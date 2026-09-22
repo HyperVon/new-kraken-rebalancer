@@ -3,6 +3,7 @@ package com.gemini.krakenbot.repository.impl
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.HistoricalOhlcSeries
+import com.gemini.krakenbot.repository.authoritativeOhlcCoverage
 import com.gemini.krakenbot.repository.table.HistoricalOhlcCandleTable
 import com.gemini.krakenbot.repository.table.HistoricalOhlcFetchTable
 import org.jetbrains.exposed.v1.core.Op
@@ -11,6 +12,8 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.isNotNull
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.notInList
@@ -27,6 +30,7 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
 
     private companion object {
         const val RETAINED_FETCH_PROOFS = 3
+        const val MAX_FETCH_PROOFS_PER_REQUEST = 24
         const val SQLITE_IN_CHUNK_SIZE = 500
     }
 
@@ -36,34 +40,44 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         sinceEpochSecond: Long,
         upToEpochSecond: Long,
     ): HistoricalOhlcSeries? = database.readTransactionIO {
+        // Only the PROVEN span counts: the original request since and fetch wall must
+        // never substitute for coverage. Legacy rows with null coverage fail closed.
         val fetch = HistoricalOhlcFetchTable
             .selectAll()
             .where {
                 (HistoricalOhlcFetchTable.pair eq pair) and
                     (HistoricalOhlcFetchTable.intervalMinutes eq intervalMinutes) and
-                    (HistoricalOhlcFetchTable.sinceEpochSecond lessEq sinceEpochSecond) and
-                    (HistoricalOhlcFetchTable.fetchedAtEpochSecond greaterEq upToEpochSecond)
+                    HistoricalOhlcFetchTable.coverageFromEpochSecond.isNotNull() and
+                    HistoricalOhlcFetchTable.coverageUntilEpochSecond.isNotNull() and
+                    (HistoricalOhlcFetchTable.coverageFromEpochSecond lessEq sinceEpochSecond) and
+                    (HistoricalOhlcFetchTable.coverageUntilEpochSecond greaterEq upToEpochSecond)
             }
             .orderBy(HistoricalOhlcFetchTable.fetchedAtEpochSecond, SortOrder.DESC)
             .limit(1)
             .firstOrNull()
             ?: return@readTransactionIO null
 
-        val fetchSince = fetch[HistoricalOhlcFetchTable.sinceEpochSecond]
-        val fetchedAt = fetch[HistoricalOhlcFetchTable.fetchedAtEpochSecond]
+        val coverageFrom = fetch[HistoricalOhlcFetchTable.coverageFromEpochSecond]
+            ?: return@readTransactionIO null
+        val coverageUntil = fetch[HistoricalOhlcFetchTable.coverageUntilEpochSecond]
+            ?: return@readTransactionIO null
+        // Returned rows correspond to evidence valid under this proof: only candles
+        // inside the proven span, never preserved rows outside it.
         val candles = HistoricalOhlcCandleTable
             .selectAll()
             .where {
                 (HistoricalOhlcCandleTable.pair eq pair) and
                     (HistoricalOhlcCandleTable.intervalMinutes eq intervalMinutes) and
-                    (HistoricalOhlcCandleTable.candleStartEpochSecond greaterEq fetchSince) and
-                    (HistoricalOhlcCandleTable.candleStartEpochSecond less fetchedAt)
+                    (HistoricalOhlcCandleTable.candleStartEpochSecond greaterEq coverageFrom) and
+                    (HistoricalOhlcCandleTable.candleStartEpochSecond less coverageUntil)
             }
             .orderBy(HistoricalOhlcCandleTable.candleStartEpochSecond, SortOrder.ASC)
             .map { it[HistoricalOhlcCandleTable.candleStartEpochSecond] to it[HistoricalOhlcCandleTable.close] }
 
         HistoricalOhlcSeries(
-            sinceEpochSecond = fetchSince,
+            requestSinceEpochSecond = fetch[HistoricalOhlcFetchTable.sinceEpochSecond],
+            coverageFromEpochSecond = coverageFrom,
+            coverageUntilEpochSecond = coverageUntil,
             fetchedAtEpochSecond = fetch[HistoricalOhlcFetchTable.fetchedAtEpochSecond],
             candles = candles,
         )
@@ -160,11 +174,26 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
                     }
                 }
             }
-            HistoricalOhlcFetchTable.upsert {
-                it[HistoricalOhlcFetchTable.pair] = pair
-                it[HistoricalOhlcFetchTable.intervalMinutes] = intervalMinutes
-                it[HistoricalOhlcFetchTable.sinceEpochSecond] = sinceEpochSecond
-                it[HistoricalOhlcFetchTable.fetchedAtEpochSecond] = fetchedAtEpochSecond
+            // The persisted proof claims only the proven span, computed by the same
+            // helper as the in-memory record. A truncated page with zero completed
+            // rows proves no reusable coverage, so no proof row is written and no
+            // historical window can later be validated from this response.
+            val coverage = authoritativeOhlcCoverage(
+                requestSinceEpochSecond = sinceEpochSecond,
+                fetchWallEpochSecond = fetchedAtEpochSecond,
+                intervalMinutes = intervalMinutes,
+                completedCandles = distinct,
+                mayBeTruncated = mayBeTruncated,
+            )
+            if (coverage != null) {
+                HistoricalOhlcFetchTable.upsert {
+                    it[HistoricalOhlcFetchTable.pair] = pair
+                    it[HistoricalOhlcFetchTable.intervalMinutes] = intervalMinutes
+                    it[HistoricalOhlcFetchTable.sinceEpochSecond] = sinceEpochSecond
+                    it[HistoricalOhlcFetchTable.fetchedAtEpochSecond] = fetchedAtEpochSecond
+                    it[HistoricalOhlcFetchTable.coverageFromEpochSecond] = coverage.fromEpochSecond
+                    it[HistoricalOhlcFetchTable.coverageUntilEpochSecond] = coverage.untilEpochSecond
+                }
             }
             pruneFetchProofs(pair, intervalMinutes, sinceEpochSecond)
             // Fetch-proof rows are metadata and change on every revalidation; only candle
@@ -184,13 +213,28 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
     /**
      * Bounds the fetch-proof lineage for one (pair, interval, since): every revalidation
      * appends a proof row, so without pruning a long-lived daemon grows this table forever.
-     * The newest few proofs are retained (the just-inserted one among them) and superseded
-     * ones are deleted inside the same transaction that commits their replacement, mirroring
-     * the comparison-cache retention policy. Candle rows are shared evidence and are never
-     * pruned here.
+     *
+     * Retention is per coverage lineage. Proofs sharing a coverage start are repeated
+     * revalidations of one range (the newest few are retained, the just-inserted one among
+     * them), while distinct coverage starts are disjoint lineages that must never evict each
+     * other: three newer truncated proofs must not prune the only proof covering an older
+     * required window. A per-request absolute cap keeps storage finite even if truncation
+     * starts shift on every save. Every eviction fails closed to a live refetch, never a
+     * stale hit. Legacy rows without coverage prove nothing and are dropped from the lineage.
+     * Candle rows are shared evidence and are never pruned here.
      */
     private fun pruneFetchProofs(pair: String, intervalMinutes: Int, sinceEpochSecond: Long) {
-        val retainedFetchedAt = HistoricalOhlcFetchTable
+        HistoricalOhlcFetchTable.deleteWhere {
+            (HistoricalOhlcFetchTable.pair eq pair) and
+                (HistoricalOhlcFetchTable.intervalMinutes eq intervalMinutes) and
+                (HistoricalOhlcFetchTable.sinceEpochSecond eq sinceEpochSecond) and
+                (
+                    HistoricalOhlcFetchTable.coverageFromEpochSecond.isNull() or
+                        HistoricalOhlcFetchTable.coverageUntilEpochSecond.isNull()
+                    )
+        }
+        // Newest first, so per-lineage take() keeps the freshest proofs.
+        val lineageWalls = HistoricalOhlcFetchTable
             .selectAll()
             .where {
                 (HistoricalOhlcFetchTable.pair eq pair) and
@@ -198,8 +242,19 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
                     (HistoricalOhlcFetchTable.sinceEpochSecond eq sinceEpochSecond)
             }
             .orderBy(HistoricalOhlcFetchTable.fetchedAtEpochSecond, SortOrder.DESC)
-            .limit(RETAINED_FETCH_PROOFS)
-            .map { it[HistoricalOhlcFetchTable.fetchedAtEpochSecond] }
+            .map {
+                it[HistoricalOhlcFetchTable.coverageFromEpochSecond] to
+                    it[HistoricalOhlcFetchTable.fetchedAtEpochSecond]
+            }
+        val retainedByLineage = lineageWalls
+            .groupBy({ it.first }, { it.second })
+            .values
+            .flatMap { walls -> walls.take(RETAINED_FETCH_PROOFS) }
+            .toSet()
+        val retainedFetchedAt = lineageWalls
+            .map { it.second }
+            .filter { it in retainedByLineage }
+            .take(MAX_FETCH_PROOFS_PER_REQUEST)
         if (retainedFetchedAt.isNotEmpty()) {
             HistoricalOhlcFetchTable.deleteWhere {
                 (HistoricalOhlcFetchTable.pair eq pair) and

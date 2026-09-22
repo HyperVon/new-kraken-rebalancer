@@ -3,6 +3,8 @@ package com.gemini.krakenbot.service.impl.history
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
+import com.gemini.krakenbot.repository.OhlcCoverage
+import com.gemini.krakenbot.repository.authoritativeOhlcCoverage
 import com.gemini.krakenbot.service.KrakenService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -79,8 +81,9 @@ class OhlcRefreshPolicy(
  *   in-progress candle (close at or after the fetch) is dropped; it must never become
  *   completed-candle evidence for history.
  * - A request is served from memory only when a SINGLE stored fetch provably contains every
- *   completed candle a fresh fetch could contribute for that window: that fetch must have
- *   started no later than this request's `since` and its wall time must be at or after `upTo`.
+ *   completed candle a fresh fetch could contribute for that window: that fetch's PROVEN
+ *   coverage must contain the window (short responses prove `[requestSince, wall)`, truncated
+ *   responses prove only their returned span, truncated-empty responses prove nothing).
  *   Two different fetches are never combined into such a proof. A joiner whose stricter window
  *   is not covered performs its own fetch instead.
  * - A fetching initiator returns exactly its own completed-candle response, so uncached callers
@@ -107,7 +110,10 @@ class HistoricalOhlcCache(
     private val log = LoggerFactory.getLogger(HistoricalOhlcCache::class.java)
 
     private class FetchRecord(
-        val sinceEpochSecond: Long,
+        /** Original request `since`: refetch lineage and exact-range matching, never coverage. */
+        val requestSinceEpochSecond: Long,
+        /** The historical span this response actually proved (see [OhlcCoverage]). */
+        val coverage: OhlcCoverage,
         val fetchWallEpochSecond: Long,
         /** Earliest epoch second at which a failed revalidation of this proof may retry the
          *  live source. Pacing only; never participates in coverage. */
@@ -126,12 +132,14 @@ class HistoricalOhlcCache(
         val candleWalls = ConcurrentSkipListMap<Long, Long>()
         val fetches = mutableListOf<FetchRecord>()
 
-        /** Newest single-fetch proof that this request needs no fresh network call. Walls are
-         *  inserted monotonically, so the last matching record is always the newest. */
+        /** A single-fetch proof whose PROVEN span contains the requested window: the last
+         *  matching record in insertion order. Out-of-order completions and durable restores
+         *  can append older walls later, so this is not always the newest wall — but that
+         *  only anchors freshness to an older instant (earlier expiry, fail closed). */
         fun coveringFetch(sinceEpochSecond: Long, upToEpochSecond: Long): FetchRecord? = synchronized(fetches) {
             var newest: FetchRecord? = null
             for (fetch in fetches) {
-                if (fetch.sinceEpochSecond <= sinceEpochSecond && fetch.fetchWallEpochSecond >= upToEpochSecond) {
+                if (fetch.coverage.contains(sinceEpochSecond, upToEpochSecond)) {
                     newest = fetch
                 }
             }
@@ -141,8 +149,16 @@ class HistoricalOhlcCache(
 
     private class CoveredSeries(val fetch: FetchRecord, val candles: List<Pair<Long, BigDecimal>>)
 
+    /**
+     * Result of recording one fetch: the series entry plus the reusable coverage the
+     * response proved ([null] when a truncated page proved nothing), with the fetch wall
+     * for freshness anchoring. Flights carry this so a joiner validates its own window
+     * against the refresh it actually shared, not an older surviving proof.
+     */
+    private class FetchOutcome(val entry: SeriesEntry, val coverage: OhlcCoverage?, val fetchWallEpochSecond: Long)
+
     private val store = ConcurrentHashMap<SeriesKey, SeriesEntry>()
-    private val inFlight = ConcurrentHashMap<FlightKey, CompletableDeferred<SeriesEntry>>()
+    private val inFlight = ConcurrentHashMap<FlightKey, CompletableDeferred<FetchOutcome>>()
 
     /**
      * Series-level outage backoff: earliest epoch second at which a revalidation of any range
@@ -213,7 +229,7 @@ class HistoricalOhlcCache(
                 )
                 val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = rememberFetch(
+                val outcome = rememberFetch(
                     seriesKey,
                     sinceEpochSecond,
                     fetchWallEpochSecond,
@@ -222,9 +238,18 @@ class HistoricalOhlcCache(
                     mayBeTruncated = mayBeTruncated,
                 )
                 persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed, mayBeTruncated)
-                val covered = CoveredSeries(FetchRecord(sinceEpochSecond, fetchWallEpochSecond), completed)
+                // Transient record for dependency reporting only (never stored): a
+                // truncated-empty response proved nothing, so it carries an empty span.
+                val covered = CoveredSeries(
+                    FetchRecord(
+                        sinceEpochSecond,
+                        outcome.coverage ?: OhlcCoverage(sinceEpochSecond, sinceEpochSecond),
+                        fetchWallEpochSecond,
+                    ),
+                    completed,
+                )
                 reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
-                flight.complete(entry)
+                flight.complete(outcome)
                 // An initiator answers with exactly its own completed-candle response.
                 return completed
             } catch (e: Throwable) {
@@ -247,13 +272,16 @@ class HistoricalOhlcCache(
 
     /**
      * Revalidates an expired covering fetch against the live source. The refetch reuses the
-     * original fetch's `since` so the replacement proof covers at least the same range, and
-     * identical concurrent revalidations share one flight. On failure the stored proof keeps
-     * its REAL wall time (coverage never extends beyond what was actually fetched) and gains
-     * a retry-pacing timestamp one freshness window out: covered windows keep serving stale
-     * data without network attempts, while windows beyond the recorded wall are not served
-     * stale evidence — they fail closed or fetch live. A joiner whose shared flight failed
-     * serves its own covered stale series instead of throwing.
+     * original fetch's request `since` so a complete replacement proof covers at least the
+     * same range, and identical concurrent revalidations share one flight. A refresh that
+     * proves nothing about this window (e.g. a truncated page for a later span) is treated
+     * like a failure: the old proof is paced and its stale series keeps serving. On failure
+     * the stored proof keeps its REAL wall time (coverage never extends beyond what was
+     * actually fetched) and gains a retry-pacing timestamp one freshness window out: covered
+     * windows keep serving stale data without network attempts, while windows beyond the
+     * recorded coverage are not served stale evidence — they fail closed or fetch live.
+     * A joiner whose shared flight failed serves its own covered stale series instead of
+     * throwing.
      */
     private suspend fun revalidate(
         seriesKey: SeriesKey,
@@ -268,7 +296,7 @@ class HistoricalOhlcCache(
             return covered.candles
         }
         val durationSeconds = intervalMinutes * 60L
-        val originalSince = covered.fetch.sinceEpochSecond
+        val originalSince = covered.fetch.requestSinceEpochSecond
         val flightKey = FlightKey(normalizedPair, intervalMinutes.toLong(), originalSince)
         val (flight, created) = startOrJoinFlight(flightKey)
         if (created) {
@@ -281,7 +309,7 @@ class HistoricalOhlcCache(
                 )
                 val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = rememberFetch(
+                val outcome = rememberFetch(
                     seriesKey,
                     originalSince,
                     fetchWallEpochSecond,
@@ -290,8 +318,15 @@ class HistoricalOhlcCache(
                     mayBeTruncated = mayBeTruncated,
                 )
                 persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, mayBeTruncated)
-                flight.complete(entry)
-                return entry.candles.tailMap(sinceEpochSecond, true)
+                flight.complete(outcome)
+                if (outcome.coverage?.contains(sinceEpochSecond, upTo.epochSecond) != true) {
+                    // The refresh proved nothing about this window (e.g. a truncated page
+                    // for a later span): pace the old proof like a failed attempt and keep
+                    // serving its stale series instead of refetching live on every request.
+                    paceFailedRevalidation(covered, intervalMinutes, sinceEpochSecond, upTo.epochSecond)
+                    return covered.candles
+                }
+                return outcome.entry.candles.tailMap(sinceEpochSecond, true)
                     .entries.asSequence()
                     .map { it.key to it.value }
                     .toList()
@@ -332,7 +367,9 @@ class HistoricalOhlcCache(
      * dependency's consumed `[since, upTo]` domain differ from the recorded candle content hash;
      * otherwise returns [OhlcRevalidationResult.Unchanged] with refreshed wall time and freshness
      * deadline. Candles closing after the dependency's `upTo` are not consumed evidence and never
-     * cause a content change. Concurrent revalidations of the same range share a single flight.
+     * cause a content change. The live refresh itself must cover the dependency's consumed
+     * domain — a truncated page for another span fails closed to [ContentChanged].
+     * Concurrent revalidations of the same range share a single flight.
      */
     suspend fun revalidateDependency(dependency: ConsumedOhlcDependency): OhlcRevalidationResult {
         val normalizedPair = dependency.pair.trim().uppercase()
@@ -351,7 +388,7 @@ class HistoricalOhlcCache(
         val exactCovered = (
             memoryCovered(seriesKey, originalSince, consumedUpTo)
                 ?: loadFromPersistent(seriesKey, originalSince, consumedUpTo)
-            )?.takeIf { it.fetch.sinceEpochSecond == originalSince }
+            )?.takeIf { it.fetch.requestSinceEpochSecond == originalSince }
         if (exactCovered != null && !isExpired(exactCovered, dependency.intervalMinutes)) {
             val currentHash = consumedCandleContentHash(
                 exactCovered.candles,
@@ -409,7 +446,7 @@ class HistoricalOhlcCache(
                 )
                 val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = rememberFetch(
+                val outcome = rememberFetch(
                     seriesKey,
                     originalSince,
                     fetchWallEpochSecond,
@@ -418,13 +455,15 @@ class HistoricalOhlcCache(
                     mayBeTruncated = mayBeTruncated,
                 )
                 persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, mayBeTruncated)
-                flight.complete(entry)
-                // No coverage proof for this window (only reachable with a corrupt or
-                // future-dated upTo): fail closed to a replay, like the joiner below.
-                if (entry.coveringFetch(originalSince, consumedUpTo) == null) {
+                flight.complete(outcome)
+                // The refresh itself must cover the dependency's consumed domain: a
+                // truncated page for another span (or a corrupt/future-dated upTo) fails
+                // closed to a replay rather than comparing stale union content. An older
+                // surviving proof must never satisfy this check.
+                if (outcome.coverage?.contains(originalSince, consumedUpTo) != true) {
                     return OhlcRevalidationResult.ContentChanged
                 }
-                val candles = candlesFrom(entry, originalSince)
+                val candles = candlesFrom(outcome.entry, originalSince)
                 val newHash = consumedCandleContentHash(
                     candles,
                     dependency.intervalMinutes,
@@ -469,18 +508,21 @@ class HistoricalOhlcCache(
 
         // 4. Joiner awaits the shared flight.
         try {
-            val entry = flight.await()
-            val candles = candlesFrom(entry, originalSince)
+            val outcome = flight.await()
+            val candles = candlesFrom(outcome.entry, originalSince)
             val newHash = consumedCandleContentHash(
                 candles,
                 dependency.intervalMinutes,
                 originalSince,
                 consumedUpTo,
             )
-            // No coverage proof for this window (only reachable with a corrupt or
-            // future-dated upTo): fail closed to a replay rather than validating stale.
-            val wall = entry.coveringFetch(originalSince, consumedUpTo)?.fetchWallEpochSecond
-                ?: return OhlcRevalidationResult.ContentChanged
+            // The shared refresh itself must cover this joiner's window: a truncated
+            // page for another span (or a corrupt/future-dated upTo) fails closed to
+            // a replay rather than validating stale union content.
+            if (outcome.coverage?.contains(originalSince, consumedUpTo) != true) {
+                return OhlcRevalidationResult.ContentChanged
+            }
+            val wall = outcome.fetchWallEpochSecond
             return if (newHash != dependency.candleContentHash) {
                 OhlcRevalidationResult.ContentChanged
             } else {
@@ -619,13 +661,18 @@ class HistoricalOhlcCache(
 
         rememberFetch(
             seriesKey = seriesKey,
-            sinceEpochSecond = stored.sinceEpochSecond,
+            sinceEpochSecond = stored.requestSinceEpochSecond,
             fetchWallEpochSecond = stored.fetchedAtEpochSecond,
             candles = stored.candles,
             authoritative = false,
             // A durable restore replays no fresh provider evidence, so replacement never
-            // runs and the raw-page shape is irrelevant.
+            // runs and the raw-page shape is irrelevant. The durable span is replayed
+            // verbatim so memory agrees with the database exactly.
             mayBeTruncated = false,
+            restoredCoverage = OhlcCoverage(
+                stored.coverageFromEpochSecond,
+                stored.coverageUntilEpochSecond,
+            ),
         )
         // loadCovered only returns a fetch that provably covers the requested window.
         return memoryCovered(seriesKey, sinceEpochSecond, upToEpochSecond)
@@ -638,6 +685,11 @@ class HistoricalOhlcCache(
      * [mayBeTruncated] page-shape flag is measured on the RAW provider response (before
      * in-progress-candle filtering) at the fetch site and is the single source of truth
      * for whether the response may be page-limited.
+     *
+     * The recorded proof claims only [authoritativeOhlcCoverage] — the span the response
+     * actually proved — or nothing at all for a truncated page with zero completed rows.
+     * A restore replays the durable span ([restoredCoverage]) instead of recomputing it,
+     * so memory agrees with the database exactly. Returns the outcome for the flight.
      */
     private fun rememberFetch(
         seriesKey: SeriesKey,
@@ -646,7 +698,15 @@ class HistoricalOhlcCache(
         candles: List<Pair<Long, BigDecimal>>,
         authoritative: Boolean,
         mayBeTruncated: Boolean,
-    ): SeriesEntry {
+        restoredCoverage: OhlcCoverage? = null,
+    ): FetchOutcome {
+        val coverage = restoredCoverage ?: authoritativeOhlcCoverage(
+            requestSinceEpochSecond = sinceEpochSecond,
+            fetchWallEpochSecond = fetchWallEpochSecond,
+            intervalMinutes = seriesKey.intervalMinutes,
+            completedCandles = candles,
+            mayBeTruncated = mayBeTruncated,
+        )
         val entry = store.compute(seriesKey) { _, existing -> existing ?: SeriesEntry() }!!
         synchronized(entry.fetches) {
             if (authoritative) {
@@ -667,21 +727,34 @@ class HistoricalOhlcCache(
                     entry.candleWalls[candleStart] = fetchWallEpochSecond
                 }
             }
-            // A replaced proof supersedes older proofs of the same range; keeping only the
-            // newest record per distinct `since` bounds the fetch list and stops an expired
-            // record from shadowing its own revalidation.
-            entry.fetches.removeAll {
-                it.sinceEpochSecond == sinceEpochSecond && it.fetchWallEpochSecond < fetchWallEpochSecond
-            }
-            if (entry.fetches.none {
-                    it.sinceEpochSecond == sinceEpochSecond &&
-                        it.fetchWallEpochSecond == fetchWallEpochSecond
+            if (coverage != null) {
+                // Same (request since, wall) collapses to the newest response, mirroring
+                // the durable upsert; older same-range proofs are dropped only when the
+                // new span fully contains them. Disjoint or broader older spans coexist,
+                // so a narrow truncated refresh never erases a proof it failed to
+                // reproduce — and an expired record never shadows its own revalidation.
+                entry.fetches.removeAll {
+                    it.requestSinceEpochSecond == sinceEpochSecond &&
+                        (
+                            it.fetchWallEpochSecond == fetchWallEpochSecond ||
+                                (
+                                    it.fetchWallEpochSecond < fetchWallEpochSecond &&
+                                        coverage.contains(it.coverage)
+                                    )
+                            )
                 }
-            ) {
-                entry.fetches += FetchRecord(sinceEpochSecond, fetchWallEpochSecond)
+                entry.fetches += FetchRecord(sinceEpochSecond, coverage, fetchWallEpochSecond)
+                // Bound same-range coexistence: repeated revalidations usually subsume, but
+                // shifting truncated spans would otherwise accumulate one proof per refresh.
+                // The oldest span goes first, preferring fresh evidence like every other
+                // newer-wins rule here; eviction fails closed to a live refetch.
+                val siblings = entry.fetches.filter { it.requestSinceEpochSecond == sinceEpochSecond }
+                if (siblings.size > MAX_FETCH_PROOFS_PER_RANGE) {
+                    entry.fetches.remove(siblings.minBy { it.fetchWallEpochSecond })
+                }
             }
         }
-        return entry
+        return FetchOutcome(entry, coverage, fetchWallEpochSecond)
     }
 
     /**
@@ -762,7 +835,7 @@ class HistoricalOhlcCache(
         }
     }
 
-    private fun startOrJoinFlight(flightKey: FlightKey): Pair<CompletableDeferred<SeriesEntry>, Boolean> {
+    private fun startOrJoinFlight(flightKey: FlightKey): Pair<CompletableDeferred<FetchOutcome>, Boolean> {
         var created = false
         val deferred = inFlight.compute(flightKey) { _, existing ->
             if (existing == null) {
@@ -782,6 +855,14 @@ class HistoricalOhlcCache(
          * backs off retries of that same range for longer.
          */
         private const val SERIES_OUTAGE_BACKOFF_SECONDS = 60L
+
+        /**
+         * Fail-closed bound on coexisting proofs per request range: disjoint truncated
+         * spans must not erase each other, but shifting spans must not accumulate one
+         * proof per refresh either. Distinct ranges keep their own proofs exactly as
+         * before; evicting a proof only costs a future live refetch, never a stale hit.
+         */
+        private const val MAX_FETCH_PROOFS_PER_RANGE = 4
 
         /**
          * Canonical consumed-candle domain: completed candles starting at or after

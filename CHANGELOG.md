@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.80] - 2026-09-22
+
+### Fixed
+
+- **Range-aware OHLC fetch proofs**: fetch coverage is now an explicit proven span instead of the
+  original request bounds, in both the in-memory cache and the durable SQLite store. A truncated
+  page proves only its returned completed span (short pages still prove the full requested
+  domain; truncated pages with zero completed rows prove nothing), so a later-span page can no
+  longer certify an older window as freshly covered — including across restarts. Dependency
+  revalidation fails closed when the live refresh does not cover the dependency's consumed
+  window, disjoint proof lineages coexist without evicting each other, and pre-migration proof
+  rows without coverage bounds fail closed until refetched.
+
 ## [6.17.79] - 2026-09-22
 
 ### Fixed

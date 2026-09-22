@@ -1062,7 +1062,11 @@ calculation actually consumed is unchanged.
   `[since, upTo]` window, so normal future candle growth never looks like a historical correction,
   while a correction or backfill inside the window (including one curing empty negative evidence)
   invalidates. Revalidation refetches each dependency's own range; a fresher response for a
-  different range never validates the window. On comparison cache lookup:
+  different range never validates the window. Fetch proofs are range-aware: a short complete
+  response proves its full requested domain, while a page-limited response proves only the
+  completed span it actually returned (and a truncated page with zero completed rows proves
+  nothing), so preserved older candles are never paired with a newer truncated proof and called
+  freshly validated. On comparison cache lookup:
   - **Fast path:** When all recorded OHLC dependencies are fresh (`now < freshnessDeadlineEpochSecond`),
     the cached comparison is served immediately (0 OHLC calls, 0 calculation replays).
   - **Expired revalidation:** If any consumed dependency is expired, only expired dependencies are

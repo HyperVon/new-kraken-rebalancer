@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
@@ -409,7 +410,8 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 )
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
                 val since = 1_000_000L
-                val wall = 2_000_000L
+                val wallFirst = 2_000_000L
+                val wallSecond = 2_010_000L
                 val pageStart = 1_100_000L
                 val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
                 val older = listOf(
@@ -421,7 +423,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     pair = pair,
                     intervalMinutes = intervalMinutes,
                     sinceEpochSecond = since,
-                    fetchedAtEpochSecond = wall,
+                    fetchedAtEpochSecond = wallFirst,
                     candles = older,
                     mayBeTruncated = false,
                 ) shouldBe true
@@ -431,18 +433,24 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 val completedPage = (0 until pageSize - 1).map { i ->
                     (pageStart + i * 900L) to BigDecimal("0.0175")
                 }
+                val pageUntil = pageStart + (pageSize - 1) * 900L
                 repository.saveFetch(
                     pair = pair,
                     intervalMinutes = intervalMinutes,
                     sinceEpochSecond = since,
-                    fetchedAtEpochSecond = wall,
+                    fetchedAtEpochSecond = wallSecond,
                     candles = completedPage,
                     mayBeTruncated = true,
                 ) shouldBe true
 
-                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
-                stored.size shouldBe older.size + completedPage.size
-                older.forEach { (start, _) -> stored.any { it.first == start } shouldBe true }
+                // The older window still hits via the seed proof, with older rows kept.
+                val olderStored = repository.loadCovered(pair, intervalMinutes, since, pageStart)?.candles.orEmpty()
+                older.forEach { (start, _) -> olderStored.any { it.first == start } shouldBe true }
+                // The truncated span is reusable exactly within its proven bounds.
+                val spanStored = repository.loadCovered(pair, intervalMinutes, pageStart, pageUntil)?.candles.orEmpty()
+                spanStored.size shouldBe completedPage.size
+                // No single proof validated the union: the full window misses.
+                repository.loadCovered(pair, intervalMinutes, since, wallSecond) shouldBe null
             }
         }
 
@@ -554,7 +562,8 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 )
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
                 val since = 1_000_000L
-                val wall = 2_000_000L
+                val wallFirst = 2_000_000L
+                val wallSecond = 2_010_000L
                 val pageStart = since + 392 * 900L
                 val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
                 val seeds = listOf(
@@ -567,7 +576,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     pair = pair,
                     intervalMinutes = intervalMinutes,
                     sinceEpochSecond = since,
-                    fetchedAtEpochSecond = wall,
+                    fetchedAtEpochSecond = wallFirst,
                     candles = seeds,
                     mayBeTruncated = false,
                 ) shouldBe true
@@ -575,18 +584,24 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 val completedPage = (0 until pageSize - 1).map { i ->
                     (pageStart + i * 900L) to BigDecimal("0.0175")
                 }
+                val pageUntil = pageStart + (pageSize - 1) * 900L
                 repository.saveFetch(
                     pair = pair,
                     intervalMinutes = intervalMinutes,
                     sinceEpochSecond = since,
-                    fetchedAtEpochSecond = wall,
+                    fetchedAtEpochSecond = wallSecond,
                     candles = completedPage,
                     mayBeTruncated = true,
                 ) shouldBe true
 
-                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
-                stored.size shouldBe seeds.size + completedPage.size
-                seeds.forEach { (start, _) -> stored.any { it.first == start } shouldBe true }
+                // Older and gap rows are preserved and still hit via the seed proof.
+                val olderStored = repository.loadCovered(pair, intervalMinutes, since, pageStart)?.candles.orEmpty()
+                seeds.forEach { (start, _) -> olderStored.any { it.first == start } shouldBe true }
+                // The late span is reusable exactly within its proven bounds.
+                val spanStored = repository.loadCovered(pair, intervalMinutes, pageStart, pageUntil)?.candles.orEmpty()
+                spanStored.size shouldBe completedPage.size
+                // The truncated page is not coverage for the unreturned head.
+                repository.loadCovered(pair, intervalMinutes, since, wallSecond) shouldBe null
             }
         }
 
@@ -674,14 +689,15 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 )
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
                 val since = 1_000_000L
-                val wall = 2_000_000L
+                val wallFirst = 2_000_000L
+                val wallSecond = 2_010_000L
                 val loneStart = 1_100_000L
                 val older = listOf(since to BigDecimal("0.0170"))
                 repository.saveFetch(
                     pair = pair,
                     intervalMinutes = intervalMinutes,
                     sinceEpochSecond = since,
-                    fetchedAtEpochSecond = wall,
+                    fetchedAtEpochSecond = wallFirst,
                     candles = older,
                     mayBeTruncated = false,
                 ) shouldBe true
@@ -692,7 +708,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     pair = pair,
                     intervalMinutes = intervalMinutes,
                     sinceEpochSecond = since,
-                    fetchedAtEpochSecond = wall,
+                    fetchedAtEpochSecond = wallSecond,
                     candles = listOf(
                         loneStart to BigDecimal("0.0175"),
                         loneStart to BigDecimal("0.0175"),
@@ -701,10 +717,221 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     mayBeTruncated = true,
                 ) shouldBe true
 
-                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
-                stored.size shouldBe 3
-                stored.count { it.first == loneStart } shouldBe 1
-                stored.any { it.first == since } shouldBe true
+                val olderStored = repository.loadCovered(pair, intervalMinutes, since, loneStart)?.candles.orEmpty()
+                olderStored.any { it.first == since } shouldBe true
+                val spanStored =
+                    repository.loadCovered(pair, intervalMinutes, loneStart, loneStart + 2 * 900L)?.candles.orEmpty()
+                spanStored.size shouldBe 2
+                spanStored.count { it.first == loneStart } shouldBe 1
+                repository.loadCovered(pair, intervalMinutes, since, wallSecond) shouldBe null
+            }
+        }
+
+        "short empty response is reusable negative evidence" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-short-empty-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = 1_000_000L,
+                    fetchedAtEpochSecond = 2_000_000L,
+                    candles = emptyList(),
+                    mayBeTruncated = false,
+                ) shouldBe false
+
+                // A definitely-complete empty page proves its requested range is empty.
+                val stored = repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L)
+                checkNotNull(stored).candles shouldBe emptyList()
+            }
+        }
+
+        "truncated empty response writes no reusable proof" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-trunc-empty-only-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = 1_000_000L,
+                    fetchedAtEpochSecond = 2_000_000L,
+                    candles = emptyList(),
+                    mayBeTruncated = true,
+                ) shouldBe false
+
+                // Nothing was proven: no window can be validated from this response.
+                repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L) shouldBe null
+                fetchProofCount(database, pair, intervalMinutes, 1_000_000L) shouldBe 0
+            }
+        }
+
+        "older full fetch completing after a truncated one keeps both coverages" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-ooo-full-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 900_000L
+                val wallNew = 2_010_000L
+                val wallOld = 2_000_000L
+                val septemberPage = (0 until 719).map { i ->
+                    (1_500_000L + i * 900L) to BigDecimal("0.0175")
+                }
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wallNew,
+                    candles = septemberPage,
+                    mayBeTruncated = true,
+                ) shouldBe true
+
+                // The older full response covers the head range but must neither delete
+                // nor overwrite the newer truncated span it never witnessed.
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wallOld,
+                    candles = listOf(
+                        1_000_000L to BigDecimal("0.0170"),
+                        1_000_900L to BigDecimal("0.0171"),
+                    ),
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                val headStored = repository.loadCovered(pair, intervalMinutes, since, 1_100_000L)?.candles.orEmpty()
+                headStored.any { it.first == 1_000_000L } shouldBe true
+                val spanStored =
+                    repository.loadCovered(pair, intervalMinutes, 1_500_000L, 2_147_100L)?.candles.orEmpty()
+                spanStored.size shouldBe septemberPage.size
+                spanStored.single { it.first == 1_500_000L }.second.compareTo(BigDecimal("0.0175")) shouldBe 0
+            }
+        }
+
+        "retention keeps disjoint lineages of one request since" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-retain-lineage-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 900_000L
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = 2_000_000L,
+                    candles = listOf(1_000_000L to BigDecimal("0.0170")),
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // Three newer truncated proofs sharing the request since must not evict
+                // the only proof covering the older required window.
+                listOf(
+                    Triple(2_001_000L, 1_500_000L, "0.0175"),
+                    Triple(2_002_000L, 1_600_000L, "0.0176"),
+                    Triple(2_003_000L, 1_700_000L, "0.0177"),
+                ).forEach { (wall, start, close) ->
+                    repository.saveFetch(
+                        pair = pair,
+                        intervalMinutes = intervalMinutes,
+                        sinceEpochSecond = since,
+                        fetchedAtEpochSecond = wall,
+                        candles = listOf(
+                            start to BigDecimal(close),
+                            (start + 900L) to BigDecimal(close),
+                        ),
+                        mayBeTruncated = true,
+                    ) shouldBe true
+                }
+
+                val olderStored = repository.loadCovered(
+                    pair,
+                    intervalMinutes,
+                    1_000_000L,
+                    1_100_000L,
+                )?.candles.orEmpty()
+                olderStored.any { it.first == 1_000_000L } shouldBe true
+                val spanStored =
+                    repository.loadCovered(pair, intervalMinutes, 1_600_000L, 1_601_800L)?.candles.orEmpty()
+                spanStored.size shouldBe 2
+            }
+        }
+
+        "absolute per-request cap evicts the oldest lineage first" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-retain-cap-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 900_000L
+                (0 until 25).forEach { k ->
+                    val wall = 2_000_000L + k * 1_000L
+                    val start = 1_500_000L + k * 10_000L
+                    repository.saveFetch(
+                        pair = pair,
+                        intervalMinutes = intervalMinutes,
+                        sinceEpochSecond = since,
+                        fetchedAtEpochSecond = wall,
+                        candles = listOf(
+                            start to BigDecimal("0.0175"),
+                            (start + 900L) to BigDecimal("0.0176"),
+                        ),
+                        mayBeTruncated = true,
+                    ) shouldBe true
+                }
+
+                // 25 disjoint lineages exceed the absolute bound: the newest 24
+                // survive and the evicted oldest window fails closed to a miss.
+                fetchProofCount(database, pair, intervalMinutes, since) shouldBe 24
+                repository.loadCovered(pair, intervalMinutes, 1_500_000L, 1_501_800L) shouldBe null
+                val newestStored =
+                    repository.loadCovered(pair, intervalMinutes, 1_740_000L, 1_741_800L)?.candles.orEmpty()
+                newestStored.size shouldBe 2
+            }
+        }
+
+        "legacy proof rows without coverage fail closed and are pruned" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-legacy-proof-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                // Locals: the insert lambda is Table-scoped, so bare `pair` would
+                // resolve to the column instead of the test fixture.
+                val legacyPair = pair
+                val legacyInterval = intervalMinutes
+                transaction(database) {
+                    // Explicit NULL coverage bounds: the pre-migration row shape.
+                    HistoricalOhlcFetchTable.insert {
+                        it[HistoricalOhlcFetchTable.pair] = legacyPair
+                        it[HistoricalOhlcFetchTable.intervalMinutes] = legacyInterval
+                        it[HistoricalOhlcFetchTable.sinceEpochSecond] = 1_000_000L
+                        it[HistoricalOhlcFetchTable.fetchedAtEpochSecond] = 2_000_000L
+                        it[HistoricalOhlcFetchTable.coverageFromEpochSecond] = null
+                        it[HistoricalOhlcFetchTable.coverageUntilEpochSecond] = null
+                    }
+                }
+
+                // Old rows cannot prove whether they were full or truncated: miss.
+                repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L) shouldBe null
+
+                // The next save of the lineage drops the dead row and writes a real proof.
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = 1_000_000L,
+                    fetchedAtEpochSecond = 2_010_000L,
+                    candles = listOf(1_000_000L to BigDecimal("0.0170")),
+                    mayBeTruncated = false,
+                ) shouldBe true
+                fetchProofCount(database, pair, intervalMinutes, 1_000_000L) shouldBe 1
+                val stored = repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L)?.candles.orEmpty()
+                stored.any { it.first == 1_000_000L } shouldBe true
             }
         }
     }
