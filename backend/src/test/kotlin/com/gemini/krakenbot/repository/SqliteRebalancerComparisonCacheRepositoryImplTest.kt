@@ -167,6 +167,7 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
                     pair = "XXBTZUSD",
                     intervalMinutes = 60,
                     sinceEpochSecond = 500L,
+                    upToEpochSecond = 550L,
                     fetchedAtEpochSecond = 600L,
                     freshnessDeadlineEpochSecond = 700L,
                     candleContentHash = "hash1",
@@ -205,7 +206,7 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
             }
         }
 
-        "handles corrupt ohlcDependenciesJson gracefully by defaulting to emptyList" {
+        "treats a corrupt ohlcDependenciesJson as a cache miss instead of validating it as empty" {
             runTest {
                 val database = DatabaseConfig.init(
                     "jdbc:sqlite:file:comparison-cache-corrupt-${UUID.randomUUID()}?mode=memory&cache=shared",
@@ -227,9 +228,48 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
                         it[calculatedAtEpochMillis] = 1000L
                     }
                 }
-                val loaded = repository.load(100L, 200L)
-                loaded?.comparison shouldBe comparison
-                loaded?.ohlcDependencies shouldBe emptyList()
+                // An empty manifest carries no freshness requirements: defaulting here would
+                // serve the cached result as a Hit without ever revalidating its OHLC evidence.
+                repository.load(100L, 200L) shouldBe null
+            }
+        }
+
+        "conditional dependency update writes only when the stored list still matches" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:comparison-cache-cas-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val repository = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val from = 1000L
+                val to = 2000L
+                val dep = ConsumedOhlcDependency(
+                    pair = "XXBTZUSD",
+                    intervalMinutes = 60,
+                    sinceEpochSecond = 500L,
+                    upToEpochSecond = 550L,
+                    fetchedAtEpochSecond = 600L,
+                    freshnessDeadlineEpochSecond = 700L,
+                    candleContentHash = "hash1",
+                )
+                repository.save(from, to, "fp-1", comparison(), listOf(dep))
+
+                val refreshed = dep.copy(freshnessDeadlineEpochSecond = 900L)
+                repository.updateOhlcDependenciesIfExpected(from, to, listOf(dep), listOf(refreshed)) shouldBe true
+                repository.load(from, to)?.ohlcDependencies shouldBe listOf(refreshed)
+
+                // A concurrent replay replaced the manifest meanwhile: the stale write is
+                // dropped and the replayed entry stays intact.
+                val replayed = dep.copy(candleContentHash = "hash2", freshnessDeadlineEpochSecond = 950L)
+                repository.updateOhlcDependencies(from, to, listOf(replayed))
+                repository.updateOhlcDependenciesIfExpected(from, to, listOf(refreshed), listOf(dep)) shouldBe false
+                repository.load(from, to)?.ohlcDependencies shouldBe listOf(replayed)
+
+                repository.delete(from, to)
+                repository.updateOhlcDependenciesIfExpected(from, to, listOf(replayed), listOf(dep)) shouldBe false
             }
         }
     }

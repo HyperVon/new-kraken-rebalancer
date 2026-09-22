@@ -1015,10 +1015,12 @@ calculation actually consumed is unchanged.
 
 - **Entry validity.** A cache entry is keyed by the exact evaluation window (first/last stable
   evaluation snapshot timestamps) and carries an input fingerprint: SHA-256 over the cache format
-  version, the certified stable horizon (`stableThrough`), the consumed-evidence digest, the OHLC
-  candle content revision, the funding provenance token, the configured allocation universe, the
+  version, the certified stable horizon (`stableThrough`), the consumed-evidence digest,
+  the funding provenance token, the configured allocation universe, the
   reconstruction revision markers, the inception resolution, and the evaluation snapshot boundary
-  (count, first, last). A read matches only when the stored fingerprint equals the fingerprint
+  (count, first, last). Consumed OHLC windows are validated by the persisted dependency manifest,
+  never by the global OHLC content revision, so unrelated price evidence activity cannot
+  invalidate the entry. A read matches only when the stored fingerprint equals the fingerprint
   computed for the current request. Unavailable results are never persisted, and cache read/write
   failures fall back to the authoritative calculation.
 - **Consumed evidence.** The fingerprint binds the recorded snapshots at or before the certified
@@ -1055,14 +1057,25 @@ calculation actually consumed is unchanged.
   `MISSING_PRICE` / `HISTORICAL_PRICE_SOURCE_ERROR` frontiers), candles fetched while recent (data ends
   within a day of the fetch) revalidate hourly, and clearly historical candles revalidate weekly.
   The comparison cache persists the exact external OHLC dependencies consumed during authoritative
-  calculation (pair, interval, since, wall fetch timestamp, freshness deadline, and candle content hash).
-  On comparison cache lookup:
+  calculation (pair, interval, since, valuation upper bound `upTo`, wall fetch timestamp, freshness
+  deadline, and candle content hash). The hash covers only completed candles in the consumed
+  `[since, upTo]` window, so normal future candle growth never looks like a historical correction,
+  while a correction or backfill inside the window (including one curing empty negative evidence)
+  invalidates. Revalidation refetches each dependency's own range; a fresher response for a
+  different range never validates the window. On comparison cache lookup:
   - **Fast path:** When all recorded OHLC dependencies are fresh (`now < freshnessDeadlineEpochSecond`),
     the cached comparison is served immediately (0 OHLC calls, 0 calculation replays).
   - **Expired revalidation:** If any consumed dependency is expired, only expired dependencies are
     revalidated against the exchange via single-flight deduplication. If all return unchanged candle
     content hashes, their freshness deadlines are refreshed in the database and the cached comparison
     is returned (0 calculation replays, 1 bounded OHLC refresh).
+  - **Refresh budget:** One request performs at most 8 distinct live OHLC refetches synchronously
+    (dependencies sharing one range share a single flight). When expired ranges exceed the budget,
+    the request refreshes a deterministic batch, persists that progress without marking the
+    remainder fresh, and serves an explicit transient (`EXTERNAL_EVIDENCE_REFRESHING`) instead of
+    the unvalidated entry; the remainder validates in one single-flighted background refresh (or
+    across later requests without an application scope), and a later request hits with 0 replays.
+    Concurrent requests join the in-flight refresh and spend zero synchronous calls.
   - **Content changed:** If external OHLC content changed or backfilled, the comparison cache entry is
     invalidated and deleted, followed by exactly 1 authoritative calculation replay.
   - **Exchange error:** Provider outages serve stale cached OHLC and do not invalidate the comparison cache.

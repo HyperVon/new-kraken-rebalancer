@@ -726,9 +726,15 @@ class HistoricalOhlcCacheTest : StringSpec() {
                 pair = pair,
                 intervalMinutes = interval,
                 sinceEpochSecond = since,
+                upToEpochSecond = clock.epochSecond,
                 fetchedAtEpochSecond = clock.epochSecond,
                 freshnessDeadlineEpochSecond = clock.epochSecond + 3600L,
-                candleContentHash = HistoricalOhlcCache.computeCandleHash(candles),
+                candleContentHash = HistoricalOhlcCache.consumedCandleContentHash(
+                    candles,
+                    interval,
+                    since,
+                    clock.epochSecond,
+                ),
             )
 
             // Advance time past freshness deadline
@@ -960,9 +966,15 @@ class HistoricalOhlcCacheTest : StringSpec() {
                 pair = pair,
                 intervalMinutes = interval,
                 sinceEpochSecond = candleStart - durationSeconds,
+                upToEpochSecond = clock.epochSecond,
                 fetchedAtEpochSecond = clock.epochSecond - 10_000L,
                 freshnessDeadlineEpochSecond = clock.epochSecond - 5_000L,
-                candleContentHash = HistoricalOhlcCache.computeCandleHash(completedCandles),
+                candleContentHash = HistoricalOhlcCache.consumedCandleContentHash(
+                    completedCandles,
+                    interval,
+                    candleStart - durationSeconds,
+                    clock.epochSecond,
+                ),
             )
 
             val result = cache.revalidateDependency(dep)
@@ -990,14 +1002,468 @@ class HistoricalOhlcCacheTest : StringSpec() {
                 pair = pair,
                 intervalMinutes = interval,
                 sinceEpochSecond = candleStart - durationSeconds,
+                upToEpochSecond = clock.epochSecond,
                 fetchedAtEpochSecond = clock.epochSecond - 10_000L,
                 freshnessDeadlineEpochSecond = clock.epochSecond - 5_000L,
-                candleContentHash = HistoricalOhlcCache.computeCandleHash(completedCandles),
+                candleContentHash = HistoricalOhlcCache.consumedCandleContentHash(
+                    completedCandles,
+                    interval,
+                    candleStart - durationSeconds,
+                    clock.epochSecond,
+                ),
             )
 
             val result = cache.revalidateDependency(dep)
             counter.get() shouldBe 1
             result shouldBe OhlcRevalidationResult.Unchanged(dep)
+        }
+
+        "consumed dependency ignores future candle growth but detects in-domain change" {
+            val counter = AtomicInteger(0)
+            val upTo = 1_000_000L
+            var clock = Instant.ofEpochSecond(upTo + 3_600L)
+            val since = upTo - 86_400L
+            val consumedStart = upTo - durationSeconds
+            val futureStart = upTo + durationSeconds
+            val newerFutureStart = upTo + 2 * durationSeconds
+            var extraCandles: List<Pair<Long, BigDecimal>> = emptyList()
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        listOf(
+                            consumedStart to BigDecimal("0.0175"),
+                            futureStart to BigDecimal("0.0180"),
+                        ) + extraCandles
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var narrowDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { narrowDep = it }
+            var wideDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo + 3_600L)) { wideDep = it }
+            counter.get() shouldBe 1
+            val narrow = checkNotNull(narrowDep)
+            val wide = checkNotNull(wideDep)
+            // The same fetch response produces different dependency hashes: the valuation
+            // bound excludes the future candle from the narrow window but not the wide one.
+            narrow.upToEpochSecond shouldBe upTo
+            (narrow.candleContentHash == wide.candleContentHash) shouldBe false
+
+            // Past the freshness deadline, the provider appends newer candles beyond the valuation instant.
+            clock = clock.plusSeconds(3_601L)
+            extraCandles = listOf(newerFutureStart to BigDecimal("0.0185"))
+
+            narrow.isFresh(clock.epochSecond) shouldBe false
+            cache.revalidateDependency(narrow) shouldBe
+                io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+            // The wide window consumed the newer candle's region, so the same growth is a change.
+            cache.revalidateDependency(wide) shouldBe OhlcRevalidationResult.ContentChanged
+            // Both revalidations shared the single refresh flight for the range.
+            counter.get() shouldBe 2
+        }
+
+        "a paced cross-range proof does not gate an unattempted exact-range refetch" {
+            val counter = AtomicInteger(0)
+            val wall0 = 2_000_000L
+            var clock = Instant.ofEpochSecond(wall0)
+            val sinceNewest = wall0 - 3 * durationSeconds
+            val candleNewest = sinceNewest to BigDecimal("50000")
+            val sinceExact = wall0 - 2 * durationSeconds
+            var backfilled = false
+            var failNext = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (failNext) {
+                            failNext = false
+                            error("transient kraken failure")
+                        }
+                        if (backfilled) {
+                            listOf(candleNewest, sinceExact to BigDecimal("51000"))
+                        } else {
+                            listOf(candleNewest)
+                        }
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            // Newest covering record for the series, then past its freshness deadline.
+            var newestDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, sinceNewest, Instant.ofEpochSecond(wall0)) { newestDep = it }
+            val newest = checkNotNull(newestDep)
+            clock = clock.plusSeconds(3_601L)
+
+            // The newest range fails: its own record is paced for a full freshness window.
+            failNext = true
+            cache.revalidateDependency(newest) shouldBe OhlcRevalidationResult.Unchanged(newest)
+            counter.get() shouldBe 2
+
+            // Past the short series backoff but inside the newest record's pacing, an exact
+            // older range the cache never attempted must still refetch live — and must
+            // detect the provider backfill inside its window.
+            clock = clock.plusSeconds(120L)
+            backfilled = true
+            val exactDep = ConsumedOhlcDependency(
+                pair = pair,
+                intervalMinutes = interval,
+                sinceEpochSecond = sinceExact,
+                upToEpochSecond = wall0,
+                fetchedAtEpochSecond = wall0,
+                freshnessDeadlineEpochSecond = wall0 + 1,
+                candleContentHash = "empty",
+            )
+            val result = cache.revalidateDependency(exactDep)
+            counter.get() shouldBe 3
+            result shouldBe OhlcRevalidationResult.ContentChanged
+        }
+
+        "a series failure briefly paces other ranges, then retries them live" {
+            val counter = AtomicInteger(0)
+            val wall0 = 2_000_000L
+            var clock = Instant.ofEpochSecond(wall0)
+            val sinceFailed = wall0 - 3 * durationSeconds
+            var failNext = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (failNext) {
+                            failNext = false
+                            error("transient kraken failure")
+                        }
+                        listOf(sinceFailed to BigDecimal("50000"))
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var failedDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, sinceFailed, Instant.ofEpochSecond(wall0)) { failedDep = it }
+            clock = clock.plusSeconds(3_601L)
+            failNext = true
+            cache.revalidateDependency(checkNotNull(failedDep))
+            val callsAfterFailure = counter.get()
+
+            // Another range of the same series skips its live call during the short outage
+            // backoff, then retries once the backoff lapses.
+            val otherDep = ConsumedOhlcDependency(
+                pair = pair,
+                intervalMinutes = interval,
+                sinceEpochSecond = wall0 - 2 * durationSeconds,
+                upToEpochSecond = wall0,
+                fetchedAtEpochSecond = wall0,
+                freshnessDeadlineEpochSecond = wall0 + 1,
+                candleContentHash = "empty",
+            )
+            val paced = cache.revalidateDependency(otherDep)
+            paced shouldBe OhlcRevalidationResult.Unchanged(otherDep)
+            counter.get() shouldBe callsAfterFailure
+
+            clock = clock.plusSeconds(61L)
+            val retried = cache.revalidateDependency(otherDep)
+            counter.get() shouldBe callsAfterFailure + 1
+            retried shouldBe io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+        }
+
+        "a failed range keeps its own long pacing for retries of that same range" {
+            val counter = AtomicInteger(0)
+            val wall0 = 2_000_000L
+            var clock = Instant.ofEpochSecond(wall0)
+            val since = wall0 - 3 * durationSeconds
+            var failNext = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (failNext) {
+                            failNext = false
+                            error("transient kraken failure")
+                        }
+                        listOf(since to BigDecimal("50000"))
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var recordedDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall0)) { recordedDep = it }
+            val dep = checkNotNull(recordedDep)
+            clock = clock.plusSeconds(3_601L)
+            failNext = true
+            cache.revalidateDependency(dep) shouldBe OhlcRevalidationResult.Unchanged(dep)
+            counter.get() shouldBe 2
+
+            // Past the short series backoff but inside the range's own pacing: no retry.
+            clock = clock.plusSeconds(120L)
+            cache.revalidateDependency(dep) shouldBe OhlcRevalidationResult.Unchanged(dep)
+            counter.get() shouldBe 2
+        }
+
+        "consumed hash delimits fields so crafted concatenations cannot collide" {
+            // Undelimited "start+close" concatenation collides here: both join to the same
+            // digit string, because the second start is all ones. Delimiters keep them apart.
+            val firstStart = 1000L
+            val secondStart = 1_111_111_111L
+            val since = 0L
+            val upTo = secondStart + durationSeconds
+            val left = listOf(firstStart to BigDecimal("1"), secondStart to BigDecimal("15"))
+            val right = listOf(firstStart to BigDecimal("11"), secondStart to BigDecimal("5"))
+            val undelimitedLeft = left.joinToString("") { (start, close) -> "$start$close" }
+            val undelimitedRight = right.joinToString("") { (start, close) -> "$start$close" }
+            undelimitedLeft shouldBe undelimitedRight
+
+            val hashLeft = HistoricalOhlcCache.consumedCandleContentHash(left, interval, since, upTo)
+            val hashRight = HistoricalOhlcCache.consumedCandleContentHash(right, interval, since, upTo)
+            (hashLeft == hashRight) shouldBe false
+        }
+
+        "revalidation joiner without a coverage proof fails closed to a content change" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val candleStart = wall - 2 * durationSeconds
+            val since = candleStart - durationSeconds
+            val candle = candleStart to BigDecimal("0.0175")
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        Thread.sleep(150)
+                        listOf(candle)
+                    }
+                },
+                nowProvider = { clock },
+            )
+            // Both deps carry matching hashes: only the joiner's missing coverage proof (its
+            // future-dated upTo) may report a change.
+            val pastDep = ConsumedOhlcDependency(
+                pair = pair,
+                intervalMinutes = interval,
+                sinceEpochSecond = since,
+                upToEpochSecond = wall,
+                fetchedAtEpochSecond = wall - 10_000L,
+                freshnessDeadlineEpochSecond = wall - 5_000L,
+                candleContentHash = HistoricalOhlcCache.consumedCandleContentHash(
+                    listOf(candle),
+                    interval,
+                    since,
+                    wall,
+                ),
+            )
+            val futureUpTo = wall + 3_600L
+            val futureDep = pastDep.copy(
+                upToEpochSecond = futureUpTo,
+                candleContentHash = HistoricalOhlcCache.consumedCandleContentHash(
+                    listOf(candle),
+                    interval,
+                    since,
+                    futureUpTo,
+                ),
+            )
+
+            val (initiatorResult, joinerResult) = withContext(Dispatchers.IO) {
+                val initiator = async { cache.revalidateDependency(pastDep) }
+                delay(50)
+                val joiner = async { cache.revalidateDependency(futureDep) }
+                initiator.await() to joiner.await()
+            }
+            counter.get() shouldBe 1
+            initiatorResult shouldBe io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+            joinerResult shouldBe OhlcRevalidationResult.ContentChanged
+        }
+
+        "revalidation initiator without a coverage proof fails closed to a content change" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val candleStart = wall - 2 * durationSeconds
+            val since = candleStart - durationSeconds
+            val candle = candleStart to BigDecimal("0.0175")
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        listOf(candle)
+                    }
+                },
+                nowProvider = { clock },
+            )
+            // Matching hash over a future-dated window: the live fetch cannot cover the
+            // window, so the initiator must report a change like a joiner would.
+            val futureUpTo = wall + 3_600L
+            val dep = ConsumedOhlcDependency(
+                pair = pair,
+                intervalMinutes = interval,
+                sinceEpochSecond = since,
+                upToEpochSecond = futureUpTo,
+                fetchedAtEpochSecond = wall - 10_000L,
+                freshnessDeadlineEpochSecond = wall - 5_000L,
+                candleContentHash = HistoricalOhlcCache.consumedCandleContentHash(
+                    listOf(candle),
+                    interval,
+                    since,
+                    futureUpTo,
+                ),
+            )
+
+            val result = cache.revalidateDependency(dep)
+            counter.get() shouldBe 1
+            result shouldBe OhlcRevalidationResult.ContentChanged
+        }
+
+        "backfill inside the consumed window invalidates an empty dependency" {
+            val counter = AtomicInteger(0)
+            val upTo = 1_000_000L
+            var clock = Instant.ofEpochSecond(upTo + 3_600L)
+            val since = upTo - 86_400L
+            var backfilled = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (backfilled) {
+                            listOf(
+                                (upTo - durationSeconds) to BigDecimal("0.0175"),
+                                (upTo + durationSeconds) to BigDecimal("0.0180"),
+                            )
+                        } else {
+                            listOf((upTo + durationSeconds) to BigDecimal("0.0180"))
+                        }
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var recordedDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recordedDep = it }
+            val dep = checkNotNull(recordedDep)
+            // Negative evidence: no qualifying candle existed inside the consumed window.
+            dep.candleContentHash shouldBe "empty"
+
+            clock = clock.plusSeconds(3_601L)
+            backfilled = true
+            cache.revalidateDependency(dep) shouldBe OhlcRevalidationResult.ContentChanged
+            counter.get() shouldBe 2
+        }
+
+        "revalidateDependency refetches its own range despite a fresher cross-range proof" {
+            val counter = AtomicInteger(0)
+            val wall0 = 2_000_000L
+            var clock = Instant.ofEpochSecond(wall0)
+            // Valuations a day apart so neither consumed candle falls in the other's window.
+            val upTo1 = wall0 - 93_600L
+            val upTo2 = wall0 - 3_600L
+            val since1 = upTo1 - 86_400L
+            val since2 = upTo2 - 86_400L
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, since ->
+                        counter.incrementAndGet()
+                        val upTo = (since ?: wall0) + 86_400L
+                        listOf((upTo - durationSeconds) to BigDecimal("0.0175"))
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var dep2: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since2, Instant.ofEpochSecond(upTo2)) { dep2 = it }
+            var dep1: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since1, Instant.ofEpochSecond(upTo1)) { dep1 = it }
+            counter.get() shouldBe 2
+            val first = checkNotNull(dep1)
+            val second = checkNotNull(dep2)
+
+            clock = clock.plusSeconds(3_601L)
+            cache.revalidateDependency(first) shouldBe
+                io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+            // The refreshed smaller-since proof covers the second window, but its response
+            // cannot prove the second window's stored candles are current: the second range
+            // must still refetch itself rather than compare stale union content as unchanged.
+            cache.revalidateDependency(second) shouldBe
+                io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+            counter.get() shouldBe 4
+        }
+
+        "revalidateDependency serves fresh exact proof from persistent store after restart" {
+            val repository = SqliteHistoricalOhlcRepositoryImpl(DatabaseConfig.init(":memory:"))
+            val firstCounter = AtomicInteger(0)
+            val secondCounter = AtomicInteger(0)
+            val wall0 = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall0)
+            val upTo = wall0 - 3_600L
+            val since = upTo - 86_400L
+            val candleStart = upTo - durationSeconds
+
+            val first = HistoricalOhlcCache(
+                fake(listOf(candleStart to "0.0175"), firstCounter),
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            var recorded: ConsumedOhlcDependency? = null
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            checkNotNull(recorded)
+            firstCounter.get() shouldBe 1
+
+            // Restart: empty memory, same durable store. The exact persisted proof is fresh,
+            // so revalidation compares from the store without a live call.
+            val restarted = HistoricalOhlcCache(
+                fake(listOf(candleStart to "0.0175"), secondCounter),
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            val result = restarted.revalidateDependency(checkNotNull(recorded))
+            result shouldBe io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+            secondCounter.get() shouldBe 0
+        }
+
+        "consumed hash ignores candles starting before since" {
+            val since = 1_000_000L
+            val upTo = since + 86_400L
+            val stale = (since - durationSeconds) to BigDecimal("0.0170")
+            val consumed = (upTo - durationSeconds) to BigDecimal("0.0175")
+            HistoricalOhlcCache.consumedCandleContentHash(listOf(stale), interval, since, upTo) shouldBe "empty"
+            HistoricalOhlcCache.consumedCandleContentHash(listOf(stale, consumed), interval, since, upTo) shouldBe
+                HistoricalOhlcCache.consumedCandleContentHash(listOf(consumed), interval, since, upTo)
+        }
+
+        "backfill outside the consumed window leaves an empty dependency unchanged" {
+            val counter = AtomicInteger(0)
+            val upTo = 1_000_000L
+            var clock = Instant.ofEpochSecond(upTo + 3_600L)
+            val since = upTo - 86_400L
+            var backfilled = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (backfilled) {
+                            listOf((upTo + durationSeconds) to BigDecimal("0.0180"))
+                        } else {
+                            emptyList()
+                        }
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var recordedDep: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recordedDep = it }
+            val dep = checkNotNull(recordedDep)
+            dep.candleContentHash shouldBe "empty"
+
+            // Empty proofs revalidate on the short cadence.
+            clock = clock.plusSeconds(601L)
+            backfilled = true
+            val result = cache.revalidateDependency(dep)
+            result shouldBe io.kotest.matchers.types.beInstanceOf<OhlcRevalidationResult.Unchanged>()
+            (result as OhlcRevalidationResult.Unchanged).updatedDependency.candleContentHash shouldBe "empty"
+            counter.get() shouldBe 2
         }
     }
 }

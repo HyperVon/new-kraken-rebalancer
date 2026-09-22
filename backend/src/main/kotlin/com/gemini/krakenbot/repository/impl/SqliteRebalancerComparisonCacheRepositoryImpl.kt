@@ -52,10 +52,13 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                 row[RebalancerComparisonCacheTable.resultJson],
                 RebalancerComparison::class.java,
             )
-            val ohlcDependencies = runCatching {
-                val raw = row[RebalancerComparisonCacheTable.ohlcDependenciesJson]
-                objectMapper.readValue(raw, dependenciesTypeRef)
-            }.getOrDefault(emptyList())
+            // An unreadable dependency manifest must miss, never validate as empty: an
+            // empty manifest carries no freshness requirements, so defaulting here would
+            // serve the cached result as a Hit without ever revalidating its OHLC evidence.
+            val ohlcDependencies: List<ConsumedOhlcDependency> = objectMapper.readValue(
+                row[RebalancerComparisonCacheTable.ohlcDependenciesJson],
+                dependenciesTypeRef,
+            )
 
             // Never rehydrate an unavailable result: those outcomes can become valid after a
             // later evidence append or price-provider recovery and are deliberately not cached.
@@ -126,6 +129,32 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
             }) {
                 it[RebalancerComparisonCacheTable.ohlcDependenciesJson] = dependenciesJson
             }
+        }
+    }
+
+    override suspend fun updateOhlcDependenciesIfExpected(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        expectedOhlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
+    ): Boolean {
+        val (expectedJson, dependenciesJson) = try {
+            objectMapper.writeValueAsString(expectedOhlcDependencies) to
+                objectMapper.writeValueAsString(ohlcDependencies)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Unable to serialize updated comparison cache dependencies: {}", e.message)
+            return false
+        }
+        return database.safeTransactionIO(log, "Failed to update comparison cache dependencies") {
+            RebalancerComparisonCacheTable.update({
+                (RebalancerComparisonCacheTable.fromEpochMillis eq fromEpochMillis) and
+                    (RebalancerComparisonCacheTable.toEpochMillis eq toEpochMillis) and
+                    (RebalancerComparisonCacheTable.ohlcDependenciesJson eq expectedJson)
+            }) {
+                it[RebalancerComparisonCacheTable.ohlcDependenciesJson] = dependenciesJson
+            } > 0
         }
     }
 

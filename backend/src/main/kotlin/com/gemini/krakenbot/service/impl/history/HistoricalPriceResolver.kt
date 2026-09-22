@@ -48,6 +48,7 @@ object HistoricalPriceResolver {
         ohlcCache: HistoricalOhlcCache? = null,
         futureTradeUpperBound: Instant? = null,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcSourceFailure: (() -> Unit)? = null,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -163,6 +164,7 @@ object HistoricalPriceResolver {
                     throw e
                 } catch (e: Exception) {
                     sourceFailed = true
+                    onOhlcSourceFailure?.invoke()
                     log.warn(
                         "Failed to fetch OHLC price for asset {} pair {} interval {}: {}",
                         normalizedAsset,
@@ -200,6 +202,7 @@ object HistoricalPriceResolver {
                             ohlcCache = ohlcCache,
                             futureTradeUpperBound = futureTradeUpperBound,
                             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+                            onOhlcSourceFailure = onOhlcSourceFailure,
                         )
                     }
                     if (converted != null) {
@@ -240,7 +243,8 @@ object HistoricalPriceResolver {
         quoteConversionDepth: Int,
         ohlcCache: HistoricalOhlcCache?,
         futureTradeUpperBound: Instant?,
-        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
+        onOhlcSourceFailure: (() -> Unit)?,
     ): BigDecimal? {
         if (quoteConversionDepth >= 1) return null
         val quoteUsdPrice = resolveHistoricalPrice(
@@ -256,6 +260,7 @@ object HistoricalPriceResolver {
             ohlcCache = ohlcCache,
             futureTradeUpperBound = futureTradeUpperBound,
             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+            onOhlcSourceFailure = onOhlcSourceFailure,
         ) ?: return null
         return quotePrice
             .multiply(quoteUsdPrice)

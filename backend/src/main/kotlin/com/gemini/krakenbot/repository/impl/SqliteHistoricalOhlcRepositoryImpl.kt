@@ -119,6 +119,9 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
             // Fetch-proof rows are metadata and change on every revalidation; only candle
             // content is evidence a comparison consumes. A content-identical refetch (or an
             // empty revalidation of an already-empty window) must not invalidate caches.
+            // The OHLC revision below is an observability/coarse-change counter only: cached
+            // comparisons validate their own consumed windows via the dependency manifest, so
+            // unrelated pairs changing here never invalidate them.
             if (contentChanged) {
                 bumpComparisonEvidenceRevision()
                 bumpSyncMetadataCounter(SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION)

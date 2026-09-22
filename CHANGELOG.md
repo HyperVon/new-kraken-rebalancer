@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.77] - 2026-09-22
+
+### Fixed
+
+- **Exact consumed OHLC windows**: comparison cache dependencies now record the valuation upper
+  bound alongside `since`, and the candle content hash covers only completed candles in the
+  consumed window. Normal future candle growth no longer invalidates historical comparisons,
+  while corrections and backfills inside the window (including ones curing empty negative
+  evidence) still invalidate exactly once. Revalidation refetches each dependency's own range
+  through one canonical hash helper.
+- **Isolated OHLC invalidation**: the comparison fingerprint no longer includes the global OHLC
+  content revision, so unrelated pairs' price evidence activity never invalidates a cached
+  comparison; the persisted dependency manifest is authoritative for OHLC validity. The cache
+  contract version bumped, so entries written under the previous contract cleanly miss and
+  repopulate.
+- **Bounded comparison OHLC refresh**: one History request performs at most 8 distinct live OHLC
+  refetches synchronously while revalidating an expired comparison entry. Larger expired sets
+  refresh a deterministic batch, persist progress without marking the remainder fresh, and serve
+  an explicit transient while one single-flighted background refresh (or later requests) completes
+  validation; concurrent requests join the in-flight refresh with zero synchronous calls and no
+  replay fan-out.
+- **Scoped OHLC failure pacing**: a failed dependency revalidation backs off retries of that same
+  range for its freshness window, while other ranges of the series pause only briefly (60s) before
+  retrying live. A paced cross-range proof no longer validates a window it never attempted, so
+  recovered ranges detect provider corrections and backfills instead of serving stale.
+- **Uncacheable degraded OHLC calculations**: a comparison computed while any candidate OHLC
+  source failed is served best-available but never persisted, since the manifest cannot prove the
+  resolver would choose the same price again. The next request recomputes, and a healthy
+  calculation caches normally.
+- **Background refresh identity guard**: the background OHLC remainder only writes while the entry
+  still carries exactly the dependency list it validated, and its final write is atomic against
+  concurrent replays, so it can neither delete nor overwrite a same-fingerprint replayed entry.
+- **Fail-closed cache reads**: an unreadable dependency manifest now misses instead of validating
+  as an empty manifest, and a revalidation joiner without a coverage proof replays instead of
+  validating stale.
+
 ## [6.17.76] - 2026-09-21
 
 ### Fixed

@@ -134,6 +134,15 @@ class HistoricalOhlcCache(
     private val store = ConcurrentHashMap<SeriesKey, SeriesEntry>()
     private val inFlight = ConcurrentHashMap<FlightKey, CompletableDeferred<SeriesEntry>>()
 
+    /**
+     * Series-level outage backoff: earliest epoch second at which a revalidation of any range
+     * of the series may retry the live source after a failure. Short and series-wide on purpose:
+     * a paced cross-range proof must never validate a range it never attempted, so long backoff
+     * applies only to a range's own record (see [FetchRecord.retryNotBeforeEpochSecond]), while
+     * this backoff only stops a failing sweep from hammering the exchange range after range.
+     */
+    private val seriesRetryNotBefore = ConcurrentHashMap<SeriesKey, Long>()
+
     private data class SeriesKey(@JvmField val pair: String, @JvmField val intervalMinutes: Int)
     private data class FlightKey(
         @JvmField val pair: String,
@@ -161,23 +170,23 @@ class HistoricalOhlcCache(
 
         memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
             if (!isExpired(covered, intervalMinutes)) {
-                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
                 return covered.candles
             }
             val revalidated = revalidate(seriesKey, covered, normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
             (memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond) ?: covered).let {
-                reportDependency(seriesKey, it, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                reportDependency(seriesKey, it, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
             }
             return revalidated
         }
         loadFromPersistent(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
             if (!isExpired(covered, intervalMinutes)) {
-                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
                 return covered.candles
             }
             val revalidated = revalidate(seriesKey, covered, normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
             (memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond) ?: covered).let {
-                reportDependency(seriesKey, it, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                reportDependency(seriesKey, it, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
             }
             return revalidated
         }
@@ -196,7 +205,7 @@ class HistoricalOhlcCache(
                 val entry = rememberFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
                 persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
                 val covered = CoveredSeries(FetchRecord(sinceEpochSecond, fetchWallEpochSecond), completed)
-                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
                 flight.complete(entry)
                 // An initiator answers with exactly its own completed-candle response.
                 return completed
@@ -211,7 +220,7 @@ class HistoricalOhlcCache(
         flight.await()
         serveFromMemory(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let {
             memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
-                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
             }
             return it
         }
@@ -293,32 +302,45 @@ class HistoricalOhlcCache(
 
     /**
      * Revalidates an expired consumed OHLC dependency against the live source without running
-     * price calculations. Returns [OhlcRevalidationResult.ContentChanged] if the newly fetched
-     * candles differ from the dependency's recorded candle content hash; otherwise returns
-     * [OhlcRevalidationResult.Unchanged] with refreshed wall time and freshness deadline.
-     * Concurrent revalidations of the same range share a single flight.
+     * price calculations. Returns [OhlcRevalidationResult.ContentChanged] if the candles in the
+     * dependency's consumed `[since, upTo]` domain differ from the recorded candle content hash;
+     * otherwise returns [OhlcRevalidationResult.Unchanged] with refreshed wall time and freshness
+     * deadline. Candles closing after the dependency's `upTo` are not consumed evidence and never
+     * cause a content change. Concurrent revalidations of the same range share a single flight.
      */
     suspend fun revalidateDependency(dependency: ConsumedOhlcDependency): OhlcRevalidationResult {
         val normalizedPair = dependency.pair.trim().uppercase()
         val seriesKey = SeriesKey(normalizedPair, dependency.intervalMinutes)
         val originalSince = dependency.sinceEpochSecond
+        val consumedUpTo = dependency.upToEpochSecond
         val durationSeconds = dependency.intervalMinutes * 60L
         val flightKey = FlightKey(normalizedPair, dependency.intervalMinutes.toLong(), originalSince)
 
-        // 1. Check if another concurrent revalidation already refreshed this proof and made it fresh.
-        val covered = memoryCovered(seriesKey, originalSince, originalSince)
-            ?: loadFromPersistent(seriesKey, originalSince, originalSince)
-        if (covered != null && !isExpired(covered, dependency.intervalMinutes)) {
-            val currentHash = computeCandleHash(covered.candles)
+        // 1. Check if the dependency's own range was already refreshed and is fresh. Only an
+        // exact-range proof validates this window: a range response carries at most the candles
+        // from its own `since`, so a fresher cross-range proof cannot prove this window's stored
+        // candles are current — comparing them would mistake stale union content for unchanged
+        // evidence whenever the cross-range response did not cover this window.
+        val exactCovered = (
+            memoryCovered(seriesKey, originalSince, consumedUpTo)
+                ?: loadFromPersistent(seriesKey, originalSince, consumedUpTo)
+            )?.takeIf { it.fetch.sinceEpochSecond == originalSince }
+        if (exactCovered != null && !isExpired(exactCovered, dependency.intervalMinutes)) {
+            val currentHash = consumedCandleContentHash(
+                exactCovered.candles,
+                dependency.intervalMinutes,
+                originalSince,
+                consumedUpTo,
+            )
             if (currentHash != dependency.candleContentHash) {
                 return OhlcRevalidationResult.ContentChanged
             }
             val updated = dependency.copy(
-                fetchedAtEpochSecond = covered.fetch.fetchWallEpochSecond,
-                freshnessDeadlineEpochSecond = covered.fetch.fetchWallEpochSecond +
+                fetchedAtEpochSecond = exactCovered.fetch.fetchWallEpochSecond,
+                freshnessDeadlineEpochSecond = exactCovered.fetch.fetchWallEpochSecond +
                     refreshPolicy.freshnessSeconds(
-                        covered.candles,
-                        covered.fetch.fetchWallEpochSecond,
+                        exactCovered.candles,
+                        exactCovered.fetch.fetchWallEpochSecond,
                         dependency.intervalMinutes,
                     ),
                 candleContentHash = currentHash,
@@ -326,8 +348,15 @@ class HistoricalOhlcCache(
             return OhlcRevalidationResult.Unchanged(updated)
         }
 
-        // 2. Obey failed-revalidation retry pacing without retrying Kraken.
-        if (covered != null && nowProvider().epochSecond < covered.fetch.retryNotBeforeEpochSecond) {
+        // 2. Obey failed-revalidation retry pacing without retrying Kraken. The series
+        // outage backoff gates every range briefly after any series failure; a range's own
+        // record pacing gates only retries of that same range. A paced cross-range proof
+        // never attempted this range, so its pacing must not validate this window.
+        val nowEpochSecond = nowProvider().epochSecond
+        if (nowEpochSecond < (seriesRetryNotBefore[seriesKey] ?: 0L)) {
+            return OhlcRevalidationResult.Unchanged(dependency)
+        }
+        if (exactCovered != null && nowEpochSecond < exactCovered.fetch.retryNotBeforeEpochSecond) {
             return OhlcRevalidationResult.Unchanged(dependency)
         }
 
@@ -345,8 +374,18 @@ class HistoricalOhlcCache(
                 val entry = rememberFetch(seriesKey, originalSince, fetchWallEpochSecond, completed)
                 persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed)
                 flight.complete(entry)
+                // No coverage proof for this window (only reachable with a corrupt or
+                // future-dated upTo): fail closed to a replay, like the joiner below.
+                if (entry.coveringFetch(originalSince, consumedUpTo) == null) {
+                    return OhlcRevalidationResult.ContentChanged
+                }
                 val candles = candlesFrom(entry, originalSince)
-                val newHash = computeCandleHash(candles)
+                val newHash = consumedCandleContentHash(
+                    candles,
+                    dependency.intervalMinutes,
+                    originalSince,
+                    consumedUpTo,
+                )
                 return if (newHash != dependency.candleContentHash) {
                     OhlcRevalidationResult.ContentChanged
                 } else {
@@ -369,8 +408,9 @@ class HistoricalOhlcCache(
                     dependency.intervalMinutes,
                     e.message,
                 )
-                if (covered != null) {
-                    paceFailedRevalidation(covered, dependency.intervalMinutes)
+                seriesRetryNotBefore[seriesKey] = nowProvider().epochSecond + SERIES_OUTAGE_BACKOFF_SECONDS
+                if (exactCovered != null) {
+                    paceFailedRevalidation(exactCovered, dependency.intervalMinutes)
                 }
                 return OhlcRevalidationResult.Unchanged(dependency)
             } finally {
@@ -382,8 +422,16 @@ class HistoricalOhlcCache(
         try {
             val entry = flight.await()
             val candles = candlesFrom(entry, originalSince)
-            val newHash = computeCandleHash(candles)
-            val wall = checkNotNull(entry.coveringFetch(originalSince, originalSince)).fetchWallEpochSecond
+            val newHash = consumedCandleContentHash(
+                candles,
+                dependency.intervalMinutes,
+                originalSince,
+                consumedUpTo,
+            )
+            // No coverage proof for this window (only reachable with a corrupt or
+            // future-dated upTo): fail closed to a replay rather than validating stale.
+            val wall = entry.coveringFetch(originalSince, consumedUpTo)?.fetchWallEpochSecond
+                ?: return OhlcRevalidationResult.ContentChanged
             return if (newHash != dependency.candleContentHash) {
                 OhlcRevalidationResult.ContentChanged
             } else {
@@ -406,6 +454,7 @@ class HistoricalOhlcCache(
         seriesKey: SeriesKey,
         covered: CoveredSeries,
         sinceEpochSecond: Long,
+        upTo: Instant,
         intervalMinutes: Int,
         onDependencyResolved: ((ConsumedOhlcDependency) -> Unit)?,
     ) {
@@ -417,9 +466,15 @@ class HistoricalOhlcCache(
             pair = seriesKey.pair,
             intervalMinutes = intervalMinutes,
             sinceEpochSecond = sinceEpochSecond,
+            upToEpochSecond = upTo.epochSecond,
             fetchedAtEpochSecond = fetch.fetchWallEpochSecond,
             freshnessDeadlineEpochSecond = fetch.fetchWallEpochSecond + freshness,
-            candleContentHash = computeCandleHash(candles),
+            candleContentHash = consumedCandleContentHash(
+                candles,
+                intervalMinutes,
+                sinceEpochSecond,
+                upTo.epochSecond,
+            ),
         )
         onDependencyResolved(dependency)
     }
@@ -569,12 +624,48 @@ class HistoricalOhlcCache(
     }
 
     companion object {
-        fun computeCandleHash(candles: Collection<Pair<Long, BigDecimal>>): String {
-            if (candles.isEmpty()) return "empty"
+        /**
+         * Series-wide outage backoff after any failed dependency revalidation. Recovery in an
+         * unattempted range is detected at most this late; a range's own record pacing still
+         * backs off retries of that same range for longer.
+         */
+        private const val SERIES_OUTAGE_BACKOFF_SECONDS = 60L
+
+        /**
+         * Canonical content identity for one consumed OHLC evidence domain.
+         *
+         * The hash covers a conservative superset of the completed candles the price
+         * resolver could have consumed for the requesting valuation: every candle starting
+         * at or after [sinceEpochSecond] and closing at or before [upToEpochSecond],
+         * deduplicated by start and hashed in start order with normalized closes —
+         * including older in-window candles the resolver's recency filter would not
+         * select. Over-covering only causes extra replays, never stale hits. Dependency
+         * identity (pair, interval, window) is carried by [ConsumedOhlcDependency]
+         * itself, so the hash is compared only within one identical window.
+         *
+         * A normal future candle append (close after [upToEpochSecond]) leaves the hash
+         * unchanged. A correction to a consumed candle, or a backfill inside the window
+         * (including one curing previously empty negative evidence, hashed as `"empty"`),
+         * changes it. This is the single helper for dependency content identity: report
+         * and revalidation paths must both use it.
+         */
+        fun consumedCandleContentHash(
+            candles: Collection<Pair<Long, BigDecimal>>,
+            intervalMinutes: Int,
+            sinceEpochSecond: Long,
+            upToEpochSecond: Long,
+        ): String {
+            val durationSeconds = intervalMinutes * 60L
+            val consumed = candles
+                .distinctBy { it.first }
+                .filter { (start, _) ->
+                    start >= sinceEpochSecond && start + durationSeconds <= upToEpochSecond
+                }
+                .sortedBy { it.first }
+            if (consumed.isEmpty()) return "empty"
             val md = MessageDigest.getInstance("SHA-256")
-            candles.distinctBy { it.first }.sortedBy { it.first }.forEach { (start, close) ->
-                md.update(start.toString().toByteArray())
-                md.update(close.stripTrailingZeros().toPlainString().toByteArray())
+            consumed.forEach { (start, close) ->
+                md.update("$start:${close.stripTrailingZeros().toPlainString()};".toByteArray(Charsets.UTF_8))
             }
             return md.digest().joinToString("") { "%02x".format(it) }
         }

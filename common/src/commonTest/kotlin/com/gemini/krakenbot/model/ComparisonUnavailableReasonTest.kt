@@ -43,6 +43,10 @@ class ComparisonUnavailableReasonTest {
             "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined.",
             ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP.displayText,
         )
+        assertEquals(
+            "Market price evidence is being refreshed; the comparison continues in the background and will update on the next refresh.",
+            ComparisonUnavailableReason.EXTERNAL_EVIDENCE_REFRESHING.displayText,
+        )
     }
 
     @Test
@@ -82,6 +86,10 @@ class ComparisonUnavailableReasonTest {
         assertEquals(
             "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined.",
             ComparisonUnavailableReason.displayTextFor("HISTORICAL_COVERAGE_GAP"),
+        )
+        assertEquals(
+            "Market price evidence is being refreshed; the comparison continues in the background and will update on the next refresh.",
+            ComparisonUnavailableReason.displayTextFor("EXTERNAL_EVIDENCE_REFRESHING"),
         )
     }
 

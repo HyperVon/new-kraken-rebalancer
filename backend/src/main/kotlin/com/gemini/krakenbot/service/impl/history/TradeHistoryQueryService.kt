@@ -19,6 +19,7 @@ import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
@@ -48,6 +49,25 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 private data class HistoricalPriceKey(val symbol: String, val time: Instant)
+
+/** One live OHLC refetch range: dependencies sharing it validate from a single flight. */
+private data class OhlcRefreshKey(val pair: String, val intervalMinutes: Int, val sinceEpochSecond: Long)
+
+/** Outcome of consulting the durable comparison cache for one request window. */
+private sealed interface CachedComparisonOutcome {
+    /** Fingerprint matched and every consumed OHLC dependency is fresh or revalidated unchanged. */
+    data class Hit(val comparison: RebalancerComparison) : CachedComparisonOutcome
+
+    /** No entry, fingerprint mismatch, or a consumed dependency changed: the caller replays. */
+    data object Miss : CachedComparisonOutcome
+
+    /**
+     * Expired dependencies exceed the synchronous refresh budget: a bounded batch was (or is
+     * being) refreshed, the remainder validates in the background or on later requests, and
+     * the caller must serve this explicit transient instead of replaying or guessing.
+     */
+    data class Refreshing(val transient: RebalancerComparison) : CachedComparisonOutcome
+}
 
 /**
  * One comparison asks for the same asset/time from validation, event construction, and valuation.
@@ -93,6 +113,12 @@ class TradeHistoryQueryService(
     private val nowProvider: () -> Instant = Instant::now,
     private val krakenService: KrakenService? = null,
     private val historicalOhlcCache: HistoricalOhlcCache? = null,
+    /**
+     * Durable comparison memo. Only meaningful together with [historicalOhlcCache]: without
+     * it the direct-Kraken path reports no dependencies, so persisted entries carry an
+     * untracked (effectively empty) manifest. Production always wires both; a repository
+     * without a cache is a test-only shape.
+     */
     private val comparisonCacheRepository: RebalancerComparisonCacheRepository? = null,
     /** Lower bound of retained history scanned for a passive benchmark anchor. */
     private val benchmarkHistoryFloor: Instant = Instant.EPOCH,
@@ -107,6 +133,13 @@ class TradeHistoryQueryService(
     private val log = LoggerFactory.getLogger(TradeHistoryQueryService::class.java)
 
     private val proposalContinuationActive = AtomicBoolean(false)
+
+    /**
+     * Comparison windows with an OHLC dependency refresh batch currently owned by one request
+     * (synchronous batch plus its background remainder). Joiners spend zero synchronous OHLC
+     * calls and serve the transient until the owner finishes.
+     */
+    private val ohlcRefreshInFlight = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
 
     /**
      * Memoized consumed-evidence digest keyed by inception, certified horizon, and the
@@ -264,8 +297,31 @@ class TradeHistoryQueryService(
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
 
+        /**
+         * Hard bound on distinct live OHLC refetches one request performs synchronously while
+         * revalidating an expired comparison cache entry. The unit is one (pair, interval,
+         * since) range: dependencies sharing a range share a single flight, so sequential
+         * requests never exceed the distinct-range count (a concurrent cross-range write to
+         * the same series can shadow an exact-range proof and cost one redundant live
+         * refetch per shadowed range, whose verdict still comes from live truth). The count
+         * bound is exact; its latency is roughly proportional on the success path (public
+         * OHLC calls pace at least one second apart plus call latency), while a failing
+         * range pays its retry exhaustion first, then paces later retries.
+         *
+         * When expired dependencies exceed the budget, the request refreshes a deterministic
+         * batch of this many ranges, persists that progress when any deadline advanced
+         * without marking the remainder fresh, and serves an explicit transient instead of
+         * the unvalidated cache entry. The
+         * remainder validates in one single-flighted background refresh when an application
+         * scope is available, otherwise across later requests; a later request hits once every
+         * dependency is fresh or revalidated unchanged. A dependency whose consumed content
+         * actually changed deletes the entry and replays exactly once (single-flighted); the
+         * replay pays the calculation's own OHLC fanout outside this revalidation budget.
+         */
+        internal const val MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST = 8
+
         /** Bump when the serialized comparison payload or its cache invalidation contract changes. */
-        private const val COMPARISON_CACHE_VERSION = "2"
+        private const val COMPARISON_CACHE_VERSION = "3"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
@@ -472,14 +528,27 @@ class TradeHistoryQueryService(
             snapshots = evaluationSnapshots,
         )
         if (cacheFingerprint != null) {
-            loadCachedComparison(cacheFrom, cacheTo, cacheFingerprint)?.let { cached ->
-                log.debug(
-                    "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
-                    cacheFrom,
-                    cacheTo,
-                    cacheFingerprint,
-                )
-                return presentComparison(cached, from, to)
+            when (val outcome = loadCachedComparison(cacheFrom, cacheTo, cacheFingerprint)) {
+                is CachedComparisonOutcome.Hit -> {
+                    log.debug(
+                        "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
+                        cacheFrom,
+                        cacheTo,
+                        cacheFingerprint,
+                    )
+                    return presentComparison(outcome.comparison, from, to)
+                }
+
+                is CachedComparisonOutcome.Refreshing -> {
+                    log.info(
+                        "Serving transient comparison refresh state; sourceFrom={} sourceTo={}",
+                        cacheFrom,
+                        cacheTo,
+                    )
+                    return outcome.transient
+                }
+
+                CachedComparisonOutcome.Miss -> Unit
             }
         }
 
@@ -488,12 +557,14 @@ class TradeHistoryQueryService(
         val reconciled = if (created) {
             try {
                 val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
+                val ohlcHadFailures = AtomicBoolean(false)
                 val calculated = calculateComparison(
                     evaluationSnapshots,
                     inceptionResolution,
                     eventUpperBound = certifiedEventUpperBound(stableThrough),
                     suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                     onOhlcDependencyConsumed = { consumedDependencies.add(it) },
+                    onOhlcSourceFailure = { ohlcHadFailures.set(true) },
                 )
                 if (calculated.availability == ComparisonAvailability.AVAILABLE) {
                     persistAutomaticBaselineVerification(
@@ -510,6 +581,7 @@ class TradeHistoryQueryService(
                         snapshots = evaluationSnapshots,
                         comparison = calculated,
                         ohlcDependencies = consumedDependencies.toList(),
+                        ohlcHadFailures = ohlcHadFailures.get(),
                     )
                 }
                 flight.complete(calculated)
@@ -602,14 +674,16 @@ class TradeHistoryQueryService(
     /**
      * Reuses only successful calculations. Cache identity is the digest of the evidence the
      * authoritative calculation actually consumed — every snapshot, trade, and ledger row at
-     * or before the certified horizon, bound to the inception the series is anchored on —
-     * plus the OHLC candle-content revision for consumed valuations. Writes beyond the
-     * horizon (a new live snapshot awaiting fills, a deposit not yet synced into coverage)
-     * bump the global revision and cost one rehash, but the digest is unchanged, so the
-     * cache stays valid. Any change to consumed evidence — an edit, backfill, deletion,
-     * reconciliation, or a certified coverage watermark moving — changes the digest and
-     * invalidates exactly once. Configuration, recovery, and prepared funding identities
-     * participate separately because they are not all row writes.
+     * or before the certified horizon, bound to the inception the series is anchored on.
+     * Consumed OHLC valuations are validated by the persisted per-window dependency manifest,
+     * never by the global OHLC content revision: unrelated price evidence activity must not
+     * invalidate this comparison. Writes beyond the horizon (a new live snapshot awaiting
+     * fills, a deposit not yet synced into coverage) bump the global revision and cost one
+     * rehash, but the digest is unchanged, so the cache stays valid. Any change to consumed
+     * evidence — an edit, backfill, deletion, reconciliation, a certified coverage watermark
+     * moving, or a consumed OHLC candle changing — invalidates exactly once. Configuration,
+     * recovery, and prepared funding identities participate separately because they are not
+     * all row writes.
      */
     private suspend fun comparisonCacheFingerprint(
         stableThrough: Instant,
@@ -631,9 +705,6 @@ class TradeHistoryQueryService(
                 horizonEpochMillis,
                 sourceRevision,
             )
-            val ohlcContentRevision = repository
-                .getSyncMetadata(SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION)
-                ?: "0"
             val configuredUniverse = configService?.getConfig()?.allocations
                 ?.sortedBy { it.symbol.value.uppercase() }
                 ?.joinToString(separator = ",") { allocation ->
@@ -654,7 +725,6 @@ class TradeHistoryQueryService(
                 append(COMPARISON_CACHE_VERSION).append('\u0000')
                 append(stableThrough).append('\u0000')
                 append(consumedEvidenceDigest).append('\u0000')
-                append(ohlcContentRevision).append('\u0000')
                 append(fundingToken).append('\u0000')
                 append(configuredUniverse).append('\u0000')
                 append(reconstructionRevision).append('\u0000')
@@ -733,22 +803,156 @@ class TradeHistoryQueryService(
         return digest
     }
 
-    private suspend fun loadCachedComparison(from: Instant, to: Instant, fingerprint: String): RebalancerComparison? {
-        val cache = comparisonCacheRepository ?: return null
+    /**
+     * Consults the durable comparison cache without ever issuing unbounded synchronous OHLC
+     * work: at most [MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST] distinct live refetches.
+     * Dependencies sharing one (pair, interval, since) range share a single flight, and the
+     * synchronous batch is a deterministic prefix of the expired ranges. Callers must serve
+     * [CachedComparisonOutcome.Refreshing] as-is (never through display sampling, which would
+     * rewrite its reason) and must treat it as unsatisfiable by replay: the cached entry is
+     * unvalidated, not missing.
+     *
+     * Every synchronous writer below runs under the history evidence lock (both query entry
+     * points hold it), so no concurrent replay can replace the entry mid-batch; only
+     * [runBackgroundOhlcRefresh] writes outside the lock, which is why only it rechecks
+     * entry identity before writing.
+     */
+    private suspend fun loadCachedComparison(
+        from: Instant,
+        to: Instant,
+        fingerprint: String,
+    ): CachedComparisonOutcome {
+        val cache = comparisonCacheRepository ?: return CachedComparisonOutcome.Miss
         return try {
-            val entry = cache.load(from.toEpochMilli(), to.toEpochMilli()) ?: return null
-            if (entry.inputFingerprint != fingerprint) return null
+            val entry = cache.load(from.toEpochMilli(), to.toEpochMilli())
+                ?: return CachedComparisonOutcome.Miss
+            if (entry.inputFingerprint != fingerprint) return CachedComparisonOutcome.Miss
 
-            val ohlc = historicalOhlcCache ?: return entry.comparison
+            val ohlc = historicalOhlcCache ?: return CachedComparisonOutcome.Hit(entry.comparison)
             val nowEpochSecond = nowProvider().epochSecond
-            val (fresh, expired) = entry.ohlcDependencies.partition { it.isFresh(nowEpochSecond) }
+            val fresh = entry.ohlcDependencies.filter { it.isFresh(nowEpochSecond) }.distinct()
+            // Sorted (stably) so the synchronous batch is a deterministic prefix of the
+            // expired ranges. The triple is unique per window — the resolver derives `since`
+            // from `upTo` deterministically — so no further tiebreak can be reached.
+            val expired = entry.ohlcDependencies
+                .filterNot { it.isFresh(nowEpochSecond) }
+                .distinct()
+                .sortedWith(
+                    compareBy(
+                        { it.pair },
+                        { it.intervalMinutes },
+                        { it.sinceEpochSecond },
+                    ),
+                )
             if (expired.isEmpty()) {
-                return entry.comparison
+                return CachedComparisonOutcome.Hit(entry.comparison)
             }
 
-            val updatedDependencies = fresh.toMutableList()
+            val expiredKeys = expired.map { it.refreshKey() }.distinct()
+            if (expiredKeys.size <= MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST) {
+                revalidateExpiredDependencies(cache, from, to, entry.comparison, ohlc, fresh, expired)
+            } else {
+                revalidateWithBoundedBatch(cache, from, to, fingerprint, entry, ohlc, fresh, expired, expiredKeys)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.debug("Comparison cache read skipped: {}", e.message)
+            CachedComparisonOutcome.Miss
+        }
+    }
+
+    /**
+     * Revalidates every expired dependency synchronously. The caller guarantees the distinct
+     * refetch count is within [MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST]; dependencies
+     * sharing one range share a single live flight inside the OHLC cache.
+     */
+    private suspend fun revalidateExpiredDependencies(
+        cache: RebalancerComparisonCacheRepository,
+        from: Instant,
+        to: Instant,
+        cached: RebalancerComparison,
+        ohlc: HistoricalOhlcCache,
+        fresh: List<ConsumedOhlcDependency>,
+        expired: List<ConsumedOhlcDependency>,
+    ): CachedComparisonOutcome {
+        val updatedDependencies = fresh.toMutableList()
+        var hasUpdates = false
+        for (dep in expired) {
+            when (val result = ohlc.revalidateDependency(dep)) {
+                is OhlcRevalidationResult.ContentChanged -> {
+                    log.info(
+                        "Comparison cache invalidated by OHLC content change; pair={} interval={} since={}",
+                        dep.pair,
+                        dep.intervalMinutes,
+                        dep.sinceEpochSecond,
+                    )
+                    cache.delete(from.toEpochMilli(), to.toEpochMilli())
+                    return CachedComparisonOutcome.Miss
+                }
+
+                is OhlcRevalidationResult.Unchanged -> {
+                    updatedDependencies.add(result.updatedDependency)
+                    if (result.updatedDependency != dep) {
+                        hasUpdates = true
+                    }
+                }
+            }
+        }
+
+        if (hasUpdates) {
+            cache.updateOhlcDependencies(
+                fromEpochMillis = from.toEpochMilli(),
+                toEpochMillis = to.toEpochMilli(),
+                ohlcDependencies = updatedDependencies,
+            )
+        }
+        return CachedComparisonOutcome.Hit(cached)
+    }
+
+    /**
+     * Refreshes a bounded batch of the expired ranges synchronously, persists that progress
+     * without marking the deferred remainder fresh, and returns the explicit transient. One
+     * request owns the window until its background remainder finishes; joiners spend zero
+     * synchronous OHLC calls. Without an application scope there is no background owner, so
+     * each request validates the next deterministic batch until a later request hits.
+     */
+    private suspend fun revalidateWithBoundedBatch(
+        cache: RebalancerComparisonCacheRepository,
+        from: Instant,
+        to: Instant,
+        fingerprint: String,
+        entry: RebalancerComparisonCacheEntry,
+        ohlc: HistoricalOhlcCache,
+        fresh: List<ConsumedOhlcDependency>,
+        expired: List<ConsumedOhlcDependency>,
+        expiredKeys: List<OhlcRefreshKey>,
+    ): CachedComparisonOutcome {
+        val window = from.toEpochMilli() to to.toEpochMilli()
+        if (!ohlcRefreshInFlight.add(window)) {
+            log.debug(
+                "Joining in-flight OHLC dependency refresh; sourceFrom={} sourceTo={}",
+                from,
+                to,
+            )
+            return CachedComparisonOutcome.Refreshing(ohlcRefreshingTransient(entry, to))
+        }
+        var backgroundOwnsMarker = false
+        try {
+            val syncKeys = expiredKeys.take(MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST).toSet()
+            val (syncBatch, deferred) = expired.partition { it.refreshKey() in syncKeys }
+            log.info(
+                "Comparison OHLC refresh exceeds synchronous budget; sourceFrom={} sourceTo={} " +
+                    "expiredRanges={} syncRanges={} deferredRanges={}",
+                from,
+                to,
+                expiredKeys.size,
+                syncKeys.size,
+                expiredKeys.size - syncKeys.size,
+            )
+            val validated = fresh.toMutableList()
             var hasUpdates = false
-            for (dep in expired) {
+            for (dep in syncBatch) {
                 when (val result = ohlc.revalidateDependency(dep)) {
                     is OhlcRevalidationResult.ContentChanged -> {
                         log.info(
@@ -758,33 +962,146 @@ class TradeHistoryQueryService(
                             dep.sinceEpochSecond,
                         )
                         cache.delete(from.toEpochMilli(), to.toEpochMilli())
-                        return null
+                        return CachedComparisonOutcome.Miss
                     }
 
                     is OhlcRevalidationResult.Unchanged -> {
-                        updatedDependencies.add(result.updatedDependency)
+                        validated.add(result.updatedDependency)
                         if (result.updatedDependency != dep) {
                             hasUpdates = true
                         }
                     }
                 }
             }
-
+            // The background refresh may only write while the entry still carries exactly
+            // this list: a concurrent replay saves under the same fingerprint (which excludes
+            // OHLC content by design), so the fingerprint alone cannot tell the validated
+            // entry from its replacement.
+            val expectedDependencies = if (hasUpdates) validated + deferred else entry.ohlcDependencies
             if (hasUpdates) {
                 cache.updateOhlcDependencies(
-                    fromEpochMillis = from.toEpochMilli(),
-                    toEpochMillis = to.toEpochMilli(),
-                    ohlcDependencies = updatedDependencies,
+                    fromEpochMillis = window.first,
+                    toEpochMillis = window.second,
+                    ohlcDependencies = expectedDependencies,
                 )
             }
-            entry.comparison
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.debug("Comparison cache read skipped: {}", e.message)
-            null
+            val scope = applicationScope
+            // Launching on a cancelled scope does not throw: it returns an already-cancelled
+            // job and the block never runs, which would leak the marker until restart. Guard
+            // liveness first; when the guard fails the finally block releases the marker and
+            // the next request retries. Otherwise the completion hook below is the single
+            // removal point: it fires on every terminal state (including never-ran), so a
+            // second unconditional removal could only steal a newer owner's marker.
+            if (scope != null && scope.isActive) {
+                val background = scope.launch {
+                    runBackgroundOhlcRefresh(
+                        cache,
+                        window,
+                        fingerprint,
+                        ohlc,
+                        validated,
+                        deferred,
+                        expectedDependencies,
+                    )
+                }
+                background.invokeOnCompletion { ohlcRefreshInFlight.remove(window) }
+                backgroundOwnsMarker = true
+            }
+            return CachedComparisonOutcome.Refreshing(ohlcRefreshingTransient(entry, to))
+        } finally {
+            if (!backgroundOwnsMarker) {
+                ohlcRefreshInFlight.remove(window)
+            }
         }
     }
+
+    /**
+     * Validates the deferred remainder after its owner's synchronous batch. This runs outside
+     * the evidence lock, so every write rechecks entry identity first: a concurrent request
+     * may have validated the deferred remainder synchronously or replayed the entry under
+     * the same fingerprint. Aborting is always safe — the entry is either already fresh or
+     * another request owns its refresh. Failures keep the expired deadlines so a later
+     * request retries.
+     */
+    private suspend fun runBackgroundOhlcRefresh(
+        cache: RebalancerComparisonCacheRepository,
+        window: Pair<Long, Long>,
+        fingerprint: String,
+        ohlc: HistoricalOhlcCache,
+        validated: List<ConsumedOhlcDependency>,
+        deferred: List<ConsumedOhlcDependency>,
+        expectedDependencies: List<ConsumedOhlcDependency>,
+    ) {
+        try {
+            if (!entryStillExpected(cache, window, fingerprint, expectedDependencies)) return
+            val refreshed = validated.toMutableList()
+            for (dep in deferred) {
+                when (val result = ohlc.revalidateDependency(dep)) {
+                    is OhlcRevalidationResult.ContentChanged -> {
+                        log.info(
+                            "Comparison cache invalidated by background OHLC content change; " +
+                                "pair={} interval={} since={}",
+                            dep.pair,
+                            dep.intervalMinutes,
+                            dep.sinceEpochSecond,
+                        )
+                        if (entryStillExpected(cache, window, fingerprint, expectedDependencies)) {
+                            cache.delete(window.first, window.second)
+                        }
+                        return
+                    }
+
+                    is OhlcRevalidationResult.Unchanged -> refreshed.add(result.updatedDependency)
+                }
+            }
+            // The manifest is conceptually a set: when validation changed nothing (every
+            // dependency skipped or refreshed identically), skip the write rather than
+            // persisting a content-identical reorder of the stored list.
+            if (entryStillExpected(cache, window, fingerprint, expectedDependencies) &&
+                refreshed.toSet() != expectedDependencies.toSet()
+            ) {
+                cache.updateOhlcDependenciesIfExpected(
+                    window.first,
+                    window.second,
+                    expectedDependencies,
+                    refreshed,
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            log.warn("Background OHLC dependency refresh failed: {}", e.message)
+        }
+        // No finally removal here: the launch-site completion hook is the single removal
+        // point (it also covers never-ran cancellation, which skips this block entirely).
+    }
+
+    private suspend fun entryStillExpected(
+        cache: RebalancerComparisonCacheRepository,
+        window: Pair<Long, Long>,
+        fingerprint: String,
+        expectedDependencies: List<ConsumedOhlcDependency>,
+    ): Boolean {
+        val current = cache.load(window.first, window.second)
+        return current != null &&
+            current.inputFingerprint == fingerprint &&
+            current.ohlcDependencies == expectedDependencies
+    }
+
+    private fun ohlcRefreshingTransient(entry: RebalancerComparisonCacheEntry, to: Instant): RebalancerComparison =
+        RebalancerComparison(
+            availability = ComparisonAvailability.UNAVAILABLE,
+            confidence = null,
+            baselineTimestamp = entry.comparison.baselineTimestamp,
+            points = emptyList(),
+            latestDifferenceUSD = null,
+            latestDifferencePercent = null,
+            unavailableReason = ComparisonUnavailableReason.EXTERNAL_EVIDENCE_REFRESHING,
+            unavailableAt = to,
+        )
+
+    private fun ConsumedOhlcDependency.refreshKey(): OhlcRefreshKey =
+        OhlcRefreshKey(pair.trim().uppercase(), intervalMinutes, sinceEpochSecond)
 
     private suspend fun persistCachedComparison(
         from: Instant,
@@ -794,8 +1111,18 @@ class TradeHistoryQueryService(
         snapshots: List<PortfolioSnapshot>,
         comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcHadFailures: Boolean,
     ) {
         val cache = comparisonCacheRepository ?: return
+        if (ohlcHadFailures) {
+            // A failed candidate pair/interval leaves no dependency, so the manifest cannot
+            // prove the resolver would choose the same price again: a recovered source could
+            // win the pair order or the fine tier could beat the cached coarse fallback.
+            // Serve this best-available result without persisting it; the next request
+            // recomputes, and a healthy calculation caches normally.
+            log.debug("Comparison cache write skipped; OHLC sources failed during calculation")
+            return
+        }
         if (fundingProvenanceResolver !== FundingProvenanceResolver.NONE &&
             fundingProvenanceResolver.preparationFailure != null
         ) {
@@ -993,7 +1320,11 @@ class TradeHistoryQueryService(
             snapshots = stableSnapshots,
         )
         val cachedSettingsComparison = settingsCacheFingerprint?.let { fingerprint ->
-            loadCachedComparison(settingsCacheFrom, settingsCacheTo, fingerprint)
+            when (val outcome = loadCachedComparison(settingsCacheFrom, settingsCacheTo, fingerprint)) {
+                is CachedComparisonOutcome.Hit -> outcome.comparison
+                is CachedComparisonOutcome.Refreshing -> outcome.transient
+                CachedComparisonOutcome.Miss -> null
+            }
         }
         val current = if (cachedSettingsComparison != null) {
             cachedSettingsComparison
@@ -1004,12 +1335,14 @@ class TradeHistoryQueryService(
             if (created) {
                 try {
                     val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
+                    val ohlcHadFailures = AtomicBoolean(false)
                     val calculated = calculateComparison(
                         stableSnapshots,
                         inceptionResolution,
                         eventUpperBound = certifiedEventUpperBound(stableThrough),
                         suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
+                        onOhlcSourceFailure = { ohlcHadFailures.set(true) },
                     )
                     if (calculated.availability == ComparisonAvailability.AVAILABLE) {
                         persistCachedComparison(
@@ -1020,6 +1353,7 @@ class TradeHistoryQueryService(
                             snapshots = stableSnapshots,
                             comparison = calculated,
                             ohlcDependencies = consumedDependencies.toList(),
+                            ohlcHadFailures = ohlcHadFailures.get(),
                         )
                     }
                     flight.complete(calculated)
@@ -1599,6 +1933,7 @@ class TradeHistoryQueryService(
         // there would make every trial reconcile the stale predecessor instead.
         suppressPassiveDiscovery: Boolean = false,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcSourceFailure: (() -> Unit)? = null,
     ): RebalancerComparison {
         val firstSnapshot = orderedSnapshots.first()
         val lastSnapshot = orderedSnapshots.last()
@@ -1794,6 +2129,7 @@ class TradeHistoryQueryService(
             marketPairsByBase = retainedMarketPairsByBase(retainedMarketTrades + trades),
             eventUpperBound = eventUpperBound,
             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+            onOhlcSourceFailure = onOhlcSourceFailure,
         )
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
@@ -2899,6 +3235,7 @@ class TradeHistoryQueryService(
         marketPairsByBase: Map<String, List<String>>,
         eventUpperBound: Instant,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
+        onOhlcSourceFailure: (() -> Unit)?,
     ): HistoricalPriceProvider {
         val memo = HistoricalPriceMemo()
         return HistoricalPriceProvider { symbol, time ->
@@ -2922,6 +3259,7 @@ class TradeHistoryQueryService(
                                 ohlcCache = historicalOhlcCache,
                                 futureTradeUpperBound = eventUpperBound,
                                 onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+                                onOhlcSourceFailure = onOhlcSourceFailure,
                             )
                         } catch (e: CancellationException) {
                             throw e
