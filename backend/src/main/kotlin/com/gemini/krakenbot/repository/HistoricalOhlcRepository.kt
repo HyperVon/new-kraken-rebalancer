@@ -28,7 +28,10 @@ interface HistoricalOhlcRepository {
      * A successful response replaces the authoritative contents of its fetched domain:
      * stored completed candles in `[since, wall)` that the response omits are deleted,
      * response candles are upserted, and rows witnessed later than this fetch are always
-     * kept. A full page proves only its covered span, since it may be truncated.
+     * kept. [mayBeTruncated] is measured on the RAW provider page (before
+     * in-progress-candle filtering); when true the response may be page-limited and
+     * proves absent only the completed span it actually returned. When the filtered
+     * [candles] list is empty and [mayBeTruncated] is true, nothing is judged absent.
      */
     suspend fun saveFetch(
         pair: String,
@@ -36,5 +39,6 @@ interface HistoricalOhlcRepository {
         sinceEpochSecond: Long,
         fetchedAtEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
+        mayBeTruncated: Boolean,
     ): Boolean
 }

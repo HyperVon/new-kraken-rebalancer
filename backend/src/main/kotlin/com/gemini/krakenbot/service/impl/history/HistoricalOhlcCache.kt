@@ -211,9 +211,17 @@ class HistoricalOhlcCache(
                     interval = intervalMinutes,
                     since = sinceEpochSecond,
                 )
+                val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = rememberFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed, true)
-                persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
+                val entry = rememberFetch(
+                    seriesKey,
+                    sinceEpochSecond,
+                    fetchWallEpochSecond,
+                    completed,
+                    authoritative = true,
+                    mayBeTruncated = mayBeTruncated,
+                )
+                persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed, mayBeTruncated)
                 val covered = CoveredSeries(FetchRecord(sinceEpochSecond, fetchWallEpochSecond), completed)
                 reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
                 flight.complete(entry)
@@ -271,9 +279,17 @@ class HistoricalOhlcCache(
                     interval = intervalMinutes,
                     since = originalSince,
                 )
+                val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = rememberFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, true)
-                persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed)
+                val entry = rememberFetch(
+                    seriesKey,
+                    originalSince,
+                    fetchWallEpochSecond,
+                    completed,
+                    authoritative = true,
+                    mayBeTruncated = mayBeTruncated,
+                )
+                persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, mayBeTruncated)
                 flight.complete(entry)
                 return entry.candles.tailMap(sinceEpochSecond, true)
                     .entries.asSequence()
@@ -391,9 +407,17 @@ class HistoricalOhlcCache(
                     interval = dependency.intervalMinutes,
                     since = originalSince,
                 )
+                val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = rememberFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, true)
-                persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed)
+                val entry = rememberFetch(
+                    seriesKey,
+                    originalSince,
+                    fetchWallEpochSecond,
+                    completed,
+                    authoritative = true,
+                    mayBeTruncated = mayBeTruncated,
+                )
+                persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, mayBeTruncated)
                 flight.complete(entry)
                 // No coverage proof for this window (only reachable with a corrupt or
                 // future-dated upTo): fail closed to a replay, like the joiner below.
@@ -599,6 +623,9 @@ class HistoricalOhlcCache(
             fetchWallEpochSecond = stored.fetchedAtEpochSecond,
             candles = stored.candles,
             authoritative = false,
+            // A durable restore replays no fresh provider evidence, so replacement never
+            // runs and the raw-page shape is irrelevant.
+            mayBeTruncated = false,
         )
         // loadCovered only returns a fetch that provably covers the requested window.
         return memoryCovered(seriesKey, sinceEpochSecond, upToEpochSecond)
@@ -607,7 +634,10 @@ class HistoricalOhlcCache(
     /**
      * Records one fetch and its completed candles. A live [authoritative] response replaces
      * the authoritative contents of its fetched domain (correcting, backfilling, and deleting);
-     * a durable restore only merges, since it replays no fresh provider evidence.
+     * a durable restore only merges, since it replays no fresh provider evidence. The
+     * [mayBeTruncated] page-shape flag is measured on the RAW provider response (before
+     * in-progress-candle filtering) at the fetch site and is the single source of truth
+     * for whether the response may be page-limited.
      */
     private fun rememberFetch(
         seriesKey: SeriesKey,
@@ -615,6 +645,7 @@ class HistoricalOhlcCache(
         fetchWallEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
         authoritative: Boolean,
+        mayBeTruncated: Boolean,
     ): SeriesEntry {
         val entry = store.compute(seriesKey) { _, existing -> existing ?: SeriesEntry() }!!
         synchronized(entry.fetches) {
@@ -625,6 +656,7 @@ class HistoricalOhlcCache(
                     sinceEpochSecond = sinceEpochSecond,
                     fetchWallEpochSecond = fetchWallEpochSecond,
                     candles = candles,
+                    mayBeTruncated = mayBeTruncated,
                 )
             }
             candles.forEach { (candleStart, close) ->
@@ -658,12 +690,15 @@ class HistoricalOhlcCache(
      * the response upserts, and must mirror the persisted replacement in
      * `SqliteHistoricalOhlcRepositoryImpl.saveFetch` so both views converge.
      *
-     * Domain contract: a short response (fewer than [KrakenApiConstants.OHLC_PAGE_SIZE]
-     * distinct candles) is complete for `[since, wall)`; a full page may be truncated
-     * (Kraken serves oldest-first with a `last` cursor this cache does not follow), so it is
-     * authoritative only for its covered `[first, last]` span. Either way only completed
-     * candles (`start + duration < wall`, the same predicate that filtered the response)
-     * can be judged absent, and candles witnessed later than this fetch are always kept.
+     * Domain contract: a short RAW provider page is complete for `[since, wall)`; a RAW
+     * page at the endpoint limit may be truncated (Kraken serves oldest-first with a `last`
+     * cursor this cache does not follow), so it is authoritative only for the completed
+     * span it actually returned. Truncation is a property of the RAW page measured before
+     * in-progress-candle filtering — never of the filtered list — and arrives here via
+     * [mayBeTruncated]. Either way only completed candles (`start + duration < wall`, the
+     * same predicate that filtered the response) can be judged absent, and candles
+     * witnessed later than this fetch are always kept. A truncated page with zero
+     * returned completed candles proves nothing absent.
      */
     private fun replaceAbsentInDomain(
         entry: SeriesEntry,
@@ -671,13 +706,15 @@ class HistoricalOhlcCache(
         sinceEpochSecond: Long,
         fetchWallEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
+        mayBeTruncated: Boolean,
     ) {
         val distinct = candles.distinctBy { it.first }
         val present = distinct.mapTo(mutableSetOf()) { it.first }
         val domainFrom: Long
         val domainToExclusive: Long
-        if (distinct.size >= KrakenApiConstants.OHLC_PAGE_SIZE) {
-            domainFrom = maxOf(sinceEpochSecond, distinct.minOf { it.first })
+        if (mayBeTruncated) {
+            val firstReturned = distinct.minOfOrNull { it.first } ?: return
+            domainFrom = maxOf(sinceEpochSecond, firstReturned)
             domainToExclusive = distinct.maxOf { it.first } + 1
         } else {
             domainFrom = sinceEpochSecond
@@ -699,6 +736,7 @@ class HistoricalOhlcCache(
         sinceEpochSecond: Long,
         fetchWallEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
+        mayBeTruncated: Boolean,
     ) {
         val repository = persistentRepository ?: return
         try {
@@ -708,6 +746,7 @@ class HistoricalOhlcCache(
                 sinceEpochSecond = sinceEpochSecond,
                 fetchedAtEpochSecond = fetchWallEpochSecond,
                 candles = candles,
+                mayBeTruncated = mayBeTruncated,
             )
         } catch (e: CancellationException) {
             throw e

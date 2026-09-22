@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
@@ -192,6 +193,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
                     sinceEpochSecond: Long,
                     fetchedAtEpochSecond: Long,
                     candles: List<Pair<Long, BigDecimal>>,
+                    mayBeTruncated: Boolean,
                 ): Boolean {
                     error("write failure")
                 }
@@ -2124,6 +2126,476 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val older = (wall - 300_000L) to BigDecimal("0.0169")
             policy.freshnessSeconds(listOf(old, older), wall, interval) shouldBe 604_800L
             policy.freshnessSeconds(listOf(older, old), wall, interval) shouldBe 604_800L
+        }
+
+        "full raw page with an in-progress candle preserves older cached candles" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageStart = 1_100_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val older = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+                (since + 2 * durationSeconds) to BigDecimal("0.0172"),
+            )
+            // RAW provider page at the endpoint limit: 719 completed candles plus the
+            // current in-progress candle. The filtered list (719) looks short, but the
+            // raw page (720) may be truncated, so replacement stays inside the returned
+            // completed span and the older in-domain candles survive.
+            val completedPage = (0 until pageSize - 1).map { i ->
+                (pageStart + i * durationSeconds) to BigDecimal("0.0175")
+            }
+            val inProgressStart = wall - 100L
+            val truncatedRaw = completedPage + listOf(inProgressStart to BigDecimal("0.0180"))
+            truncatedRaw.size shouldBe pageSize
+            val responses = mutableListOf(older, truncatedRaw)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            // Beyond-wall windows defeat cross-range coverage so the range refetches live.
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 2
+
+            val memory = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 2
+            memory.size shouldBe older.size + completedPage.size
+            older.forEach { (start, _) -> memory.any { it.first == start } shouldBe true }
+            memory.any { it.first == pageStart } shouldBe true
+            memory.any { it.first == pageStart + (pageSize - 2) * durationSeconds } shouldBe true
+            memory.none { it.first == inProgressStart } shouldBe true
+        }
+
+        "genuinely short raw page with an in-progress candle replaces the full domain" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val omittedStart = since + 3 * durationSeconds
+            val older = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+                (since + 2 * durationSeconds) to BigDecimal("0.0172"),
+                omittedStart to BigDecimal("0.0173"),
+            )
+            // RAW page below the endpoint limit: 718 completed candles plus one
+            // in-progress candle. Short means complete for [since, wall), so the
+            // omitted in-domain candle is authoritatively deleted.
+            val completedPage = (0 until pageSize - 1)
+                .filter { i -> since + i * durationSeconds != omittedStart }
+                .map { i -> (since + i * durationSeconds) to BigDecimal("0.0175") }
+            completedPage.size shouldBe pageSize - 2
+            val shortRaw = completedPage + listOf((wall - 100L) to BigDecimal("0.0180"))
+            shortRaw.size shouldBe pageSize - 1
+            val responses = mutableListOf(older, shortRaw)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 2
+
+            val memory = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 2
+            memory.size shouldBe completedPage.size
+            memory.none { it.first == omittedStart } shouldBe true
+            memory.any { it.first == since } shouldBe true
+        }
+
+        "full raw page of completed candles keeps bounded-span replacement" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val earlySince = 900_000L
+            val since = 1_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val retractedStart = since + 5 * durationSeconds
+            val extraStart = since + pageSize * durationSeconds
+            val seed = listOf(earlySince to BigDecimal("0.0169"))
+            val inSpan = listOf(
+                since to BigDecimal("0.0170"),
+                retractedStart to BigDecimal("0.0171"),
+            )
+            // 720 RAW rows, all completed: the page may be truncated, so the
+            // retracted in-span candle is deleted while the older pre-span candle
+            // is preserved.
+            val fullPage = (0 until pageSize)
+                .filter { i -> since + i * durationSeconds != retractedStart }
+                .map { i -> (since + i * durationSeconds) to BigDecimal("0.0175") } +
+                listOf(extraStart to BigDecimal("0.0185"))
+            fullPage.size shouldBe pageSize
+            // Beyond-wall upTo defeats coverage so the in-span seed and the full
+            // page each fetch live instead of being served from the seed proof.
+            val responses = mutableListOf(seed, inSpan, fullPage)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, earlySince, Instant.ofEpochSecond(wall))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 3
+
+            val memory = cache.getOHLC(pair, interval, earlySince, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 3
+            memory.size shouldBe 1 + pageSize
+            memory.none { it.first == retractedStart } shouldBe true
+            memory.any { it.first == earlySince } shouldBe true
+            memory.any { it.first == since } shouldBe true
+            memory.any { it.first == extraStart } shouldBe true
+        }
+
+        "truncated page starting well after since preserves older and gap candles" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            // Latest 719-completed span that still closes before the wall: its first
+            // row starts ~4 days after the requested since.
+            val pageStart = since + 392 * durationSeconds
+            val seeds = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+                (since + 200 * durationSeconds) to BigDecimal("0.0172"),
+                (since + 300 * durationSeconds) to BigDecimal("0.0173"),
+            )
+            val completedPage = (0 until pageSize - 1).map { i ->
+                (pageStart + i * durationSeconds) to BigDecimal("0.0175")
+            }
+            val truncatedRaw = completedPage + listOf((wall - 100L) to BigDecimal("0.0180"))
+            truncatedRaw.size shouldBe pageSize
+            val responses = mutableListOf(seeds, truncatedRaw)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 2
+
+            val memory = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 2
+            memory.size shouldBe seeds.size + completedPage.size
+            seeds.forEach { (start, _) -> memory.any { it.first == start } shouldBe true }
+        }
+
+        "out-of-order truncated fetch keeps evidence witnessed later" {
+            val counter = AtomicInteger(0)
+            val wallNew = 2_000_000L
+            val wallOld = 1_900_000L
+            var clock = Instant.ofEpochSecond(wallNew)
+            val sinceNew = 1_500_000L
+            val sinceOld = 1_000_000L
+            val witnessStart = sinceOld + 666 * durationSeconds
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            // Newer fetch completes first; the older truncated page overlaps the
+            // witness with a stale close and must neither overwrite nor delete it.
+            val stalePage = (0 until pageSize - 1).map { i ->
+                val start = sinceOld + i * durationSeconds
+                val close = if (start == witnessStart) "0.0199" else "0.0175"
+                start to BigDecimal(close)
+            }
+            val staleRaw = stalePage + listOf((wallOld - 500L) to BigDecimal("0.0180"))
+            staleRaw.size shouldBe pageSize
+            val responses = mutableListOf(
+                listOf(witnessStart to BigDecimal("0.0179")),
+                staleRaw,
+            )
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, sinceNew, Instant.ofEpochSecond(wallNew))
+            counter.get() shouldBe 1
+
+            clock = Instant.ofEpochSecond(wallOld)
+            cache.getOHLC(pair, interval, sinceOld, Instant.ofEpochSecond(wallNew + 100L))
+            counter.get() shouldBe 2
+
+            clock = Instant.ofEpochSecond(wallNew)
+            val memory = cache.getOHLC(pair, interval, sinceOld, Instant.ofEpochSecond(wallOld))
+            counter.get() shouldBe 2
+            memory.size shouldBe pageSize - 1
+            memory.single { it.first == witnessStart }.second shouldBeEqualComparingTo BigDecimal("0.0179")
+        }
+
+        "oversized raw page is treated as potentially truncated" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageStart = 1_100_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val older = listOf(since to BigDecimal("0.0170"))
+            // A provider (or fake) returning more rows than the documented page limit
+            // is still only authoritative for its returned span.
+            val completedPage = (0 until pageSize).map { i ->
+                (pageStart + i * durationSeconds) to BigDecimal("0.0175")
+            }
+            val oversizedRaw = completedPage + listOf((wall - 100L) to BigDecimal("0.0180"))
+            oversizedRaw.size shouldBe pageSize + 1
+            val responses = mutableListOf(older, oversizedRaw)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 2
+
+            val memory = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 2
+            memory.size shouldBe older.size + completedPage.size
+            memory.any { it.first == since } shouldBe true
+        }
+
+        "full raw page of only in-progress candles deletes nothing" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val older = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+            )
+            // Every raw row is still in progress: zero completed candles prove
+            // nothing absent, and the older evidence keeps serving.
+            val allInProgress = (0 until pageSize).map { i ->
+                (wall - 800L + i) to BigDecimal("0.0180")
+            }
+            val responses = mutableListOf(older, allInProgress)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            val answered = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 2
+            answered shouldBe emptyList()
+
+            val memory = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 2
+            memory.size shouldBe older.size
+            older.forEach { (start, _) -> memory.any { it.first == start } shouldBe true }
+        }
+
+        "full raw page with a single completed candle deletes nothing outside it" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val loneStart = 1_100_000L
+            val older = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+            )
+            val singleCompletedRaw = listOf(loneStart to BigDecimal("0.0175")) +
+                (0 until pageSize - 1).map { i -> (wall - 800L + i) to BigDecimal("0.0180") }
+            singleCompletedRaw.size shouldBe pageSize
+            val responses = mutableListOf(older, singleCompletedRaw)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            counter.get() shouldBe 2
+
+            val memory = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 2
+            memory.size shouldBe older.size + 1
+            memory.any { it.first == loneStart } shouldBe true
+            older.forEach { (start, _) -> memory.any { it.first == start } shouldBe true }
+        }
+
+        "restart after a truncated replacement keeps older persisted history" {
+            val database = DatabaseConfig.init(":memory:")
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val firstCounter = AtomicInteger(0)
+            val secondCounter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageStart = 1_100_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val older = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+                (since + 2 * durationSeconds) to BigDecimal("0.0172"),
+            )
+            val completedPage = (0 until pageSize - 1).map { i ->
+                (pageStart + i * durationSeconds) to BigDecimal("0.0175")
+            }
+            val truncatedRaw = completedPage + listOf((wall - 100L) to BigDecimal("0.0180"))
+            val responses = mutableListOf(older, truncatedRaw)
+            val first = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        firstCounter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            firstCounter.get() shouldBe 2
+
+            val restarted = HistoricalOhlcCache(
+                fake(emptyList(), secondCounter),
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            val restored = restarted.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+
+            firstCounter.get() shouldBe 2
+            secondCounter.get() shouldBe 0
+            restored.size shouldBe older.size + completedPage.size
+            older.forEach { (start, _) -> restored.any { it.first == start } shouldBe true }
+        }
+
+        "acceptance: truncated page preserves older history and dependency identity across restart" {
+            val database = DatabaseConfig.init(":memory:")
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val firstCounter = AtomicInteger(0)
+            val secondCounter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageStart = 1_100_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val older = listOf(
+                since to BigDecimal("0.0170"),
+                (since + durationSeconds) to BigDecimal("0.0171"),
+                (since + 2 * durationSeconds) to BigDecimal("0.0172"),
+            )
+            val completedPage = (0 until pageSize - 1).map { i ->
+                (pageStart + i * durationSeconds) to BigDecimal("0.0175")
+            }
+            val truncatedRaw = completedPage + listOf((wall - 100L) to BigDecimal("0.0180"))
+            truncatedRaw.size shouldBe pageSize
+            val shortCorrection = listOf(
+                since to BigDecimal("0.0170"),
+                (since + 2 * durationSeconds) to BigDecimal("0.0172"),
+                pageStart to BigDecimal("0.0175"),
+            )
+            val responses = mutableListOf(older, truncatedRaw)
+            val first = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        firstCounter.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+
+            // Existing persisted older history: 3 rows at 1000000/1000900/1001800.
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            var depBefore: ConsumedOhlcDependency? = null
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(pageStart)) { depBefore = it }
+            firstCounter.get() shouldBe 1
+
+            // Fresh 720-row page (719 completed + 1 in-progress) is processed as
+            // potentially truncated: memory and SQLite keep 3 + 719 = 722 rows.
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            firstCounter.get() shouldBe 2
+            val afterTruncated = first.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            afterTruncated.size shouldBe 722
+            var depAfter: ConsumedOhlcDependency? = null
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(pageStart)) { depAfter = it }
+            firstCounter.get() shouldBe 2
+            // The dependency over the older-only window resolves identically: the
+            // truncated page neither removed nor rewrote the older rows.
+            checkNotNull(depAfter).candleContentHash shouldBe checkNotNull(depBefore).candleContentHash
+            val durableBeforeRestart = repository.loadCovered(pair, interval, since, wall)?.candles.orEmpty()
+            durableBeforeRestart.size shouldBe 722
+
+            // Restart: the older rows are still present with zero live calls.
+            val restarted = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        secondCounter.incrementAndGet()
+                        shortCorrection
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            val restored = restarted.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            secondCounter.get() shouldBe 0
+            restored.size shouldBe 722
+            older.forEach { (start, _) -> restored.any { it.first == start } shouldBe true }
+
+            // A genuinely short page is authoritative for [since, wall): the omitted
+            // 1000900 candle (and the unlisted page rows) are deleted, leaving 3 rows.
+            restarted.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 7_200L))
+            secondCounter.get() shouldBe 1
+            val afterShort = restarted.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            secondCounter.get() shouldBe 1
+            afterShort.size shouldBe shortCorrection.size
+            afterShort.none { it.first == since + durationSeconds } shouldBe true
+            val durableAfterShort = repository.loadCovered(pair, interval, since, wall)?.candles.orEmpty()
+            durableAfterShort.size shouldBe shortCorrection.size
         }
     }
 }

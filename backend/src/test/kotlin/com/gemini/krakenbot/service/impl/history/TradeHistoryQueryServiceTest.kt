@@ -552,6 +552,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     sinceEpochSecond = snap2.timestamp.epochSecond - 86_400L,
                     fetchedAtEpochSecond = clock.epochSecond,
                     candles = listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("3000")),
+                    mayBeTruncated = false,
                 ) shouldBe true
                 metadata[SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION] = "1"
                 queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
@@ -1010,6 +1011,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     sinceEpochSecond = snap2.timestamp.epochSecond - 86_400L,
                     fetchedAtEpochSecond = clock.epochSecond,
                     candles = listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("3000")),
+                    mayBeTruncated = false,
                 ) shouldBe true
                 metadata[SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION] = "1"
                 serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe

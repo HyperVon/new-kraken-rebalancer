@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.79] - 2026-09-22
+
+### Fixed
+
+- **Raw-page OHLC truncation signal**: whether a fresh OHLC response may be page-limited is now
+  measured on the raw provider page before in-progress-candle filtering, and carried explicitly
+  into the in-memory and SQLite replacement paths. A full 720-row page with one in-progress
+  candle no longer masquerades as a short complete response, so older cached candles before the
+  returned span are preserved instead of deleted; genuinely short pages keep full-domain
+  authority and truncated pages with zero completed candles delete nothing.
+
 ## [6.17.78] - 2026-09-22
 
 ### Fixed

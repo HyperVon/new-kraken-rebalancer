@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.repository.impl
 
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.HistoricalOhlcSeries
@@ -76,6 +75,7 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         sinceEpochSecond: Long,
         fetchedAtEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
+        mayBeTruncated: Boolean,
     ): Boolean {
         var contentChanged = false
         database.safeTransactionIO(log, "Failed to persist historical OHLC evidence") {
@@ -83,16 +83,26 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
             val distinct = candles.distinctBy { it.first }
             val responseByStart = distinct.associate { it.first to it.second }
             // Authoritative deletion domain, mirroring the in-memory replacement: a short
-            // response is complete for [since, wall), while a full page may be truncated
-            // (Kraken serves oldest-first with a `last` cursor this cache does not follow)
-            // and only proves its covered [first, last] span. Either way only completed
-            // candles (start + duration < wall) can be judged absent.
+            // RAW provider page is complete for [since, wall), while a RAW page at the
+            // endpoint limit may be truncated (Kraken serves oldest-first with a `last`
+            // cursor this cache does not follow) and only proves the completed span it
+            // actually returned. mayBeTruncated is measured on the RAW page before
+            // in-progress-candle filtering — never inferred from the filtered list.
+            // Either way only completed candles (start + duration < wall) can be
+            // judged absent; a truncated page with zero returned candles proves
+            // nothing absent.
             val completedBefore = fetchedAtEpochSecond - durationSeconds
             val domainFrom: Long
             val domainToInclusive: Long
-            if (distinct.size >= KrakenApiConstants.OHLC_PAGE_SIZE) {
-                domainFrom = maxOf(sinceEpochSecond, distinct.minOf { it.first })
-                domainToInclusive = minOf(distinct.maxOf { it.first }, completedBefore - 1)
+            if (mayBeTruncated) {
+                val firstReturned = distinct.minOfOrNull { it.first }
+                if (firstReturned == null) {
+                    domainFrom = 1L
+                    domainToInclusive = 0L
+                } else {
+                    domainFrom = maxOf(sinceEpochSecond, firstReturned)
+                    domainToInclusive = minOf(distinct.maxOf { it.first }, completedBefore - 1)
+                }
             } else {
                 domainFrom = sinceEpochSecond
                 domainToInclusive = completedBefore - 1

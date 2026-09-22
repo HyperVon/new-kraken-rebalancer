@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.repository.impl.readSyncMetadata
@@ -34,7 +35,14 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
                 val candles = listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0179"))
 
-                val changedFirst = repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, candles)
+                val changedFirst = repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    candles,
+                    mayBeTruncated = false,
+                )
                 changedFirst shouldBe true
                 val revisionAfterFirst = comparisonRevision(database)
                 val ohlcRevisionAfterFirst = ohlcRevision(database)
@@ -43,13 +51,27 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
 
                 // A revalidation returning identical candle content must not invalidate any
                 // comparison cache: only the fetch-proof timestamp moves.
-                val changedIdentical = repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, candles)
+                val changedIdentical = repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    candles,
+                    mayBeTruncated = false,
+                )
                 changedIdentical shouldBe false
                 comparisonRevision(database) shouldBe revisionAfterFirst
                 ohlcRevision(database) shouldBe ohlcRevisionAfterFirst
 
                 // An empty revalidation of a window with no candles changes no evidence.
-                val changedEmpty = repository.saveFetch("DELISTEDUSD", intervalMinutes, 0L, 9_000L, emptyList())
+                val changedEmpty = repository.saveFetch(
+                    "DELISTEDUSD",
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    emptyList(),
+                    mayBeTruncated = false,
+                )
                 changedEmpty shouldBe false
                 comparisonRevision(database) shouldBe revisionAfterFirst
                 ohlcRevision(database) shouldBe ohlcRevisionAfterFirst
@@ -63,10 +85,17 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 )
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
                 val candles = listOf(1_000L to BigDecimal("0.0175"))
-                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, candles)
+                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, candles, mayBeTruncated = false)
 
                 // A provider correction of a stored close is real evidence change.
-                repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, listOf(1_000L to BigDecimal("0.0199")))
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0199")),
+                    mayBeTruncated = false,
+                )
                 comparisonRevision(database) shouldBe "2"
                 ohlcRevision(database) shouldBe "2"
 
@@ -77,6 +106,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     12_000L,
                     listOf(1_000L to BigDecimal("0.0199"), 1_900L to BigDecimal("0.0200")),
+                    mayBeTruncated = false,
                 )
                 comparisonRevision(database) shouldBe "3"
                 ohlcRevision(database) shouldBe "3"
@@ -89,8 +119,22 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     "jdbc:sqlite:file:ohlc-rev-covered-${UUID.randomUUID()}?mode=memory&cache=shared",
                 )
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
-                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, listOf(1_000L to BigDecimal("0.0175")))
-                repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, listOf(1_000L to BigDecimal("0.0175")))
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
+                )
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
+                )
 
                 val covered = repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)
 
@@ -110,10 +154,17 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 val candles = listOf(1_000L to BigDecimal("0.0175"))
 
                 repeat(5) { attempt ->
-                    repository.saveFetch(pair, intervalMinutes, 0L, 5_000L + attempt * 4_000L, candles)
+                    repository.saveFetch(
+                        pair,
+                        intervalMinutes,
+                        0L,
+                        5_000L + attempt * 4_000L,
+                        candles,
+                        mayBeTruncated = false,
+                    )
                 }
                 // A second lineage for the same series keeps its own bounded history.
-                repository.saveFetch(pair, intervalMinutes, 100_000L, 105_000L, candles)
+                repository.saveFetch(pair, intervalMinutes, 100_000L, 105_000L, candles, mayBeTruncated = false)
 
                 fetchProofCount(database, pair, intervalMinutes, 0L) shouldBe 3
                 fetchProofCount(database, pair, intervalMinutes, 100_000L) shouldBe 1
@@ -135,11 +186,13 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     5_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 ) shouldBe true
 
                 // A later authoritative response for the same domain is empty: C is deleted,
                 // not unioned, and the removal counts as content change.
-                repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, emptyList()) shouldBe true
+                repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, emptyList(), mayBeTruncated = false) shouldBe
+                    true
                 repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles shouldBe emptyList()
             }
         }
@@ -156,6 +209,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     5_000L,
                     listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0179")),
+                    mayBeTruncated = false,
                 )
 
                 repository.saveFetch(
@@ -164,6 +218,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     9_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 ) shouldBe true
                 repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles?.map { it.first } shouldBe
                     listOf(1_000L)
@@ -182,6 +237,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     5_000L,
                     listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0179")),
+                    mayBeTruncated = false,
                 )
 
                 // One close corrected, one candle removed, one backfilled: the stored
@@ -192,6 +248,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     9_000L,
                     listOf(1_000L to BigDecimal("0.0199"), 2_800L to BigDecimal("0.0200")),
+                    mayBeTruncated = false,
                 ) shouldBe true
                 val stored = repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles
                 stored?.map { it.first } shouldBe listOf(1_000L, 2_800L)
@@ -212,11 +269,20 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     5_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 )
 
                 // An empty refetch of a strictly newer domain leaves the older candle alone
                 // and reports no change: nothing inside its own domain moved.
-                repository.saveFetch(pair, intervalMinutes, 2_000L, 9_000L, emptyList()) shouldBe false
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    2_000L,
+                    9_000L,
+                    emptyList(),
+                    mayBeTruncated = false,
+                ) shouldBe
+                    false
                 repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles?.map { it.first } shouldBe
                     listOf(1_000L)
             }
@@ -234,11 +300,13 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     9_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 )
 
                 // A stale overlapping fetch completing late must not retract the close a
                 // newer wall already witnessed.
-                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, emptyList()) shouldBe false
+                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, emptyList(), mayBeTruncated = false) shouldBe
+                    false
                 repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles?.map { it.first } shouldBe
                     listOf(1_000L)
             }
@@ -256,6 +324,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     5_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 )
 
                 // The newer range echoes the older stored candle outside its own domain:
@@ -266,6 +335,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     2_000L,
                     9_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 ) shouldBe false
                 repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles?.map { it.first } shouldBe
                     listOf(1_000L)
@@ -284,6 +354,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     9_000L,
                     listOf(1_000L to BigDecimal("0.0199")),
+                    mayBeTruncated = false,
                 )
 
                 // A stale overlapping fetch completing late must neither overwrite the
@@ -294,6 +365,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     5_000L,
                     listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 ) shouldBe false
                 val stored = repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles
                 stored?.single()?.second?.compareTo(BigDecimal("0.0199")) shouldBe 0
@@ -312,6 +384,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     20_000L,
                     listOf(8_500L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 )
 
                 // A narrower older-wall refetch echoes the stored candle above its own
@@ -322,9 +395,316 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     0L,
                     9_000L,
                     listOf(8_500L to BigDecimal("0.0175")),
+                    mayBeTruncated = false,
                 ) shouldBe false
                 val stored = repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles
                 stored?.map { it.first } shouldBe listOf(8_500L)
+            }
+        }
+
+        "truncated raw page preserves older stored candles before its span" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-trunc-older-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                val wall = 2_000_000L
+                val pageStart = 1_100_000L
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                val older = listOf(
+                    1_000_000L to BigDecimal("0.0170"),
+                    1_000_900L to BigDecimal("0.0171"),
+                    1_001_800L to BigDecimal("0.0172"),
+                )
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = older,
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // 719 completed rows from a 720-row RAW page (one in-progress row was
+                // filtered): mayBeTruncated restricts deletion to the returned span.
+                val completedPage = (0 until pageSize - 1).map { i ->
+                    (pageStart + i * 900L) to BigDecimal("0.0175")
+                }
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = completedPage,
+                    mayBeTruncated = true,
+                ) shouldBe true
+
+                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
+                stored.size shouldBe older.size + completedPage.size
+                older.forEach { (start, _) -> stored.any { it.first == start } shouldBe true }
+            }
+        }
+
+        "short raw page deletes the omitted in-domain candle" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-short-delete-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                val wall = 2_000_000L
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                val omittedStart = since + 3 * 900L
+                val older = listOf(
+                    since to BigDecimal("0.0170"),
+                    (since + 900L) to BigDecimal("0.0171"),
+                    (since + 1_800L) to BigDecimal("0.0172"),
+                    omittedStart to BigDecimal("0.0173"),
+                )
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = older,
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // 718 completed rows from a 719-row RAW page: short means complete
+                // for [since, wall), so the omitted candle is deleted.
+                val completedPage = (0 until pageSize - 1)
+                    .filter { i -> since + i * 900L != omittedStart }
+                    .map { i -> (since + i * 900L) to BigDecimal("0.0175") }
+                completedPage.size shouldBe pageSize - 2
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = completedPage,
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
+                stored.size shouldBe completedPage.size
+                stored.none { it.first == omittedStart } shouldBe true
+            }
+        }
+
+        "full completed page retracts only its own span" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-full-span-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                val wall = 2_000_000L
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                val retractedStart = since + 5 * 900L
+                val extraStart = since + pageSize * 900L
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = 900_000L,
+                    fetchedAtEpochSecond = wall,
+                    candles = listOf(900_000L to BigDecimal("0.0169")),
+                    mayBeTruncated = false,
+                ) shouldBe true
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = listOf(
+                        since to BigDecimal("0.0170"),
+                        retractedStart to BigDecimal("0.0171"),
+                    ),
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // 720 completed rows from a full RAW page: the retracted in-span
+                // candle is deleted while the pre-span candle survives.
+                val fullPage = (0 until pageSize)
+                    .filter { i -> since + i * 900L != retractedStart }
+                    .map { i -> (since + i * 900L) to BigDecimal("0.0175") } +
+                    listOf(extraStart to BigDecimal("0.0185"))
+                fullPage.size shouldBe pageSize
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = fullPage,
+                    mayBeTruncated = true,
+                ) shouldBe true
+
+                val stored = repository.loadCovered(pair, intervalMinutes, 900_000L, wall)?.candles.orEmpty()
+                stored.size shouldBe 1 + pageSize
+                stored.none { it.first == retractedStart } shouldBe true
+                stored.any { it.first == 900_000L } shouldBe true
+                stored.any { it.first == extraStart } shouldBe true
+            }
+        }
+
+        "truncated page starting well after since preserves older and gap rows" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-trunc-gap-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                val wall = 2_000_000L
+                val pageStart = since + 392 * 900L
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                val seeds = listOf(
+                    since to BigDecimal("0.0170"),
+                    (since + 900L) to BigDecimal("0.0171"),
+                    (since + 200 * 900L) to BigDecimal("0.0172"),
+                    (since + 300 * 900L) to BigDecimal("0.0173"),
+                )
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = seeds,
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                val completedPage = (0 until pageSize - 1).map { i ->
+                    (pageStart + i * 900L) to BigDecimal("0.0175")
+                }
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = completedPage,
+                    mayBeTruncated = true,
+                ) shouldBe true
+
+                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
+                stored.size shouldBe seeds.size + completedPage.size
+                seeds.forEach { (start, _) -> stored.any { it.first == start } shouldBe true }
+            }
+        }
+
+        "out-of-order truncated fetch keeps rows witnessed later" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-trunc-ooo-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val wallNew = 2_000_000L
+                val wallOld = 1_900_000L
+                val sinceOld = 1_000_000L
+                val witnessStart = sinceOld + 666 * 900L
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = 1_500_000L,
+                    fetchedAtEpochSecond = wallNew,
+                    candles = listOf(witnessStart to BigDecimal("0.0179")),
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // The older truncated page overlaps the witness with a stale close.
+                val stalePage = (0 until pageSize - 1).map { i ->
+                    val start = sinceOld + i * 900L
+                    val close = if (start == witnessStart) "0.0199" else "0.0175"
+                    start to BigDecimal(close)
+                }
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = sinceOld,
+                    fetchedAtEpochSecond = wallOld,
+                    candles = stalePage,
+                    mayBeTruncated = true,
+                ) shouldBe true
+
+                val stored = repository.loadCovered(pair, intervalMinutes, 1_500_000L, wallOld)?.candles.orEmpty()
+                stored.single { it.first == witnessStart }.second.compareTo(BigDecimal("0.0179")) shouldBe 0
+            }
+        }
+
+        "truncated page with zero completed candles deletes nothing" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-trunc-empty-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                val wall = 2_000_000L
+                val older = listOf(
+                    since to BigDecimal("0.0170"),
+                    (since + 900L) to BigDecimal("0.0171"),
+                )
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = older,
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // A full RAW page whose every row was still in progress: nothing is
+                // proven absent and no content changes.
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = emptyList(),
+                    mayBeTruncated = true,
+                ) shouldBe false
+
+                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
+                stored.size shouldBe older.size
+            }
+        }
+
+        "truncated page with duplicate timestamps stores each candle once" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-trunc-dup-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                val wall = 2_000_000L
+                val loneStart = 1_100_000L
+                val older = listOf(since to BigDecimal("0.0170"))
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = older,
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // Duplicate starts on a truncated page dedupe to one row; the older
+                // pre-span candle is outside the returned span and survives.
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = wall,
+                    candles = listOf(
+                        loneStart to BigDecimal("0.0175"),
+                        loneStart to BigDecimal("0.0175"),
+                        (loneStart + 900L) to BigDecimal("0.0176"),
+                    ),
+                    mayBeTruncated = true,
+                ) shouldBe true
+
+                val stored = repository.loadCovered(pair, intervalMinutes, since, wall)?.candles.orEmpty()
+                stored.size shouldBe 3
+                stored.count { it.first == loneStart } shouldBe 1
+                stored.any { it.first == since } shouldBe true
             }
         }
     }
