@@ -341,7 +341,7 @@ class TradeHistoryQueryService(
         internal const val MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST = 8
 
         /** Bump when the serialized comparison payload or its cache invalidation contract changes. */
-        private const val COMPARISON_CACHE_VERSION = "3"
+        private const val COMPARISON_CACHE_VERSION = "4"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24

@@ -20,7 +20,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   separate selection manifest, so expiry or a changed provider boundary forces recalculation
   without treating skipped intervals as consumed candle dependencies. Candidate exhaustion stays
   debug-only, with one INFO frontier-discovery line per freshness window and DEBUG-only per-event
-  skips.
+  skips. Cache contract v4 also forces pre-manifest comparison rows to recalculate after migration;
+  current-format empty manifests remain reusable when no reachability skips were needed.
 
 ## [6.17.81] - 2026-09-22
 

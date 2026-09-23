@@ -206,10 +206,12 @@ class DatabaseConfigTest : StringSpec() {
             DriverManager.getConnection(databaseUrl).use { connection ->
                 connection.createStatement().use { statement ->
                     statement.executeQuery(
-                        "SELECT ohlc_reachability_dependencies_json FROM rebalancer_comparison_cache " +
+                        "SELECT input_fingerprint, ohlc_reachability_dependencies_json " +
+                            "FROM rebalancer_comparison_cache " +
                             "WHERE from_epoch_millis = 1 AND to_epoch_millis = 2",
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
+                        resultSet.getString("input_fingerprint") shouldBe "legacy"
                         resultSet.getString("ohlc_reachability_dependencies_json") shouldBe "[]"
                     }
                     statement.executeQuery(

@@ -83,7 +83,11 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import java.math.BigDecimal
+import java.nio.file.Files
+import java.nio.file.Path
+import java.sql.DriverManager
 import java.time.Instant
+import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -101,6 +105,22 @@ private val CERTIFIED_COVERAGE_DEFAULTS = mapOf(
     SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "test-scope",
     SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST to "test-scope",
 )
+
+// Captured with COMPARISON_CACHE_VERSION=3 at reviewed head 7bf7d533; the migration fixture below
+// uses the same snapshots, evidence metadata, and 1440m fallback inputs.
+private const val PRE_V4_COMPARISON_FINGERPRINT =
+    "913a36b1371ac3089a2954b98bcb2bdb92f1c9721d47667b0c453d26592d1535"
+
+private suspend fun <T> withTemporarySqliteDatabase(block: suspend (String) -> T): T {
+    val directory = Files.createTempDirectory("comparison-cache-test-")
+    return try {
+        block(directory.resolve("history.db").toString())
+    } finally {
+        Files.walk(directory).use { paths ->
+            paths.sorted(Comparator.reverseOrder<Path>()).forEach(Files::deleteIfExists)
+        }
+    }
+}
 
 @Suppress("unused")
 class TradeHistoryQueryServiceTest : StringSpec() {
@@ -601,10 +621,15 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // Make the valuation old enough to exercise a genuine 240m page-limit frontier.
                 var clock = snap2.timestamp.plusSeconds(130 * 24 * 60 * 60L)
                 var ohlcCalls = 0
+                val requestedIntervals = mutableListOf<Int>()
+                var fifteenMinuteReachable = false
                 val kraken = FakeKrakenService().apply {
                     ohlcSupplier = { _, requestedInterval, _ ->
                         ohlcCalls++
-                        if (requestedInterval == 1440) {
+                        requestedIntervals += requestedInterval
+                        if (requestedInterval == 15 && fifteenMinuteReachable) {
+                            listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("51000"))
+                        } else if (requestedInterval == 1440) {
                             listOf(
                                 (snap2.timestamp.epochSecond - 24 * 60 * 60L - 1800L) to BigDecimal("50000"),
                             )
@@ -675,8 +700,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 } shouldBe true
 
                 // The frontier TTL is policy-derived from the truncated completed candles.
-                // At the earliest deadline, all three historical frontiers and the consumed
-                // daily candle proof expire together: three discoveries plus one daily refresh.
+                // At the first-tier deadline, 15m becomes reachable and must replace the old
+                // daily fallback selection after the expired negative evidence is replayed.
                 val retryTimes = mutableListOf<Long>()
                 for (dependency in refreshedEntry.ohlcReachabilityDependencies) {
                     retryTimes += checkNotNull(
@@ -685,100 +710,200 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 }
                 val callsBeforeExpiry = ohlcCalls
                 val earliestRetry = retryTimes.min()
+                fifteenMinuteReachable = true
                 clock = Instant.ofEpochSecond(earliestRetry)
                 queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
-                ohlcCalls shouldBe callsBeforeExpiry + 4
+                ohlcCalls shouldBe callsBeforeExpiry + 1
+                requestedIntervals.drop(requestedIntervals.size - 1) shouldBe listOf(15)
                 countingCache.saveCount shouldBe 3
 
-                // If a later process has the comparison cache but no OHLC cache, it cannot
-                // validate a nonempty selection manifest and must discard the entry.
-                val deletesBeforeUncachedRead = countingCache.deleteCount
-                val queryWithoutOhlcCache = TradeHistoryQueryService(
-                    repository = repository,
-                    portfolioStatsRepository = statsRepository,
-                    ledgerRepository = ledgerRepository,
-                    orderIntentRepository = orderIntentRepository,
-                    krakenService = kraken,
-                    comparisonCacheRepository = countingCache,
-                    nowProvider = { clock },
-                )
-                queryWithoutOhlcCache.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
-                countingCache.deleteCount shouldBe deletesBeforeUncachedRead + 1
+                // The recalculation now consumes the newly reachable 15m candle and records no
+                // negative selection dependencies. Its empty manifest remains a valid cache hit.
+                val finerEntry = checkNotNull(durableCache.load(fromMs, toMs))
+                finerEntry.ohlcDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(15)
+                finerEntry.ohlcReachabilityDependencies.shouldBeEmpty()
+                val callsAfterFinerSelection = ohlcCalls
+                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                ohlcCalls shouldBe callsAfterFinerSelection
+                countingCache.saveCount shouldBe 3
             }
         }
 
         "regression: legacy comparison entry without dependency manifest misses and repopulates" {
             runTest {
-                val database = DatabaseConfig.init(":memory:")
-                val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
-                val mapper = jacksonObjectMapper().apply {
-                    registerModule(JavaTimeModule())
-                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                }
-                val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
-                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
-                val snap2 = snapshot(now.plusSeconds(3600), "50000.00", btc = "1.0" to "0.00", usdBalance = "50000.00")
-                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
-                coEvery { repository.getSnapshotBefore(any()) } returns null
-                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
-                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
-                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
-                    { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
-                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    RebalancerOrderIdentities()
-
-                val clock = now.plusSeconds(7200)
-                val kraken = FakeKrakenService().apply {
-                    ohlcSupplier = { _, _, _ ->
-                        listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("50000"))
+                withTemporarySqliteDatabase { databasePath ->
+                    val databaseUrl = "jdbc:sqlite:$databasePath"
+                    val database = DatabaseConfig.init(databaseUrl)
+                    val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
+                    val mapper = jacksonObjectMapper().apply {
+                        registerModule(JavaTimeModule())
+                        disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                     }
-                }
-                val countingCache = CountingComparisonCache(durableCache)
-                val queryService = TradeHistoryQueryService(
-                    repository = repository,
-                    portfolioStatsRepository = statsRepository,
-                    ledgerRepository = ledgerRepository,
-                    orderIntentRepository = orderIntentRepository,
-                    krakenService = kraken,
-                    historicalOhlcCache = HistoricalOhlcCache(
-                        kraken,
-                        persistentRepository = ohlcRepository,
+                    val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                    val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                    val snap2 = snapshot(
+                        now.plusSeconds(3600),
+                        "50000.00",
+                        btc = "1.0" to "0.00",
+                        usdBalance = "50000.00",
+                    )
+                    coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
+                        listOf(snap1, snap2)
+                    coEvery { repository.getSnapshotBefore(any()) } returns null
+                    coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                    coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                    coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                    coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
+                        { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                    coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                        RebalancerOrderIdentities()
+
+                    var clock = snap2.timestamp.plusSeconds(130 * 24 * 60 * 60L)
+                    var ohlcCalls = 0
+                    val requestedIntervals = mutableListOf<Int>()
+                    var fifteenMinuteReachable = false
+                    val kraken = FakeKrakenService().apply {
+                        ohlcSupplier = { _, requestedInterval, _ ->
+                            ohlcCalls++
+                            requestedIntervals += requestedInterval
+                            if (requestedInterval == 15 && fifteenMinuteReachable) {
+                                listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("51000"))
+                            } else if (requestedInterval == 1440) {
+                                listOf(
+                                    (snap2.timestamp.epochSecond - 24 * 60 * 60L - 1800L) to BigDecimal("50000"),
+                                )
+                            } else {
+                                val candleSeconds = requestedInterval * 60L
+                                val firstFutureStart = snap2.timestamp.epochSecond + 2 * candleSeconds
+                                (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                                    (firstFutureStart + index * candleSeconds) to BigDecimal("50000")
+                                }
+                            }
+                        }
+                    }
+                    val countingCache = CountingComparisonCache(durableCache)
+                    val queryService = TradeHistoryQueryService(
+                        repository = repository,
+                        portfolioStatsRepository = statsRepository,
+                        ledgerRepository = ledgerRepository,
+                        orderIntentRepository = orderIntentRepository,
+                        krakenService = kraken,
+                        historicalOhlcCache = HistoricalOhlcCache(
+                            kraken,
+                            persistentRepository = ohlcRepository,
+                            nowProvider = { clock },
+                        ),
+                        comparisonCacheRepository = countingCache,
                         nowProvider = { clock },
-                    ),
-                    comparisonCacheRepository = countingCache,
-                    nowProvider = { clock },
-                )
+                    )
 
-                // Cold calculation writes the current-contract entry with exact dependencies.
-                val cold = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
-                cold.availability shouldBe ComparisonAvailability.AVAILABLE
-                countingCache.saveCount shouldBe 1
-                val fromMs = snap1.timestamp.toEpochMilli()
-                val toMs = snap2.timestamp.toEpochMilli()
+                    // Cold calculation writes the current-contract entry with exact dependencies.
+                    val cold = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                    cold.availability shouldBe ComparisonAvailability.AVAILABLE
+                    countingCache.saveCount shouldBe 1
+                    val fromMs = snap1.timestamp.toEpochMilli()
+                    val toMs = snap2.timestamp.toEpochMilli()
+                    val preMigrationEntry = checkNotNull(durableCache.load(fromMs, toMs))
+                    preMigrationEntry.inputFingerprint shouldNotBe PRE_V4_COMPARISON_FINGERPRINT
+                    preMigrationEntry.ohlcDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(1440)
+                    preMigrationEntry.ohlcReachabilityDependencies.map { it.intervalMinutes }.toSet() shouldBe
+                        setOf(15, 60, 240)
+                    ohlcCalls shouldBe 4
+                    val firstTierRetry = preMigrationEntry.ohlcReachabilityDependencies.minOf { dependency ->
+                        checkNotNull(
+                            ohlcRepository.loadReachabilityFrontier(dependency.pair, dependency.intervalMinutes),
+                        ).retryAfterEpochSecond
+                    }
 
-                // Simulate a row written under the previous cache contract: a stale
-                // fingerprint and no dependency metadata (the column default).
-                durableCache.save(fromMs, toMs, "legacy-v2-fingerprint", cold, emptyList())
+                    // Preserve the v3 fingerprint and consumed candle proof while removing the v15
+                    // manifest column/table, then let the real schema migration restore its [] default.
+                    durableCache.save(
+                        fromMs,
+                        toMs,
+                        PRE_V4_COMPARISON_FINGERPRINT,
+                        cold,
+                        preMigrationEntry.ohlcDependencies,
+                        emptyList(),
+                    )
+                    DriverManager.getConnection(databaseUrl).use { connection ->
+                        connection.createStatement().use { statement ->
+                            statement.executeUpdate("DROP TABLE historical_ohlc_reachability_frontiers")
+                            statement.executeUpdate(
+                                "ALTER TABLE rebalancer_comparison_cache " +
+                                    "DROP COLUMN ohlc_reachability_dependencies_json",
+                            )
+                            statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 15")
+                        }
+                    }
 
-                // The legacy row is not trusted: one authoritative replay repopulates it
-                // with a current entry carrying proper dependency metadata.
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
-                    ComparisonAvailability.AVAILABLE
-                countingCache.saveCount shouldBe 2
-                val repopulated = checkNotNull(durableCache.load(fromMs, toMs))
-                repopulated.inputFingerprint shouldNotBe "legacy-v2-fingerprint"
-                repopulated.ohlcDependencies.shouldNotBeEmpty()
-                repopulated.ohlcDependencies.forEach { dep ->
-                    (dep.upToEpochSecond > dep.sinceEpochSecond) shouldBe true
-                    dep.candleContentHash.shouldNotBeBlank()
+                    val migratedDatabase = DatabaseConfig.init(databaseUrl)
+                    val migratedCache = SqliteRebalancerComparisonCacheRepositoryImpl(migratedDatabase, mapper)
+                    val migratedEntry = checkNotNull(migratedCache.load(fromMs, toMs))
+                    migratedEntry.inputFingerprint shouldBe PRE_V4_COMPARISON_FINGERPRINT
+                    migratedEntry.ohlcDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(1440)
+                    migratedEntry.ohlcReachabilityDependencies.shouldBeEmpty()
+                    val migratedCountingCache = CountingComparisonCache(migratedCache)
+                    val migratedQueryService = TradeHistoryQueryService(
+                        repository = repository,
+                        portfolioStatsRepository = statsRepository,
+                        ledgerRepository = ledgerRepository,
+                        orderIntentRepository = orderIntentRepository,
+                        krakenService = kraken,
+                        historicalOhlcCache = HistoricalOhlcCache(
+                            kraken,
+                            persistentRepository = SqliteHistoricalOhlcRepositoryImpl(migratedDatabase),
+                            nowProvider = { clock },
+                        ),
+                        comparisonCacheRepository = migratedCountingCache,
+                        nowProvider = { clock },
+                    )
+
+                    // The migrated v3 row remains readable but its fingerprint cannot validate under
+                    // v4. When 15m history becomes reachable, replay replaces its old 1440m selection.
+                    val callsBeforeReplay = requestedIntervals.size
+                    fifteenMinuteReachable = true
+                    clock = Instant.ofEpochSecond(firstTierRetry)
+                    migratedQueryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                        ComparisonAvailability.AVAILABLE
+                    requestedIntervals.drop(callsBeforeReplay) shouldBe listOf(15)
+                    migratedCountingCache.saveCount shouldBe 1
+                    val repopulated = checkNotNull(migratedCache.load(fromMs, toMs))
+                    repopulated.inputFingerprint shouldNotBe PRE_V4_COMPARISON_FINGERPRINT
+                    repopulated.ohlcDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(15)
+                    repopulated.ohlcReachabilityDependencies.shouldBeEmpty()
+                    repopulated.ohlcDependencies.shouldNotBeEmpty()
+                    repopulated.ohlcDependencies.forEach { dep ->
+                        (dep.upToEpochSecond > dep.sinceEpochSecond) shouldBe true
+                        dep.candleContentHash.shouldNotBeBlank()
+                    }
+
+                    // Reopen the file-backed database and use new repositories/services to verify
+                    // the persisted v4 entry survives restart.
+                    val restartedDatabase = DatabaseConfig.init(databaseUrl)
+                    val restartedCache = SqliteRebalancerComparisonCacheRepositoryImpl(restartedDatabase, mapper)
+                    val restartedCountingCache = CountingComparisonCache(restartedCache)
+                    val restartedQueryService = TradeHistoryQueryService(
+                        repository = repository,
+                        portfolioStatsRepository = statsRepository,
+                        ledgerRepository = ledgerRepository,
+                        orderIntentRepository = orderIntentRepository,
+                        krakenService = kraken,
+                        historicalOhlcCache = HistoricalOhlcCache(
+                            kraken,
+                            persistentRepository = SqliteHistoricalOhlcRepositoryImpl(restartedDatabase),
+                            nowProvider = { clock },
+                        ),
+                        comparisonCacheRepository = restartedCountingCache,
+                        nowProvider = { clock },
+                    )
+                    val callsBeforeRestartHit = ohlcCalls
+                    restartedQueryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                        ComparisonAvailability.AVAILABLE
+                    ohlcCalls shouldBe callsBeforeRestartHit
+                    restartedCountingCache.saveCount shouldBe 0
                 }
-
-                // The repopulated entry serves hits again.
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
-                    ComparisonAvailability.AVAILABLE
-                countingCache.saveCount shouldBe 2
             }
         }
 
