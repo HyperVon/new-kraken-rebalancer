@@ -187,6 +187,12 @@ class HistoricalOhlcCacheTest : StringSpec() {
                     upToEpochSecond: Long,
                 ): com.gemini.krakenbot.repository.HistoricalOhlcSeries = error("read failure")
 
+                override suspend fun loadLatestProofForSince(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                ): com.gemini.krakenbot.repository.HistoricalOhlcSeries = error("read failure")
+
                 override suspend fun saveFetch(
                     pair: String,
                     intervalMinutes: Int,
@@ -719,9 +725,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val since = candleStart - durationSeconds
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, clock) { d ->
+            cache.getOHLC(pair, interval, since, clock, onDependencyResolved = { d ->
                 recordedDep = d
-            }
+            })
             counter.get() shouldBe 1
             val dep = checkNotNull(recordedDep)
             dep shouldBe ConsumedOhlcDependency(
@@ -771,9 +777,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val since = candleStart - durationSeconds
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, clock) { d ->
+            cache.getOHLC(pair, interval, since, clock, onDependencyResolved = { d ->
                 recordedDep = d
-            }
+            })
             counter.get() shouldBe 1
             val dep = checkNotNull(recordedDep)
 
@@ -804,9 +810,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val since = candleStart - durationSeconds
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, clock) { d ->
+            cache.getOHLC(pair, interval, since, clock, onDependencyResolved = { d ->
                 recordedDep = d
-            }
+            })
             counter.get() shouldBe 1
             val dep = checkNotNull(recordedDep)
 
@@ -840,9 +846,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val since = candleStart - durationSeconds
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, clock) { d ->
+            cache.getOHLC(pair, interval, since, clock, onDependencyResolved = { d ->
                 recordedDep = d
-            }
+            })
             counter.get() shouldBe 1
             val dep = checkNotNull(recordedDep)
 
@@ -876,9 +882,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val since = candleStart - durationSeconds
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, clock) { d ->
+            cache.getOHLC(pair, interval, since, clock, onDependencyResolved = { d ->
                 recordedDep = d
-            }
+            })
             counter.get() shouldBe 1
             val dep = checkNotNull(recordedDep)
 
@@ -921,9 +927,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val since = candleStart - durationSeconds
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, clock) { d ->
+            cache.getOHLC(pair, interval, since, clock, onDependencyResolved = { d ->
                 recordedDep = d
-            }
+            })
             val dep = checkNotNull(recordedDep)
 
             // 1. Content changed on concurrent revalidation
@@ -1043,9 +1049,15 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var narrowDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { narrowDep = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { narrowDep = it })
             var wideDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo + 3_600L)) { wideDep = it }
+            cache.getOHLC(
+                pair,
+                interval,
+                since,
+                Instant.ofEpochSecond(upTo + 3_600L),
+                onDependencyResolved = { wideDep = it },
+            )
             counter.get() shouldBe 1
             val narrow = checkNotNull(narrowDep)
             val wide = checkNotNull(wideDep)
@@ -1096,7 +1108,10 @@ class HistoricalOhlcCacheTest : StringSpec() {
 
             // Newest covering record for the series, then past its freshness deadline.
             var newestDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, sinceNewest, Instant.ofEpochSecond(wall0)) { newestDep = it }
+            cache.getOHLC(pair, interval, sinceNewest, Instant.ofEpochSecond(wall0), onDependencyResolved = {
+                newestDep =
+                    it
+            })
             val newest = checkNotNull(newestDep)
             clock = clock.plusSeconds(3_601L)
 
@@ -1145,7 +1160,10 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var failedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, sinceFailed, Instant.ofEpochSecond(wall0)) { failedDep = it }
+            cache.getOHLC(pair, interval, sinceFailed, Instant.ofEpochSecond(wall0), onDependencyResolved = {
+                failedDep =
+                    it
+            })
             clock = clock.plusSeconds(3_601L)
             failNext = true
             cache.revalidateDependency(checkNotNull(failedDep))
@@ -1193,7 +1211,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall0)) { recordedDep = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall0), onDependencyResolved = {
+                recordedDep = it
+            })
             val dep = checkNotNull(recordedDep)
             clock = clock.plusSeconds(3_601L)
             failNext = true
@@ -1342,7 +1362,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recordedDep = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = {
+                recordedDep = it
+            })
             val dep = checkNotNull(recordedDep)
             // Negative evidence: no qualifying candle existed inside the consumed window.
             dep.candleContentHash shouldBe "empty"
@@ -1381,9 +1403,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var dep2: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since2, Instant.ofEpochSecond(upTo2)) { dep2 = it }
+            cache.getOHLC(pair, interval, since2, Instant.ofEpochSecond(upTo2), onDependencyResolved = { dep2 = it })
             var dep1: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since1, Instant.ofEpochSecond(upTo1)) { dep1 = it }
+            cache.getOHLC(pair, interval, since1, Instant.ofEpochSecond(upTo1), onDependencyResolved = { dep1 = it })
             counter.get() shouldBe 2
             val first = checkNotNull(dep1)
             val second = checkNotNull(dep2)
@@ -1415,7 +1437,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
                 nowProvider = { clock },
             )
             var recorded: ConsumedOhlcDependency? = null
-            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            first.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             checkNotNull(recorded)
             firstCounter.get() shouldBe 1
 
@@ -1462,7 +1484,9 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recordedDep: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recordedDep = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = {
+                recordedDep = it
+            })
             val dep = checkNotNull(recordedDep)
             dep.candleContentHash shouldBe "empty"
 
@@ -1496,7 +1520,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             counter.get() shouldBe 1
 
@@ -1538,7 +1562,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
 
             clock = clock.plusSeconds(3_601L)
@@ -1580,7 +1604,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
 
             // The provider retracts only the unconsumed future candle: replacement deletes
@@ -1626,7 +1650,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
 
             clock = clock.plusSeconds(3_601L)
@@ -1666,7 +1690,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val cache = HistoricalOhlcCache(kraken, persistentRepository = repository, nowProvider = { clock })
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
 
             clock = clock.plusSeconds(3_601L)
@@ -1679,7 +1703,10 @@ class HistoricalOhlcCacheTest : StringSpec() {
             // fresh, so the restarted cache serves the post-removal evidence with no call.
             val restarted = HistoricalOhlcCache(kraken, persistentRepository = repository, nowProvider = { clock })
             var restartedDep: ConsumedOhlcDependency? = null
-            restarted.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { restartedDep = it } shouldBe
+            restarted.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = {
+                restartedDep =
+                    it
+            }) shouldBe
                 emptyList()
             counter.get() shouldBe 2
             checkNotNull(restartedDep).isFresh(clock.epochSecond) shouldBe true
@@ -1871,7 +1898,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             counter.get() shouldBe 1
             dep.candleContentHash shouldBe HistoricalOhlcCache.consumedCandleContentHash(
@@ -1906,7 +1933,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.freshnessDeadlineEpochSecond - dep.fetchedAtEpochSecond shouldBe 604_800L
 
@@ -1942,7 +1969,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.candleContentHash shouldBe "empty"
             dep.freshnessDeadlineEpochSecond - dep.fetchedAtEpochSecond shouldBe 600L
@@ -1966,7 +1993,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.freshnessDeadlineEpochSecond - dep.fetchedAtEpochSecond shouldBe 3_600L
         }
@@ -1989,7 +2016,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.freshnessDeadlineEpochSecond - dep.fetchedAtEpochSecond shouldBe 604_800L
         }
@@ -2015,7 +2042,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val cache = HistoricalOhlcCache(kraken, persistentRepository = repository, nowProvider = { clock })
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.freshnessDeadlineEpochSecond - dep.fetchedAtEpochSecond shouldBe 604_800L
 
@@ -2050,7 +2077,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.candleContentHash shouldBe "empty"
             dep.freshnessDeadlineEpochSecond - dep.fetchedAtEpochSecond shouldBe 600L
@@ -2085,7 +2112,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) { recorded = it }
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
             val dep = checkNotNull(recorded)
             dep.candleContentHash shouldBe "empty"
 
@@ -2152,7 +2179,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val pageUntil = pageStart + (pageSize - 1) * durationSeconds
             val truncatedRaw = completedPage + listOf((wallSecond - 100L) to BigDecimal("0.0180"))
             truncatedRaw.size shouldBe pageSize
-            val responses = mutableListOf(older, truncatedRaw, emptyList())
+            val responses = mutableListOf(older, truncatedRaw)
             val cache = HistoricalOhlcCache(
                 FakeKrakenService().apply {
                     ohlcSupplier = { _, _, _ ->
@@ -2177,10 +2204,12 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val spanWindow = cache.getOHLC(pair, interval, pageStart, Instant.ofEpochSecond(pageUntil))
             counter.get() shouldBe 2
             spanWindow.size shouldBe completedPage.size
-            // No single proof validated the union: the full window refetches live.
+            // No single proof covers the full window, but the same-since truncated
+            // proof is fresh and the valuation sits at its wall: the gate serves the
+            // proven span instead of refetching a range the provider already missed.
             val refetched = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wallSecond))
-            counter.get() shouldBe 3
-            refetched shouldBe emptyList()
+            counter.get() shouldBe 2
+            refetched shouldBe completedPage
         }
 
         "genuinely short raw page with an in-progress candle replaces the full domain" {
@@ -2299,7 +2328,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val pageUntil = pageStart + (pageSize - 1) * durationSeconds
             val truncatedRaw = completedPage + listOf((wallSecond - 100L) to BigDecimal("0.0180"))
             truncatedRaw.size shouldBe pageSize
-            val responses = mutableListOf(seeds, truncatedRaw, emptyList())
+            val responses = mutableListOf(seeds, truncatedRaw)
             val cache = HistoricalOhlcCache(
                 FakeKrakenService().apply {
                     ohlcSupplier = { _, _, _ ->
@@ -2323,10 +2352,12 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val spanWindow = cache.getOHLC(pair, interval, pageStart, Instant.ofEpochSecond(pageUntil))
             counter.get() shouldBe 2
             spanWindow.size shouldBe completedPage.size
-            // The gap was never refreshed by the late page: the full window refetches live.
+            // The gap was never refreshed by the late page, but the same-since proof
+            // is fresh and the valuation sits at its wall: the gate serves the proven
+            // span instead of refetching a range the provider already missed.
             val refetched = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wallSecond))
-            counter.get() shouldBe 3
-            refetched shouldBe emptyList()
+            counter.get() shouldBe 2
+            refetched shouldBe completedPage
         }
 
         "out-of-order truncated fetch keeps evidence witnessed later" {
@@ -2395,7 +2426,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val pageUntil = pageStart + pageSize * durationSeconds
             val oversizedRaw = completedPage + listOf((wallSecond - 100L) to BigDecimal("0.0180"))
             oversizedRaw.size shouldBe pageSize + 1
-            val responses = mutableListOf(older, oversizedRaw, emptyList())
+            val responses = mutableListOf(older, oversizedRaw)
             val cache = HistoricalOhlcCache(
                 FakeKrakenService().apply {
                     ohlcSupplier = { _, _, _ ->
@@ -2418,10 +2449,12 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val spanWindow = cache.getOHLC(pair, interval, pageStart, Instant.ofEpochSecond(pageUntil))
             counter.get() shouldBe 2
             spanWindow.size shouldBe completedPage.size
-            // The full window was never validated by one fetch: it refetches live.
+            // The full window was never validated by one fetch, but the same-since
+            // proof is fresh and the valuation sits at its wall: the gate serves the
+            // proven span instead of refetching a range the provider already missed.
             val refetched = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wallSecond))
-            counter.get() shouldBe 3
-            refetched shouldBe emptyList()
+            counter.get() shouldBe 2
+            refetched shouldBe completedPage
         }
 
         "full raw page of only in-progress candles deletes nothing" {
@@ -2476,7 +2509,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val singleCompletedRaw = listOf(loneStart to BigDecimal("0.0175")) +
                 (0 until pageSize - 1).map { i -> (wallSecond - 800L + i) to BigDecimal("0.0180") }
             singleCompletedRaw.size shouldBe pageSize
-            val responses = mutableListOf(older, singleCompletedRaw, emptyList())
+            val responses = mutableListOf(older, singleCompletedRaw)
             val cache = HistoricalOhlcCache(
                 FakeKrakenService().apply {
                     ohlcSupplier = { _, _, _ ->
@@ -2501,10 +2534,12 @@ class HistoricalOhlcCacheTest : StringSpec() {
                 cache.getOHLC(pair, interval, loneStart, Instant.ofEpochSecond(loneStart + durationSeconds))
             counter.get() shouldBe 2
             spanWindow.size shouldBe 1
-            // One returned candle proves one candle of coverage: the full window misses.
+            // One returned candle proves one candle of coverage: the full window
+            // misses it, but the same-since proof is fresh and the valuation sits at
+            // its wall, so the gate serves the proven span instead of refetching.
             val refetched = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wallSecond))
-            counter.get() shouldBe 3
-            refetched shouldBe emptyList()
+            counter.get() shouldBe 2
+            refetched.map { it.first } shouldBe listOf(loneStart)
         }
 
         "restart after a truncated replacement keeps older persisted history" {
@@ -2655,7 +2690,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
         "first fetch returning only in-progress rows proves no reusable coverage" {
             val counter = AtomicInteger(0)
             val wall = 2_000_000L
-            val clock = Instant.ofEpochSecond(wall)
+            var clock = Instant.ofEpochSecond(wall)
             val since = 1_000_000L
             val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
             val allInProgress = (0 until pageSize).map { i ->
@@ -2676,8 +2711,15 @@ class HistoricalOhlcCacheTest : StringSpec() {
             cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall)) shouldBe emptyList()
             counter.get() shouldBe 1
 
-            // No proof was recorded, so the same window refetches live instead of
-            // reusing a phantom empty coverage.
+            // The truncated-empty marker proves no coverage, but it still paces the
+            // exact request: the same window reuses the empty answer instead of
+            // refetching live until the marker's freshness expires.
+            val gated = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
+            counter.get() shouldBe 1
+            gated shouldBe emptyList()
+
+            // Past the empty-result freshness window the range refetches exactly once.
+            clock = Instant.ofEpochSecond(wall + 601L)
             val refetched = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall))
             counter.get() shouldBe 2
             refetched shouldBe juneEcho
@@ -2717,9 +2759,11 @@ class HistoricalOhlcCacheTest : StringSpec() {
             counter.get() shouldBe 1
 
             // Older full response completes late: it covers the head range but must
-            // neither delete the newer span nor erase the truncated proof.
+            // neither delete the newer span nor erase the truncated proof. The late
+            // valuation sits beyond the truncated proof's wall (a live tail that may
+            // have grown), so it refetches instead of reusing the insufficient span.
             clock = Instant.ofEpochSecond(wallOld)
-            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wallOld + 7_200L))
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wallNew + 7_200L))
             counter.get() shouldBe 2
 
             val headWindow = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(1_100_000L))
@@ -2760,7 +2804,10 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, juneSince, Instant.ofEpochSecond(juneUpTo)) { recorded = it }
+            cache.getOHLC(pair, interval, juneSince, Instant.ofEpochSecond(juneUpTo), onDependencyResolved = {
+                recorded =
+                    it
+            })
             counter.get() shouldBe 1
 
             // Expired June dependency, live refresh proves only September: the stale
@@ -2801,7 +2848,10 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
 
             var recorded: ConsumedOhlcDependency? = null
-            cache.getOHLC(pair, interval, juneSince, Instant.ofEpochSecond(juneUpTo)) { recorded = it }
+            cache.getOHLC(pair, interval, juneSince, Instant.ofEpochSecond(juneUpTo), onDependencyResolved = {
+                recorded =
+                    it
+            })
             counter.get() shouldBe 1
 
             clock = Instant.ofEpochSecond(wallSecond)
@@ -2897,6 +2947,202 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val refetched = cache.getOHLC(pair, interval, firstStarts.first(), Instant.ofEpochSecond(firstStarts[1]))
             counter.get() shouldBe 6
             refetched shouldBe emptyList()
+        }
+
+        "truncated page that misses the requested window is not refetched while fresh" {
+            val counter = AtomicInteger(0)
+            val now = Instant.now().epochSecond
+            val firstStart = now - (KrakenApiConstants.OHLC_PAGE_SIZE + 1) * durationSeconds
+            val septemberPage = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { i ->
+                (firstStart + i * durationSeconds) to "1.0"
+            }
+            val cache = HistoricalOhlcCache(fake(septemberPage, counter))
+            val january = Instant.parse("2026-01-15T12:00:00Z")
+            val since = january.epochSecond - 86_400L
+
+            val first = cache.getOHLC(pair, interval, since, january)
+            val second = cache.getOHLC(pair, interval, since, january)
+
+            counter.get() shouldBe 1
+            first shouldBe second
+            first.size shouldBe KrakenApiConstants.OHLC_PAGE_SIZE
+        }
+
+        "concurrent requests for an unreachable window share one network call" {
+            val counter = AtomicInteger(0)
+            val now = Instant.now().epochSecond
+            val firstStart = now - (KrakenApiConstants.OHLC_PAGE_SIZE + 1) * durationSeconds
+            val septemberPage = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { i ->
+                (firstStart + i * durationSeconds) to "1.0"
+            }
+            val cache = HistoricalOhlcCache(
+                fake(septemberPage, counter, perCallDelayMillis = 100),
+            )
+            val january = Instant.parse("2026-01-15T12:00:00Z")
+            val since = january.epochSecond - 86_400L
+            val upTo = january
+
+            val results =
+                withContext(Dispatchers.IO) {
+                    (1..4).map { async { cache.getOHLC(pair, interval, since, upTo) } }.awaitAll()
+                }
+
+            counter.get() shouldBe 1
+            results.forEach { result -> result.size shouldBe KrakenApiConstants.OHLC_PAGE_SIZE }
+        }
+
+        "fifteen minutes of repeated polling issues one live call per unreachable range" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val firstStart = clock.epochSecond - (pageSize + 1) * durationSeconds
+            val septemberPage = (0 until pageSize).map { i ->
+                (firstStart + i * durationSeconds) to BigDecimal("1.0")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        septemberPage
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val january = Instant.parse("2026-01-15T12:00:00Z")
+            val since = january.epochSecond - 86_400L
+
+            // Twenty fragment polls across fifteen minutes of virtual time: the first
+            // poll fetches, every later poll reuses the insufficient proof.
+            repeat(20) {
+                cache.getOHLC(pair, interval, since, january)
+                clock = clock.plusSeconds(45)
+            }
+            counter.get() shouldBe 1
+
+            // Past the span freshness window the range retries exactly one bounded
+            // round, then paces again on the fresh proof.
+            clock = clock.plusSeconds(3_601)
+            cache.getOHLC(pair, interval, since, january)
+            counter.get() shouldBe 2
+            cache.getOHLC(pair, interval, since, january)
+            counter.get() shouldBe 2
+        }
+
+        "persisted insufficient proof paces the same range after a restart" {
+            val database = DatabaseConfig.init(":memory:")
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val firstCounter = AtomicInteger(0)
+            val secondCounter = AtomicInteger(0)
+            val now = Instant.now().epochSecond
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val firstStart = now - (pageSize + 1) * durationSeconds
+            val septemberPage = (0 until pageSize).map { i ->
+                (firstStart + i * durationSeconds) to BigDecimal("1.0")
+            }
+            val january = Instant.parse("2026-01-15T12:00:00Z")
+            val since = january.epochSecond - 86_400L
+
+            val first = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        firstCounter.incrementAndGet()
+                        septemberPage
+                    }
+                },
+                persistentRepository = repository,
+            )
+            val fetched = first.getOHLC(pair, interval, since, january)
+            firstCounter.get() shouldBe 1
+
+            val second = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        secondCounter.incrementAndGet()
+                        septemberPage
+                    }
+                },
+                persistentRepository = repository,
+            )
+            val restored = second.getOHLC(pair, interval, since, january)
+
+            secondCounter.get() shouldBe 0
+            restored.size shouldBe fetched.size
+            restored.map { it.first } shouldBe fetched.map { it.first }
+            restored.forEachIndexed { index, (_, close) ->
+                close shouldBeEqualComparingTo fetched[index].second
+            }
+        }
+
+        "truncated span overlapping the window serves identical content from the gate" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val upTo = 1_200_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            // Returned span starts after the request since (insufficient for the
+            // window) but overlaps its tail: a resolver filtering to the window
+            // must see the same candles from the gate as from a fresh fetch.
+            val page = (0 until pageSize).map { i ->
+                (1_100_000L + i * durationSeconds) to BigDecimal("0.0175")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        page
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var liveDep: ConsumedOhlcDependency? = null
+            val live = cache.getOHLC(
+                pair,
+                interval,
+                since,
+                Instant.ofEpochSecond(upTo),
+                onDependencyResolved = { liveDep = it },
+            )
+            var gatedDep: ConsumedOhlcDependency? = null
+            val gated = cache.getOHLC(
+                pair,
+                interval,
+                since,
+                Instant.ofEpochSecond(upTo),
+                onDependencyResolved = { gatedDep = it },
+            )
+
+            counter.get() shouldBe 1
+            gated shouldBe live
+            checkNotNull(gatedDep) shouldBe checkNotNull(liveDep)
+        }
+
+        "a degenerate window against a marker paces instead of refetching" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val since = 1_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val allInProgress = (0 until pageSize).map { i ->
+                (wall - 800L + i) to BigDecimal("0.0180")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        allInProgress
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall)) shouldBe emptyList()
+            // Degenerate valuation (upTo == since): the consumed domain is empty by
+            // definition, so the gate serves empty instead of refetching every lookup.
+            val degenerate = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(since))
+            counter.get() shouldBe 1
+            degenerate shouldBe emptyList()
         }
     }
 }

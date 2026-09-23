@@ -11,6 +11,9 @@ import org.jetbrains.exposed.v1.core.Table
  * coverageUntilEpochSecond). The coverage columns are nullable only so pre-existing rows migrate
  * without fabricated bounds — rows with null coverage fail closed in [loadCovered][com.gemini.krakenbot.repository.HistoricalOhlcRepository.loadCovered]
  * and are pruned on the next save of their lineage. Every newly written proof carries bounds.
+ * A truncated-empty response persists an explicit empty marker (`since == from == until`):
+ * it paces that exact request's refetch but its span contains no window, so it can never
+ * validate coverage.
  */
 object HistoricalOhlcFetchTable : Table("historical_ohlc_fetches") {
     val pair = varchar("pair", 16)

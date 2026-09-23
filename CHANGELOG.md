@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.81] - 2026-09-22
+
+### Fixed
+
+- **Insufficient OHLC coverage convergence**: a live fetch whose proven span misses its requested
+  historical window no longer refetches on every lookup. While the latest same-since proof is
+  fresh (and the valuation sits at or before its wall, so a refetch could not complete any new
+  in-window candle), identical requests reuse the proof's stored span instead of hammering the
+  exchange; expiry, window changes, and new covering evidence naturally reopen the range.
+  Truncated-empty responses record an explicit empty marker that paces the same way but never
+  satisfies a coverage check (and never evicts a real proof recorded at the same wall). Pacing
+  survives restarts through the durable proof rows, with no schema change. Live-tail valuations
+  beyond the fetch wall still refetch as before.
+- **OHLC single-flight joiners share insufficient answers**: a joiner whose window the shared
+  flight did not cover now serves the flight's proven span instead of starting its own fetch, so
+  N concurrent identical requests cost one network call instead of N sequential ones. Expired
+  revalidation joiners likewise serve paced stale data instead of refetching.
+- **Settings proposal single-flight**: concurrent identical Settings comparison-status evaluations
+  (tabs, reloads, overlapping polls, background continuation) join one flight instead of each
+  running the full proposal search. The under-evidence-lock POST variant stays unflighted to
+  avoid a lock-ordering deadlock.
+- **Call-owner OHLC diagnostics**: live OHLC paths log structured pair/interval/since/upTo/shape/
+  coverage/owner lines (debug; one concise INFO line per exhausted historical candidate), and the
+  Settings proposal fragment logs request timing with an in-flight count, making duplicate work
+  attributable instead of silent.
+- **Shutdown cancellation noise**: `CancellationException` is rethrown (not logged as a failure)
+  in the Settings proposal fragment and passes through StatusPages without rendering an error
+  response, so Ctrl-C during active requests no longer spams failure logs.
+- **Production log level**: added a `logback.xml` defaulting the root logger to INFO (tests keep
+  DEBUG via `logback-test.xml`). Without it logback falls back to DEBUG and every Exposed SQL
+  statement — hundreds of per-candle UPSERTs per OHLC persist — lands in the log.
+- **Settings baseline poller starts once**: the inception-baseline sync-progress poller no longer
+  stacks a new 5s interval on every HTMX swap.
+
 ## [6.17.80] - 2026-09-22
 
 ### Fixed

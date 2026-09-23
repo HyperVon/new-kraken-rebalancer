@@ -29,9 +29,28 @@ fun initSettings() {
  * sync-progress surface and reload once the outcome is terminal so the panel
  * shows progress without a manual refresh.
  */
+private var inceptionBaselinePollingStarted = false
+
+/** Test-only reset for the once-per-page poller guard. */
+internal fun resetInceptionBaselinePollingForTest() {
+    inceptionBaselinePollingStarted = false
+}
+
 private fun startInceptionBaselinePolling() {
     if (document.getElementById(HtmlIds.INCEPTION_BASELINE_PENDING) == null) return
-    window.setInterval({
+    // initSettings runs on page load and after every HTMX swap; the poller must
+    // start exactly once per page, not once per swap.
+    if (inceptionBaselinePollingStarted) return
+    inceptionBaselinePollingStarted = true
+    var handle = 0
+    handle = window.setInterval({
+        if (document.getElementById(HtmlIds.INCEPTION_BASELINE_PENDING) == null) {
+            // The pending block is gone (a form swap replaced it): stop this poller
+            // and allow a later initSettings to start a fresh one if it returns.
+            inceptionBaselinePollingStarted = false
+            window.clearInterval(handle)
+            return@setInterval
+        }
         window.fetch(Routes.API_HISTORY_SYNC_PROGRESS)
             .then { response: dynamic -> response.json() }
             .then { raw: dynamic ->

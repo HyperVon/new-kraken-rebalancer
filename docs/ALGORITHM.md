@@ -1053,7 +1053,7 @@ calculation actually consumed is unchanged.
   results are never cached.
 - **OHLC freshness, dependency tracking, and bounded revalidation.** Historical OHLC candles are cached
   in memory and persisted with covering-fetch proofs. A covering fetch stays authoritative for a bounded
-  freshness window: successful empty responses revalidate after 5 minutes (so later backfills can cure
+  freshness window: successful empty responses revalidate after 10 minutes (so later backfills can cure
   `MISSING_PRICE` / `HISTORICAL_PRICE_SOURCE_ERROR` frontiers), candles fetched while recent (data ends
   within a day of the fetch) revalidate hourly, and clearly historical candles revalidate weekly.
   The comparison cache persists the exact external OHLC dependencies consumed during authoritative
@@ -1066,13 +1066,19 @@ calculation actually consumed is unchanged.
   response proves its full requested domain, while a page-limited response proves only the
   completed span it actually returned (and a truncated page with zero completed rows proves
   nothing), so preserved older candles are never paired with a newer truncated proof and called
-  freshly validated. On comparison cache lookup:
+  freshly validated. A fetch whose proven span misses its requested historical window still paces
+  that exact request: while the latest same-since proof is fresh and the valuation sits at or
+  before its wall, identical requests reuse the stored span (empty for a truncated-empty marker)
+  instead of refetching — one live call per freshness window per unreachable range, with live-tail
+  valuations beyond the wall still refetching. Identical concurrent requests share one flight even
+  when the shared response proves insufficient, and concurrent identical Settings proposal
+  evaluations join one flight instead of each running the search. On comparison cache lookup:
   - **Fast path:** When all recorded OHLC dependencies are fresh (`now < freshnessDeadlineEpochSecond`),
     the cached comparison is served immediately (0 OHLC calls, 0 calculation replays).
   - **Expired revalidation:** If any consumed dependency is expired, only expired dependencies are
     revalidated against the exchange via single-flight deduplication. If all return unchanged candle
     content hashes, their freshness deadlines are refreshed in the database and the cached comparison
-    is returned (0 calculation replays, 1 bounded OHLC refresh).
+    is returned (0 calculation replays, one bounded refresh batch of at most 8 calls).
   - **Refresh budget:** One request performs at most 8 distinct live OHLC refetches synchronously
     (dependencies sharing one range share a single flight). When expired ranges exceed the budget,
     the request refreshes a deterministic batch, persists that progress without marking the
