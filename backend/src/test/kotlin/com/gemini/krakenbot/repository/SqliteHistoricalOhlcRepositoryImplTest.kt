@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.repository.impl.readSyncMetadata
 import com.gemini.krakenbot.repository.table.HistoricalOhlcFetchTable
+import com.gemini.krakenbot.repository.table.HistoricalOhlcReachabilityFrontierTable
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -28,6 +29,66 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
     private val intervalMinutes = 15
 
     init {
+        "reachability frontier keeps one newest row per pair and interval and can be superseded" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-frontier-bounds-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier(pair, intervalMinutes, 10_000L, 100L, 200L),
+                )
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier(pair, intervalMinutes, 9_000L, 200L, 300L),
+                )
+                // Same-wall responses can race. Keep the earlier boundary and retry time,
+                // so their merge cannot suppress more history than either observation.
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier(pair, intervalMinutes, 11_000L, 200L, 500L),
+                )
+                // An older completion cannot move the boundary or roll back its TTL.
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier(pair, intervalMinutes, 8_000L, 150L, 250L),
+                )
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier("OTHERUSD", intervalMinutes, 7_000L, 200L, 300L),
+                )
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier(pair, 60, 6_000L, 200L, 300L),
+                )
+
+                repository.loadReachabilityFrontier(pair, intervalMinutes)?.let {
+                    it.earliestReachableEpochSecond shouldBe 9_000L
+                    it.observedAtEpochSecond shouldBe 200L
+                    it.retryAfterEpochSecond shouldBe 300L
+                }
+                transaction(database) {
+                    HistoricalOhlcReachabilityFrontierTable.selectAll().count() shouldBe 3
+                }
+
+                // A delayed contradictory observation cannot clear newer evidence.
+                repository.clearReachabilityFrontierIfContradicted(
+                    pair,
+                    intervalMinutes,
+                    observedAtEpochSecond = 199L,
+                    provenReachableFromEpochSecond = 8_000L,
+                )
+                repository.loadReachabilityFrontier(pair, intervalMinutes) shouldBe
+                    OhlcReachabilityFrontier(pair, intervalMinutes, 9_000L, 200L, 300L)
+
+                repository.clearReachabilityFrontierIfContradicted(
+                    pair,
+                    intervalMinutes,
+                    observedAtEpochSecond = 201L,
+                    provenReachableFromEpochSecond = 8_500L,
+                )
+                repository.loadReachabilityFrontier(pair, intervalMinutes) shouldBe null
+                transaction(database) {
+                    HistoricalOhlcReachabilityFrontierTable.selectAll().count() shouldBe 2
+                }
+            }
+        }
+
         "content-identical refetches and empty fetches never advance the evidence revisions" {
             runTest {
                 val database = DatabaseConfig.init(

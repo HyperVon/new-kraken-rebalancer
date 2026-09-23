@@ -57,6 +57,44 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
             }
         }
 
+        "keeps reachability selection evidence separate from consumed candles" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:comparison-cache-frontier-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val repository = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val selection = listOf(OhlcReachabilityDependency("XBTUSD", 15, 1_800_000_000L))
+                val consumed = listOf(
+                    ConsumedOhlcDependency(
+                        pair = "XBTUSD",
+                        intervalMinutes = 1440,
+                        sinceEpochSecond = 1_700_000_000L,
+                        upToEpochSecond = 1_700_086_400L,
+                        fetchedAtEpochSecond = 1_800_000_000L,
+                        freshnessDeadlineEpochSecond = 1_800_003_600L,
+                        candleContentHash = "daily-candle-hash",
+                    ),
+                )
+                repository.save(0L, 1L, "fingerprint", comparison(), consumed, selection)
+
+                repository.load(0L, 1L)?.let { entry ->
+                    entry.ohlcDependencies shouldBe consumed
+                    entry.ohlcReachabilityDependencies shouldBe selection
+                }
+
+                // Background candle revalidation changes only consumed data metadata.
+                repository.updateOhlcDependencies(0L, 1L, emptyList())
+                repository.load(0L, 1L)?.let { entry ->
+                    entry.ohlcDependencies shouldBe emptyList()
+                    entry.ohlcReachabilityDependencies shouldBe selection
+                }
+            }
+        }
+
         "does not persist unavailable results" {
             runTest {
                 val database = DatabaseConfig.init(

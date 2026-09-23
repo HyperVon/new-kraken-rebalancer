@@ -4,9 +4,12 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.HistoricalOhlcSeries
 import com.gemini.krakenbot.repository.OhlcCoverage
+import com.gemini.krakenbot.repository.OhlcReachabilityFrontier
 import com.gemini.krakenbot.repository.authoritativeOhlcCoverage
+import com.gemini.krakenbot.repository.selectReachabilityFrontier
 import com.gemini.krakenbot.repository.table.HistoricalOhlcCandleTable
 import com.gemini.krakenbot.repository.table.HistoricalOhlcFetchTable
+import com.gemini.krakenbot.repository.table.HistoricalOhlcReachabilityFrontierTable
 import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
@@ -34,6 +37,79 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         const val RETAINED_FETCH_PROOFS = 3
         const val MAX_FETCH_PROOFS_PER_REQUEST = 24
         const val SQLITE_IN_CHUNK_SIZE = 500
+    }
+
+    override suspend fun loadReachabilityFrontier(pair: String, intervalMinutes: Int): OhlcReachabilityFrontier? =
+        database.readTransactionIO {
+            HistoricalOhlcReachabilityFrontierTable
+                .selectAll()
+                .where {
+                    (HistoricalOhlcReachabilityFrontierTable.pair eq pair) and
+                        (HistoricalOhlcReachabilityFrontierTable.intervalMinutes eq intervalMinutes)
+                }
+                .firstOrNull()
+                ?.let { row ->
+                    OhlcReachabilityFrontier(
+                        pair = row[HistoricalOhlcReachabilityFrontierTable.pair],
+                        intervalMinutes = row[HistoricalOhlcReachabilityFrontierTable.intervalMinutes],
+                        earliestReachableEpochSecond =
+                        row[HistoricalOhlcReachabilityFrontierTable.earliestReachableEpochSecond],
+                        observedAtEpochSecond = row[HistoricalOhlcReachabilityFrontierTable.observedAtEpochSecond],
+                        retryAfterEpochSecond = row[HistoricalOhlcReachabilityFrontierTable.retryAfterEpochSecond],
+                    )
+                }
+        }
+
+    override suspend fun saveReachabilityFrontier(frontier: OhlcReachabilityFrontier) {
+        database.safeTransactionIO(log, "Failed to persist OHLC reachability frontier") {
+            val current = HistoricalOhlcReachabilityFrontierTable
+                .selectAll()
+                .where {
+                    (HistoricalOhlcReachabilityFrontierTable.pair eq frontier.pair) and
+                        (HistoricalOhlcReachabilityFrontierTable.intervalMinutes eq frontier.intervalMinutes)
+                }
+                .firstOrNull()
+            val currentFrontier = current?.let { row ->
+                OhlcReachabilityFrontier(
+                    pair = row[HistoricalOhlcReachabilityFrontierTable.pair],
+                    intervalMinutes = row[HistoricalOhlcReachabilityFrontierTable.intervalMinutes],
+                    earliestReachableEpochSecond =
+                    row[HistoricalOhlcReachabilityFrontierTable.earliestReachableEpochSecond],
+                    observedAtEpochSecond = row[HistoricalOhlcReachabilityFrontierTable.observedAtEpochSecond],
+                    retryAfterEpochSecond = row[HistoricalOhlcReachabilityFrontierTable.retryAfterEpochSecond],
+                )
+            }
+            val selected = selectReachabilityFrontier(currentFrontier, frontier)
+            if (selected != currentFrontier) {
+                HistoricalOhlcReachabilityFrontierTable.upsert {
+                    it[HistoricalOhlcReachabilityFrontierTable.pair] = selected.pair
+                    it[HistoricalOhlcReachabilityFrontierTable.intervalMinutes] = selected.intervalMinutes
+                    it[HistoricalOhlcReachabilityFrontierTable.earliestReachableEpochSecond] =
+                        selected.earliestReachableEpochSecond
+                    it[HistoricalOhlcReachabilityFrontierTable.observedAtEpochSecond] = selected.observedAtEpochSecond
+                    it[HistoricalOhlcReachabilityFrontierTable.retryAfterEpochSecond] = selected.retryAfterEpochSecond
+                }
+            }
+        }
+    }
+
+    override suspend fun clearReachabilityFrontierIfContradicted(
+        pair: String,
+        intervalMinutes: Int,
+        observedAtEpochSecond: Long,
+        provenReachableFromEpochSecond: Long,
+    ) {
+        database.safeTransactionIO(log, "Failed to clear superseded OHLC reachability frontier") {
+            HistoricalOhlcReachabilityFrontierTable.deleteWhere {
+                (HistoricalOhlcReachabilityFrontierTable.pair eq pair) and
+                    (HistoricalOhlcReachabilityFrontierTable.intervalMinutes eq intervalMinutes) and
+                    (HistoricalOhlcReachabilityFrontierTable.observedAtEpochSecond lessEq observedAtEpochSecond) and
+                    (
+                        HistoricalOhlcReachabilityFrontierTable.earliestReachableEpochSecond greaterEq
+                            provenReachableFromEpochSecond
+                        )
+            }
+        }
     }
 
     override suspend fun loadCovered(

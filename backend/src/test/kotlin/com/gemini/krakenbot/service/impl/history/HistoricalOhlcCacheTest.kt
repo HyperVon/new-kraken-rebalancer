@@ -1,25 +1,41 @@
 package com.gemini.krakenbot.service.impl.history
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
+import com.gemini.krakenbot.repository.HistoricalOhlcSeries
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
+import com.gemini.krakenbot.repository.OhlcReachabilityFrontier
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
+import com.gemini.krakenbot.repository.table.HistoricalOhlcReachabilityFrontierTable
 import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.KrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.mockk.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class HistoricalOhlcCacheTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -180,6 +196,11 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val now = Instant.now().epochSecond
             val completed = now - 2 * durationSeconds
             val repository = object : HistoricalOhlcRepository {
+                override suspend fun loadReachabilityFrontier(
+                    pair: String,
+                    intervalMinutes: Int,
+                ): OhlcReachabilityFrontier = error("frontier read failure")
+
                 override suspend fun loadCovered(
                     pair: String,
                     intervalMinutes: Int,
@@ -2965,7 +2986,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
 
             counter.get() shouldBe 1
             first shouldBe second
-            first.size shouldBe KrakenApiConstants.OHLC_PAGE_SIZE
+            first shouldBe emptyList()
         }
 
         "concurrent requests for an unreachable window share one network call" {
@@ -2988,7 +3009,7 @@ class HistoricalOhlcCacheTest : StringSpec() {
                 }
 
             counter.get() shouldBe 1
-            results.forEach { result -> result.size shouldBe KrakenApiConstants.OHLC_PAGE_SIZE }
+            results.forEach { result -> result shouldBe emptyList() }
         }
 
         "fifteen minutes of repeated polling issues one live call per unreachable range" {
@@ -3143,6 +3164,1622 @@ class HistoricalOhlcCacheTest : StringSpec() {
             val degenerate = cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(since))
             counter.get() shouldBe 1
             degenerate shouldBe emptyList()
+        }
+
+        "67-second-shifted historical windows reuse a truncated provider frontier" {
+            val counter = AtomicInteger(0)
+            val intervalMinutes = 15
+            val candleSeconds = intervalMinutes * 60L
+            val wall = 2_000_000_000L
+            val clock = Instant.ofEpochSecond(wall)
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val recentPageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val recentPage = (0 until pageSize).map { index ->
+                (recentPageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        recentPage
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val sinceA = 1_767_855_038L
+            val sinceB = 1_767_855_105L
+            val lookbackSeconds = 7 * 24 * 60 * 60L
+
+            val first = cache.getOHLC(
+                pair = "MORPHOUSD",
+                intervalMinutes = intervalMinutes,
+                sinceEpochSecond = sinceA,
+                upTo = Instant.ofEpochSecond(sinceA + lookbackSeconds),
+            )
+            val second = cache.getOHLC(
+                pair = "MORPHOUSD",
+                intervalMinutes = intervalMinutes,
+                sinceEpochSecond = sinceB,
+                upTo = Instant.ofEpochSecond(sinceB + lookbackSeconds),
+            )
+
+            counter.get() shouldBe 1
+            first shouldBe emptyList()
+            second shouldBe emptyList()
+        }
+
+        "one frontier paces one hundred shifted requests and expires at its policy deadline" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        page
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val since = 1_767_855_038L
+            val sevenDays = 7 * 24 * 60 * 60L
+
+            repeat(100) { index ->
+                val shiftedSince = since + index * 67L
+                cache.getOHLC(pair, interval, shiftedSince, Instant.ofEpochSecond(shiftedSince + sevenDays))
+                    .shouldBe(emptyList())
+            }
+            counter.get() shouldBe 1
+
+            val ttl = OhlcRefreshPolicy().freshnessSeconds(page, wall, interval)
+            clock.set(wall + ttl)
+            val retrySince = since + 100 * 67L
+            cache.getOHLC(pair, interval, retrySince, Instant.ofEpochSecond(retrySince + sevenDays))
+                .shouldBe(emptyList())
+            counter.get() shouldBe 2
+        }
+
+        "twenty concurrent distinct historical windows share one frontier discovery" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        Thread.sleep(100)
+                        counter.incrementAndGet()
+                        page
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val firstSince = 1_767_855_038L
+            val results = withContext(Dispatchers.IO) {
+                (0 until 20).map { index ->
+                    async {
+                        val shiftedSince = firstSince + index * 67L
+                        cache.getOHLC(
+                            pair,
+                            interval,
+                            shiftedSince,
+                            Instant.ofEpochSecond(shiftedSince + 7 * 24 * 60 * 60L),
+                        )
+                    }
+                }.awaitAll()
+            }
+
+            counter.get() shouldBe 1
+            results.forEach { it shouldBe emptyList() }
+        }
+
+        "cancelled discovery owner releases waiters to elect one replacement" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val counter = AtomicInteger(0)
+            val kraken = mockk<KrakenService>(relaxed = true)
+            coEvery { kraken.getOHLC(any(), any(), any()) } coAnswers {
+                if (counter.incrementAndGet() == 1) {
+                    started.complete(Unit)
+                    awaitCancellation()
+                }
+                page
+            }
+            val cache = HistoricalOhlcCache(
+                kraken,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val firstSince = 1_767_855_038L
+            val first = async(Dispatchers.IO) {
+                cache.getOHLC(
+                    pair,
+                    interval,
+                    firstSince,
+                    Instant.ofEpochSecond(firstSince + 7 * 24 * 60 * 60L),
+                )
+            }
+            started.await()
+            val joiner = async(Dispatchers.IO) {
+                val shiftedSince = firstSince + 67L
+                cache.getOHLC(
+                    pair,
+                    interval,
+                    shiftedSince,
+                    Instant.ofEpochSecond(shiftedSince + 7 * 24 * 60 * 60L),
+                )
+            }
+            delay(20)
+            first.cancelAndJoin()
+
+            joiner.await() shouldBe emptyList()
+            counter.get() shouldBe 2
+        }
+
+        "reachability frontier survives cache recreation" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-restart-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val service = FakeKrakenService().apply {
+                ohlcSupplier = { _, _, _ ->
+                    counter.incrementAndGet()
+                    page
+                }
+            }
+            val firstCache = HistoricalOhlcCache(
+                service,
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val firstSince = 1_767_855_038L
+            firstCache.getOHLC(
+                pair,
+                interval,
+                firstSince,
+                Instant.ofEpochSecond(firstSince + 7 * 24 * 60 * 60L),
+            ) shouldBe emptyList()
+
+            val restartedCache = HistoricalOhlcCache(
+                service,
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val shiftedSince = firstSince + 67L
+            restartedCache.getOHLC(
+                pair,
+                interval,
+                shiftedSince,
+                Instant.ofEpochSecond(shiftedSince + 7 * 24 * 60 * 60L),
+            ) shouldBe emptyList()
+            counter.get() shouldBe 1
+        }
+
+        "live-tail lookups bypass historical frontier discovery" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        page
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall + 1))
+            cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(wall + 2))
+
+            counter.get() shouldBe 2
+        }
+
+        "frontier discovery is isolated by pair and interval" {
+            val counter = AtomicInteger(0)
+            val wall = 2_000_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, requestedInterval, _ ->
+                        counter.incrementAndGet()
+                        val candleSeconds = requestedInterval * 60L
+                        val firstStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+                        (0 until pageSize).map { index ->
+                            (firstStart + index * candleSeconds) to BigDecimal("1.0")
+                        }
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = Instant.ofEpochSecond(wall - 70 * 24 * 60 * 60L)
+
+            cache.getOHLC("PAIRONEUSD", 15, since, upTo) shouldBe emptyList()
+            cache.getOHLC("PAIRONEUSD", 15, since + 67L, upTo.plusSeconds(67)) shouldBe emptyList()
+            cache.getOHLC("PAIRTWOUSD", 15, since, upTo) shouldBe emptyList()
+            cache.getOHLC("PAIRONEUSD", 60, since, upTo).size shouldBe pageSize
+
+            counter.get() shouldBe 3
+        }
+
+        "two-pair four-interval fifteen-minute soak keeps frontier storage bounded" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-soak-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val counter = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, requestedInterval, _ ->
+                        counter.incrementAndGet()
+                        val candleSeconds = requestedInterval * 60L
+                        val firstStart = wall - 60 * 24 * 60 * 60L -
+                            KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+                        (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                            (firstStart + index * candleSeconds) to BigDecimal("1.0")
+                        }
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val pairIntervals = listOf("PAIRONEUSD", "PAIRTWOUSD")
+                .flatMap { marketPair -> listOf(15, 60, 240, 1440).map { marketPair to it } }
+            val pollsPerSeries = 20
+            val virtualSoakSeconds = 15 * 60L
+
+            for ((marketPair, requestedInterval) in pairIntervals) {
+                val since = wall - 2_000 * 24 * 60 * 60L
+                val firstUpTo = wall - 1_000 * 24 * 60 * 60L
+                repeat(pollsPerSeries) { poll ->
+                    val elapsed = (pairIntervals.indexOf(marketPair to requestedInterval) * pollsPerSeries + poll) *
+                        virtualSoakSeconds / (pairIntervals.size * pollsPerSeries - 1)
+                    clock.set(wall + elapsed)
+                    cache.getOHLC(
+                        marketPair,
+                        requestedInterval,
+                        since + poll * 67L,
+                        Instant.ofEpochSecond(firstUpTo + poll * 45L),
+                    ) shouldBe emptyList()
+                }
+            }
+
+            clock.get() shouldBe wall + virtualSoakSeconds
+            counter.get() shouldBe 8
+            transaction(database) {
+                HistoricalOhlcReachabilityFrontierTable.selectAll().count() shouldBe 8
+            }
+        }
+
+        "short empty and all-in-progress pages never establish a frontier" {
+            val wall = 2_000_000_000L
+            val since = wall - 90 * 24 * 60 * 60L
+            val shortPage = listOf((wall - 10_000L) to BigDecimal("1.0"))
+            val inProgressPage = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (wall - 100L + index) to BigDecimal("1.0")
+            }
+            val pages = listOf(emptyList(), shortPage, inProgressPage)
+
+            pages.forEachIndexed { index, page ->
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-no-frontier-$index-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val cache = HistoricalOhlcCache(
+                    FakeKrakenService().apply { ohlcSupplier = { _, _, _ -> page } },
+                    persistentRepository = repository,
+                    nowProvider = { Instant.ofEpochSecond(wall) },
+                )
+
+                cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L))
+                repository.loadReachabilityFrontier(pair, interval) shouldBe null
+            }
+        }
+
+        "frontier skips stay at debug level while discovery info is throttled" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val logger = LoggerFactory.getLogger(HistoricalOhlcCache::class.java) as Logger
+            val originalLevel = logger.level
+            val appender = ListAppender<ILoggingEvent>().apply {
+                context = logger.loggerContext
+                start()
+            }
+            logger.addAppender(appender)
+            logger.level = Level.DEBUG
+
+            try {
+                val since = wall - 90 * 24 * 60 * 60L
+                cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L))
+                repeat(5) { index ->
+                    cache.getOHLC(
+                        pair,
+                        interval,
+                        since + (index + 1) * 67L,
+                        Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L + (index + 1) * 67L),
+                    ) shouldBe emptyList()
+                }
+
+                val events = appender.list
+                events.count {
+                    it.level == Level.INFO && it.formattedMessage.contains("OHLC reachability frontier discovered")
+                } shouldBe 1
+                events.count { it.level == Level.DEBUG && it.formattedMessage.contains("OHLC frontier skip") } shouldBe
+                    6
+                events.count { it.level == Level.INFO && it.formattedMessage.contains("exhausted") } shouldBe 0
+                providerCalls.get() shouldBe 1
+            } finally {
+                logger.detachAppender(appender)
+                appender.stop()
+                logger.level = originalLevel
+            }
+        }
+
+        "newer provider history moves the frontier backward" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val candleSeconds = interval * 60L
+            val firstStart = wall - 10 * 24 * 60 * 60L
+            val earlierStart = wall - 20 * 24 * 60 * 60L
+            val firstPage = (0 until pageSize).map { i ->
+                (firstStart + i * candleSeconds) to BigDecimal("1.0")
+            }
+            val earlierPage = (0 until pageSize).map { i ->
+                (earlierStart + i * candleSeconds) to BigDecimal("1.0")
+            }
+            val callCounter = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        if (callCounter.incrementAndGet() == 1) firstPage else earlierPage
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val since = wall - 40 * 24 * 60 * 60L
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 30 * 24 * 60 * 60L))
+            val shiftedSince = since - 67L
+            cache.getOHLC(pair, interval, shiftedSince, Instant.ofEpochSecond(firstStart + candleSeconds + 1))
+
+            callCounter.get() shouldBe 2
+            val augustValuation = wall - 15 * 24 * 60 * 60L
+            val reachedEarlierHistory = cache.getOHLC(
+                pair,
+                interval,
+                augustValuation - 86_400L,
+                Instant.ofEpochSecond(augustValuation),
+            )
+            reachedEarlierHistory.isNotEmpty() shouldBe true
+            // The earlier provider page positively covers this later valuation, and the moved
+            // frontier no longer rejects it based on the old September boundary.
+            callCounter.get() shouldBe 2
+        }
+
+        "frontier selection dependency tracks durable movement expiry and removal" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-selection-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply { ohlcSupplier = { _, _, _ -> page } },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val selected = mutableListOf<OhlcReachabilityDependency>()
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L)
+
+            cache.getOHLC(pair, interval, since, upTo, onReachabilityResolved = { selected += it }) shouldBe emptyList()
+            val dependency = selected.single()
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe true
+
+            repository.saveReachabilityFrontier(
+                OhlcReachabilityFrontier(
+                    pair = pair,
+                    intervalMinutes = interval,
+                    earliestReachableEpochSecond = dependency.earliestReachableEpochSecond + candleSeconds,
+                    observedAtEpochSecond = wall + 1,
+                    retryAfterEpochSecond = wall + 10_000,
+                ),
+            )
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe false
+
+            repository.saveReachabilityFrontier(
+                OhlcReachabilityFrontier(
+                    pair = pair,
+                    intervalMinutes = interval,
+                    earliestReachableEpochSecond = dependency.earliestReachableEpochSecond,
+                    observedAtEpochSecond = wall + 2,
+                    retryAfterEpochSecond = wall,
+                ),
+            )
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe false
+
+            repository.clearReachabilityFrontierIfContradicted(
+                pair = pair,
+                intervalMinutes = interval,
+                observedAtEpochSecond = wall + 3,
+                provenReachableFromEpochSecond = dependency.earliestReachableEpochSecond - candleSeconds,
+            )
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe false
+        }
+
+        "a cold cache reloads durable frontier dependencies before comparing their high-water wall" {
+            val wall = 2_000_000_000L
+            val frontier = OhlcReachabilityFrontier(
+                pair = pair,
+                intervalMinutes = interval,
+                earliestReachableEpochSecond = wall - 60 * 24 * 60 * 60L,
+                observedAtEpochSecond = wall - 100L,
+                retryAfterEpochSecond = wall + 10_000L,
+            )
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-cold-load-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            repository.saveReachabilityFrontier(frontier)
+            val dependency = OhlcReachabilityDependency(
+                pair = pair,
+                intervalMinutes = interval,
+                earliestReachableEpochSecond = frontier.earliestReachableEpochSecond,
+            )
+            val providerCalls = AtomicInteger(0)
+            val makeCache = {
+                HistoricalOhlcCache(
+                    FakeKrakenService().apply {
+                        ohlcSupplier = { _, _, _ ->
+                            providerCalls.incrementAndGet()
+                            emptyList()
+                        }
+                    },
+                    persistentRepository = repository,
+                    nowProvider = { Instant.ofEpochSecond(wall) },
+                )
+            }
+
+            val dependencyCache = makeCache()
+            dependencyCache.isReachabilityDependencyCurrent(dependency) shouldBe true
+            dependencyCache.isReachabilityDependencyCurrent(dependency) shouldBe true
+
+            val lookupCache = makeCache()
+            lookupCache.getOHLC(
+                pair,
+                interval,
+                wall - 90 * 24 * 60 * 60L,
+                Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L),
+            ) shouldBe emptyList()
+            providerCalls.get() shouldBe 0
+        }
+
+        "frontier close and observation boundaries are inclusive only when proved" {
+            val frontier = OhlcReachabilityFrontier(
+                pair = pair,
+                intervalMinutes = interval,
+                earliestReachableEpochSecond = 1_000L,
+                observedAtEpochSecond = 2_000L,
+                retryAfterEpochSecond = 3_000L,
+            )
+
+            frontier.isFresh(2_999L) shouldBe true
+            frontier.isFresh(3_000L) shouldBe false
+            frontier.blocks(1_899L) shouldBe true
+            frontier.blocks(1_900L) shouldBe false
+            frontier.blocks(2_001L) shouldBe false
+        }
+
+        "memory-only selection dependencies expire and require the same boundary" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply { ohlcSupplier = { _, _, _ -> page } },
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val selected = mutableListOf<OhlcReachabilityDependency>()
+            val since = wall - 90 * 24 * 60 * 60L
+
+            cache.getOHLC(
+                pair,
+                interval,
+                since,
+                Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L),
+                onReachabilityResolved = { selected += it },
+            ) shouldBe emptyList()
+            val dependency = selected.single()
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe true
+            cache.isReachabilityDependencyCurrent(
+                dependency.copy(earliestReachableEpochSecond = dependency.earliestReachableEpochSecond + 1),
+            ) shouldBe false
+
+            val ttl = OhlcRefreshPolicy().freshnessSeconds(page, wall, interval)
+            clock.set(wall + ttl)
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe false
+            cache.isReachabilityDependencyCurrent(dependency.copy(pair = "MISSINGUSD")) shouldBe false
+        }
+
+        "frontier persistence failures preserve local skips and invalidate comparison reuse" {
+            val wall = 2_000_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val providerCalls = AtomicInteger(0)
+            val frontierReads = AtomicInteger(0)
+            val frontierWrites = AtomicInteger(0)
+            val repository = object : HistoricalOhlcRepository {
+                override suspend fun loadReachabilityFrontier(
+                    pair: String,
+                    intervalMinutes: Int,
+                ): OhlcReachabilityFrontier {
+                    frontierReads.incrementAndGet()
+                    error("frontier storage unavailable")
+                }
+
+                override suspend fun saveReachabilityFrontier(frontier: OhlcReachabilityFrontier) {
+                    frontierWrites.incrementAndGet()
+                    error("frontier storage unavailable")
+                }
+
+                override suspend fun loadCovered(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    upToEpochSecond: Long,
+                ): HistoricalOhlcSeries? = null
+
+                override suspend fun loadLatestProofForSince(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                ): HistoricalOhlcSeries? = null
+
+                override suspend fun saveFetch(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    fetchedAtEpochSecond: Long,
+                    candles: List<Pair<Long, BigDecimal>>,
+                    mayBeTruncated: Boolean,
+                ): Boolean = false
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val selected = mutableListOf<OhlcReachabilityDependency>()
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L)
+
+            cache.getOHLC(pair, interval, since, upTo, onReachabilityResolved = { selected += it }) shouldBe emptyList()
+            val dependency = selected.single()
+            cache.isReachabilityDependencyCurrent(dependency) shouldBe false
+            cache.getOHLC(pair, interval, since + 67L, upTo.plusSeconds(67)) shouldBe emptyList()
+
+            providerCalls.get() shouldBe 1
+            frontierReads.get() shouldBe 3
+            frontierWrites.get() shouldBe 1
+        }
+
+        "durable frontier reads coalesce before historical discovery" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val frontierReadStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val releaseFrontierRead = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val frontierReads = AtomicInteger(0)
+            val providerCalls = AtomicInteger(0)
+            val repository = object : HistoricalOhlcRepository {
+                override suspend fun loadReachabilityFrontier(
+                    pair: String,
+                    intervalMinutes: Int,
+                ): OhlcReachabilityFrontier? {
+                    if (frontierReads.incrementAndGet() == 1) {
+                        frontierReadStarted.complete(Unit)
+                        releaseFrontierRead.await()
+                    }
+                    return null
+                }
+
+                override suspend fun loadCovered(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    upToEpochSecond: Long,
+                ): HistoricalOhlcSeries? = null
+
+                override suspend fun loadLatestProofForSince(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                ): HistoricalOhlcSeries? = null
+
+                override suspend fun saveFetch(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    fetchedAtEpochSecond: Long,
+                    candles: List<Pair<Long, BigDecimal>>,
+                    mayBeTruncated: Boolean,
+                ): Boolean = false
+            }
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val firstSince = wall - 90 * 24 * 60 * 60L
+            val first = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, firstSince, Instant.ofEpochSecond(firstSince + 7 * 24 * 60 * 60L))
+            }
+            frontierReadStarted.await()
+            val secondSince = firstSince + 67L
+            val second = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, secondSince, Instant.ofEpochSecond(secondSince + 7 * 24 * 60 * 60L))
+            }
+            delay(20)
+            releaseFrontierRead.complete(Unit)
+
+            listOf(first.await(), second.await()).forEach { it shouldBe emptyList() }
+            frontierReads.get() shouldBe 1
+            providerCalls.get() shouldBe 1
+        }
+
+        "discovery joiners reuse short complete responses without a frontier" {
+            val wall = 2_000_000_000L
+            val candle = (wall - 85 * 24 * 60 * 60L) to BigDecimal("1.0")
+            val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val providerCalls = AtomicInteger(0)
+            val kraken = mockk<KrakenService>(relaxed = true)
+            coEvery { kraken.getOHLC(any(), any(), any()) } coAnswers {
+                providerCalls.incrementAndGet()
+                started.complete(Unit)
+                release.await()
+                listOf(candle)
+            }
+            val cache = HistoricalOhlcCache(
+                kraken,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = wall - 80 * 24 * 60 * 60L
+            val first = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo))
+            }
+            started.await()
+            val second = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(upTo + 67L))
+            }
+            delay(20)
+            release.complete(Unit)
+
+            first.await() shouldBe listOf(candle)
+            second.await() shouldBe listOf(candle)
+            providerCalls.get() shouldBe 1
+        }
+
+        "an expiring discovery frontier does not suppress a joined retry" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L - KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val providerCalls = AtomicInteger(0)
+            val policy = OhlcRefreshPolicy(
+                emptyResultRevalidationSeconds = 1,
+                recentCandleTtlSeconds = 1,
+                historicalCandleTtlSeconds = 1,
+                recentCandleAgeSeconds = 86_400,
+            )
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        if (providerCalls.incrementAndGet() == 1) {
+                            started.complete(Unit)
+                            Thread.sleep(100)
+                            clock.set(wall + 2)
+                        }
+                        page
+                    }
+                },
+                refreshPolicy = policy,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = wall - 80 * 24 * 60 * 60L
+            val first = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo))
+            }
+            started.await()
+            val second = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(upTo + 67L))
+            }
+            delay(20)
+
+            first.await() shouldBe emptyList()
+            second.await() shouldBe emptyList()
+            providerCalls.get() shouldBe 2
+        }
+
+        "discovery joiners reuse a returned span or pace the shared insufficient proof" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val page = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+
+            suspend fun runConcurrent(
+                firstSince: Long,
+                secondSince: Long,
+                upTo: Long,
+                expectedProviderCalls: Int = 1,
+                responsePage: List<Pair<Long, BigDecimal>> = page,
+                repository: HistoricalOhlcRepository? = null,
+            ): Pair<List<Pair<Long, BigDecimal>>, List<Pair<Long, BigDecimal>>> {
+                val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val calls = AtomicInteger(0)
+                val kraken = mockk<KrakenService>(relaxed = true)
+                coEvery { kraken.getOHLC(any(), any(), any()) } coAnswers {
+                    calls.incrementAndGet()
+                    started.complete(Unit)
+                    release.await()
+                    responsePage
+                }
+                val cache = HistoricalOhlcCache(
+                    kraken,
+                    persistentRepository = repository,
+                    nowProvider = { Instant.ofEpochSecond(wall) },
+                )
+                val first = async(Dispatchers.IO) {
+                    cache.getOHLC(pair, interval, firstSince, Instant.ofEpochSecond(upTo))
+                }
+                started.await()
+                val second = async(Dispatchers.IO) {
+                    cache.getOHLC(pair, interval, secondSince, Instant.ofEpochSecond(upTo))
+                }
+                delay(20)
+                release.complete(Unit)
+                val results = first.await() to second.await()
+
+                calls.get() shouldBe expectedProviderCalls
+                return results
+            }
+
+            val coveredJoiner = runConcurrent(
+                firstSince = pageStart - candleSeconds,
+                secondSince = pageStart + candleSeconds,
+                upTo = pageStart + 5 * candleSeconds,
+            )
+            coveredJoiner.first shouldBe page
+            coveredJoiner.second shouldBe page.drop(1)
+
+            val insufficientJoiner = runConcurrent(
+                firstSince = wall - 90 * 24 * 60 * 60L,
+                secondSince = wall - 90 * 24 * 60 * 60L,
+                upTo = wall - 24 * 60 * 60L,
+            )
+            insufficientJoiner.first shouldBe page
+            insufficientJoiner.second shouldBe page
+
+            val shortCandle = (wall - 2 * 24 * 60 * 60L) to BigDecimal("1.0")
+            val shortJoiner = runConcurrent(
+                firstSince = wall - 90 * 24 * 60 * 60L,
+                secondSince = wall - 91 * 24 * 60 * 60L,
+                upTo = wall - 24 * 60 * 60L,
+                expectedProviderCalls = 2,
+                responsePage = listOf(shortCandle),
+            )
+            shortJoiner.first shouldBe listOf(shortCandle)
+            shortJoiner.second shouldBe listOf(shortCandle)
+
+            val inProgressPage = (0 until pageSize).map { index ->
+                (wall - 100L + index) to BigDecimal("1.0")
+            }
+            val emptyJoiner = runConcurrent(
+                firstSince = wall - 90 * 24 * 60 * 60L,
+                secondSince = wall - 90 * 24 * 60 * 60L + 67L,
+                upTo = wall - 24 * 60 * 60L,
+                expectedProviderCalls = 2,
+                responsePage = inProgressPage,
+            )
+            emptyJoiner.first shouldBe emptyList()
+            emptyJoiner.second shouldBe emptyList()
+
+            val joinerOutsideReturnedSpan = runConcurrent(
+                firstSince = pageStart - candleSeconds,
+                secondSince = pageStart + candleSeconds,
+                upTo = wall - 30 * 24 * 60 * 60L,
+                expectedProviderCalls = 2,
+            )
+            joinerOutsideReturnedSpan.first shouldBe page
+            joinerOutsideReturnedSpan.second shouldBe page
+
+            val joinerWithoutValuationCandle = runConcurrent(
+                firstSince = pageStart,
+                secondSince = pageStart - candleSeconds,
+                upTo = pageStart + 1L,
+                expectedProviderCalls = 2,
+            )
+            joinerWithoutValuationCandle.first shouldBe page
+            joinerWithoutValuationCandle.second shouldBe emptyList()
+
+            val joinerOfUnprovenPage = runConcurrent(
+                firstSince = page.last().first + candleSeconds,
+                secondSince = pageStart - candleSeconds,
+                upTo = wall - 30 * 24 * 60 * 60L,
+                expectedProviderCalls = 2,
+            )
+            joinerOfUnprovenPage.first shouldBe page
+            joinerOfUnprovenPage.second shouldBe page
+
+            // The shared page contains the valuation, so the joiner can consume that exact
+            // response without persisting it as positive coverage for its wider range.
+            val repository = SqliteHistoricalOhlcRepositoryImpl(
+                DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-frontier-shared-page-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+                ),
+            )
+            val uncoveredSince = wall - 90 * 24 * 60 * 60L + 67L
+            val uncoveredUpTo = wall - 24 * 60 * 60L
+            val uncoveredJoiner = runConcurrent(
+                firstSince = wall - 90 * 24 * 60 * 60L,
+                secondSince = uncoveredSince,
+                upTo = uncoveredUpTo,
+                repository = repository,
+            )
+            uncoveredJoiner.first shouldBe page
+            uncoveredJoiner.second shouldBe page
+            repository.loadCovered(pair, interval, uncoveredSince, uncoveredUpTo) shouldBe null
+        }
+
+        "a short page after the frontier does not invalidate its negative evidence" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val frontierStart = wall - 60 * 24 * 60 * 60L
+            val frontier = OhlcReachabilityFrontier(
+                pair = pair,
+                intervalMinutes = interval,
+                earliestReachableEpochSecond = frontierStart,
+                observedAtEpochSecond = wall - 100L,
+                retryAfterEpochSecond = wall + 10_000L,
+            )
+            val providerCalls = AtomicInteger(0)
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-short-contradiction-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            repository.saveReachabilityFrontier(frontier)
+            val laterShortCandle = (frontierStart + 10 * candleSeconds) to BigDecimal("1.0")
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        listOf(laterShortCandle)
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+
+            cache.getOHLC(
+                pair,
+                interval,
+                since,
+                Instant.ofEpochSecond(frontierStart + 20 * candleSeconds),
+            ) shouldBe listOf(laterShortCandle)
+            repository.loadReachabilityFrontier(pair, interval) shouldBe frontier
+
+            cache.getOHLC(
+                pair,
+                interval,
+                since - 67L,
+                Instant.ofEpochSecond(frontierStart - 24 * 60 * 60L),
+            ) shouldBe emptyList()
+            providerCalls.get() shouldBe 1
+        }
+
+        "newer positive coverage clears a contradicted persisted frontier" {
+            val wall = 2_000_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L - pageSize * candleSeconds
+            val truncatedPage = (0 until pageSize).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val since = wall - 90 * 24 * 60 * 60L
+            val earlierCandle = (since + candleSeconds) to BigDecimal("0.9")
+            val responses = mutableListOf(truncatedPage, listOf(earlierCandle))
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-contradiction-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply { ohlcSupplier = { _, _, _ -> responses.removeAt(0) } },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L)) shouldBe emptyList()
+            repository.loadReachabilityFrontier(pair, interval)?.earliestReachableEpochSecond shouldBe pageStart
+            val newlyReachable = cache.getOHLC(
+                pair,
+                interval,
+                since + 67L,
+                Instant.ofEpochSecond(wall - 60 * 24 * 60 * 60L),
+            )
+
+            newlyReachable shouldBe listOf(earlierCandle)
+            repository.loadReachabilityFrontier(pair, interval) shouldBe null
+        }
+
+        "older or same-wall in-flight discovery cannot restore a frontier cleared by positive evidence" {
+            suspend fun verifyDelayedDiscovery(clearWallOffset: Long) {
+                val wall = 2_000_000_000L
+                val clock = AtomicLong(wall)
+                val candleSeconds = interval * 60L
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                val since = wall - 40 * 24 * 60 * 60L
+                val stalePageStart = wall - 20 * 24 * 60 * 60L
+                val stalePage = (0 until pageSize).map { index ->
+                    (stalePageStart + index * candleSeconds) to BigDecimal("1.0")
+                }
+                val earlierCandle = (wall - 30 * 24 * 60 * 60L) to BigDecimal("0.9")
+                val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val releaseOlder = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val providerCalls = AtomicInteger(0)
+                val jdbcUrl = "jdbc:sqlite:file:ohlc-frontier-clear-race-$clearWallOffset-" +
+                    "${java.util.UUID.randomUUID()}?mode=memory&cache=shared"
+                val database = DatabaseConfig.init(jdbcUrl)
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveReachabilityFrontier(
+                    OhlcReachabilityFrontier(
+                        pair = pair,
+                        intervalMinutes = interval,
+                        earliestReachableEpochSecond = wall - 10 * 24 * 60 * 60L,
+                        observedAtEpochSecond = wall - 100L,
+                        retryAfterEpochSecond = wall + 10_000L,
+                    ),
+                )
+                val kraken = mockk<KrakenService>(relaxed = true)
+                coEvery { kraken.getOHLC(any(), any(), any()) } coAnswers {
+                    when (providerCalls.incrementAndGet()) {
+                        1 -> {
+                            started.complete(Unit)
+                            releaseOlder.await()
+                            stalePage
+                        }
+
+                        2 -> listOf(earlierCandle)
+
+                        3 -> listOf(earlierCandle)
+
+                        else -> error("Unexpected provider request")
+                    }
+                }
+                val cache = HistoricalOhlcCache(
+                    kraken,
+                    persistentRepository = repository,
+                    nowProvider = { Instant.ofEpochSecond(clock.get()) },
+                )
+                val olderDiscovery = async(Dispatchers.IO) {
+                    cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 5 * 24 * 60 * 60L))
+                }
+                started.await()
+
+                clock.set(wall + clearWallOffset)
+                val dependency = ConsumedOhlcDependency(
+                    pair = pair,
+                    intervalMinutes = interval,
+                    sinceEpochSecond = since,
+                    upToEpochSecond = wall - 35 * 24 * 60 * 60L,
+                    fetchedAtEpochSecond = wall - 1_000L,
+                    freshnessDeadlineEpochSecond = wall - 1L,
+                    candleContentHash = "empty",
+                )
+                cache.revalidateDependency(dependency)
+                repository.loadReachabilityFrontier(pair, interval) shouldBe null
+
+                releaseOlder.complete(Unit)
+                olderDiscovery.await() shouldBe stalePage
+                repository.loadReachabilityFrontier(pair, interval) shouldBe null
+
+                // The newer positive proof covers this nearby window; a stale restored frontier
+                // would incorrectly short-circuit it before that proof could be selected.
+                val nearby = cache.getOHLC(
+                    pair,
+                    interval,
+                    since + 67L,
+                    Instant.ofEpochSecond(wall - 25 * 24 * 60 * 60L),
+                )
+                nearby.any {
+                    it.first == earlierCandle.first && it.second.compareTo(earlierCandle.second) == 0
+                } shouldBe true
+            }
+
+            // The second wall exercises the strict older-observation guard; the first wall
+            // proves that positive evidence wins a tie against a delayed capped response.
+            verifyDelayedDiscovery(
+                clearWallOffset = 100L,
+            )
+            verifyDelayedDiscovery(
+                clearWallOffset = 0L,
+            )
+        }
+
+        "a fresh truncated provider page can move the frontier forward across since values" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            fun page(firstStart: Long): List<Pair<Long, BigDecimal>> = (0 until pageSize).map { index ->
+                (firstStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+
+            val initialPage = page(wall - 40 * 24 * 60 * 60L)
+            val advancedPageStart = wall + 7 * 24 * 60 * 60L - 8 * 24 * 60 * 60L
+            val advancedPage = page(advancedPageStart)
+            val providerCalls = AtomicInteger(0)
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-forward-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        if (providerCalls.incrementAndGet() == 1) initialPage else advancedPage
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = Instant.ofEpochSecond(wall - 50 * 24 * 60 * 60L)
+
+            cache.getOHLC(pair, interval, since, upTo) shouldBe emptyList()
+            val originalFrontier = repository.loadReachabilityFrontier(pair, interval)!!
+            originalFrontier.earliestReachableEpochSecond shouldBe initialPage.first().first
+
+            val ttl = OhlcRefreshPolicy().freshnessSeconds(initialPage, wall, interval)
+            clock.set(wall + ttl)
+            val laterSince = wall - 20 * 24 * 60 * 60L
+            val laterUpTo = Instant.ofEpochSecond(wall - 10 * 24 * 60 * 60L)
+            (laterSince > originalFrontier.earliestReachableEpochSecond) shouldBe true
+            cache.getOHLC(pair, interval, laterSince, laterUpTo) shouldBe emptyList()
+
+            val movedFrontier = repository.loadReachabilityFrontier(pair, interval)!!
+            movedFrontier.earliestReachableEpochSecond shouldBe advancedPageStart
+            movedFrontier.observedAtEpochSecond shouldBe wall + ttl
+            (movedFrontier.earliestReachableEpochSecond > originalFrontier.earliestReachableEpochSecond) shouldBe true
+            providerCalls.get() shouldBe 2
+        }
+
+        "out-of-order provider observations cannot replace a newer frontier" {
+            val wall = 2_000_000_000L
+            val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+            val candleSeconds = interval * 60L
+            val since = wall - 40 * 24 * 60 * 60L
+            val providerStart = wall - 20 * 24 * 60 * 60L
+            val existingStart = wall - 10 * 24 * 60 * 60L
+            val newerFrontier = OhlcReachabilityFrontier(
+                pair = pair,
+                intervalMinutes = interval,
+                earliestReachableEpochSecond = existingStart,
+                observedAtEpochSecond = wall + 100,
+                retryAfterEpochSecond = wall + 10_000,
+            )
+            val page = (0 until pageSize).map { index ->
+                (providerStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-out-of-order-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            repository.saveReachabilityFrontier(newerFrontier)
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 5 * 24 * 60 * 60L)).size shouldBe pageSize
+
+            repository.loadReachabilityFrontier(pair, interval) shouldBe newerFrontier
+            providerCalls.get() shouldBe 1
+        }
+
+        "an unchanged same-wall frontier observation does not rewrite persisted evidence" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L -
+                KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-same-wall-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val delegate = SqliteHistoricalOhlcRepositoryImpl(database)
+            val frontierWrites = AtomicInteger(0)
+            val repository = object : HistoricalOhlcRepository by delegate {
+                override suspend fun saveReachabilityFrontier(frontier: OhlcReachabilityFrontier) {
+                    frontierWrites.incrementAndGet()
+                    delegate.saveReachabilityFrontier(frontier)
+                }
+            }
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+            val upTo = Instant.ofEpochSecond(wall - 30 * 24 * 60 * 60L)
+
+            cache.getOHLC(pair, interval, since, upTo) shouldBe page
+            cache.getOHLC(pair, interval, since + 67L, upTo) shouldBe page
+
+            providerCalls.get() shouldBe 2
+            frontierWrites.get() shouldBe 1
+            delegate.loadReachabilityFrontier(pair, interval)?.earliestReachableEpochSecond shouldBe pageStart
+        }
+
+        "truncated dependency revalidation can discover its own reachability frontier" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val recentCandle = (wall - 3 * candleSeconds) to BigDecimal("1.0")
+            val since = wall - 30 * 24 * 60 * 60L
+            val refreshTtlSeconds = 60L
+            val refreshPolicy = OhlcRefreshPolicy(
+                emptyResultRevalidationSeconds = 30,
+                recentCandleTtlSeconds = refreshTtlSeconds,
+                historicalCandleTtlSeconds = 604_800,
+                recentCandleAgeSeconds = 86_400,
+            )
+            val refreshWall = wall + refreshTtlSeconds
+            val frontierStart = refreshWall - 4 * 24 * 60 * 60L
+            val refreshPage = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (frontierStart + index * candleSeconds) to BigDecimal("1.1")
+            }
+            val responses = mutableListOf(listOf(recentCandle), refreshPage)
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-revalidation-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply { ohlcSupplier = { _, _, _ -> responses.removeAt(0) } },
+                persistentRepository = repository,
+                refreshPolicy = refreshPolicy,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val dependencies = mutableListOf<ConsumedOhlcDependency>()
+            val upTo = Instant.ofEpochSecond(recentCandle.first + candleSeconds)
+
+            cache.getOHLC(pair, interval, since, upTo, onDependencyResolved = { dependencies += it })
+            val dependency = dependencies.single()
+            clock.set(refreshWall)
+
+            cache.revalidateDependency(dependency) shouldBe OhlcRevalidationResult.ContentChanged
+            repository.loadReachabilityFrontier(pair, interval)?.earliestReachableEpochSecond shouldBe frontierStart
+        }
+
+        "windows newer than the truncation horizon keep exact-since requests separate" {
+            val wall = 2_000_000_000L
+            val pageSpanSeconds = KrakenApiConstants.OHLC_PAGE_SIZE * interval * 60L
+            val since = wall - pageSpanSeconds + 1L
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        Thread.sleep(75)
+                        providerCalls.incrementAndGet()
+                        listOf((since + durationSeconds) to BigDecimal("1.0"))
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+
+            val results = withContext(Dispatchers.IO) {
+                listOf(
+                    async { cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall)) },
+                    async { cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(wall)) },
+                ).awaitAll()
+            }
+
+            providerCalls.get() shouldBe 2
+            results.forEach { it.size shouldBe 1 }
+        }
+
+        "failed historical discovery releases the series flight for a later retry" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L - KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        val call = providerCalls.incrementAndGet()
+                        if (call == 1) {
+                            started.complete(Unit)
+                            Thread.sleep(100)
+                            error("temporary OHLC provider failure")
+                        }
+                        page
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+            val first = async(Dispatchers.IO) {
+                runCatching {
+                    cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L))
+                }
+            }
+            started.await()
+            val second = async(Dispatchers.IO) {
+                runCatching {
+                    cache.getOHLC(
+                        pair,
+                        interval,
+                        since + 67L,
+                        Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L + 67L),
+                    )
+                }
+            }
+            delay(20)
+
+            first.await().isFailure shouldBe true
+            second.await().isFailure shouldBe true
+            providerCalls.get() shouldBe 1
+            cache.getOHLC(pair, interval, since + 134L, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L)) shouldBe
+                emptyList()
+            providerCalls.get() shouldBe 2
+        }
+
+        "discovery joiners fetch again when their valuation is beyond the leader fetch wall" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L -
+                KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val providerCalls = AtomicInteger(0)
+            val kraken = mockk<KrakenService>(relaxed = true)
+            coEvery { kraken.getOHLC(any(), any(), any()) } coAnswers {
+                when (providerCalls.incrementAndGet()) {
+                    1 -> {
+                        started.complete(Unit)
+                        release.await()
+                        page
+                    }
+
+                    2 -> page
+
+                    else -> error("Unexpected provider request")
+                }
+            }
+            val cache = HistoricalOhlcCache(
+                kraken,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val firstSince = wall - 90 * 24 * 60 * 60L
+            val leader = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, firstSince, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L))
+            }
+            started.await()
+            clock.set(wall + 2 * 24 * 60 * 60L)
+            val joiner = async(Dispatchers.IO) {
+                cache.getOHLC(
+                    pair,
+                    interval,
+                    firstSince + 67L,
+                    Instant.ofEpochSecond(wall + 24 * 60 * 60L),
+                )
+            }
+            delay(20)
+            release.complete(Unit)
+
+            leader.await() shouldBe emptyList()
+            joiner.await() shouldBe page
+            providerCalls.get() shouldBe 2
+        }
+
+        "a discovery joiner inside the page horizon at leader time does not reuse a newer-since page" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 2 * 24 * 60 * 60L
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val providerCalls = AtomicInteger(0)
+            val kraken = mockk<KrakenService>(relaxed = true)
+            coEvery { kraken.getOHLC(any(), any(), any()) } coAnswers {
+                when (providerCalls.incrementAndGet()) {
+                    1 -> {
+                        started.complete(Unit)
+                        release.await()
+                        page
+                    }
+
+                    2 -> page
+
+                    else -> error("Unexpected provider request")
+                }
+            }
+            val cache = HistoricalOhlcCache(
+                kraken,
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+            val pageSpan = KrakenApiConstants.OHLC_PAGE_SIZE * interval * 60L
+            val leaderSince = wall - pageSpan - 1L
+            val upTo = wall - 24 * 60 * 60L
+            val leader = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, leaderSince, Instant.ofEpochSecond(upTo))
+            }
+            started.await()
+            clock.set(wall + 24 * 60 * 60L)
+            val joinerSince = wall - pageSpan + 1L
+            val joiner = async(Dispatchers.IO) {
+                cache.getOHLC(pair, interval, joinerSince, Instant.ofEpochSecond(upTo))
+            }
+            delay(20)
+            release.complete(Unit)
+
+            leader.await().isNotEmpty() shouldBe true
+            joiner.await().isNotEmpty() shouldBe true
+            providerCalls.get() shouldBe 2
+        }
+
+        "positive in-memory coverage clears a contradicted frontier without a repository" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L -
+                KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val since = wall - 90 * 24 * 60 * 60L
+            val newlyReachable = (since + candleSeconds) to BigDecimal("0.9")
+            val responses = ArrayDeque<List<Pair<Long, BigDecimal>>>().apply {
+                addLast(page)
+                addLast(listOf(newlyReachable))
+                addLast(listOf(newlyReachable))
+            }
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L)) shouldBe
+                emptyList()
+            cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(wall - 60 * 24 * 60 * 60L)) shouldBe
+                listOf(newlyReachable)
+            cache.getOHLC(pair, interval, since - 67L, Instant.ofEpochSecond(pageStart - 24 * 60 * 60L)) shouldBe
+                listOf(newlyReachable)
+
+            providerCalls.get() shouldBe 3
+        }
+
+        "later reachability discoveries remain clearable after an earlier positive reset" {
+            val wall = 2_000_000_000L
+            val clock = AtomicLong(wall)
+            val candleSeconds = interval * 60L
+            val pageSpan = KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            fun page(firstStart: Long): List<Pair<Long, BigDecimal>> =
+                (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                    (firstStart + index * candleSeconds) to BigDecimal("1.0")
+                }
+
+            val since = wall - 90 * 24 * 60 * 60L
+            val firstPositive = (since + candleSeconds) to BigDecimal("0.9")
+            val secondPositive = (since - 134L + candleSeconds) to BigDecimal("0.8")
+            val responses = ArrayDeque<List<Pair<Long, BigDecimal>>>().apply {
+                addLast(page(wall - 60 * 24 * 60 * 60L - pageSpan))
+                addLast(listOf(firstPositive))
+                addLast(page(wall - 30 * 24 * 60 * 60L))
+                addLast(listOf(secondPositive))
+                addLast(listOf(secondPositive))
+            }
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        responses.removeFirst()
+                    }
+                },
+                nowProvider = { Instant.ofEpochSecond(clock.get()) },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 80 * 24 * 60 * 60L)) shouldBe
+                emptyList()
+            clock.set(wall + 100L)
+            cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(wall - 60 * 24 * 60 * 60L)) shouldBe
+                listOf(firstPositive)
+            clock.set(wall + 200L)
+            cache.getOHLC(pair, interval, since - 67L, Instant.ofEpochSecond(wall - 20 * 24 * 60 * 60L))
+                .isNotEmpty() shouldBe true
+            clock.set(wall + 300L)
+            cache.getOHLC(pair, interval, since - 134L, Instant.ofEpochSecond(wall - 20 * 24 * 60 * 60L)) shouldBe
+                listOf(secondPositive)
+
+            cache.getOHLC(pair, interval, since - 201L, Instant.ofEpochSecond(wall - 35 * 24 * 60 * 60L)) shouldBe
+                listOf(secondPositive)
+            providerCalls.get() shouldBe 5
+        }
+
+        "zero-width historical windows keep exact-since behavior without creating a frontier" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageStart = wall - 60 * 24 * 60 * 60L -
+                KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (pageStart + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val providerCalls = AtomicInteger(0)
+            val database = DatabaseConfig.init(
+                "jdbc:sqlite:file:ohlc-frontier-degenerate-${java.util.UUID.randomUUID()}?mode=memory&cache=shared",
+            )
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { Instant.ofEpochSecond(wall) },
+            )
+            val since = wall - 90 * 24 * 60 * 60L
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(since)) shouldBe page
+            cache.getOHLC(pair, interval, since + 67L, Instant.ofEpochSecond(since + 67L)) shouldBe page
+
+            providerCalls.get() shouldBe 2
+            repository.loadReachabilityFrontier(pair, interval) shouldBe null
+        }
+
+        "reachability is not recorded when the fetch wall moves inside the possible page span" {
+            val wall = 2_000_000_000L
+            val candleSeconds = interval * 60L
+            val pageSpanSeconds = KrakenApiConstants.OHLC_PAGE_SIZE * candleSeconds
+            val since = wall - pageSpanSeconds
+            val page = (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                (since + candleSeconds + index * candleSeconds) to BigDecimal("1.0")
+            }
+            val clockCalls = AtomicInteger(0)
+            val providerCalls = AtomicInteger(0)
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        providerCalls.incrementAndGet()
+                        page
+                    }
+                },
+                nowProvider = {
+                    val current = if (clockCalls.incrementAndGet() == 1) wall else wall - 1L
+                    Instant.ofEpochSecond(current)
+                },
+            )
+
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(wall - 24 * 60 * 60L)) shouldBe
+                page.dropLast(2)
+            clockCalls.get() shouldBe 2
+            providerCalls.get() shouldBe 1
         }
     }
 }

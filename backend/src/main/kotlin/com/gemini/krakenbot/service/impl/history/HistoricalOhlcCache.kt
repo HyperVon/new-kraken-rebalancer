@@ -4,10 +4,15 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.OhlcCoverage
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
+import com.gemini.krakenbot.repository.OhlcReachabilityFrontier
 import com.gemini.krakenbot.repository.authoritativeOhlcCoverage
+import com.gemini.krakenbot.repository.selectReachabilityFrontier
 import com.gemini.krakenbot.service.KrakenService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.security.MessageDigest
@@ -107,6 +112,19 @@ class OhlcRefreshPolicy(
  *   covering proofs. Truncated-empty responses record an explicit empty marker proof so they
  *   pace the same way; markers never satisfy a coverage check. A valuation beyond the wall
  *   is a live tail that may have grown and always refetches.
+ * - A separate durable negative-reachability frontier is keyed only by pair / interval. It is
+ *   learned only from a nonempty, completed, page-truncated response whose first returned candle
+ *   begins after the requested history bound. While fresh, it skips valuation instants earlier
+ *   than the first returned candle's close; it never supplies positive coverage or a synthetic
+ *   candle. A newer page may move the boundary in either direction, and a contradictory positive
+ *   span clears the obsolete frontier. Comparison caches record frontier skips in a separate
+ *   selection manifest so expiry or movement invalidates the selected result.
+ * - Distinct historical discovery requests that are old enough to be page-truncated join one
+ *   per-series flight. A truncated page may be returned to a joiner when the requested valuation
+ *   is in that exact page, but it is never persisted as positive coverage for the joiner's range.
+ *   Live tails and requests within the provider page limit retain exact-since behavior. Frontier
+ *   skip diagnostics are debug-only; one discovery message is throttled per series freshness
+ *   window.
  * - A fetching initiator returns exactly its own completed-candle response, so uncached callers
  *   observe uncached semantics; the store only serves other requests under the proof above.
  * - Identical in-flight (pair, interval, since) requests join one flight; failures complete the
@@ -193,6 +211,17 @@ class HistoricalOhlcCache(
 
     private val store = ConcurrentHashMap<SeriesKey, SeriesEntry>()
     private val inFlight = ConcurrentHashMap<FlightKey, CompletableDeferred<FetchOutcome>>()
+    private val reachabilityFrontiers = ConcurrentHashMap<SeriesKey, OhlcReachabilityFrontier>()
+    private val reachabilityLoaded = ConcurrentHashMap.newKeySet<SeriesKey>()
+    private val reachabilityLoads = ConcurrentHashMap<SeriesKey, CompletableDeferred<OhlcReachabilityFrontier?>>()
+    private val reachabilityInFlight = ConcurrentHashMap<SeriesKey, CompletableDeferred<DiscoveryFlightResult>>()
+    private val reachabilityObservationLocks = ConcurrentHashMap<SeriesKey, Mutex>()
+    private val reachabilityObservationWalls = ConcurrentHashMap<SeriesKey, Long>()
+
+    /** Positive evidence wins ties: an in-flight capped response at the same wall cannot
+     * restore a frontier that a response at that wall already contradicted. */
+    private val reachabilityPositiveClearWalls = ConcurrentHashMap<SeriesKey, Long>()
+    private val loggedFrontierRetryAfter = ConcurrentHashMap<SeriesKey, Long>()
 
     /**
      * Series-level outage backoff: earliest epoch second at which a revalidation of any range
@@ -208,6 +237,13 @@ class HistoricalOhlcCache(
         @JvmField val pair: String,
         @JvmField val intervalMinutes: Long,
         @JvmField val sinceEpochSecond: Long,
+    )
+    private data class DiscoveryFlightResult(
+        val retryAfterCancellation: Boolean = false,
+        val completedCandles: List<Pair<Long, BigDecimal>> = emptyList(),
+        val coverage: OhlcCoverage? = null,
+        val mayBeTruncated: Boolean = false,
+        val fetchWallEpochSecond: Long? = null,
     )
 
     /**
@@ -225,6 +261,7 @@ class HistoricalOhlcCache(
         sinceEpochSecond: Long,
         upTo: Instant,
         onDependencyResolved: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
         callOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): List<Pair<Long, BigDecimal>> {
         val normalizedPair = pair.trim().uppercase()
@@ -271,6 +308,12 @@ class HistoricalOhlcCache(
             }
             return revalidated
         }
+        val existingFrontier = loadReachabilityFrontier(seriesKey)
+        if (existingFrontier?.isFresh(nowProvider().epochSecond) == true && existingFrontier.blocks(upTo.epochSecond)) {
+            logReachabilitySkip(existingFrontier, upTo.epochSecond)
+            reportReachabilityDependency(existingFrontier, onReachabilityResolved)
+            return emptyList()
+        }
         // No proof covers this window: a fresh same-since proof still paces the exact
         // request instead of refetching an unreachable range on every lookup.
         memoryInsufficient(seriesKey, sinceEpochSecond, upTo.epochSecond, intervalMinutes)?.let { gated ->
@@ -300,6 +343,128 @@ class HistoricalOhlcCache(
             return gated.candles
         }
 
+        if (shouldDiscoverHistoricalReachability(sinceEpochSecond, upTo.epochSecond, intervalMinutes)) {
+            val (discovery, created) = startOrJoinReachabilityFlight(seriesKey)
+            if (created) {
+                try {
+                    val fetchWallEpochSecond = nowProvider().epochSecond
+                    val fetched = krakenService.getOHLC(
+                        pair = normalizedPair,
+                        interval = intervalMinutes,
+                        since = sinceEpochSecond,
+                    )
+                    val mayBeTruncated = fetched.size >= KrakenApiConstants.OHLC_PAGE_SIZE
+                    val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
+                    val outcome = rememberFetch(
+                        seriesKey,
+                        sinceEpochSecond,
+                        fetchWallEpochSecond,
+                        completed,
+                        authoritative = true,
+                        mayBeTruncated = mayBeTruncated,
+                    )
+                    persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed, mayBeTruncated)
+                    recordReachabilityObservation(
+                        seriesKey = seriesKey,
+                        sinceEpochSecond = sinceEpochSecond,
+                        upToEpochSecond = upTo.epochSecond,
+                        fetchWallEpochSecond = fetchWallEpochSecond,
+                        completed = completed,
+                        mayBeTruncated = mayBeTruncated,
+                    )
+                    discovery.complete(
+                        DiscoveryFlightResult(
+                            completedCandles = completed,
+                            coverage = outcome.coverage,
+                            mayBeTruncated = mayBeTruncated,
+                            fetchWallEpochSecond = fetchWallEpochSecond,
+                        ),
+                    )
+                    val frontier = loadReachabilityFrontier(seriesKey)
+                    if (frontier?.isFresh(fetchWallEpochSecond) == true && frontier.blocks(upTo.epochSecond)) {
+                        logReachabilitySkip(frontier, upTo.epochSecond)
+                        reportReachabilityDependency(frontier, onReachabilityResolved)
+                        return emptyList()
+                    }
+                    val coverage = outcome.coverage ?: OhlcCoverage(sinceEpochSecond, sinceEpochSecond)
+                    val record = FetchRecord(sinceEpochSecond, coverage, fetchWallEpochSecond)
+                    reportDependency(
+                        seriesKey,
+                        CoveredSeries(record, completed),
+                        sinceEpochSecond,
+                        upTo,
+                        intervalMinutes,
+                        onDependencyResolved,
+                    )
+                    return completed
+                } catch (e: CancellationException) {
+                    reachabilityInFlight.remove(seriesKey, discovery)
+                    discovery.complete(DiscoveryFlightResult(retryAfterCancellation = true))
+                    throw e
+                } catch (e: Throwable) {
+                    discovery.completeExceptionally(e)
+                    throw e
+                } finally {
+                    reachabilityInFlight.remove(seriesKey, discovery)
+                }
+            }
+
+            val shared = discovery.await()
+            if (shared.retryAfterCancellation) {
+                return getOHLC(
+                    normalizedPair,
+                    intervalMinutes,
+                    sinceEpochSecond,
+                    upTo,
+                    onDependencyResolved,
+                    onReachabilityResolved,
+                    callOwner,
+                )
+            }
+            val frontier = loadReachabilityFrontier(seriesKey)
+            if (frontier?.isFresh(nowProvider().epochSecond) == true && frontier.blocks(upTo.epochSecond)) {
+                logReachabilitySkip(frontier, upTo.epochSecond)
+                reportReachabilityDependency(frontier, onReachabilityResolved)
+                return emptyList()
+            }
+            // The shared truncated page is not positive coverage for this caller's older
+            // request bound. Recheck the exact persisted proofs below, then fetch only if its
+            // own range still lacks positive or same-since pacing evidence.
+            memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
+                reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
+                return covered.candles
+            }
+            memoryInsufficient(seriesKey, sinceEpochSecond, upTo.epochSecond, intervalMinutes)?.let { gated ->
+                reportDependency(seriesKey, gated, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
+                return gated.candles
+            }
+            loadInsufficientFromPersistent(
+                seriesKey,
+                sinceEpochSecond,
+                upTo.epochSecond,
+                intervalMinutes,
+            )?.let { gated ->
+                reportDependency(seriesKey, gated, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
+                return gated.candles
+            }
+            reusableDiscoveryPage(shared, sinceEpochSecond, upTo.epochSecond, intervalMinutes)?.let { page ->
+                val fetchWallEpochSecond = checkNotNull(shared.fetchWallEpochSecond)
+                val coverage = checkNotNull(shared.coverage)
+                reportDependency(
+                    seriesKey,
+                    CoveredSeries(
+                        FetchRecord(sinceEpochSecond, coverage, fetchWallEpochSecond),
+                        page,
+                    ),
+                    sinceEpochSecond,
+                    upTo,
+                    intervalMinutes,
+                    onDependencyResolved,
+                )
+                return page
+            }
+        }
+
         val flightKey = FlightKey(normalizedPair, intervalMinutes.toLong(), sinceEpochSecond)
         val (flight, created) = startOrJoinFlight(flightKey)
         if (created) {
@@ -321,6 +486,21 @@ class HistoricalOhlcCache(
                     mayBeTruncated = mayBeTruncated,
                 )
                 persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed, mayBeTruncated)
+                recordReachabilityObservation(
+                    seriesKey,
+                    sinceEpochSecond,
+                    upTo.epochSecond,
+                    fetchWallEpochSecond,
+                    completed,
+                    mayBeTruncated,
+                )
+                val frontier = loadReachabilityFrontier(seriesKey)
+                if (frontier?.isFresh(fetchWallEpochSecond) == true && frontier.blocks(upTo.epochSecond)) {
+                    logReachabilitySkip(frontier, upTo.epochSecond)
+                    reportReachabilityDependency(frontier, onReachabilityResolved)
+                    flight.complete(outcome)
+                    return emptyList()
+                }
                 val outcomeCoverage = outcome.coverage
                     ?: OhlcCoverage(sinceEpochSecond, sinceEpochSecond)
                 val outcomeRecord = FetchRecord(sinceEpochSecond, outcomeCoverage, fetchWallEpochSecond)
@@ -335,7 +515,6 @@ class HistoricalOhlcCache(
                     completedRowCount = completed.size,
                     mayBeTruncated = mayBeTruncated,
                     coverage = outcomeCoverage,
-                    completed = completed,
                     fetchWallEpochSecond = fetchWallEpochSecond,
                     sufficient = sufficient,
                 )
@@ -355,6 +534,12 @@ class HistoricalOhlcCache(
         }
 
         flight.await()
+        val sharedFrontier = loadReachabilityFrontier(seriesKey)
+        if (sharedFrontier?.isFresh(nowProvider().epochSecond) == true && sharedFrontier.blocks(upTo.epochSecond)) {
+            logReachabilitySkip(sharedFrontier, upTo.epochSecond)
+            reportReachabilityDependency(sharedFrontier, onReachabilityResolved)
+            return emptyList()
+        }
         serveFromMemory(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let {
             memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
                 reportDependency(seriesKey, covered, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
@@ -368,7 +553,15 @@ class HistoricalOhlcCache(
             reportDependency(seriesKey, gated, sinceEpochSecond, upTo, intervalMinutes, onDependencyResolved)
             return gated.candles
         }
-        return getOHLC(normalizedPair, intervalMinutes, sinceEpochSecond, upTo, onDependencyResolved, callOwner)
+        return getOHLC(
+            normalizedPair,
+            intervalMinutes,
+            sinceEpochSecond,
+            upTo,
+            onDependencyResolved,
+            onReachabilityResolved,
+            callOwner,
+        )
     }
 
     /**
@@ -419,6 +612,14 @@ class HistoricalOhlcCache(
                     mayBeTruncated = mayBeTruncated,
                 )
                 persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, mayBeTruncated)
+                recordReachabilityObservation(
+                    seriesKey,
+                    originalSince,
+                    upTo.epochSecond,
+                    fetchWallEpochSecond,
+                    completed,
+                    mayBeTruncated,
+                )
                 flight.complete(outcome)
                 if (outcome.coverage?.contains(sinceEpochSecond, upTo.epochSecond) != true) {
                     // The refresh proved nothing about this window (e.g. a truncated page
@@ -562,6 +763,14 @@ class HistoricalOhlcCache(
                     mayBeTruncated = mayBeTruncated,
                 )
                 persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed, mayBeTruncated)
+                recordReachabilityObservation(
+                    seriesKey,
+                    originalSince,
+                    consumedUpTo,
+                    fetchWallEpochSecond,
+                    completed,
+                    mayBeTruncated,
+                )
                 flight.complete(outcome)
                 if (log.isDebugEnabled) {
                     val span = outcome.coverage?.let { "[${it.fromEpochSecond}, ${it.untilEpochSecond})" } ?: "none"
@@ -699,6 +908,272 @@ class HistoricalOhlcCache(
         onDependencyResolved(dependency)
     }
 
+    private fun reportReachabilityDependency(
+        frontier: OhlcReachabilityFrontier,
+        callback: ((OhlcReachabilityDependency) -> Unit)?,
+    ) {
+        callback?.invoke(
+            OhlcReachabilityDependency(
+                pair = frontier.pair,
+                intervalMinutes = frontier.intervalMinutes,
+                earliestReachableEpochSecond = frontier.earliestReachableEpochSecond,
+            ),
+        )
+    }
+
+    private fun logReachabilitySkip(frontier: OhlcReachabilityFrontier, upToEpochSecond: Long) {
+        if (!log.isDebugEnabled) return
+        log.debug(
+            "OHLC frontier skip; pair={} interval={} upTo={} earliestReachable={} wall={} retryAfter={}",
+            frontier.pair,
+            frontier.intervalMinutes,
+            upToEpochSecond,
+            frontier.earliestReachableEpochSecond,
+            frontier.observedAtEpochSecond,
+            frontier.retryAfterEpochSecond,
+        )
+    }
+
+    /**
+     * True only for a historical request old enough that the configured Kraken page limit
+     * could truncate it. Valuations after the current fetch wall remain live-tail requests and
+     * never join or create this series-wide discovery flight.
+     */
+    private fun shouldDiscoverHistoricalReachability(
+        sinceEpochSecond: Long,
+        upToEpochSecond: Long,
+        intervalMinutes: Int,
+    ): Boolean {
+        val now = nowProvider().epochSecond
+        if (upToEpochSecond > now || sinceEpochSecond >= upToEpochSecond) return false
+        val pageSpanSeconds = KrakenApiConstants.OHLC_PAGE_SIZE * intervalMinutes * 60L
+        return sinceEpochSecond <= now - pageSpanSeconds
+    }
+
+    /**
+     * A truncated Kraken response is the same latest page for every request whose `since`
+     * precedes its first returned candle. A discovery joiner may consume that exact response
+     * when its valuation is in the page, without turning the response into a positive coverage
+     * proof for the joiner's wider requested range.
+     */
+    private fun reusableDiscoveryPage(
+        discovery: DiscoveryFlightResult,
+        sinceEpochSecond: Long,
+        upToEpochSecond: Long,
+        intervalMinutes: Int,
+    ): List<Pair<Long, BigDecimal>>? {
+        if (!discovery.mayBeTruncated || sinceEpochSecond >= upToEpochSecond) return null
+        val fetchWallEpochSecond = discovery.fetchWallEpochSecond ?: return null
+        if (upToEpochSecond > fetchWallEpochSecond) return null
+        val candles = discovery.completedCandles
+        val firstReturned = candles.minOfOrNull { it.first } ?: return null
+        if (sinceEpochSecond >= firstReturned) return null
+        val pageSpanSeconds = KrakenApiConstants.OHLC_PAGE_SIZE * intervalMinutes * 60L
+        if (sinceEpochSecond > fetchWallEpochSecond - pageSpanSeconds) return null
+        val hasValuationCandle = candles.any { (start, _) ->
+            start >= sinceEpochSecond && start + intervalMinutes * 60L <= upToEpochSecond
+        }
+        return candles.takeIf { hasValuationCandle && discovery.coverage != null }
+    }
+
+    /**
+     * Records negative provider reachability only from a completed, nonempty truncated page
+     * whose first proven candle starts after the old requested bound. A short page, empty page,
+     * in-progress-only page, future valuation, or failed request cannot create a frontier.
+     */
+    private suspend fun recordReachabilityObservation(
+        seriesKey: SeriesKey,
+        sinceEpochSecond: Long,
+        upToEpochSecond: Long,
+        fetchWallEpochSecond: Long,
+        completed: List<Pair<Long, BigDecimal>>,
+        mayBeTruncated: Boolean,
+    ) {
+        if (sinceEpochSecond >= upToEpochSecond || upToEpochSecond > fetchWallEpochSecond) return
+        val distinct = completed.distinctBy { it.first }
+        val firstReturned = distinct.minOfOrNull { it.first } ?: return
+        observationLock(seriesKey).withLock {
+            val existing = loadReachabilityFrontierLocked(seriesKey)
+            val positiveClearWall = reachabilityPositiveClearWalls[seriesKey] ?: Long.MIN_VALUE
+            if (fetchWallEpochSecond <= positiveClearWall) return@withLock
+            val latestObservation = reachabilityObservationWalls[seriesKey]
+                ?: existing?.observedAtEpochSecond
+                ?: Long.MIN_VALUE
+            if (fetchWallEpochSecond < latestObservation) return@withLock
+            // Retain a high-water mark even after a positive response clears the active
+            // frontier. A delayed older fetch must not restore the negative evidence.
+            reachabilityObservationWalls[seriesKey] = maxOf(latestObservation, fetchWallEpochSecond)
+
+            val pageSpanSeconds = KrakenApiConstants.OHLC_PAGE_SIZE * seriesKey.intervalMinutes * 60L
+            val requestCouldBePageTruncated = sinceEpochSecond <= fetchWallEpochSecond - pageSpanSeconds
+            if (mayBeTruncated && requestCouldBePageTruncated && firstReturned > sinceEpochSecond) {
+                val frontier = OhlcReachabilityFrontier(
+                    pair = seriesKey.pair,
+                    intervalMinutes = seriesKey.intervalMinutes,
+                    earliestReachableEpochSecond = firstReturned,
+                    observedAtEpochSecond = fetchWallEpochSecond,
+                    retryAfterEpochSecond = fetchWallEpochSecond +
+                        refreshPolicy.freshnessSeconds(distinct, fetchWallEpochSecond, seriesKey.intervalMinutes),
+                )
+                val selected = selectReachabilityFrontier(existing, frontier)
+                if (selected != existing) {
+                    reachabilityFrontiers[seriesKey] = selected
+                    reachabilityLoaded.add(seriesKey)
+                    try {
+                        persistentRepository?.saveReachabilityFrontier(selected)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        log.warn(
+                            "Unable to persist OHLC reachability frontier for pair {} interval {}: {}",
+                            seriesKey.pair,
+                            seriesKey.intervalMinutes,
+                            e.message,
+                        )
+                    }
+                    var logDiscovery = false
+                    loggedFrontierRetryAfter.compute(seriesKey) { _, previous ->
+                        if (previous == null || selected.observedAtEpochSecond >= previous) {
+                            logDiscovery = true
+                            selected.retryAfterEpochSecond
+                        } else {
+                            previous
+                        }
+                    }
+                    if (logDiscovery) {
+                        log.info(
+                            "OHLC reachability frontier discovered; pair={} interval={} earliestReachable={} " +
+                                "wall={} retryAfter={}",
+                            selected.pair,
+                            selected.intervalMinutes,
+                            selected.earliestReachableEpochSecond,
+                            selected.observedAtEpochSecond,
+                            selected.retryAfterEpochSecond,
+                        )
+                    }
+                }
+                return@withLock
+            }
+
+            // A newer authoritative positive span that reaches before the old boundary makes
+            // that frontier obsolete. The per-series lock plus wall high-water prevents a
+            // delayed older or same-wall truncated fetch from reinstating it after this clear.
+            if (existing != null && firstReturned < existing.earliestReachableEpochSecond) {
+                reachabilityPositiveClearWalls.compute(seriesKey) { _, previous ->
+                    maxOf(previous ?: Long.MIN_VALUE, fetchWallEpochSecond)
+                }
+                reachabilityFrontiers.remove(seriesKey, existing)
+                try {
+                    persistentRepository?.clearReachabilityFrontierIfContradicted(
+                        pair = seriesKey.pair,
+                        intervalMinutes = seriesKey.intervalMinutes,
+                        observedAtEpochSecond = fetchWallEpochSecond,
+                        provenReachableFromEpochSecond = firstReturned,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn(
+                        "Unable to clear superseded OHLC reachability frontier for pair {} interval {}: {}",
+                        seriesKey.pair,
+                        seriesKey.intervalMinutes,
+                        e.message,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun observationLock(seriesKey: SeriesKey): Mutex =
+        reachabilityObservationLocks.computeIfAbsent(seriesKey) { Mutex() }
+
+    private suspend fun loadReachabilityFrontier(seriesKey: SeriesKey): OhlcReachabilityFrontier? =
+        observationLock(seriesKey).withLock { loadReachabilityFrontierLocked(seriesKey) }
+
+    private suspend fun loadReachabilityFrontierLocked(seriesKey: SeriesKey): OhlcReachabilityFrontier? {
+        reachabilityFrontiers[seriesKey]?.let { return it }
+        if (seriesKey in reachabilityLoaded) return null
+        val repository = persistentRepository ?: run {
+            reachabilityLoaded.add(seriesKey)
+            return null
+        }
+        var created = false
+        val loading = reachabilityLoads.compute(seriesKey) { _, existing ->
+            if (existing == null) {
+                created = true
+                CompletableDeferred()
+            } else {
+                existing
+            }
+        }!!
+        if (!created) return loading.await()
+        try {
+            val loaded = repository.loadReachabilityFrontier(seriesKey.pair, seriesKey.intervalMinutes)
+            if (loaded != null) {
+                reachabilityFrontiers[seriesKey] = loaded
+                reachabilityObservationWalls.compute(seriesKey) { _, previous ->
+                    maxOf(previous ?: Long.MIN_VALUE, loaded.observedAtEpochSecond)
+                }
+            }
+            reachabilityLoaded.add(seriesKey)
+            loading.complete(loaded)
+            return loaded
+        } catch (e: CancellationException) {
+            reachabilityLoads.remove(seriesKey, loading)
+            loading.complete(null)
+            throw e
+        } catch (e: Exception) {
+            log.warn(
+                "Unable to read persisted OHLC reachability frontier for pair {} interval {}: {}",
+                seriesKey.pair,
+                seriesKey.intervalMinutes,
+                e.message,
+            )
+            loading.complete(null)
+            return null
+        } finally {
+            reachabilityLoads.remove(seriesKey, loading)
+        }
+    }
+
+    /** Reads the durable frontier again: comparison selection manifests must notice updates
+     * made by another process as well as TTL expiry, not merely trust this cache's RAM copy. */
+    suspend fun isReachabilityDependencyCurrent(dependency: OhlcReachabilityDependency): Boolean {
+        val key = SeriesKey(dependency.pair.trim().uppercase(), dependency.intervalMinutes)
+        return observationLock(key).withLock {
+            val current = if (persistentRepository == null) {
+                reachabilityFrontiers[key]
+            } else {
+                try {
+                    persistentRepository.loadReachabilityFrontier(key.pair, key.intervalMinutes)
+                        .also { loaded ->
+                            if (loaded == null) {
+                                reachabilityFrontiers.remove(key)
+                            } else {
+                                reachabilityFrontiers[key] = loaded
+                                reachabilityObservationWalls.compute(key) { _, previous ->
+                                    maxOf(previous ?: Long.MIN_VALUE, loaded.observedAtEpochSecond)
+                                }
+                            }
+                            reachabilityLoaded.add(key)
+                        }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn(
+                        "Unable to recheck OHLC reachability frontier for pair {} interval {}: {}",
+                        key.pair,
+                        key.intervalMinutes,
+                        e.message,
+                    )
+                    return@withLock false
+                }
+            } ?: return@withLock false
+            current.isFresh(nowProvider().epochSecond) &&
+                current.earliestReachableEpochSecond == dependency.earliestReachableEpochSecond
+        }
+    }
+
     /**
      * Structured per-request cache diagnostic: makes duplicate OHLC work attributable
      * by (owner, pair, interval, since, upTo). Debug-gated; production stays quiet.
@@ -729,12 +1204,9 @@ class HistoricalOhlcCache(
 
     /**
      * Structured live-fetch diagnostic with the raw page shape and the proven span.
-     * A fetch that exhausted its historical candidate (proven span misses a requested
-     * window at or before the fetch wall, so an immediate refetch could not help)
-     * additionally logs one concise INFO line: it fires at most once per freshness
-     * window per key, so it stays low-volume while making exhausted candidates
-     * visible. A live-tail valuation beyond the wall is routine growth, not
-     * exhaustion, and stays at debug level.
+     * Cache-level diagnostics are debug-only: resolver lookups can use a different `since`
+     * for every historical event, so INFO logging an insufficient response creates another
+     * per-event stream even after repeated provider work is reduced.
      */
     private fun logLiveFetch(
         seriesKey: SeriesKey,
@@ -746,28 +1218,11 @@ class HistoricalOhlcCache(
         completedRowCount: Int,
         mayBeTruncated: Boolean,
         coverage: OhlcCoverage,
-        completed: List<Pair<Long, BigDecimal>>,
         fetchWallEpochSecond: Long,
         sufficient: Boolean,
     ) {
         val exhausted = !sufficient && upTo.epochSecond <= fetchWallEpochSecond
         val outcome = if (exhausted) "LIVE_FETCH_TRUNCATED_INSUFFICIENT" else "LIVE_FETCH"
-        if (exhausted) {
-            val retryAfter = fetchWallEpochSecond +
-                refreshPolicy.freshnessSeconds(completed, fetchWallEpochSecond, intervalMinutes)
-            log.info(
-                "Historical OHLC candidate exhausted: pair={} interval={} since={} upTo={} " +
-                    "coverage=[{}, {}) retryAfter={} owner={}",
-                seriesKey.pair,
-                intervalMinutes,
-                sinceEpochSecond,
-                upTo.epochSecond,
-                coverage.fromEpochSecond,
-                coverage.untilEpochSecond,
-                retryAfter,
-                callOwner,
-            )
-        }
         if (!log.isDebugEnabled) return
         log.debug(
             "OHLC cache {}; pair={} interval={} since={} upTo={} owner={} rawRows={} completedRows={} " +
@@ -1164,6 +1619,21 @@ class HistoricalOhlcCache(
     private fun startOrJoinFlight(flightKey: FlightKey): Pair<CompletableDeferred<FetchOutcome>, Boolean> {
         var created = false
         val deferred = inFlight.compute(flightKey) { _, existing ->
+            if (existing == null) {
+                created = true
+                CompletableDeferred()
+            } else {
+                existing
+            }
+        }!!
+        return deferred to created
+    }
+
+    private fun startOrJoinReachabilityFlight(
+        seriesKey: SeriesKey,
+    ): Pair<CompletableDeferred<DiscoveryFlightResult>, Boolean> {
+        var created = false
+        val deferred = reachabilityInFlight.compute(seriesKey) { _, existing ->
             if (existing == null) {
                 created = true
                 CompletableDeferred()
