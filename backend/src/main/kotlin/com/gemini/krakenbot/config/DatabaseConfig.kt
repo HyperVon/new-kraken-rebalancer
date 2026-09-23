@@ -5,6 +5,7 @@ import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.AthAppliedFlowTable
 import com.gemini.krakenbot.repository.table.HistoricalOhlcCandleTable
 import com.gemini.krakenbot.repository.table.HistoricalOhlcFetchTable
+import com.gemini.krakenbot.repository.table.HistoricalOhlcReachabilityFrontierTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.InceptionInferenceCandidateTable
 import com.gemini.krakenbot.repository.table.InceptionInferenceTable
@@ -63,6 +64,7 @@ object DatabaseConfig {
             HistorySyncMetadataTable,
             HistoricalOhlcCandleTable,
             HistoricalOhlcFetchTable,
+            HistoricalOhlcReachabilityFrontierTable,
             RebalancerComparisonCacheTable,
         )
 

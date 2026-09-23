@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -48,6 +49,7 @@ object HistoricalPriceResolver {
         ohlcCache: HistoricalOhlcCache? = null,
         futureTradeUpperBound: Instant? = null,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
         onOhlcSourceFailure: (() -> Unit)? = null,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): BigDecimal? {
@@ -153,6 +155,7 @@ object HistoricalPriceResolver {
                             sinceEpochSecond = earliestCandleStart.epochSecond,
                             upTo = eventTime,
                             onDependencyResolved = onOhlcDependencyConsumed,
+                            onReachabilityResolved = onOhlcReachabilityResolved,
                             callOwner = ohlcCallOwner,
                         )
                     } else {
@@ -204,6 +207,7 @@ object HistoricalPriceResolver {
                             ohlcCache = ohlcCache,
                             futureTradeUpperBound = futureTradeUpperBound,
                             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+                            onOhlcReachabilityResolved = onOhlcReachabilityResolved,
                             onOhlcSourceFailure = onOhlcSourceFailure,
                             ohlcCallOwner = ohlcCallOwner,
                         )
@@ -247,6 +251,7 @@ object HistoricalPriceResolver {
         ohlcCache: HistoricalOhlcCache?,
         futureTradeUpperBound: Instant?,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
+        onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)?,
         onOhlcSourceFailure: (() -> Unit)?,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): BigDecimal? {
@@ -264,6 +269,7 @@ object HistoricalPriceResolver {
             ohlcCache = ohlcCache,
             futureTradeUpperBound = futureTradeUpperBound,
             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+            onOhlcReachabilityResolved = onOhlcReachabilityResolved,
             onOhlcSourceFailure = onOhlcSourceFailure,
             ohlcCallOwner = ohlcCallOwner,
         ) ?: return null

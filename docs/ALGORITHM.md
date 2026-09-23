@@ -1037,7 +1037,8 @@ calculation actually consumed is unchanged.
 - **Non-invalidating writes.** New live-tail snapshots beyond `stableThrough` bump the global
   evidence revision but leave the consumed-evidence digest unchanged, so the cached comparison is
   still a hit (one bounded rehash, no replay). Empty or content-identical OHLC refetches do not
-  advance the OHLC content revision. Passage of time alone never invalidates.
+  advance the OHLC content revision. Passage of time alone does not invalidate consumed candle
+  content; a separate resolver-selection frontier expires on its own bounded freshness deadline.
 - **Funding freshness vs durable identity.** Historical settled Kraken deposits, withdrawals, and
   transfers represent settled ledger events whose provenance identity is immutable once observed.
   Kraken does not mutate the method, status, or asset classification of a settled historical funding
@@ -1069,10 +1070,29 @@ calculation actually consumed is unchanged.
   freshly validated. A fetch whose proven span misses its requested historical window still paces
   that exact request: while the latest same-since proof is fresh and the valuation sits at or
   before its wall, identical requests reuse the stored span (empty for a truncated-empty marker)
-  instead of refetching — one live call per freshness window per unreachable range, with live-tail
-  valuations beyond the wall still refetching. Identical concurrent requests share one flight even
-  when the shared response proves insufficient, and concurrent identical Settings proposal
-  evaluations join one flight instead of each running the search. On comparison cache lookup:
+  instead of refetching. This remains the conservative fallback when no cross-window frontier can
+  be proved. Identical concurrent requests share one flight even when the shared response proves
+  insufficient, and concurrent identical Settings proposal evaluations join one flight instead of
+  each running the search.
+- **Cross-window provider reachability.** A separate, bounded SQLite row per exact pair and
+  interval records a negative frontier only after a historical, nonempty completed page may be
+  truncated and its first returned candle starts after the request's `since`. It records neither
+  candle coverage nor market-history absence. While fresh, the cache locally skips another request
+  only when its valuation time is at or before the observation wall and falls before the first
+  returned candle's close; the resolver then tries the next interval or pair in its existing
+  fine-to-coarse order. A newer safe observation replaces the boundary even when it moves earlier
+  or later. Freshness uses `OhlcRefreshPolicy` (hourly for recent page data, weekly for historical
+  page data); empty, short, failed, malformed, and live-tail responses never create frontiers.
+  Historical frontier discovery single-flight is keyed by pair and interval, while live-tail calls
+  keep the existing exact-range path. A frontier emits at most one INFO discovery diagnostic per
+  freshness window; per-valuation skips and candidate exhaustion stay DEBUG-only because resolver
+  `since` values change per valuation.
+- **Resolver-selection evidence.** An `AVAILABLE` comparison stores frontier skips in a separate
+  selection manifest from consumed candle dependencies. A cache hit rechecks that each selected
+  frontier still exists, remains fresh, and has the same boundary. Expiry, deletion, or a changed
+  boundary forces an authoritative calculation, allowing a newly reachable finer interval to take
+  precedence. Skipped frontiers never satisfy coverage or contribute a candle content hash.
+- **Comparison cache lookup:**
   - **Fast path:** When all recorded OHLC dependencies are fresh (`now < freshnessDeadlineEpochSecond`),
     the cached comparison is served immediately (0 OHLC calls, 0 calculation replays).
   - **Expired revalidation:** If any consumed dependency is expired, only expired dependencies are

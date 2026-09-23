@@ -29,6 +29,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
@@ -573,6 +574,137 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2
+            }
+        }
+
+        "comparison cache expires resolver selections when a fine-tier frontier expires" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "50000.00", btc = "1.0" to "0.00", usdBalance = "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
+                    { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    RebalancerOrderIdentities()
+
+                // Make the valuation old enough to exercise a genuine 240m page-limit frontier.
+                var clock = snap2.timestamp.plusSeconds(130 * 24 * 60 * 60L)
+                var ohlcCalls = 0
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { _, requestedInterval, _ ->
+                        ohlcCalls++
+                        if (requestedInterval == 1440) {
+                            listOf(
+                                (snap2.timestamp.epochSecond - 24 * 60 * 60L - 1800L) to BigDecimal("50000"),
+                            )
+                        } else {
+                            val candleSeconds = requestedInterval * 60L
+                            val firstFutureStart = snap2.timestamp.epochSecond + 2 * candleSeconds
+                            (0 until KrakenApiConstants.OHLC_PAGE_SIZE).map { index ->
+                                (firstFutureStart + index * candleSeconds) to BigDecimal("50000")
+                            }
+                        }
+                    }
+                }
+                val countingCache = CountingComparisonCache(durableCache)
+                val queryService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    historicalOhlcCache = HistoricalOhlcCache(
+                        kraken,
+                        persistentRepository = ohlcRepository,
+                        nowProvider = { clock },
+                    ),
+                    comparisonCacheRepository = countingCache,
+                    nowProvider = { clock },
+                )
+
+                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                val fromMs = snap1.timestamp.toEpochMilli()
+                val toMs = snap2.timestamp.toEpochMilli()
+                val saved = checkNotNull(durableCache.load(fromMs, toMs))
+                saved.ohlcReachabilityDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(15, 60, 240)
+                saved.ohlcDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(1440)
+                ohlcCalls shouldBe 4
+
+                // Fresh selection evidence permits a true cache hit with no provider work.
+                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                ohlcCalls shouldBe 4
+                countingCache.saveCount shouldBe 1
+
+                // Moving one still-fresh boundary invalidates the cached resolver choice. The
+                // shifted frontier continues to block that interval, so recalculation persists
+                // the new selection without needing another provider request.
+                val movedDependency = saved.ohlcReachabilityDependencies.first()
+                val storedFrontier = checkNotNull(
+                    ohlcRepository.loadReachabilityFrontier(
+                        movedDependency.pair,
+                        movedDependency.intervalMinutes,
+                    ),
+                )
+                val movedBoundary = storedFrontier.copy(
+                    earliestReachableEpochSecond = storedFrontier.earliestReachableEpochSecond + 1,
+                    observedAtEpochSecond = storedFrontier.observedAtEpochSecond + 1,
+                )
+                ohlcRepository.saveReachabilityFrontier(movedBoundary)
+                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                countingCache.deleteCount shouldBe 1
+                countingCache.saveCount shouldBe 2
+                val refreshedEntry = checkNotNull(durableCache.load(fromMs, toMs))
+                refreshedEntry.ohlcReachabilityDependencies.any {
+                    it.pair == movedDependency.pair &&
+                        it.intervalMinutes == movedDependency.intervalMinutes &&
+                        it.earliestReachableEpochSecond == movedBoundary.earliestReachableEpochSecond
+                } shouldBe true
+
+                // The frontier TTL is policy-derived from the truncated completed candles.
+                // At the earliest deadline, all three historical frontiers and the consumed
+                // daily candle proof expire together: three discoveries plus one daily refresh.
+                val retryTimes = mutableListOf<Long>()
+                for (dependency in refreshedEntry.ohlcReachabilityDependencies) {
+                    retryTimes += checkNotNull(
+                        ohlcRepository.loadReachabilityFrontier(dependency.pair, dependency.intervalMinutes),
+                    ).retryAfterEpochSecond
+                }
+                val callsBeforeExpiry = ohlcCalls
+                val earliestRetry = retryTimes.min()
+                clock = Instant.ofEpochSecond(earliestRetry)
+                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                ohlcCalls shouldBe callsBeforeExpiry + 4
+                countingCache.saveCount shouldBe 3
+
+                // If a later process has the comparison cache but no OHLC cache, it cannot
+                // validate a nonempty selection manifest and must discard the entry.
+                val deletesBeforeUncachedRead = countingCache.deleteCount
+                val queryWithoutOhlcCache = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    comparisonCacheRepository = countingCache,
+                    nowProvider = { clock },
+                )
+                queryWithoutOhlcCache.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                countingCache.deleteCount shouldBe deletesBeforeUncachedRead + 1
             }
         }
 
@@ -8076,9 +8208,17 @@ private class CountingComparisonCache(private val delegate: RebalancerComparison
         inputFingerprint: String,
         comparison: com.gemini.krakenbot.model.RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {
         saveCount++
-        delegate.save(fromEpochMillis, toEpochMillis, inputFingerprint, comparison, ohlcDependencies)
+        delegate.save(
+            fromEpochMillis,
+            toEpochMillis,
+            inputFingerprint,
+            comparison,
+            ohlcDependencies,
+            ohlcReachabilityDependencies,
+        )
     }
 
     override suspend fun updateOhlcDependencies(
@@ -8135,12 +8275,14 @@ private class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
         inputFingerprint: String,
         comparison: com.gemini.krakenbot.model.RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {
         saveCount++
         stored[fromEpochMillis to toEpochMillis] = RebalancerComparisonCacheEntry(
             inputFingerprint = inputFingerprint,
             comparison = comparison,
             ohlcDependencies = ohlcDependencies,
+            ohlcReachabilityDependencies = ohlcReachabilityDependencies,
         )
     }
 
@@ -8184,6 +8326,7 @@ private class ThrowingComparisonCache : RebalancerComparisonCacheRepository {
         inputFingerprint: String,
         comparison: com.gemini.krakenbot.model.RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {
         error("cache write failure")
     }

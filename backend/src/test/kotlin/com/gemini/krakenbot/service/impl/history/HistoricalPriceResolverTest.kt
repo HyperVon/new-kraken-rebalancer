@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
@@ -430,6 +431,76 @@ class HistoricalPriceResolverTest : StringSpec() {
                     marketPairs = listOf("XLMUSDT"),
                     marketPairsByBase = mapOf("USDT" to listOf("USDTZUSD")),
                 )!! shouldBeEqualComparingTo BigDecimal("0.24980000")
+            }
+        }
+
+        "frontier skips also protect the one-hop quote conversion ladder" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                // The one-day resolver lookback predates the 240m page horizon only when the
+                // provider wall is sufficiently later than this valuation.
+                val wall = eventTime.plusSeconds(130 * 24 * 60 * 60L)
+                val callCount = AtomicInteger(0)
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { pair, requestedInterval, _ ->
+                        callCount.incrementAndGet()
+                        when {
+                            requestedInterval < 1440 && pair in setOf("XLMUSD", "XLMUSDT", "USDTUSD") -> {
+                                val duration = requestedInterval * 60L
+                                val firstFutureStart = eventTime.epochSecond + 2 * duration
+                                (0 until pageSize).map { index ->
+                                    (firstFutureStart + index * duration) to BigDecimal("1.0")
+                                }
+                            }
+
+                            pair == "XLMUSD" && requestedInterval == 1440 ->
+                                listOf((eventTime.epochSecond - 10 * 24 * 60 * 60L) to BigDecimal("0.5"))
+
+                            pair == "XLMUSDT" && requestedInterval == 1440 ->
+                                listOf((eventTime.epochSecond - 24 * 60 * 60L - 1800L) to BigDecimal("0.25"))
+
+                            pair == "USDTZUSD" && requestedInterval == 15 ->
+                                listOf((eventTime.epochSecond - 900L) to BigDecimal("0.9992"))
+
+                            else -> emptyList()
+                        }
+                    }
+                }
+                val cache = HistoricalOhlcCache(kraken, nowProvider = { wall })
+                val skipped = mutableSetOf<OhlcReachabilityDependency>()
+                val common = mapOf(
+                    "USDT" to listOf("USDTZUSD"),
+                )
+
+                val first = HistoricalPriceResolver.resolveHistoricalPrice(
+                    asset = "XLM",
+                    eventTime = eventTime,
+                    tradesRepo = repository,
+                    krakenService = kraken,
+                    marketPairs = listOf("XLMUSDT"),
+                    marketPairsByBase = common,
+                    ohlcCache = cache,
+                    onOhlcReachabilityResolved = skipped::add,
+                )
+                first!! shouldBeEqualComparingTo BigDecimal("0.24980000")
+                skipped.any { it.pair == "XLMUSDT" && it.intervalMinutes == 15 } shouldBe true
+                skipped.any { it.pair == "USDTUSD" && it.intervalMinutes == 15 } shouldBe true
+                val firstCallCount = callCount.get()
+
+                val second = HistoricalPriceResolver.resolveHistoricalPrice(
+                    asset = "XLM",
+                    eventTime = eventTime.plusSeconds(67),
+                    tradesRepo = repository,
+                    krakenService = kraken,
+                    marketPairs = listOf("XLMUSDT"),
+                    marketPairsByBase = common,
+                    ohlcCache = cache,
+                    onOhlcReachabilityResolved = skipped::add,
+                )
+                second!! shouldBeEqualComparingTo BigDecimal("0.24980000")
+                callCount.get() shouldBe firstCallCount
             }
         }
 

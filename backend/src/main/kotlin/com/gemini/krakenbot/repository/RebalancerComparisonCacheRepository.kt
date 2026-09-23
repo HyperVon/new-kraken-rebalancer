@@ -31,6 +31,7 @@ data class RebalancerComparisonCacheEntry(
     val inputFingerprint: String,
     val comparison: RebalancerComparison,
     val ohlcDependencies: List<ConsumedOhlcDependency> = emptyList(),
+    val ohlcReachabilityDependencies: List<OhlcReachabilityDependency> = emptyList(),
 )
 
 /**
@@ -49,6 +50,7 @@ interface RebalancerComparisonCacheRepository {
         inputFingerprint: String,
         comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency> = emptyList(),
+        ohlcReachabilityDependencies: List<OhlcReachabilityDependency> = emptyList(),
     )
 
     /** Refreshes freshness deadlines for consumed dependencies without re-serializing the result payload. */

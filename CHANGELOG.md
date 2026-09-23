@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.82] - 2026-09-22
+
+### Fixed
+
+- **Cross-window OHLC reachability pacing**: persist one bounded frontier per pair and interval
+  when a historical truncated page proves that no candle can close before its returned boundary.
+  Nearby `since` values reuse that negative evidence until its existing OHLC freshness policy
+  expires; positive candle coverage remains range-proven, exact-since pacing remains as fallback,
+  and live-tail requests still fetch normally. A per-series discovery flight coalesces concurrent
+  historical requests.
+- **Comparison source-selection validity**: successful comparisons persist frontier skips in a
+  separate selection manifest, so expiry or a changed provider boundary forces recalculation
+  without treating skipped intervals as consumed candle dependencies. Candidate exhaustion stays
+  debug-only, with one INFO frontier-discovery line per freshness window and DEBUG-only per-event
+  skips.
+
 ## [6.17.81] - 2026-09-22
 
 ### Fixed

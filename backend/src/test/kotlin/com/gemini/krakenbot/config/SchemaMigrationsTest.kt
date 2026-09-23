@@ -37,6 +37,7 @@ class SchemaMigrationsTest : StringSpec() {
                 "ledger-amount-validity",
                 "trade-economic-validity",
                 "history-sync-metadata-value-text",
+                "ohlc-reachability-frontier",
             )
         }
 
@@ -157,6 +158,7 @@ class SchemaMigrationsTest : StringSpec() {
                         12 to "ledger-amount-validity",
                         13 to "trade-economic-validity",
                         14 to "history-sync-metadata-value-text",
+                        15 to "ohlc-reachability-frontier",
                     )
                 }
             }
@@ -247,6 +249,7 @@ class SchemaMigrationsTest : StringSpec() {
                         12 to "ledger-amount-validity",
                         13 to "trade-economic-validity",
                         14 to "history-sync-metadata-value-text",
+                        15 to "ohlc-reachability-frontier",
                     )
                 }
             }

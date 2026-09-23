@@ -103,6 +103,7 @@ class OhlcCoverageTest : StringSpec() {
             coverage.contains(1_500_000L, 2_147_101L) shouldBe false
             coverage.contains(OhlcCoverage(1_600_000L, 1_700_000L)) shouldBe true
             coverage.contains(OhlcCoverage(1_000_000L, 1_600_000L)) shouldBe false
+            coverage.contains(OhlcCoverage(1_600_000L, 2_147_101L)) shouldBe false
         }
     }
 }

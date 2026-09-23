@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.table.RebalancerComparisonCacheTable
@@ -28,6 +29,7 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
     private val log = LoggerFactory.getLogger(SqliteRebalancerComparisonCacheRepositoryImpl::class.java)
 
     private val dependenciesTypeRef = object : TypeReference<List<ConsumedOhlcDependency>>() {}
+    private val reachabilityDependenciesTypeRef = object : TypeReference<List<OhlcReachabilityDependency>>() {}
 
     override suspend fun load(fromEpochMillis: Long, toEpochMillis: Long): RebalancerComparisonCacheEntry? {
         val row = try {
@@ -59,6 +61,10 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                 row[RebalancerComparisonCacheTable.ohlcDependenciesJson],
                 dependenciesTypeRef,
             )
+            val ohlcReachabilityDependencies: List<OhlcReachabilityDependency> = objectMapper.readValue(
+                row[RebalancerComparisonCacheTable.ohlcReachabilityDependenciesJson],
+                reachabilityDependenciesTypeRef,
+            )
 
             // Never rehydrate an unavailable result: those outcomes can become valid after a
             // later evidence append or price-provider recovery and are deliberately not cached.
@@ -68,6 +74,7 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                         inputFingerprint = row[RebalancerComparisonCacheTable.inputFingerprint],
                         comparison = it,
                         ohlcDependencies = ohlcDependencies,
+                        ohlcReachabilityDependencies = ohlcReachabilityDependencies,
                     )
                 }
         } catch (e: CancellationException) {
@@ -86,10 +93,15 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
         inputFingerprint: String,
         comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {
         if (comparison.availability != ComparisonAvailability.AVAILABLE) return
-        val (resultJson, dependenciesJson) = try {
-            objectMapper.writeValueAsString(comparison) to objectMapper.writeValueAsString(ohlcDependencies)
+        val (resultJson, dependenciesJson, reachabilityDependenciesJson) = try {
+            Triple(
+                objectMapper.writeValueAsString(comparison),
+                objectMapper.writeValueAsString(ohlcDependencies),
+                objectMapper.writeValueAsString(ohlcReachabilityDependencies),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -104,6 +116,7 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                 it[RebalancerComparisonCacheTable.resultJson] = resultJson
                 it[RebalancerComparisonCacheTable.calculatedAtEpochMillis] = Instant.now().toEpochMilli()
                 it[RebalancerComparisonCacheTable.ohlcDependenciesJson] = dependenciesJson
+                it[RebalancerComparisonCacheTable.ohlcReachabilityDependenciesJson] = reachabilityDependenciesJson
             }
             pruneSuperseded()
         }

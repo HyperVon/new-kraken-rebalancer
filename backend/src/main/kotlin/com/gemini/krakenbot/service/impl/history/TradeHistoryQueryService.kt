@@ -17,6 +17,7 @@ import com.gemini.krakenbot.model.hasValidEconomicFields
 import com.gemini.krakenbot.model.isHistoricallyReplayable
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
@@ -576,6 +577,7 @@ class TradeHistoryQueryService(
         val reconciled = if (created) {
             try {
                 val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
+                val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                 val ohlcHadFailures = AtomicBoolean(false)
                 val calculated = calculateComparison(
                     evaluationSnapshots,
@@ -583,6 +585,7 @@ class TradeHistoryQueryService(
                     eventUpperBound = certifiedEventUpperBound(stableThrough),
                     suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                     onOhlcDependencyConsumed = { consumedDependencies.add(it) },
+                    onOhlcReachabilityResolved = { reachabilityDependencies.add(it) },
                     onOhlcSourceFailure = { ohlcHadFailures.set(true) },
                     ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
                 )
@@ -601,6 +604,7 @@ class TradeHistoryQueryService(
                         snapshots = evaluationSnapshots,
                         comparison = calculated,
                         ohlcDependencies = consumedDependencies.toList(),
+                        ohlcReachabilityDependencies = reachabilityDependencies.toList(),
                         ohlcHadFailures = ohlcHadFailures.get(),
                     )
                 }
@@ -849,7 +853,18 @@ class TradeHistoryQueryService(
                 ?: return CachedComparisonOutcome.Miss
             if (entry.inputFingerprint != fingerprint) return CachedComparisonOutcome.Miss
 
-            val ohlc = historicalOhlcCache ?: return CachedComparisonOutcome.Hit(entry.comparison)
+            val ohlc = historicalOhlcCache
+            if (entry.ohlcReachabilityDependencies.isNotEmpty()) {
+                val selectionStillValid = ohlc != null && entry.ohlcReachabilityDependencies
+                    .distinct()
+                    .all { ohlc.isReachabilityDependencyCurrent(it) }
+                if (!selectionStillValid) {
+                    cache.delete(from.toEpochMilli(), to.toEpochMilli())
+                    return CachedComparisonOutcome.Miss
+                }
+            }
+
+            if (ohlc == null) return CachedComparisonOutcome.Hit(entry.comparison)
             val nowEpochSecond = nowProvider().epochSecond
             val fresh = entry.ohlcDependencies.filter { it.isFresh(nowEpochSecond) }.distinct()
             // Sorted (stably) so the synchronous batch is a deterministic prefix of the
@@ -1132,6 +1147,7 @@ class TradeHistoryQueryService(
         snapshots: List<PortfolioSnapshot>,
         comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
+        ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
         ohlcHadFailures: Boolean,
     ) {
         val cache = comparisonCacheRepository ?: return
@@ -1173,6 +1189,7 @@ class TradeHistoryQueryService(
                 inputFingerprint = fingerprint,
                 comparison = comparison,
                 ohlcDependencies = ohlcDependencies,
+                ohlcReachabilityDependencies = ohlcReachabilityDependencies,
             )
         } catch (e: CancellationException) {
             throw e
@@ -1392,6 +1409,7 @@ class TradeHistoryQueryService(
             if (created) {
                 try {
                     val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
+                    val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                     val ohlcHadFailures = AtomicBoolean(false)
                     val calculated = calculateComparison(
                         stableSnapshots,
@@ -1399,6 +1417,7 @@ class TradeHistoryQueryService(
                         eventUpperBound = certifiedEventUpperBound(stableThrough),
                         suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
+                        onOhlcReachabilityResolved = reachabilityDependencies::add,
                         onOhlcSourceFailure = { ohlcHadFailures.set(true) },
                         ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
                     )
@@ -1411,6 +1430,7 @@ class TradeHistoryQueryService(
                             snapshots = stableSnapshots,
                             comparison = calculated,
                             ohlcDependencies = consumedDependencies.toList(),
+                            ohlcReachabilityDependencies = reachabilityDependencies.toList(),
                             ohlcHadFailures = ohlcHadFailures.get(),
                         )
                     }
@@ -1996,6 +2016,7 @@ class TradeHistoryQueryService(
         // there would make every trial reconcile the stale predecessor instead.
         suppressPassiveDiscovery: Boolean = false,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
         onOhlcSourceFailure: (() -> Unit)? = null,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): RebalancerComparison {
@@ -2193,6 +2214,7 @@ class TradeHistoryQueryService(
             marketPairsByBase = retainedMarketPairsByBase(retainedMarketTrades + trades),
             eventUpperBound = eventUpperBound,
             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+            onOhlcReachabilityResolved = onOhlcReachabilityResolved,
             onOhlcSourceFailure = onOhlcSourceFailure,
             ohlcCallOwner = ohlcCallOwner,
         )
@@ -3310,6 +3332,7 @@ class TradeHistoryQueryService(
         marketPairsByBase: Map<String, List<String>>,
         eventUpperBound: Instant,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
+        onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)?,
         onOhlcSourceFailure: (() -> Unit)?,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): HistoricalPriceProvider {
@@ -3335,6 +3358,7 @@ class TradeHistoryQueryService(
                                 ohlcCache = historicalOhlcCache,
                                 futureTradeUpperBound = eventUpperBound,
                                 onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+                                onOhlcReachabilityResolved = onOhlcReachabilityResolved,
                                 onOhlcSourceFailure = onOhlcSourceFailure,
                                 ohlcCallOwner = ohlcCallOwner,
                             )

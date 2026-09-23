@@ -12,7 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 14
+internal const val CURRENT_SCHEMA_VERSION = 15
 
 internal data class SchemaMigration(
     val version: Int,
@@ -85,6 +85,10 @@ internal val SCHEMA_MIGRATIONS = listOf(
         exec("ALTER TABLE history_sync_metadata_wide RENAME TO history_sync_metadata")
         currentDialectMetadata.resetCaches()
     },
+    // The frontier table and comparison-selection manifest are added through the base-table
+    // schema pass before migrations; this marker advances existing databases without inventing
+    // historical reachability evidence for old rows.
+    SchemaMigration(15, "ohlc-reachability-frontier"),
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

@@ -10,6 +10,7 @@ object RebalancerComparisonCacheTable : Table("rebalancer_comparison_cache") {
     val resultJson = text("result_json")
     val calculatedAtEpochMillis = long("calculated_at_epoch_millis")
     val ohlcDependenciesJson = text("ohlc_dependencies_json").default("[]")
+    val ohlcReachabilityDependenciesJson = text("ohlc_reachability_dependencies_json").default("[]")
 
     override val primaryKey = PrimaryKey(fromEpochMillis, toEpochMillis)
 }

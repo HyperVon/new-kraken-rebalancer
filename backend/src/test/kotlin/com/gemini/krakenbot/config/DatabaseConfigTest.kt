@@ -100,6 +100,7 @@ class DatabaseConfigTest : StringSpec() {
                         12 to "ledger-amount-validity",
                         13 to "trade-economic-validity",
                         14 to "history-sync-metadata-value-text",
+                        15 to "ohlc-reachability-frontier",
                     )
 
                     val expectedTables = setOf(
@@ -114,6 +115,7 @@ class DatabaseConfigTest : StringSpec() {
                         "order_intents",
                         "inception_inference",
                         "inception_inference_candidates",
+                        "historical_ohlc_reachability_frontiers",
                     )
                     val actualTables = buildSet {
                         statement.executeQuery(
@@ -172,6 +174,55 @@ class DatabaseConfigTest : StringSpec() {
                             }
                         }
                         actualColumns shouldBe columns
+                    }
+                }
+            }
+        }
+
+        "v15 creates an empty reachability table and defaults legacy cache manifests safely" {
+            val databaseUrl = "jdbc:sqlite:file:ohlc-frontier-migration-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            // Emulate a v14 install: retain its successful comparison row, but remove the new
+            // table/column and migration marker before booting the upgraded schema.
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "INSERT INTO rebalancer_comparison_cache " +
+                            "(from_epoch_millis, to_epoch_millis, input_fingerprint, result_json, " +
+                            "calculated_at_epoch_millis, ohlc_dependencies_json) " +
+                            "VALUES (1, 2, 'legacy', '{}', 3, '[]')",
+                    )
+                    statement.executeUpdate("DROP TABLE historical_ohlc_reachability_frontiers")
+                    statement.executeUpdate(
+                        "ALTER TABLE rebalancer_comparison_cache " +
+                            "DROP COLUMN ohlc_reachability_dependencies_json",
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 15")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT ohlc_reachability_dependencies_json FROM rebalancer_comparison_cache " +
+                            "WHERE from_epoch_millis = 1 AND to_epoch_millis = 2",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("ohlc_reachability_dependencies_json") shouldBe "[]"
+                    }
+                    statement.executeQuery(
+                        "SELECT COUNT(*) AS total FROM historical_ohlc_reachability_frontiers",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt("total") shouldBe 0
+                    }
+                    statement.executeQuery(
+                        "SELECT name FROM schema_migrations WHERE version = 15",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("name") shouldBe "ohlc-reachability-frontier"
                     }
                 }
             }

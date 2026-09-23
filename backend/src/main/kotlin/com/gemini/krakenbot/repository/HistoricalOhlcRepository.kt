@@ -75,7 +75,72 @@ data class HistoricalOhlcSeries(
     val candles: List<Pair<Long, BigDecimal>>,
 )
 
+/**
+ * A bounded negative discovery result for one pair and interval. A truncated provider page
+ * established that no candle can close before [earliestReachableEpochSecond] for the observed
+ * historical request. This is selection evidence only; it never proves positive candle coverage.
+ */
+data class OhlcReachabilityFrontier(
+    val pair: String,
+    val intervalMinutes: Int,
+    val earliestReachableEpochSecond: Long,
+    val observedAtEpochSecond: Long,
+    val retryAfterEpochSecond: Long,
+) {
+    fun isFresh(nowEpochSecond: Long): Boolean = nowEpochSecond < retryAfterEpochSecond
+
+    /** Whether the frontier proves that no returned candle can close by this valuation time. */
+    fun blocks(upToEpochSecond: Long): Boolean = upToEpochSecond <= observedAtEpochSecond &&
+        upToEpochSecond < earliestReachableEpochSecond + intervalMinutes * 60L
+}
+
+/**
+ * Selects the newest provider observation. Same-wall observations merge conservatively: retain
+ * the earlier boundary (which skips fewer valuations) and the earlier retry deadline.
+ */
+internal fun selectReachabilityFrontier(
+    current: OhlcReachabilityFrontier?,
+    candidate: OhlcReachabilityFrontier,
+): OhlcReachabilityFrontier = when {
+    current == null || candidate.observedAtEpochSecond > current.observedAtEpochSecond -> candidate
+
+    candidate.observedAtEpochSecond < current.observedAtEpochSecond -> current
+
+    else -> current.copy(
+        earliestReachableEpochSecond = minOf(
+            current.earliestReachableEpochSecond,
+            candidate.earliestReachableEpochSecond,
+        ),
+        retryAfterEpochSecond = minOf(current.retryAfterEpochSecond, candidate.retryAfterEpochSecond),
+    )
+}
+
+/** Separate cache-selection evidence: an interval was skipped because its frontier blocked it. */
+data class OhlcReachabilityDependency(
+    val pair: String,
+    val intervalMinutes: Int,
+    val earliestReachableEpochSecond: Long,
+)
+
 interface HistoricalOhlcRepository {
+    /** Loads the single bounded negative reachability observation for this series, if present. */
+    suspend fun loadReachabilityFrontier(pair: String, intervalMinutes: Int): OhlcReachabilityFrontier? = null
+
+    /** Stores a newer reachability observation; older out-of-order observations are ignored. */
+    suspend fun saveReachabilityFrontier(frontier: OhlcReachabilityFrontier) = Unit
+
+    /**
+     * Removes a frontier only when a newer authoritative response proves a candle earlier than
+     * the stored boundary. A null frontier is never inferred from an empty, failed, or malformed
+     * provider response.
+     */
+    suspend fun clearReachabilityFrontierIfContradicted(
+        pair: String,
+        intervalMinutes: Int,
+        observedAtEpochSecond: Long,
+        provenReachableFromEpochSecond: Long,
+    ) = Unit
+
     /**
      * Returns one persisted fetch and its candles when that single fetch's proven [OhlcCoverage]
      * contains the requested window. A null result means the database cannot prove coverage and
