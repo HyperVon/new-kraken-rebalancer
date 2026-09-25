@@ -493,6 +493,115 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
+        "paired documented internal transfer with malformed amount is unsupported on both legs" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "bad-amount",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "10.00",
+                        refid = "BAD-AMOUNT-PAIR",
+                        subtype = "spottostaking",
+                    ).copy(hasValidAmount = false),
+                    event(
+                        "valid-counterpart",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "-10.00",
+                        refid = "BAD-AMOUNT-PAIR",
+                        subtype = "spottostaking",
+                    ),
+                ),
+            )
+
+            result shouldBe mapOf(
+                "bad-amount" to FlowCategory.UNSUPPORTED,
+                "valid-counterpart" to FlowCategory.UNSUPPORTED,
+            )
+        }
+
+        "paired documented internal transfer with a negative fee is unsupported on both legs" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "negative-fee",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "-10.00",
+                        refid = "NEGATIVE-FEE-PAIR",
+                        subtype = "spottostaking",
+                        fee = "-0.01",
+                    ),
+                    event(
+                        "valid-counterpart",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "10.00",
+                        refid = "NEGATIVE-FEE-PAIR",
+                        subtype = "spottostaking",
+                    ),
+                ),
+            )
+
+            result shouldBe mapOf(
+                "negative-fee" to FlowCategory.UNSUPPORTED,
+                "valid-counterpart" to FlowCategory.UNSUPPORTED,
+            )
+        }
+
+        "documented internal SOL and SOL03 transfer pair remains an internal move" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "sol-debit",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "-1.00",
+                        refid = "SOL-ALIAS-PAIR",
+                        subtype = "spottostaking",
+                        asset = Asset.SOL,
+                    ),
+                    event(
+                        "sol03-credit",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "1.00",
+                        refid = "SOL-ALIAS-PAIR",
+                        subtype = "spottostaking",
+                        asset = "SOL03",
+                    ),
+                ),
+            )
+
+            result shouldBe mapOf(
+                "sol-debit" to FlowCategory.INTERNAL_MOVE,
+                "sol03-credit" to FlowCategory.INTERNAL_MOVE,
+            )
+        }
+
+        "external USD funding linked to a malformed spend is ambiguous on both legs" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "EXTERNAL-BAD-SPEND",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "EXTERNAL-BAD-SPEND"),
+                    event("spend", "spend", "-60.00", refid = "EXTERNAL-BAD-SPEND")
+                        .copy(hasValidAmount = false),
+                ),
+                resolver,
+            )
+
+            result shouldBe mapOf(
+                "deposit" to FlowCategory.AMBIGUOUS,
+                "spend" to FlowCategory.AMBIGUOUS,
+            )
+        }
+
         "reward predicate recognizes legacy, promotion, transfer airdrop, and earn rewards" {
             LedgerEvent.isRewardEvent(event("staking", KrakenApiConstants.LEDGER_TYPE_STAKING, "1.00")) shouldBe true
             LedgerEvent.isRewardEvent(event("promotion", KrakenApiConstants.LEDGER_TYPE_REWARD, "1.00")) shouldBe true

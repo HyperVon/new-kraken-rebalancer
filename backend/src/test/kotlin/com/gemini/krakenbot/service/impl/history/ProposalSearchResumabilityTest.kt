@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.FundingProvenanceFailure
 import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
@@ -19,6 +20,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -150,7 +152,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
         applicationScope: CoroutineScope? = null,
         fundingResolver: FundingProvenanceResolver = SimpleFundingProvenanceResolver(),
         ledgers: List<LedgerEvent> = emptyList(),
-        krakenService: KrakenService? = null,
+        krakenService: KrakenService = FakeKrakenService(),
         historicalOhlcCache: HistoricalOhlcCache? = null,
     ): Triple<TradeHistoryQueryService, TradeRepository, LedgerRepository> {
         val repository = mockk<TradeRepository>(relaxed = true)
@@ -480,6 +482,10 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 val s3 = fundedSnapshot(10800)
                 val metadata = mutableMapOf<String, String>()
                 val krakenService = mockk<KrakenService>()
+                coEvery { krakenService.getAssetMetadata() } returns listOf(
+                    KrakenAssetMetadata("BTC", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("USD", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                )
                 coEvery { krakenService.getOHLC(any(), any(), any()) } throws
                     RuntimeException("OHLC outage")
                 val (service, _) = harness(
@@ -529,6 +535,10 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 val s4 = fundedSnapshot(14400)
                 val metadata = mutableMapOf<String, String>()
                 val krakenService = mockk<KrakenService>()
+                coEvery { krakenService.getAssetMetadata() } returns listOf(
+                    KrakenAssetMetadata("BTC", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("USD", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                )
                 coEvery { krakenService.getOHLC(any(), any(), any()) } throws
                     RuntimeException("OHLC outage")
                 val (service, repository, _) = harness(

@@ -1699,5 +1699,109 @@ class FundingProvenanceTest : StringSpec() {
                 ),
             ) shouldBe FundingEvidence.EXTERNAL
         }
+
+        "diagnose exposes a directly matched internal transfer" {
+            val transfer = InternalTransferRecord(
+                refid = "REF-DIAGNOSTIC-INTERNAL",
+                asset = "USD",
+                amount = BigDecimal("500.00"),
+                time = now,
+            )
+            val resolver = SimpleFundingProvenanceResolver(internalTransfers = listOf(transfer))
+            val event = LedgerEvent(
+                ledgerId = "L-DIAGNOSTIC-INTERNAL",
+                refid = transfer.refid,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                asset = "USD",
+                amount = BigDecimal("500.00"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe true
+            diagnostic?.recordRefid shouldBe transfer.refid
+            diagnostic?.hasTransactionProof shouldBe false
+            diagnostic?.evidence shouldBe FundingEvidence.INTERNAL
+            diagnostic?.detail shouldBe null
+        }
+
+        "diagnose reports ambiguous fuzzy matches without selecting a record" {
+            val first = DepositStatusRecord(
+                refid = "REF-DIAG-FUZZY-A",
+                txid = "0xa",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                time = now,
+                status = "Success",
+            )
+            val second = first.copy(refid = "REF-DIAG-FUZZY-B", txid = "0xb")
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(first, second))
+            val event = LedgerEvent(
+                ledgerId = "L-DIAG-FUZZY",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe false
+            diagnostic?.recordRefid shouldBe null
+            diagnostic?.evidence shouldBe FundingEvidence.UNRESOLVED
+            diagnostic?.detail shouldBe "multiple funding records matched"
+        }
+
+        "whitespace transaction IDs do not prove external funding" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-WHITESPACE-TXID",
+                txid = "   ",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                time = now,
+                status = "Settled",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(deposit))
+            val event = LedgerEvent(
+                ledgerId = "L-WHITESPACE-TXID",
+                refid = deposit.refid,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe true
+            diagnostic?.hasTransactionProof shouldBe false
+            diagnostic?.evidence shouldBe FundingEvidence.UNRESOLVED
+            diagnostic?.detail shouldBe "funding record lacks external proof"
+        }
+
+        "same-evidence direct competitor does not invalidate external proof" {
+            val direct = DepositStatusRecord(
+                refid = "REF-SAME-EVIDENCE-DIRECT",
+                txid = "0xdirect",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                time = now,
+                status = "Settled",
+            )
+            val matching = direct.copy(refid = "REF-SAME-EVIDENCE-COMPETITOR", txid = "0xmatching")
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(direct, matching))
+            val event = LedgerEvent(
+                ledgerId = "L-SAME-EVIDENCE-DIRECT",
+                refid = direct.refid,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+            resolver.explain(event) shouldBe null
+        }
     }
 }

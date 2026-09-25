@@ -38,6 +38,7 @@ internal object AssetAliasTables {
             KrakenAssetAliases.XXRP to KrakenAssetAliases.XRP,
             KrakenAssetAliases.XXLM to KrakenAssetAliases.XLM,
             KrakenAssetAliases.XXMR to KrakenAssetAliases.XMR,
+            KrakenAssetAliases.SOL03 to KrakenAssetAliases.SOL,
             KrakenAssetAliases.XZEC to KrakenAssetAliases.ZEC,
             KrakenAssetAliases.XETC to KrakenAssetAliases.ETC,
             KrakenAssetAliases.XREP to KrakenAssetAliases.REP,

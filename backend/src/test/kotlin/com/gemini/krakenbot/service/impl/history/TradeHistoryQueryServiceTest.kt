@@ -19,6 +19,7 @@ import com.gemini.krakenbot.model.FundingProvenanceFailure
 import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -62,6 +63,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -132,7 +134,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
     private val orderIntentRepository = mockk<OrderIntentRepository>(relaxed = true)
-    private val service = TradeHistoryQueryService(repository, statsRepository, ledgerRepository, orderIntentRepository)
+    private val service = TradeHistoryQueryService(
+        repository,
+        statsRepository,
+        ledgerRepository,
+        orderIntentRepository,
+        krakenService = FakeKrakenService(),
+    )
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
 
@@ -175,6 +183,26 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 rewards.points[0].perAssetUSD.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("5000.00"))
                 rewards.points[1].cumulativeUSD.shouldBeEqualComparingTo(BigDecimal("15000.00"))
                 rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("15000.00"))
+            }
+        }
+
+        "getRewardsOverTime_ExcludesUsdEarnRewardsFromCryptoRewardTotals" {
+            runTest {
+                val snap = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val btcReward = ledgerEvent("BTC-REWARD", now.minusSeconds(3600), Asset.BTC, "0.1")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "reward")
+                val usdReward = ledgerEvent("USD-REWARD", now.minusSeconds(1800), Asset.USD, "50.00")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "reward")
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(btcReward, usdReward)
+
+                val rewards = service.getRewardsOverTime(Instant.EPOCH, now)
+
+                rewards.points.single().perAssetUSD.containsKey(Asset.USD) shouldBe false
+                rewards.points.single().perAssetUSD.getValue(Asset.BTC)
+                    .shouldBeEqualComparingTo(BigDecimal("5000.00"))
+                rewards.points.single().cumulativeUSD.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+                rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("5000.00"))
             }
         }
 
@@ -315,6 +343,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     comparisonCacheRepository = cache,
                     configService = configService,
+                    krakenService = FakeKrakenService(),
                 )
                 coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery { repository.getSnapshotBefore(any()) } returns null
@@ -416,6 +445,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     comparisonCacheRepository = cache,
+                    krakenService = FakeKrakenService(),
                 )
                 var revisionReads = 0
                 coEvery {
@@ -435,6 +465,80 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 cache.loadCount shouldBe 2
                 cache.saveCount shouldBe 1
+            }
+        }
+
+        "comparison cache invalidates when asset classification changes" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                val cache = InMemoryComparisonCache()
+                val kraken = FakeKrakenService()
+                val cachedService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    comparisonCacheRepository = cache,
+                )
+
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.saveCount shouldBe 1
+
+                // If metadata changes, a prior NAV is no longer valid even when history is unchanged.
+                kraken.assetMetadataSupplier = { emptyList() }
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+                cache.loadCount shouldBe 2
+                cache.saveCount shouldBe 1
+            }
+        }
+
+        "asset metadata failures cannot reuse a cached comparison and cancellation propagates" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                val cache = InMemoryComparisonCache()
+                val kraken = FakeKrakenService()
+                val cachedService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    comparisonCacheRepository = cache,
+                )
+                val from = Instant.EPOCH
+                val through = snap2.timestamp
+
+                cachedService.getRebalancerComparison(from, through).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.saveCount shouldBe 1
+
+                kraken.assetMetadataSupplier = { throw IllegalStateException("metadata unavailable") }
+                cachedService.getRebalancerComparison(from, through).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+                cache.saveCount shouldBe 1
+
+                val cancellation = CancellationException("metadata lookup cancelled")
+                kraken.assetMetadataSupplier = { throw cancellation }
+                var propagated: CancellationException? = null
+                try {
+                    cachedService.getRebalancerComparison(from, through)
+                } catch (error: CancellationException) {
+                    propagated = error
+                }
+                propagated shouldBe cancellation
             }
         }
 
@@ -473,6 +577,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     comparisonCacheRepository = cache,
+                    krakenService = FakeKrakenService(),
                 )
 
                 cachedService.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
@@ -924,6 +1029,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     comparisonCacheRepository = brokenCache,
+                    krakenService = FakeKrakenService(),
                 )
                 cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
@@ -2603,6 +2709,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     comparisonCacheRepository = cache,
+                    krakenService = FakeKrakenService(),
                 )
 
                 cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
@@ -2679,6 +2786,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     comparisonCacheRepository = ThrowingComparisonCache(),
+                    krakenService = FakeKrakenService(),
                 )
                 coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery { repository.getSnapshotBefore(any()) } returns null
@@ -2732,6 +2840,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     fundingProvenanceResolver = KrakenFundingProvenanceResolver(kraken),
+                    krakenService = kraken,
                 )
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -3068,6 +3177,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     portfolioStatsRepository = statsRepository,
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = null,
+                    krakenService = FakeKrakenService(),
                 )
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
@@ -3435,6 +3545,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
@@ -3490,6 +3601,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
@@ -3557,6 +3669,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             ),
                         ),
                     ),
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
@@ -3626,6 +3739,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             ),
                         ),
                     ),
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
@@ -3701,7 +3815,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             ),
                         ),
                     ),
-                    krakenService = mockk<KrakenService>(relaxed = true),
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
@@ -3732,6 +3846,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val outageGateway = mockk<KrakenService>(relaxed = true)
                 coEvery { outageGateway.getOHLC(any(), any(), any()) } throws
                     IllegalStateException("gateway outage")
+                coEvery { outageGateway.getAssetMetadata() } returns listOf(
+                    KrakenAssetMetadata("BTC", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("USD", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("XLM", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
                 coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
@@ -3838,6 +3957,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             ),
                         ),
                     ),
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
@@ -3848,6 +3968,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val outageGateway = mockk<KrakenService>(relaxed = true)
                 coEvery { outageGateway.getOHLC(any(), any(), any()) } throws
                     IllegalStateException("historical source outage")
+                coEvery { outageGateway.getAssetMetadata() } returns listOf(
+                    KrakenAssetMetadata("BTC", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("USD", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("XLM", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                )
                 val outageService = TradeHistoryQueryService(
                     repository = repository,
                     portfolioStatsRepository = statsRepository,
@@ -3877,7 +4002,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRebalancerComparison_RejectsFutureObservedPriceCandidates" {
+        "getRebalancerComparison_RejectsFutureAndNonPositivePriceCandidates" {
             runTest {
                 val t0 = now.minusSeconds(86400 * 30)
                 val tMid = now.plusSeconds(1800)
@@ -3906,6 +4031,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     timestamp = tMid.minusSeconds(90),
                     assets = snap1.assets - Asset.BTC,
                 )
+                val zeroPrice = snap1.copy(
+                    timestamp = tMid.minusSeconds(30),
+                    balancesObservedAt = tMid.minusSeconds(30),
+                    assets = snap1.assets.mapValues { (symbol, asset) ->
+                        if (symbol == Asset.BTC) asset.copy(price = BigDecimal.ZERO) else asset
+                    },
+                )
                 val validPrice = snap1.copy(
                     timestamp = tMid.minusSeconds(120),
                     balancesObservedAt = tMid.minusSeconds(120),
@@ -3929,7 +4061,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 coEvery { repository.getSnapshotsInRange(any(), any()) } answers {
                     if (secondArg<Instant>() == tMid) {
-                        listOf(futureObserved, missingAsset, validPrice)
+                        listOf(futureObserved, missingAsset, zeroPrice, validPrice)
                     } else {
                         listOf(snap1, snap2)
                     }
@@ -3954,6 +4086,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             ),
                         ),
                     ),
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
@@ -4046,6 +4179,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
@@ -4129,6 +4263,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
@@ -4386,13 +4521,14 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     usdBalance = "900.00",
                 )
                 val later = laterBase.copy(assets = orderedAssets)
-                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(zeroFirst, later)
-                coEvery {
-                    repository.getAllSnapshotsInRange(
-                        Instant.EPOCH,
-                        openEndedRangeEnd,
-                    )
-                } returns listOf(zeroFirst, later)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } coAnswers {
+                    val from = firstArg<Instant>()
+                    val to = secondArg<Instant>()
+                    listOf(zeroFirst, later).filter {
+                        !it.timestamp.isBefore(from) && !it.timestamp.isAfter(to)
+                    }
+                }
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(zeroFirst, later)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
@@ -4733,14 +4869,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     timestamp = laterTime,
                     totalValueUSD = BigDecimal("910.00"),
                     assets = zeroFirst.assets,
+                    balancesObservedAt = laterTime,
                 )
-                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(zeroFirst, later)
-                coEvery {
-                    repository.getAllSnapshotsInRange(
-                        Instant.EPOCH,
-                        openEndedRangeEnd,
-                    )
-                } returns listOf(zeroFirst, later)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } coAnswers {
+                    val from = firstArg<Instant>()
+                    val to = secondArg<Instant>()
+                    listOf(zeroFirst, later).filter {
+                        !it.timestamp.isBefore(from) && !it.timestamp.isAfter(to)
+                    }
+                }
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(zeroFirst, later)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
@@ -4846,6 +4984,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
@@ -4921,6 +5060,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
@@ -4977,6 +5117,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
 
                 val beforeRestart = newService().getRebalancerComparison(anchorTime, laterTime)
@@ -5042,6 +5183,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 ).getRebalancerComparison(anchorTime, laterTime)
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -5112,6 +5254,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 ).getRebalancerComparison(anchorTime, laterTime)
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -5187,6 +5330,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 ).getRebalancerComparison(anchorTime, laterTime)
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -5319,6 +5463,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(anchorTime, laterTime)
@@ -5373,6 +5518,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
 
                 val versionKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION
@@ -5510,6 +5656,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
                 val comparison = service.getRebalancerComparison(anchorTime, laterTime)
 
@@ -5643,6 +5790,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
                 val shapes = listOf(
                     mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to "abc"),
@@ -5708,6 +5856,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
                 val comparison = service.getRebalancerComparison(anchorTime, laterTime)
 
@@ -5773,6 +5922,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
@@ -5839,6 +5989,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
@@ -5882,6 +6033,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(anchorTime, later.timestamp)
@@ -5921,6 +6073,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(t0, t2)
@@ -5968,6 +6121,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 // Display window excludes snap1 entirely, yet the verified
@@ -6048,6 +6202,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
@@ -6277,6 +6432,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = null,
                     fundingProvenanceResolver = provenanceResolver,
+                    krakenService = FakeKrakenService(),
                 )
 
                 serviceWithInception.findVerifiedLaterComparisonStart(t0).shouldBeNull()
@@ -6338,6 +6494,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(t0, t1)
@@ -6380,6 +6537,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 // The first trial may report an unavailableAt after more than one candidate, but
@@ -6451,6 +6609,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = null,
+                    krakenService = FakeKrakenService(),
                 )
 
                 serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
@@ -6505,6 +6664,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = null,
+                    krakenService = FakeKrakenService(),
                 )
 
                 serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
@@ -7067,6 +7227,55 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "a gap after the verified baseline horizon keeps proposal search incomplete" {
+            runTest {
+                val fixture = automaticBaselineFixture(anchorOffsetSeconds = 8 * 86400L)
+                val service = automaticBaselineService(fixture)
+                val verified = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                verified.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                verified.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
+                    fixture.laterTime.toEpochMilli().toString()
+
+                val gapTime = fixture.laterTime.plusSeconds(29 * 3600)
+                fixture.snapshotRows += snapshot(
+                    gapTime,
+                    "1200.00",
+                    btc = "1.0" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = gapTime.minusMillis(600),
+                )
+                val liveTailTime = gapTime.plusSeconds(3600)
+                fixture.snapshotRows += snapshot(
+                    liveTailTime,
+                    "1270.00",
+                    btc = "1.1" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = liveTailTime.minusMillis(500),
+                )
+
+                val comparison = service.getRebalancerComparison(fixture.anchorTime, now)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                comparison.proposalSearchStatus shouldBe ComparisonProposalStatus.INCOMPLETE
+                comparison.proposedBaselineTimestamp.shouldBeNull()
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                status.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                status.proposal.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
+                    fixture.laterTime.toEpochMilli().toString()
+            }
+        }
+
         "verified baseline proof does not exempt gaps when the evidence horizon is malformed" {
             runTest {
                 val fixture = automaticBaselineFixture(anchorOffsetSeconds = 8 * 86400L)
@@ -7083,6 +7292,42 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 service.getRebalancerComparison(fixture.anchorTime, now)
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] =
                     "not-a-number"
+
+                val liveTailTime = gapTime.plusSeconds(3600)
+                fixture.snapshotRows += snapshot(
+                    liveTailTime,
+                    "1270.00",
+                    btc = "1.1" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = liveTailTime.minusMillis(500),
+                )
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                status.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                status.proposal.shouldBeNull()
+            }
+        }
+
+        "verified baseline proof does not exempt gaps when the evidence horizon predates inception" {
+            runTest {
+                val fixture = automaticBaselineFixture(anchorOffsetSeconds = 8 * 86400L)
+                val service = automaticBaselineService(fixture)
+                val gapTime = fixture.laterTime.plusSeconds(29 * 3600)
+                fixture.snapshotRows += snapshot(
+                    gapTime,
+                    "1200.00",
+                    btc = "1.0" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = gapTime.minusMillis(600),
+                )
+
+                service.getRebalancerComparison(fixture.anchorTime, now)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] =
+                    fixture.anchorTime.minusMillis(1).toEpochMilli().toString()
 
                 val liveTailTime = gapTime.plusSeconds(3600)
                 fixture.snapshotRows += snapshot(
@@ -8308,6 +8553,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         fundingProvenanceResolver = fixture.fundingProvenanceResolver,
         comparisonCacheRepository = comparisonCacheRepository,
         nowProvider = { now },
+        krakenService = FakeKrakenService(),
     )
 }
 

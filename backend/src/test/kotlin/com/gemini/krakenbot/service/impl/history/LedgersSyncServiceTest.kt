@@ -198,6 +198,25 @@ class LedgersSyncServiceTest : StringSpec() {
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
         }
 
+        "allows a new sync when the clock moves behind the previous run" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+
+            var now = fixedNow
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
+            service.syncLedgersFromKraken()
+
+            now = fixedNow.minusSeconds(60)
+            service.syncLedgersFromKraken()
+
+            coVerify(exactly = 2) { krakenService.getLedgers(any(), any(), any(), any()) }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+        }
+
         "skips sync when credentials are missing and simulation is off" {
             stubStableBackend()
             every {
@@ -211,6 +230,22 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             coVerify(exactly = 0) { krakenService.getLedgers(any(), any(), any(), any()) }
+            service.isLedgersSeeded() shouldBe false
+        }
+
+        "rechecks credentials inside the execution session before reading ledgers" {
+            stubStableBackend()
+            every { configService.getConfig() } returnsMany listOf(
+                appConfig,
+                appConfig.copy(kraken = KrakenCredentials("", "")),
+            )
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(exactly = 0) { krakenService.getLedgers(any(), any(), any(), any()) }
+            coVerify(exactly = 1) { configService.beginExecutionSession() }
+            coVerify(exactly = 1) { configService.endExecutionSession() }
             service.isLedgersSeeded() shouldBe false
         }
 
@@ -334,6 +369,65 @@ class LedgersSyncServiceTest : StringSpec() {
             coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), 50, any(), any())
             }
+        }
+
+        "restarts pagination from zero when the authoritative ledger total shifts" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+
+            val originalFirstPage = (0 until 50).map { event(it) }
+            val middlePage = (49 until 99).map { event(it) }
+            val shiftedFirstPage = listOf(event(100)) + (0 until 49).map { event(it) }
+            val finalPage = listOf(event(99))
+            val offsets = mutableListOf<Int>()
+            var reportedTotal = 0
+            var rawPageSize = 0
+            coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { reportedTotal }
+            coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { rawPageSize }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val offset = secondArg<Int?>() ?: 0
+                offsets += offset
+                when (offsets.size) {
+                    1 -> {
+                        reportedTotal = 100
+                        rawPageSize = originalFirstPage.size
+                        originalFirstPage
+                    }
+
+                    2 -> {
+                        reportedTotal = 101
+                        rawPageSize = middlePage.size
+                        middlePage
+                    }
+
+                    3 -> {
+                        reportedTotal = 101
+                        rawPageSize = shiftedFirstPage.size
+                        shiftedFirstPage
+                    }
+
+                    4 -> {
+                        reportedTotal = 101
+                        rawPageSize = middlePage.size
+                        middlePage
+                    }
+
+                    else -> {
+                        reportedTotal = 101
+                        rawPageSize = finalPage.size
+                        finalPage
+                    }
+                }
+            }
+
+            LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+                .syncLedgersFromKraken()
+
+            offsets shouldBe listOf(0, 50, 0, 50, 100)
+            val stored = repository.getLedgersInRange(Instant.EPOCH, fixedNow)
+            stored.map { it.ledgerId }.toSet() shouldBe (0..100).map { "ledger-$it" }.toSet()
+            stored.size shouldBe 101
         }
 
         "recovering an interrupted seed restarts from 96-day bounded history" {
@@ -692,6 +786,25 @@ class LedgersSyncServiceTest : StringSpec() {
             service.isLedgerCoverageCurrent() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        }
+
+        "rejects count-less pages when certifying stale ledger coverage" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerTotalCount() } returns false
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(event(0))
+
+            val error = shouldThrow<IllegalStateException> {
+                LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+                    .syncLedgersFromKraken()
+            }
+
+            error.message shouldContain "count-less page"
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "7"
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe null
+            repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 0
         }
 
         "coverage migration backfills from an older configured inception date" {

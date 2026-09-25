@@ -1030,6 +1030,12 @@ object AuthoritativeLedgerBalanceValidator {
         }
     }
 
+    /** Scope recorded by a documented internal-transfer marker, before balance evidence exists. */
+    internal fun documentedInternalTransferWalletScope(event: LedgerEvent): LedgerWalletScope? {
+        if (!LedgerFlowClassifier.isDocumentedInternalTransfer(event)) return null
+        return fixedScope(event)?.let(::ledgerWalletScope)
+    }
+
     private fun isDustSweep(event: LedgerEvent): Boolean = (
         event.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
             event.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)

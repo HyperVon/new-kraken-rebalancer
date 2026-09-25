@@ -6,6 +6,7 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.WithdrawStatusRecord
@@ -29,6 +30,7 @@ class FakeKrakenService :
     RecoveryTradeHistoryService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
+    var assetMetadataSupplier: () -> List<KrakenAssetMetadata> = { DEFAULT_ASSET_METADATA }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
     var ledgerSupplier: (Long?, Int?, Long?, Set<String>?) -> List<LedgerEvent> = { _, _, _, _ -> emptyList() }
     var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
@@ -86,6 +88,8 @@ class FakeKrakenService :
             else -> BigDecimal.ZERO
         }
     }
+
+    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = assetMetadataSupplier()
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         getTradeHistoryCallCount++
@@ -202,6 +206,31 @@ class FakeKrakenService :
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
         getOHLCCallCount++
         return ohlcSupplier(pair, interval, since)
+    }
+
+    private companion object {
+        val DEFAULT_ASSET_METADATA =
+            listOf(
+                "USD",
+                "USDG",
+                "BTC",
+                "ETH",
+                "ADA",
+                "MORPHO",
+                "XMR",
+                "ATOM",
+                "DOGE",
+                "SOL",
+                "XRP",
+                "XLM",
+                "DOT",
+                "LINK",
+                "LTC",
+                "USDT",
+                "USDC",
+                "BABY",
+            ).map { KrakenAssetMetadata(it, KrakenApiConstants.ASSET_CLASS_CURRENCY) } +
+                KrakenAssetMetadata("STRC", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET)
     }
 }
 

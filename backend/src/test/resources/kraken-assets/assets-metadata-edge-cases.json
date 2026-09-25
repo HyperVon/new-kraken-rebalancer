@@ -1,0 +1,15 @@
+{
+  "error": [],
+  "result": {
+    "XXBT": { "aclass": "currency" },
+    "TOKENIZED_ASSET_1": { "aclass": "tokenized_asset" },
+    "FUTURE_CLASS_ASSET": { "aclass": "future_asset_class" },
+    "MISSING_CLASS": { "altname": "MISSING_CLASS" },
+    "NULL_CLASS": { "aclass": null },
+    "NON_TEXT_CLASS": { "aclass": 12 },
+    "BLANK_CLASS": { "aclass": " " },
+    "NULL_METADATA": null,
+    "SCALAR_METADATA": "currency",
+    "": { "aclass": "currency" }
+  }
+}

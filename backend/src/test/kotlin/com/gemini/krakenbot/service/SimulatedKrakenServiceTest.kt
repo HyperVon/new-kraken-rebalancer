@@ -6,6 +6,7 @@ import com.gemini.krakenbot.domain.toCryptoScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.kotest.core.spec.IsolationMode
@@ -39,6 +40,30 @@ class SimulatedKrakenServiceTest : StringSpec() {
         )
 
     init {
+        "should expose an allocation-independent simulated currency catalog" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getAssetMetadata() shouldBe listOf(
+                KrakenAssetMetadata("BTC", "currency"),
+                KrakenAssetMetadata("ETH", "currency"),
+                KrakenAssetMetadata("USD", "currency"),
+                KrakenAssetMetadata("USDT", "currency"),
+                KrakenAssetMetadata("USDC", "currency"),
+                KrakenAssetMetadata("DOGE", "currency"),
+                KrakenAssetMetadata("SOL", "currency"),
+                KrakenAssetMetadata("ADA", "currency"),
+                KrakenAssetMetadata("XRP", "currency"),
+                KrakenAssetMetadata("DOT", "currency"),
+                KrakenAssetMetadata("LINK", "currency"),
+                KrakenAssetMetadata("LTC", "currency"),
+                KrakenAssetMetadata("MORPHO", "currency"),
+                KrakenAssetMetadata("XMR", "currency"),
+            )
+        }
+
         "should initialize prices and drifted balances based on config allocations" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG

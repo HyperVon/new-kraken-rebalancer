@@ -1,0 +1,7 @@
+{
+  "error": [],
+  "result": {
+    "XXBT": { "aclass": "currency", "altname": "XBT" },
+    "ZUSD": { "aclass": "currency", "altname": "USD" }
+  }
+}

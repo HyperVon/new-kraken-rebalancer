@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -14,6 +15,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.FakeKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -43,6 +45,9 @@ class ReconcileThenSampleTest : StringSpec() {
     private val orderIntentRepository = mockk<OrderIntentRepository>(relaxed = true)
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
+    private val comparisonAssetMetadata = listOf("USD", "USDG", "BTC").map {
+        KrakenAssetMetadata(assetId = it, assetClass = "currency")
+    }
 
     private val provenance = FundingProvenanceResolver { event ->
         if (event.subtype.isNullOrBlank()) {
@@ -92,9 +97,13 @@ class ReconcileThenSampleTest : StringSpec() {
                 val full = RebalancerComparisonCalculator.calculate(
                     snapshots = listOf(base, pre, dep, conv),
                     trades = emptyList(),
+                    assetMetadata = comparisonAssetMetadata,
                     rewards = ledgers,
                     ledgerContext = context,
                     provenanceResolver = provenance,
+                    priceProvider = HistoricalPriceProvider { symbol, _ ->
+                        if (Asset.normalizeLedgerAsset(symbol).uppercase() == "USDG") BigDecimal.ONE else null
+                    },
                 )
                 full.availability shouldBe ComparisonAvailability.AVAILABLE
                 full.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1389.28")
@@ -106,6 +115,7 @@ class ReconcileThenSampleTest : StringSpec() {
                 val merged = RebalancerComparisonCalculator.calculate(
                     snapshots = listOf(base, pre),
                     trades = emptyList(),
+                    assetMetadata = comparisonAssetMetadata,
                     rewards = ledgers,
                     ledgerContext = context,
                     provenanceResolver = provenance,
@@ -154,6 +164,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     portfolioStatsRepository = statsRepository,
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
+                    krakenService = FakeKrakenService(),
                     inceptionDiscoveryService = mockInceptionService,
                 )
 
@@ -205,6 +216,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = mockInceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(now, now.plusSeconds(count * 60L))
@@ -212,6 +224,7 @@ class ReconcileThenSampleTest : StringSpec() {
                 val full = RebalancerComparisonCalculator.calculate(
                     snapshots = series,
                     trades = emptyList(),
+                    assetMetadata = comparisonAssetMetadata,
                     anchorSnapshot = null,
                     inceptionSnapshot = series.first(),
                     knownInceptionTime = series.first().timestamp,
@@ -316,6 +329,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = inceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val lifetime = service.getRebalancerComparison(baselineTime, displayEnd)
@@ -370,6 +384,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     portfolioStatsRepository = statsRepository,
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(now, last.timestamp)
@@ -404,6 +419,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     portfolioStatsRepository = statsRepository,
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(now, last.timestamp)
@@ -780,8 +796,14 @@ class ReconcileThenSampleTest : StringSpec() {
                     ),
                     now,
                 )
-                val second = first.copy(timestamp = now.plusSeconds(3600))
-                val uncertifiedTail = first.copy(timestamp = now.plusSeconds(7200))
+                val second = first.copy(
+                    timestamp = now.plusSeconds(3600),
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                val uncertifiedTail = first.copy(
+                    timestamp = now.plusSeconds(7200),
+                    balancesObservedAt = now.plusSeconds(7200),
+                )
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns
                     listOf(first, second, uncertifiedTail)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -797,6 +819,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     portfolioStatsRepository = statsRepository,
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(now, uncertifiedTail.timestamp)
@@ -816,7 +839,10 @@ class ReconcileThenSampleTest : StringSpec() {
                     ),
                     now,
                 )
-                val last = first.copy(timestamp = now.plusSeconds(3600))
+                val last = first.copy(
+                    timestamp = now.plusSeconds(3600),
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
@@ -837,6 +863,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     portfolioStatsRepository = statsRepository,
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(now, last.timestamp)
@@ -895,6 +922,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     ledgerRepository = ledgerRepository,
                     orderIntentRepository = orderIntentRepository,
                     inceptionDiscoveryService = inceptionService,
+                    krakenService = FakeKrakenService(),
                 )
 
                 val comparison = service.getRebalancerComparison(first.timestamp, last.timestamp)

@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
@@ -456,6 +457,25 @@ class DynamicKrakenServiceTest : StringSpec() {
 
             dynamicService.getBalances()
             coVerify(exactly = 1) { realService.getBalances() }
+        }
+
+        "getAssetMetadata follows the stable backend selection" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            val simulatedMetadata = listOf(KrakenAssetMetadata("SIM_ASSET", "currency"))
+            val liveMetadata = listOf(KrakenAssetMetadata("LIVE_ASSET", "currency"))
+            coEvery { simulatedService.getAssetMetadata() } returns simulatedMetadata
+            coEvery { realService.getAssetMetadata() } returns liveMetadata
+            val dynamicService = createService()
+
+            dynamicService.withStableBackend {
+                every { configService.getConfig() } returns appConfig(simulation = false)
+                dynamicService.getAssetMetadata() shouldBe simulatedMetadata
+            }
+            coVerify(exactly = 1) { simulatedService.getAssetMetadata() }
+            coVerify(exactly = 0) { realService.getAssetMetadata() }
+
+            dynamicService.getAssetMetadata() shouldBe liveMetadata
+            coVerify(exactly = 1) { realService.getAssetMetadata() }
         }
 
         "delegates ledger queries to the selected backend" {

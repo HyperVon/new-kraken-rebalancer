@@ -912,28 +912,30 @@ external capital over time:
   and no retained snapshot is presented as the earliest trustworthy lifetime strategy start. A
   passive invested anchor can still be available when the retained post-anchor snapshots themselves
   are complete and reconcile.
-- **Buy & Hold preserves the recorded anchor thesis.** The basket starts with every positive holding
-  in the selected recorded anchor, using its actual balance, historical price, and value proportion
-  normalized to project precision. It is not an equal-capital recreation of current targets: the
-  target percentages, later configuration changes, trade ownership labels, internal conversions,
-  and consumer-transaction plumbing never rewrite the anchor lots. Consequently the first actual and
-  B&H values normally match within rounding tolerance. A passive re-anchor uses the same rule; it is
-  a bounded recorded-state comparison, not an approval of the historical strategy inception.
-- **Comparison reconciles actual holdings through recorded base/quote semantics.** Every successful
-  trade in the interval is replayed through `Asset.splitTradingPair`, so a delisted or no longer
-  configured USD market (for example `STRCZUSD`) adjusts the tracked quote balance and its base
-  holding instead of making the whole comparison unavailable; a pair with unknown quote semantics
-  still fails closed. Snapshots may carry historical-only assets beyond the configured targets, but
-  every non-zero balance must be produced by the replayed baseline, trades, or ledger events — an
-  unexplained appearance fails closed. Asset-universe validation compares the current configured
-  allocation membership (including configured zero-weight assets), not every historical-only row in
-  the full-wallet baseline. A historical-only row may therefore be absent from a later
-  configured-only snapshot once reconciliation explains its balance change; a same-instant
-  configured-only legacy row cannot replace the approved full-wallet anchor; dropping a configured
-  baseline asset still reports `ASSET_UNIVERSE_CHANGED`. Legacy/unknown-observation boundaries
-  follow the same rule: a boundary ledger for an omitted historical-only asset counts as already
-  embodied only when its authoritative post-balance is zero, so absence is never read as wallet
-  truth and a nonzero post-balance stays a candidate the recorded series must explain.
+- **Buy & Hold preserves the recorded fiat-and-crypto anchor thesis.** Kraken asset metadata classifies `currency` assets as comparison scope and `tokenized_asset` securities as out of scope.
+  Unknown or conflicting classification for a material holding fails closed. Every positive in-scope
+  anchor holding starts with its actual balance, historical price, and normalized value proportion.
+  This includes crypto that is not in the current configured allocation. Security balances remain in
+  full-wallet reconciliation but are excluded from both comparison NAVs and need no price mark. The
+  basket is not an equal-capital recreation of current targets: later configuration changes, trade
+  ownership labels, internal conversions, and consumer-transaction plumbing never rewrite the anchor
+  lots. Consequently the first actual and B&H values normally match within rounding tolerance. A
+  passive re-anchor uses the same rule; it is a bounded recorded-state comparison, not an approval of
+  the historical strategy inception.
+- **Full-wallet reconciliation precedes comparison-scope projection.** Every successful trade in
+  the interval is replayed through `Asset.splitTradingPair`, and full wallet balances and ledger
+  effects are reconciled before NAV is projected. A market outside comparison scope can therefore
+  explain its in-scope quote-currency debit or credit without adding the market's security holding
+  or requiring a security price. Snapshots may carry historical-only assets beyond configured
+  targets, but every non-zero balance must be produced by the replayed baseline, trades, or ledger
+  events; an unexplained appearance fails closed. Configured-universe validation still compares
+  current allocation membership (including configured zero-weight assets), not every historical
+  row in the full-wallet baseline. A same-instant configured-only legacy row cannot replace the
+  approved full-wallet anchor; dropping a configured baseline asset still reports
+  `ASSET_UNIVERSE_CHANGED`. Legacy/unknown-observation boundaries follow the same rule: a boundary
+  ledger for an omitted historical-only asset counts as already embodied only when its authoritative
+  post-balance is zero, so absence is never read as wallet truth and a nonzero post-balance remains a
+  candidate the recorded series must explain.
 - **Recorded history exposes one final state per instant and only spot-wallet effects.**
   Reconstruction persists a row per replayed event, so several cumulative rows can share a
   millisecond; the chart keeps the first row written for an instant (the state
@@ -995,9 +997,11 @@ external capital over time:
   proportionally. Holding-dependent rewards are mirrored in-kind only while the synthetic basket
   holds that asset; a positive reward in an otherwise unheld asset remains actual-only. Explicitly
   classified account-level credits may introduce their credited asset even when it was absent at
-  the anchor. A generic USD/equity cash dividend is excluded because the crypto/cash thesis has no
-  underlying equity position. Other supported independent charges and external balance movements
-  retain their attributable treatment.
+  the anchor. Held crypto rewards and dividends remain performance. A USD cash dividend explicitly
+  identified as proceeds from an out-of-scope security is a neutral owner contribution, net of its
+  fee and invested using fixed anchor weights; an unclassified material USD dividend fails closed
+  instead of being guessed as crypto performance or capital. Other supported independent charges
+  and external balance movements retain their attributable treatment.
 - **Conversions and consumer plumbing stay neutral in pure Buy & Hold.** Complete conversions with
   at least one tracked leg, and complete refid-linked consumer `spend`/`receive` groups, are
   validated and consumed once for actual-history continuity but emit no synthetic transformation,
@@ -1016,7 +1020,7 @@ calculation actually consumed is unchanged.
 - **Entry validity.** A cache entry is keyed by the exact evaluation window (first/last stable
   evaluation snapshot timestamps) and carries an input fingerprint: SHA-256 over the cache format
   version, the certified stable horizon (`stableThrough`), the consumed-evidence digest,
-  the funding provenance token, the configured allocation universe, the
+  the funding provenance token, the normalized Kraken asset-classification digest, the configured allocation universe, the
   reconstruction revision markers, the inception resolution, and the evaluation snapshot boundary
   (count, first, last). Consumed OHLC windows are validated by the persisted dependency manifest,
   never by the global OHLC content revision, so unrelated price evidence activity cannot

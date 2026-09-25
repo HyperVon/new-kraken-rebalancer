@@ -256,6 +256,38 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             result.scopeCount shouldBe 1
         }
 
+        "fails closed when an authoritative dust sweep fits distinct scopes within rounding tolerance" {
+            val result = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event("spot", 0, "receive", "1", "1"),
+                    event("opaque-staking", 1, "staking", "1.00000001", "1.00000001"),
+                    event(
+                        "ambiguous-authoritative-dust",
+                        2,
+                        "spend",
+                        "-1",
+                        "0",
+                        fee = "0.00000001",
+                        subtype = "dustsweeping",
+                    ),
+                ),
+            )
+
+            result.isValid shouldBe false
+            requireNotNull(result.failure).diagnostic shouldContain
+                "authoritative sweep has ambiguous wallet scope and aggregate balance"
+        }
+
+        "maps an authoritative BABY staking reward to Spot when no BABY scope exists" {
+            val result = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(event("baby-staking", 0, "staking", "0.1", "0.1", asset = "BABY")),
+            )
+
+            result.isValid shouldBe true
+            result.resolvedScopes["baby-staking"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+        }
+
         "ignores a non-authoritative dust row without an established scope" {
             val result = AuthoritativeLedgerBalanceValidator.validate(
                 listOf(
@@ -1137,6 +1169,46 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
 
             result.isValid shouldBe true
             result.scopeCount shouldBe 14
+        }
+
+        "maps documented transfer directions to the wallet scope of each leg" {
+            val cases = listOf(
+                event("stake-debit", 0, "transfer", "-1", "0", subtype = "spottostaking") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("stake-credit", 0, "transfer", "1", "0", subtype = "spottostaking") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                event("stake-from-spot-debit", 0, "transfer", "-1", "0", subtype = "stakingfromspot") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("stake-from-spot-credit", 0, "transfer", "1", "0", subtype = "stakingfromspot") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                event("spot-debit", 0, "transfer", "-1", "0", subtype = "stakingtospot") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                event("spot-credit", 0, "transfer", "1", "0", subtype = "stakingtospot") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("spot-from-staking-debit", 0, "transfer", "-1", "0", subtype = "spotfromstaking") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                event("spot-from-staking-credit", 0, "transfer", "1", "0", subtype = "spotfromstaking") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("futures-debit", 0, "transfer", "-1", "0", subtype = "spottofutures") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("futures-credit", 0, "transfer", "1", "0", subtype = "spottofutures") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                event("spot-from-futures-debit", 0, "transfer", "-1", "0", subtype = "spotfromfutures") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                event("spot-from-futures-credit", 0, "transfer", "1", "0", subtype = "spotfromfutures") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("spot-to-spot-debit", 0, "transfer", "-1", "0", subtype = "spottospot") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("spot-to-spot-credit", 0, "transfer", "1", "0", subtype = "spotfromspot") to
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                event("opaque-allocation", 0, "transfer", "1", "0", subtype = "allocation") to null,
+                event("staking-reward", 0, "earn", "1", "0", subtype = "staking") to null,
+            )
+
+            for ((transfer, expectedScope) in cases) {
+                AuthoritativeLedgerBalanceValidator.documentedInternalTransferWalletScope(transfer) shouldBe
+                    expectedScope
+            }
         }
 
         "can continue staking from the Spot scope and reject an unassignable reward" {

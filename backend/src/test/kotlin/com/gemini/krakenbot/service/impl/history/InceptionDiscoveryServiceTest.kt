@@ -461,6 +461,36 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "resolveInception ignores a cached epoch without a nearby snapshot" {
+            runTest {
+                val cachedEpoch = 1775000000000L
+                val earliest = dummySnapshot(Instant.parse("2026-05-01T00:00:00Z"))
+                val later = dummySnapshot(Instant.parse("2026-05-02T00:00:00Z"))
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns
+                    cachedEpoch.toString()
+                coEvery { tradeRepository.isHistorySeeded() } returns false
+                coEvery { tradeRepository.getSnapshotBefore(any()) } returns null
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns emptyList() andThen
+                    listOf(earliest, later)
+                coEvery { tradeRepository.getSnapshotId(earliest.timestamp) } returns 105
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe earliest.timestamp
+                result.inceptionSnapshot shouldBe earliest
+                coVerify {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        earliest.timestamp.toEpochMilli().toString(),
+                    )
+                }
+                coVerify { tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, "105") }
+            }
+        }
+
         "resolveInception falls back to earliest snapshot when no burst or cache exists" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
@@ -1074,6 +1104,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
         "when recoveryService reports AMBIGUOUS, resolution has INCEPTION_AMBIGUOUS reason" {
             runTest {
                 val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val earliestSnapshotTime = Instant.parse("2026-01-01T00:00:00Z")
                 val serviceWithRecovery = InceptionDiscoveryService(
                     tradeRepository,
                     configService,
@@ -1083,11 +1114,16 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
                     status = InceptionRecoveryStatus.AMBIGUOUS,
                 )
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns
+                    listOf(dummySnapshot(earliestSnapshotTime))
 
                 val resolution = serviceWithRecovery.resolveInception()
 
                 resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
                 resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_AMBIGUOUS
+                resolution.inceptionTime shouldBe earliestSnapshotTime
+                resolution.inceptionSnapshot shouldBe null
+                resolution.isAutoDetected shouldBe true
             }
         }
 
@@ -1388,6 +1424,102 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 result.inceptionTime shouldBe acceptedAnchor
                 result.inceptionSnapshot shouldBe selected
                 result.confidence shouldBe InceptionConfidence.CONFIDENT
+            }
+        }
+
+        "resolveInception rejects a stale accepted comparison identity instead of a nearby snapshot" {
+            runTest {
+                val acceptedAnchor = Instant.parse("2026-01-15T10:30:00Z")
+                coEvery { configService.getConfig() } returns testConfig(
+                    inceptionDate = "2025-12-05",
+                    comparisonStartDate = acceptedAnchor.toString(),
+                )
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+                } returns "22"
+                coEvery { tradeRepository.getSnapshotById(22) } returns
+                    dummySnapshot(acceptedAnchor.minusSeconds(120))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns
+                    listOf(dummySnapshot(acceptedAnchor.minusSeconds(60)))
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionTime shouldBe Instant.parse("2025-12-05T00:00:00Z")
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
+            }
+        }
+
+        "resolveInception rejects a dangling accepted identity instead of a nearby snapshot" {
+            runTest {
+                val acceptedAnchor = Instant.parse("2026-01-15T10:30:00Z")
+                coEvery { configService.getConfig() } returns testConfig(
+                    inceptionDate = "2025-12-05",
+                    comparisonStartDate = acceptedAnchor.toString(),
+                )
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+                } returns "22"
+                coEvery { tradeRepository.getSnapshotById(22) } returns null
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns
+                    listOf(dummySnapshot(acceptedAnchor.minusSeconds(60)))
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionTime shouldBe Instant.parse("2025-12-05T00:00:00Z")
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
+            }
+        }
+
+        "resolveInception rejects a malformed accepted identity instead of a nearby snapshot" {
+            runTest {
+                val acceptedAnchor = Instant.parse("2026-01-15T10:30:00Z")
+                coEvery { configService.getConfig() } returns testConfig(
+                    inceptionDate = "2025-12-05",
+                    comparisonStartDate = acceptedAnchor.toString(),
+                )
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+                } returns "not-an-integer"
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns
+                    listOf(dummySnapshot(acceptedAnchor.minusSeconds(60)))
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionTime shouldBe Instant.parse("2025-12-05T00:00:00Z")
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
             }
         }
 

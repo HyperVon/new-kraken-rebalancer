@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.WithdrawStatusRecord
@@ -683,6 +684,10 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 val comparison = RebalancerComparisonCalculator.calculate(
                     snapshots = listOf(baseline, latest),
                     trades = emptyList(),
+                    assetMetadata = listOf(
+                        KrakenAssetMetadata("BTC", "currency"),
+                        KrakenAssetMetadata("USD", "currency"),
+                    ),
                     rewards = listOf(event),
                     priceProvider = HistoricalPriceProvider { symbol, _ ->
                         if (symbol == Asset.USD) BigDecimal.ONE else BigDecimal("50000.00")
