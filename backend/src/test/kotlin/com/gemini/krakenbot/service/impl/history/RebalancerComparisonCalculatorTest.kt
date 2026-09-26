@@ -3709,6 +3709,385 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("11700.00")
         }
 
+        "real production STRC trade and equity ledger classify out-of-scope without synthetic metadata or mark" {
+            val tradeTime = now.plusSeconds(1800)
+            val tradeId = "ET4RO7E-DZ5AL-LNEPMP"
+            val requestedPrices = mutableListOf<String>()
+            val trade = TradeRecord(
+                timestamp = tradeTime,
+                pair = "STRCZUSD",
+                side = "BUY",
+                symbol = "STRCZUSD",
+                volume = BigDecimal("23"),
+                price = BigDecimal("99.73"),
+                usdAmount = BigDecimal("2293.79"),
+                fee = BigDecimal.ZERO,
+                success = true,
+                dryRun = false,
+                source = TradeSource.MANUAL,
+                cycleId = null,
+                clientOrderId = null,
+                tradeId = tradeId,
+                orderTxid = "EOG7EAM-MUW7Q-7GFGT2",
+            )
+            val baseLedger = LedgerEvent(
+                ledgerId = "LZG33R-EOIQF-YIVXY7",
+                refid = tradeId,
+                time = tradeTime,
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradeequities",
+                aclass = "equity",
+                asset = "STRC",
+                amount = BigDecimal("23"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("23"),
+                hasAuthoritativeBalance = true,
+            )
+            val quoteLedger = LedgerEvent(
+                ledgerId = "L726FD-EI6KS-FECCUR",
+                refid = tradeId,
+                time = tradeTime,
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradeequities",
+                aclass = "currency",
+                asset = "USD",
+                amount = BigDecimal("-2293.79"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("7706.21"),
+                hasAuthoritativeBalance = true,
+            )
+
+            val realKrakenMetadata = testAssetMetadata.filterNot {
+                Asset.normalizeLedgerAsset(it.assetId).equals("STRC", ignoreCase = true)
+            } + listOf(
+                KrakenAssetMetadata("STRCSPV", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+                KrakenAssetMetadata("STRCx", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+            )
+
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "10000.00", mapOf("USD" to assetRow("10000.00", "1.00", "10000.00"))),
+                    snapshot(
+                        now.plusSeconds(3600),
+                        "7706.21",
+                        mapOf(
+                            "USD" to assetRow("7706.21", "1.00", "7706.21"),
+                            "STRC" to assetRow("23.00", "0", "2293.79"),
+                        ),
+                    ),
+                ),
+                trades = listOf(trade),
+                rewards = listOf(baseLedger, quoteLedger),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    requestedPrices += symbol
+                    null
+                },
+                assetMetadata = realKrakenMetadata,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points.first().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("7706.21")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("7706.21")
+            requestedPrices.any { it.contains("STRC", ignoreCase = true) } shouldBe false
+        }
+
+        "collision safety ensures tokenized suffix does not silently reclassify currency holding" {
+            val tradeTime = now.plusSeconds(1800)
+            val fooTradeId = "FOO-TRADE-1"
+            val trade = TradeRecord(
+                timestamp = tradeTime,
+                pair = "FOOUSD",
+                side = "BUY",
+                symbol = "FOO",
+                volume = BigDecimal("10"),
+                price = BigDecimal("100.00"),
+                usdAmount = BigDecimal("1000.00"),
+                fee = BigDecimal.ZERO,
+                success = true,
+                dryRun = false,
+                source = TradeSource.MANUAL,
+                cycleId = null,
+                clientOrderId = null,
+                tradeId = fooTradeId,
+                orderTxid = "FOO-ORDER-1",
+            )
+
+            val baseLedger = LedgerEvent(
+                ledgerId = "FOO-LEDGER-BASE",
+                refid = fooTradeId,
+                time = tradeTime,
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradespot",
+                aclass = "currency",
+                asset = "FOO",
+                amount = BigDecimal("10"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("10"),
+                hasAuthoritativeBalance = true,
+            )
+            val quoteLedger = LedgerEvent(
+                ledgerId = "FOO-LEDGER-QUOTE",
+                refid = fooTradeId,
+                time = tradeTime,
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradespot",
+                aclass = "currency",
+                asset = "USD",
+                amount = BigDecimal("-1000.00"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("9000.00"),
+                hasAuthoritativeBalance = true,
+            )
+
+            val collisionMetadata = testAssetMetadata + listOf(
+                KrakenAssetMetadata("FOO", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                KrakenAssetMetadata("FOOx", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+            )
+
+            val snapshots = listOf(
+                snapshot(now, "10000.00", mapOf("USD" to assetRow("10000.00", "1.00", "10000.00"))),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "10000.00",
+                    mapOf(
+                        "USD" to assetRow("9000.00", "1.00", "9000.00"),
+                        "FOO" to assetRow("10.00", "100.00", "1000.00"),
+                    ),
+                ),
+            )
+
+            // Case A: Historical ledger evidence says currency -> FOO remains IN_SCOPE
+            val successResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(baseLedger, quoteLedger),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    if (symbol == "FOO") BigDecimal("100.00") else null
+                },
+                assetMetadata = collisionMetadata,
+            )
+            successResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            successResult.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+
+            // Case B: No historical ledger evidence, but exact currency metadata conflicts with inferred tokenized alias -> fails closed
+            val conflictingResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = emptyList(),
+                assetMetadata = collisionMetadata,
+            )
+            conflictingResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            conflictingResult.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+
+            // Case C: Exact evidence genuinely conflicts (metadata currency vs ledger equity) -> fails closed
+            val genuineConflictLedger = baseLedger.copy(aclass = "equity")
+            val genuineConflictResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(genuineConflictLedger, quoteLedger),
+                assetMetadata = collisionMetadata,
+            )
+            genuineConflictResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            genuineConflictResult.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+
+            // Case D: Exact evidence genuinely conflicts (metadata tokenized vs ledger currency) -> fails closed
+            val reverseConflictMetadata = testAssetMetadata + listOf(
+                KrakenAssetMetadata("FOO", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+            )
+            val reverseConflictResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(baseLedger, quoteLedger),
+                assetMetadata = reverseConflictMetadata,
+            )
+            reverseConflictResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            reverseConflictResult.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+
+            // Case E: Ledger with unrecognized aclass -> fails closed
+            val unrecognizedLedger = baseLedger.copy(aclass = "unsupported_class")
+            val unrecognizedResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(unrecognizedLedger, quoteLedger),
+                assetMetadata = testAssetMetadata,
+            )
+            unrecognizedResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            unrecognizedResult.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+
+            // Case F: Ledger with blank aclass falls back to exact metadata
+            val blankAclassLedger = baseLedger.copy(aclass = " ")
+            val blankResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(blankAclassLedger, quoteLedger),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    if (symbol == "FOO") BigDecimal("100.00") else null
+                },
+                assetMetadata = testAssetMetadata + listOf(
+                    KrakenAssetMetadata("FOO", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                ),
+            )
+            blankResult.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            // Case G: Metadata with unrecognized asset class -> fails closed
+            val unrecognizedMetaResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = emptyList(),
+                assetMetadata = testAssetMetadata + listOf(
+                    KrakenAssetMetadata("FOO", "future_class"),
+                ),
+            )
+            unrecognizedMetaResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            unrecognizedMetaResult.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+
+            // Case H: Metadata assetId normalizes to empty string, and ledger asset normalizes to empty string -> safely ignored
+            val emptyAssetMetadata = testAssetMetadata + listOf(
+                KrakenAssetMetadata("", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                KrakenAssetMetadata(" ", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+            )
+            val emptyAssetLedger = ledgerEvent(
+                timestamp = now.minusSeconds(10),
+                asset = " ",
+                amount = "0",
+                fee = "0",
+                balance = "0",
+                ledgerId = "empty-asset-ledger",
+                refid = null,
+            )
+            val ignoredEmptyResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(baseLedger, quoteLedger, emptyAssetLedger),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    if (symbol == "FOO") BigDecimal("100.00") else null
+                },
+                assetMetadata = emptyAssetMetadata + listOf(
+                    KrakenAssetMetadata("FOO", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                ),
+            )
+            ignoredEmptyResult.unavailableReason shouldBe null
+            ignoredEmptyResult.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            // Case I: Tokenized metadata boundary lengths (SPV len <= 3, X len <= 1, non-SPV/X suffix)
+            val edgeTokenizedMetadata = testAssetMetadata + listOf(
+                KrakenAssetMetadata("FOO", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                KrakenAssetMetadata("SPV", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+                KrakenAssetMetadata("X", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+                KrakenAssetMetadata("BOND", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+            )
+            val edgeTokenizedResult = calculate(
+                snapshots = snapshots,
+                trades = listOf(trade),
+                rewards = listOf(baseLedger, quoteLedger),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    if (symbol == "FOO") BigDecimal("100.00") else null
+                },
+                assetMetadata = edgeTokenizedMetadata,
+            )
+            edgeTokenizedResult.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            // Case J: Secondary tokenized alias alone (no exact metadata for BAR, no ledger evidence) classifies OUT_OF_SCOPE
+            val barSnapshots = listOf(
+                snapshot(now, "10000.00", mapOf("USD" to assetRow("10000.00", "1.00", "10000.00"))),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "9000.00",
+                    mapOf(
+                        "USD" to assetRow("9000.00", "1.00", "9000.00"),
+                        "BAR" to assetRow("10.00", "0", "1000.00"),
+                    ),
+                ),
+            )
+            val barTrade = manualTrade(
+                timestamp = now.plusSeconds(1800),
+                side = "buy",
+                symbol = "BAR",
+                volume = "10.00",
+                usdAmount = "1000.00",
+                fee = "0",
+                tradeId = "BAR-TRADE",
+                orderTxid = "BAR-ORDER",
+            )
+            val barMetadata = testAssetMetadata + listOf(
+                KrakenAssetMetadata("BARSPV", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET),
+            )
+            val barResult = calculate(
+                snapshots = barSnapshots,
+                trades = listOf(barTrade),
+                rewards = emptyList(),
+                assetMetadata = barMetadata,
+            )
+            barResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            barResult.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("9000.00")
+            barResult.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("9000.00")
+
+            // Case K: Ledger currency evidence alone (no metadata for BAZ) classifies IN_SCOPE
+            val bazTrade = manualTrade(
+                timestamp = now.plusSeconds(1800),
+                side = "buy",
+                symbol = "BAZ",
+                volume = "10.00",
+                usdAmount = "1000.00",
+                fee = "0",
+                tradeId = "BAZ-TRADE",
+                orderTxid = "BAZ-ORDER",
+            )
+            val bazLedger = LedgerEvent(
+                ledgerId = "BAZ-LEDGER-BASE",
+                refid = "BAZ-TRADE",
+                time = now.plusSeconds(1800),
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradespot",
+                aclass = "currency",
+                asset = "BAZ",
+                amount = BigDecimal("10"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("10"),
+                hasAuthoritativeBalance = true,
+            )
+            val bazQuoteLedger = LedgerEvent(
+                ledgerId = "BAZ-LEDGER-QUOTE",
+                refid = "BAZ-TRADE",
+                time = now.plusSeconds(1800),
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradespot",
+                aclass = "currency",
+                asset = "USD",
+                amount = BigDecimal("-1000.00"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("9000.00"),
+                hasAuthoritativeBalance = true,
+            )
+            val bazSnapshots = listOf(
+                snapshot(now, "10000.00", mapOf("USD" to assetRow("10000.00", "1.00", "10000.00"))),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "10000.00",
+                    mapOf(
+                        "USD" to assetRow("9000.00", "1.00", "9000.00"),
+                        "BAZ" to assetRow("10.00", "100.00", "1000.00"),
+                    ),
+                ),
+            )
+            val bazResult = calculate(
+                snapshots = bazSnapshots,
+                trades = listOf(bazTrade),
+                rewards = listOf(bazLedger, bazQuoteLedger),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    if (symbol == "BAZ") BigDecimal("100.00") else null
+                },
+                assetMetadata = testAssetMetadata.filterNot { it.assetId == "BAZ" } + listOf(
+                    KrakenAssetMetadata("NON_MATERIAL_FUTURE", "unrecognized_future_class"),
+                ),
+            )
+            bazResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            bazResult.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+        }
+
         "source-proven USD security dividend uses net amount and anchor weights while unknown dividend fails" {
             val dividendAt = now.plusSeconds(1800)
             val snapshots = listOf(

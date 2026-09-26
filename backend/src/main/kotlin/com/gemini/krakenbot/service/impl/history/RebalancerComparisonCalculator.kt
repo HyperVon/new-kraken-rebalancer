@@ -982,6 +982,12 @@ object RebalancerComparisonCalculator {
         val ledgerDeltas: Map<Int, BigDecimal>,
     )
 
+    private enum class ComparisonScopeClassification {
+        IN_SCOPE,
+        OUT_OF_SCOPE,
+        UNRECOGNIZED,
+    }
+
     private data class ComparisonAssetScope(
         val currencyAssets: Set<String>,
         val tokenizedAssets: Set<String>,
@@ -1160,29 +1166,94 @@ object RebalancerComparisonCalculator {
             }
         }
 
-        val classesByAsset = assetMetadata.groupBy { metadata ->
-            Asset.normalizeLedgerAsset(metadata.assetId).uppercase()
-        }.filterKeys(String::isNotEmpty).mapValues { (_, entries) ->
-            entries.map { it.assetClass.trim().lowercase() }.toSet()
-        }
-        val unresolvedAsset = materialAssets.entries
-            .filter { (symbol, _) ->
-                classesByAsset[symbol]?.singleOrNull()?.let {
-                    it == KrakenApiConstants.ASSET_CLASS_CURRENCY ||
-                        it == KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET
-                } != true
+        val exactMetadataBySymbol = assetMetadata.asSequence()
+            .mapNotNull { metadata ->
+                val symbol = Asset.normalizeLedgerAsset(metadata.assetId).uppercase()
+                if (symbol.isEmpty()) return@mapNotNull null
+                val classification = when (metadata.assetClass.trim().lowercase()) {
+                    KrakenApiConstants.ASSET_CLASS_CURRENCY -> ComparisonScopeClassification.IN_SCOPE
+                    KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET -> ComparisonScopeClassification.OUT_OF_SCOPE
+                    else -> ComparisonScopeClassification.UNRECOGNIZED
+                }
+                symbol to classification
             }
-            .minByOrNull { (_, timestamp) -> timestamp }
-        val currencyAssets = classesByAsset
-            .filterValues { it.singleOrNull() == KrakenApiConstants.ASSET_CLASS_CURRENCY }
-            .keys
-        val tokenizedAssets = classesByAsset
-            .filterValues { it.singleOrNull() == KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET }
-            .keys
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, classes) -> classes.toSet() }
+
+        val ledgerEvidenceBySymbol = ledgers.asSequence()
+            .mapNotNull { ledger ->
+                val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
+                if (symbol.isEmpty()) return@mapNotNull null
+                val classification = when (val aclass = ledger.aclass?.trim()?.lowercase()) {
+                    null, "" -> null
+                    KrakenApiConstants.ASSET_CLASS_CURRENCY -> ComparisonScopeClassification.IN_SCOPE
+                    "equity" -> ComparisonScopeClassification.OUT_OF_SCOPE
+                    else -> ComparisonScopeClassification.UNRECOGNIZED
+                }
+                classification?.let { symbol to it }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, classes) -> classes.toSet() }
+
+        val secondaryTokenizedSymbols = assetMetadata.asSequence()
+            .filter { it.assetClass.trim().lowercase() == KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET }
+            .mapNotNull { metadata ->
+                val upper = metadata.assetId.trim().uppercase()
+                val base = when {
+                    upper.length > 3 && upper.endsWith("SPV") -> upper.removeSuffix("SPV")
+                    upper.length > 1 && upper.endsWith("X") -> upper.removeSuffix("X")
+                    else -> null
+                }
+                base?.let { Asset.normalizeLedgerAsset(it).uppercase() }
+            }
+            .toSet()
+
+        val allCandidateSymbols = materialAssets.keys + exactMetadataBySymbol.keys + ledgerEvidenceBySymbol.keys
+        val resolvedCurrencyAssets = mutableSetOf<String>()
+        val resolvedTokenizedAssets = mutableSetOf<String>()
+        val unresolvedMaterialAssets = mutableMapOf<String, Instant>()
+
+        for (symbol in allCandidateSymbols) {
+            val metadataClasses = exactMetadataBySymbol[symbol].orEmpty()
+            val ledgerClasses = ledgerEvidenceBySymbol[symbol].orEmpty()
+            val hasSecondaryOutOfScope = symbol in secondaryTokenizedSymbols
+
+            val hasPrimaryInScope = ComparisonScopeClassification.IN_SCOPE in metadataClasses ||
+                ComparisonScopeClassification.IN_SCOPE in ledgerClasses
+            val hasPrimaryOutOfScope = ComparisonScopeClassification.OUT_OF_SCOPE in metadataClasses ||
+                ComparisonScopeClassification.OUT_OF_SCOPE in ledgerClasses
+
+            val classification: ComparisonScopeClassification? = when {
+                ComparisonScopeClassification.UNRECOGNIZED in metadataClasses ||
+                    ComparisonScopeClassification.UNRECOGNIZED in ledgerClasses -> null
+
+                hasPrimaryInScope && hasPrimaryOutOfScope -> null
+
+                hasPrimaryInScope -> {
+                    if (hasSecondaryOutOfScope && ComparisonScopeClassification.IN_SCOPE !in ledgerClasses) {
+                        null
+                    } else {
+                        ComparisonScopeClassification.IN_SCOPE
+                    }
+                }
+
+                hasPrimaryOutOfScope || hasSecondaryOutOfScope -> ComparisonScopeClassification.OUT_OF_SCOPE
+
+                else -> null
+            }
+
+            when (classification) {
+                ComparisonScopeClassification.IN_SCOPE -> resolvedCurrencyAssets += symbol
+                ComparisonScopeClassification.OUT_OF_SCOPE -> resolvedTokenizedAssets += symbol
+                else -> materialAssets[symbol]?.let { timestamp -> unresolvedMaterialAssets[symbol] = timestamp }
+            }
+        }
+
+        val earliestUnresolved = unresolvedMaterialAssets.minByOrNull { it.value }
         return ComparisonAssetScope(
-            currencyAssets = currencyAssets,
-            tokenizedAssets = tokenizedAssets,
-            unavailableAt = unresolvedAsset?.value,
+            currencyAssets = resolvedCurrencyAssets,
+            tokenizedAssets = resolvedTokenizedAssets,
+            unavailableAt = earliestUnresolved?.value,
         )
     }
 
