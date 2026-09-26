@@ -18,8 +18,7 @@
   "plugin": [
     "opencode-pty",
     "opencode-worktree",
-    "opencode-vibeguard",
-    "@tarquinen/opencode-dcp"
+    "opencode-vibeguard"
   ],
   "agent": {
     "adversarial-reviewer-a": {
