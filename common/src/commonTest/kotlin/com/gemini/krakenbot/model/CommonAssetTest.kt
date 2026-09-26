@@ -28,6 +28,7 @@ class CommonAssetTest {
         assertEquals("DOGE", Asset.normalizeLedgerAsset("XXDG"))
         assertEquals("DOGE", Asset.normalizeLedgerAsset("XDG"))
         assertEquals("ETH", Asset.normalizeLedgerAsset("XETH"))
+        assertEquals("SOL", Asset.normalizeLedgerAsset("SOL03"))
         assertEquals("LTC", Asset.normalizeLedgerAsset("XLTC"))
         assertEquals("XRP", Asset.normalizeLedgerAsset("XXRP"))
         assertEquals("XLM", Asset.normalizeLedgerAsset("XXLM"))

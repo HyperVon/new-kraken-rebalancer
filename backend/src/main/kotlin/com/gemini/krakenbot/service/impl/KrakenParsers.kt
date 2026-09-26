@@ -7,6 +7,7 @@ import com.gemini.krakenbot.domain.safeParseBigDecimal
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -68,6 +69,18 @@ object KrakenParsers {
                 null
             }
         }.toMap()
+
+    fun parseAssetMetadata(response: JsonNode): List<KrakenAssetMetadata> {
+        val assets = response.path(KrakenApiConstants.FIELD_RESULT)
+        if (!assets.isObject) return emptyList()
+
+        return assets.properties().mapNotNull { (assetId, metadata) ->
+            if (!metadata.isObject || assetId.isBlank()) return@mapNotNull null
+            val assetClass = metadata.path(KrakenApiConstants.FIELD_ACLASS)
+            if (!assetClass.isTextual || assetClass.asText().isBlank()) return@mapNotNull null
+            KrakenAssetMetadata(assetId, assetClass.asText())
+        }
+    }
 
     data class TradePageResult(
         val entries: List<TradeRecord>,

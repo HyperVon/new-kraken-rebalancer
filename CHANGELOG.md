@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.83] - 2026-09-25
+
+### Fixed
+
+- **Buy & Hold comparison scope**: calculate Actual and synthetic portfolio values from fiat and
+  Kraken-classified crypto assets, excluding tokenized securities while retaining full-wallet
+  reconstruction and reconciliation. Neutralize security purchases, sales, and explicitly sourced
+  cash dividends as net-of-fee capital flows; fail closed when a material asset or dividend source
+  cannot be classified. Comparison cache identity now includes the authoritative asset-classification
+  digest.
+
 ## [6.17.82] - 2026-09-22
 
 ### Fixed

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -18,8 +19,26 @@ class KrakenParsersTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val objectMapper = jacksonObjectMapper().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+    private fun assetFixture(name: String): String =
+        checkNotNull(javaClass.getResource("/kraken-assets/$name")).readText()
 
     init {
+        "parses asset IDs from object keys and retains unknown response classes" {
+            KrakenParsers.parseAssetMetadata(
+                objectMapper.readTree(assetFixture("assets-metadata-edge-cases.json")),
+            ) shouldBe listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("TOKENIZED_ASSET_1", "tokenized_asset"),
+                KrakenAssetMetadata("FUTURE_CLASS_ASSET", "future_asset_class"),
+            )
+        }
+
+        "returns no metadata for missing or malformed result containers" {
+            listOf("{}", "{\"result\": null}", "{\"result\": []}").forEach { json ->
+                KrakenParsers.parseAssetMetadata(objectMapper.readTree(json)) shouldBe emptyList()
+            }
+        }
+
         "parses balance and ticker golden responses without changing positive values" {
             val balances = KrakenParsers.parseBalances(
                 objectMapper.readTree(
@@ -411,6 +430,7 @@ class KrakenParsersTest : StringSpec() {
                 "{\"count\": -1}",
                 "{\"count\": 1.5}",
                 "{\"count\": \"2\"}",
+                "{\"count\": 5000000000}",
             ).forEach { response ->
                 val parsedPage = KrakenParsers.parseLedgerPage(objectMapper.readTree(response), null)
 
@@ -513,13 +533,21 @@ class KrakenParsersTest : StringSpec() {
             val response = objectMapper.readTree(
                 """
                 {
-                  "count": 1,
+                  "count": 2,
                   "ledger": {
                     "INVALID-AMOUNT": {
                       "time": 1700000100.0000,
                       "type": "receive",
                       "asset": "USD",
                       "amount": "not-a-number",
+                      "fee": "0.00000000",
+                      "balance": "0.00"
+                    },
+                    "BLANK-AMOUNT": {
+                      "time": 1700000200.0000,
+                      "type": "receive",
+                      "asset": "USD",
+                      "amount": "",
                       "fee": "0.00000000",
                       "balance": "0.00"
                     }
@@ -530,9 +558,12 @@ class KrakenParsersTest : StringSpec() {
 
             val (entries, count) = KrakenParsers.parseLedgerPage(response, null)
 
-            count shouldBe 1
-            entries.single().amount shouldBe BigDecimal.ZERO.setScale(8)
-            entries.single().hasValidAmount shouldBe false
+            count shouldBe 2
+            entries.size shouldBe 2
+            entries.forEach { entry ->
+                entry.amount shouldBe BigDecimal.ZERO.setScale(8)
+                entry.hasValidAmount shouldBe false
+            }
         }
 
         "parses deposit and withdrawal status pages with cursor and explicit zero fee" {
@@ -1160,7 +1191,7 @@ class KrakenParsersTest : StringSpec() {
                 """
                 {
                   "result": {
-                    "count": 2,
+                    "count": 3,
                     "trades": {
                       "T1": {
                         "pair": "XBTUSD",
@@ -1179,6 +1210,15 @@ class KrakenParsersTest : StringSpec() {
                         "cost": "1500.00",
                         "vol": "10.00000000",
                         "fee": "2.00"
+                      },
+                      "T3": {
+                        "pair": "UNKNWNZZZ",
+                        "time": 1700000020.0,
+                        "type": "sell",
+                        "price": "1.00",
+                        "cost": "10.00",
+                        "vol": "10.00000000",
+                        "fee": "0.00"
                       }
                     }
                   }
@@ -1192,9 +1232,9 @@ class KrakenParsersTest : StringSpec() {
             )
             parsed.hasTradeContainer shouldBe true
             parsed.hasTotalCount shouldBe true
-            parsed.totalCount shouldBe 2
-            parsed.rawPageSize shouldBe 2
-            parsed.entries.size shouldBe 2
+            parsed.totalCount shouldBe 3
+            parsed.rawPageSize shouldBe 3
+            parsed.entries.size shouldBe 3
 
             val normal = parsed.entries.first { it.tradeId == "T1" }
             normal.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
@@ -1203,6 +1243,10 @@ class KrakenParsersTest : StringSpec() {
             val unsupported = parsed.entries.first { it.tradeId == "T2" }
             unsupported.usdAmount.shouldBeEqualComparingTo(BigDecimal.ZERO)
             unsupported.errorMessage shouldBe "unsupported historical trade market: SOLUSDT"
+
+            val unparseable = parsed.entries.first { it.tradeId == "T3" }
+            unparseable.symbol shouldBe "UNKNWNZZZ"
+            unparseable.errorMessage shouldBe "unsupported historical trade market: UNKNWNZZZ"
         }
 
         "parseTradeHistoryPage validates envelope shape and count presence" {

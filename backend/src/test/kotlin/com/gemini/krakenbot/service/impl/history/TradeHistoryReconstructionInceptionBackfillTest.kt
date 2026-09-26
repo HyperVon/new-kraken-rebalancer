@@ -77,6 +77,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
             repository = repository,
             portfolioStatsRepository = statsRepository,
             ledgerRepository = ledgerRepository,
+            krakenService = krakenService,
             nowProvider = { now },
         )
 

@@ -8,6 +8,7 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.WithdrawStatusRecord
@@ -202,6 +203,14 @@ class KrakenServiceImpl(
         val path = "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
         val result = queryPublic(path).path(KrakenApiConstants.FIELD_RESULT)
         return KrakenParsers.parseTickerPrices(result)
+    }
+
+    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = listOf(
+        KrakenApiConstants.ASSET_CLASS_CURRENCY,
+        KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET,
+    ).flatMap { requestedClass ->
+        val path = "${KrakenApiConstants.PATH_ASSETS}?${KrakenApiConstants.PARAM_ACLASS}=$requestedClass"
+        KrakenParsers.parseAssetMetadata(queryPublic(path))
     }
 
     override suspend fun executeOrder(
