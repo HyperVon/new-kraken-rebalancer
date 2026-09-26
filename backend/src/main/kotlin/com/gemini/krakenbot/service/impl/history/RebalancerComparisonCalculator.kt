@@ -1019,7 +1019,12 @@ object RebalancerComparisonCalculator {
                 baselineTimestamp = baseline.timestamp,
             )
         }
-        if (recordedAssetValueTotal(baseline) > baseline.totalValueUSD) {
+        // Portfolio totals are the cent-rounded aggregate of raw products while asset rows are
+        // individually cent-rounded, so the row sum may legitimately exceed the recorded total by
+        // up to the per-row persistence envelope. A larger excess is a real inconsistency.
+        if (recordedAssetValueTotal(baseline).subtract(baseline.totalValueUSD) >
+            snapshotPersistenceRoundingEnvelope(baseline)
+        ) {
             return unavailable(
                 reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
                 unavailableAt = baseline.timestamp,
@@ -2897,7 +2902,9 @@ object RebalancerComparisonCalculator {
             val recordedPrice = if (normalizedSymbol == Asset.USD) BigDecimal.ONE else asset.price
             if (hasRecordedPrice) {
                 val recordedValue = asset.balance.multiply(recordedPrice)
-                representedRecordedValue = representedRecordedValue.add(recordedValue)
+                representedRecordedValue = representedRecordedValue.add(
+                    recordedValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                )
                 representedRawValue = representedRawValue.add(recordedValue)
                 continue
             }
@@ -2964,9 +2971,15 @@ object RebalancerComparisonCalculator {
         if ((omittedBalances.isNotEmpty() || hasScopedNonSpotBalance) && !hasOutOfScopeBalance) {
             val recordedTotalResidual = snapshot.totalValueUSD.subtract(recordedAssetValueTotal(snapshot))
             val reconstructedOmittedValue = omittedRawValue.add(nonSpotRawValue)
-            val residualMatchesPartialRows = recordedTotalResidual.abs() <= baselineMismatchTolerance
+            // Both branches carry the same rounding budget. The recorded total is one HALF_UP of
+            // the full raw aggregate, and the persisted rows are each rounded individually, so the
+            // residual can only differ by that aggregate half-cent plus one half-cent per persisted
+            // row. Holdings the snapshot does not persist appear on both sides as raw products, so
+            // they add no rounding error of their own.
+            val persistenceRoundingEnvelope = snapshotPersistenceRoundingEnvelope(snapshot)
+            val residualMatchesPartialRows = recordedTotalResidual.abs() <= persistenceRoundingEnvelope
             val residualMatchesReconstructedWallet =
-                recordedTotalResidual.subtract(reconstructedOmittedValue).abs() <= baselineMismatchTolerance
+                recordedTotalResidual.subtract(reconstructedOmittedValue).abs() <= persistenceRoundingEnvelope
             if (!residualMatchesPartialRows && !residualMatchesReconstructedWallet) {
                 return ActualPortfolioValuation.InconsistentSnapshotValue
             }
@@ -4728,6 +4741,22 @@ object RebalancerComparisonCalculator {
         snapshot.assets.entries
             .filter { (symbol, _) -> Asset.normalizeLedgerAsset(symbol).uppercase() in comparisonAssetSymbols }
             .fold(BigDecimal.ZERO) { total, (_, asset) -> total.add(asset.valueUSD) }
+
+    /**
+     * Bound on how far a recorded portfolio total may sit from the sum of its own persisted rows.
+     *
+     * Each persisted USD row is the HALF_UP rounding of its own raw product, so it carries up to
+     * half a cent of error, and the portfolio total is a single HALF_UP rounding of the raw
+     * aggregate, carrying up to another half cent.
+     */
+    private fun snapshotPersistenceRoundingEnvelope(snapshot: PortfolioSnapshot): BigDecimal {
+        val persistedRows = snapshot.assets.values.count {
+            it.balance.signum() != 0 || it.valueUSD.signum() != 0
+        }
+        val halfUsdUnit = BigDecimal.ONE.movePointLeft(PrecisionConstants.SCALE_USD)
+            .divide(BigDecimal("2"))
+        return halfUsdUnit.multiply(BigDecimal.valueOf(persistedRows.toLong() + 1L))
+    }
 
     private fun calculateDifferencePercent(differenceUSD: BigDecimal, buyAndHoldValue: BigDecimal): BigDecimal =
         differenceUSD

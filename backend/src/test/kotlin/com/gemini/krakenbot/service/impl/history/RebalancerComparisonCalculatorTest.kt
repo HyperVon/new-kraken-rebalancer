@@ -19,11 +19,13 @@ import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.WithdrawStatusRecord
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -8563,6 +8565,169 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
+        "five cent-rounded asset rows reconcile when aggregate rounding differs by two cents" {
+            val result = calculateHalfCentPartialSnapshot(
+                visibleSymbols = listOf("BTC", "ETH", "ADA", "ATOM", "AVAX"),
+                omittedSymbols = listOf("DOGE", "DOT", "SOL", "XMR", "XRP", "VET", "ZEC"),
+                fullValue = "100.05",
+                partialValue = "100.03",
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.05")
+        }
+
+        "seven half-cent rows remain bounded while actual NAV retains raw product precision" {
+            val result = calculateHalfCentPartialSnapshot(
+                visibleSymbols = listOf("BTC", "ETH", "ADA", "ATOM", "AVAX", "DOGE", "DOT"),
+                omittedSymbols = listOf("SOL", "XMR", "XRP", "VET", "ZEC", "XLM", "PAXG", "MORPHO", "BABY"),
+                fullValue = "100.07",
+                partialValue = "100.04",
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.07")
+        }
+
+        "one persisted asset row keeps cent-rounded validation and final raw NAV rounding" {
+            val baseline = snapshot(
+                now,
+                "10.02",
+                mapOf(
+                    "BTC" to assetRow("1.00", "10.006", "10.01"),
+                    "ADA" to assetRow("0.006", "1.00", "0.01"),
+                    "ETH" to assetRow("0.004", "1.00", "0.00"),
+                ),
+            )
+            val partial = snapshot(
+                now.plusSeconds(60),
+                "10.01",
+                mapOf("BTC" to assetRow("1.00", "10.006", "10.01")),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, partial),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+                priceProvider = mapPriceProvider(mapOf("ADA" to BigDecimal.ONE, "ETH" to BigDecimal.ONE)),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("10.02")
+        }
+
+        "a persisted row mismatch beyond the rounding envelope fails closed" {
+            val baseline = snapshot(
+                now,
+                "10.02",
+                mapOf(
+                    "BTC" to assetRow("1.00", "10.005", "10.01"),
+                    "ADA" to assetRow("0.005", "1.00", "0.01"),
+                ),
+            )
+            val inconsistentPartial = snapshot(
+                now.plusSeconds(60),
+                "10.03",
+                mapOf("BTC" to assetRow("1.00", "10.005", "10.03")),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, inconsistentPartial),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+                priceProvider = mapPriceProvider(mapOf("ADA" to BigDecimal.ONE)),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe inconsistentPartial.timestamp
+        }
+
+        "a baseline whose cent rows exceed its cent-rounded total within the persistence envelope is accepted" {
+            // Production evidence: 1324 of 4794 retained snapshots record a portfolio total up to
+            // $0.03 below the sum of their own cent-rounded rows, because the total is the
+            // cent-rounded aggregate of raw products while each row is rounded on its own. A strict
+            // inequality with no allowance failed closed on those self-consistent baselines.
+            val visible = listOf("BTC", "ETH", "ADA", "ATOM", "AVAX")
+            val omitted = listOf("DOGE", "DOT", "SOL", "XMR", "XRP", "VET", "ZEC")
+            val rows = visible.associateWith { assetRow("0.005", "1.00", "0.01") } +
+                omitted.associateWith { assetRow("0.004", "1.00", "0.00") } +
+                (Asset.USD to assetRow("100.00", "1.00", "100.00"))
+            val rowSum = rows.values.fold(BigDecimal.ZERO) { acc, row -> acc.add(BigDecimal(row.third)) }
+            val total = rowSum.subtract(BigDecimal("0.02"))
+            val baseline = snapshot(now, total.toPlainString(), rows)
+            val partial = snapshot(
+                now.plusSeconds(60),
+                total.toPlainString(),
+                visible.associateWith { assetRow("0.005", "1.00", "0.01") } +
+                    (Asset.USD to assetRow("100.00", "1.00", "100.00")),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, partial),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = visible.toSet() + Asset.USD,
+                priceProvider = mapPriceProvider(omitted.associateWith { BigDecimal.ONE }),
+            )
+
+            withClue("reason=${result.unavailableReason} at=${result.unavailableAt}") {
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+            }
+        }
+
+        "a baseline whose rows exceed its total beyond the persistence envelope still fails closed" {
+            val rows = mapOf(
+                "BTC" to assetRow("1.00", "3963.64", "3963.64"),
+                "ETH" to assetRow("2.00", "2306.36", "2306.36"),
+                "SOL" to assetRow("3.00", "1784.31", "1784.31"),
+                "ADA" to assetRow("4.00", "204.82", "204.82"),
+                "USD" to assetRow("2000.00", "1.00", "2000.00"),
+            )
+            val rowSum = rows.values.fold(BigDecimal.ZERO) { acc, row -> acc.add(BigDecimal(row.third)) }
+            val materialExcessTotal = rowSum.subtract(BigDecimal("0.10"))
+            val baseline = snapshot(now, materialExcessTotal.toPlainString(), rows)
+
+            val result = calculate(
+                snapshots = listOf(
+                    baseline,
+                    snapshot(now.plusSeconds(3600), materialExcessTotal.toPlainString(), rows),
+                ),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(emptyMap()),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.BASELINE_MISMATCH
+            result.unavailableAt shouldBe baseline.timestamp
+        }
+
+        "a total-to-row residual beyond the row-count persistence envelope fails closed" {
+            val baseline = snapshot(
+                now,
+                "10.01",
+                mapOf(
+                    "BTC" to assetRow("1.00", "10.00", "10.00"),
+                    "ADA" to assetRow("0.005", "1.00", "0.01"),
+                ),
+            )
+            val inconsistentPartial = snapshot(
+                now.plusSeconds(60),
+                "10.02",
+                mapOf("BTC" to assetRow("1.00", "10.00", "10.00")),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, inconsistentPartial),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+                priceProvider = mapPriceProvider(mapOf("ADA" to BigDecimal.ONE)),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe inconsistentPartial.timestamp
+        }
+
         "unpriced snapshot row for a baseline holding preserves its recorded value during wallet revaluation" {
             val baseline = snapshot(
                 now,
@@ -11621,14 +11786,17 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("100.00")
         }
 
-        "a configured-target value above the full inception total fails closed" {
+        "a baseline whose rows materially exceed its recorded total fails closed" {
             val t0 = now
             val t1 = now.plusSeconds(3600)
             val assets = mapOf(
                 "BTC" to assetRow("0.005", "100000.00", "500.00"),
                 "USD" to assetRow("500.00", "1.0", "500.00"),
             )
-            val inceptionBaseline = snapshot(t0, "999.999", assets).copy(
+            // Rows sum to 1000.00 while the recorded total says 900.00, a $100 excess that is far
+            // beyond the persistence envelope. This used to pass only because the baseline check
+            // compared a strict inequality with no rounding allowance at all.
+            val inceptionBaseline = snapshot(t0, "900.00", assets).copy(
                 assets = mapOf(
                     "BTC" to assetSnapshot(
                         symbol = "BTC",
@@ -19401,6 +19569,33 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         HistoricalPriceProvider { symbol, _ ->
             if (symbol == "USD") BigDecimal.ONE else prices[symbol]
         }
+
+    private suspend fun calculateHalfCentPartialSnapshot(
+        visibleSymbols: List<String>,
+        omittedSymbols: List<String>,
+        fullValue: String,
+        partialValue: String,
+    ): RebalancerComparison {
+        val baseline = snapshot(
+            timestamp = now,
+            totalValueUSD = fullValue,
+            assets = visibleSymbols.associateWith { assetRow("0.005", "1.00", "0.01") } +
+                omittedSymbols.associateWith { assetRow("0.004", "1.00", "0.00") } +
+                (Asset.USD to assetRow("100.00", "1.00", "100.00")),
+        )
+        val partial = snapshot(
+            timestamp = now.plusSeconds(60),
+            totalValueUSD = partialValue,
+            assets = visibleSymbols.associateWith { assetRow("0.005", "1.00", "0.01") } +
+                (Asset.USD to assetRow("100.00", "1.00", "100.00")),
+        )
+        return calculate(
+            snapshots = listOf(baseline, partial),
+            inceptionSnapshot = baseline,
+            configuredAssetUniverse = visibleSymbols.toSet() + Asset.USD,
+            priceProvider = mapPriceProvider(omittedSymbols.associateWith { BigDecimal.ONE }),
+        )
+    }
 
     private fun assetRow(balance: String, price: String, valueUSD: String): Triple<String, String, String> =
         Triple(balance, price, valueUSD)
