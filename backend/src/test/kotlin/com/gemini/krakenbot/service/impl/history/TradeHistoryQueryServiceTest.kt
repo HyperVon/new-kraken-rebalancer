@@ -8622,7 +8622,7 @@ private class CountingComparisonCache(private val delegate: RebalancerComparison
     }
 }
 
-private class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
+internal class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
     private val stored = mutableMapOf<Pair<Long, Long>, RebalancerComparisonCacheEntry>()
     var loadCount = 0
         private set

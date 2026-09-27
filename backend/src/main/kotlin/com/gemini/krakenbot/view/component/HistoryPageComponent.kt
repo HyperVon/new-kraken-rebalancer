@@ -201,6 +201,11 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 id = HtmlIds.COMPARISON_CONFIDENCE_BADGE
             }
             p(CssClass.History.ChartCaption) { +ViewText.COMPARISON_CAPTION }
+            // The served benchmark follows inferred allocation changes, not a retained
+            // configuration record. Saying so here is what keeps "RECONCILED" accounting from
+            // being read as proven configuration history.
+            p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CONFIGURATION_MATCHED_HOLD_CAPTION }
+            p(CssClass.History.ChartCaption) { +ViewText.HISTORY_BENCHMARK_FIXED_INCEPTION_REFERENCE }
             renderChartScrubber(HtmlIds.REBALANCER_COMPARISON_CHART)
         }
     }

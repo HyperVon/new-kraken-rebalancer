@@ -116,9 +116,15 @@ tasks.withType<Test> {
         finalizedBy(tasks.jacocoTestReport)
         finalizedBy(tasks.jacocoTestCoverageVerification)
     }
+    // Suite cost is concentrated, not spread evenly: the slowest specs dominate, so throughput
+    // saturates well below core count. Measured on a 12-core host (3,212 tests, 130 specs):
+    // 1 fork 162s, 2 forks 100s, 4 forks 79s, 6 forks 81s, 8 forks 73s, 12 forks 83s — past the
+    // knee, extra forks only duplicate per-fork JVM/Kotest startup and oversubscribe the CPU.
+    // A third of the cores lands on that knee and scales down on smaller hosts instead of pinning
+    // a magic ceiling. -PtestForks overrides this for constrained or oversized CI runners.
     maxParallelForks =
         providers.gradleProperty("testForks").orNull?.toIntOrNull()?.coerceAtLeast(1)
-            ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 2)
+            ?: (Runtime.getRuntime().availableProcessors() / 3).coerceAtLeast(1)
     maxHeapSize = providers.gradleProperty("testMaxHeap").orElse("2g").get()
     jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED")
     systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")

@@ -295,7 +295,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 unavailableReason = null,
                 unavailableAt = null,
             )
-            coEvery { tradeHistoryService.getRebalancerComparison(any(), any()) } returns comparison
+            coEvery { tradeHistoryService.getRebalancerComparison(any(), any(), any()) } returns comparison
             testApplication {
                 application {
                     configureTestEnv()
@@ -322,7 +322,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
             )
-            coEvery { tradeHistoryService.getRebalancerComparison(any(), any()) } returns comparison
+            coEvery { tradeHistoryService.getRebalancerComparison(any(), any(), any()) } returns comparison
             testApplication {
                 application {
                     configureTestEnv()

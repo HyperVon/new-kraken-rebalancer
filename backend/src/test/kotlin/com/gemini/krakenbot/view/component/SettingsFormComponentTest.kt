@@ -184,7 +184,7 @@ class SettingsFormComponentTest : StringSpec() {
                 )
             }
 
-            fragment shouldContain "Buy &amp; Hold baseline is currently unavailable."
+            fragment shouldContain "The comparison baseline is currently unavailable."
             fragment shouldContain "A deposit, withdrawal, transfer, or incomplete trade history may exist."
             fragment shouldContain "(failed at: 2026-06-08T00:00:00Z)"
         }
@@ -202,7 +202,7 @@ class SettingsFormComponentTest : StringSpec() {
             }
 
             fragment shouldContain "Automatic"
-            fragment shouldContain "Effective Buy &amp; Hold baseline: 2026-06-07T00:00:00Z"
+            fragment shouldContain "Effective comparison baseline: 2026-06-07T00:00:00Z"
             fragment shouldNotContain "currently unavailable"
             fragment shouldNotContain "failed at"
         }

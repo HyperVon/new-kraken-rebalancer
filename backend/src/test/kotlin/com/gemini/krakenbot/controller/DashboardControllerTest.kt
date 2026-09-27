@@ -274,7 +274,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain """hx-get="/fragments/settings-proposal""""
                 body shouldContain """hx-target="#comparison-proposal-slot""""
                 body shouldContain """hx-target="body""""
-                body shouldContain "Determining effective Buy &amp; Hold baseline"
+                body shouldContain "Determining effective comparison baseline"
                 coVerify(exactly = 0) { tradeHistoryService.getComparisonStartProposal(any()) }
                 coVerify(exactly = 0) { tradeHistoryService.getSettingsComparisonStatus(any()) }
             }
@@ -334,7 +334,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
                 body shouldContain """id="comparison-proposal-slot""""
                 body shouldContain "Automatic"
-                body shouldContain "Effective Buy &amp; Hold baseline: 2026-06-08T03:09:55.608Z"
+                body shouldContain "Effective comparison baseline: 2026-06-08T03:09:55.608Z"
                 body shouldNotContain """hx-trigger="load""""
                 body shouldNotContain """hx-get="/fragments/settings-proposal""""
                 body shouldNotContain "Use verified start"
@@ -365,7 +365,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
                 body shouldContain "Manual override active"
                 body shouldContain "Requested comparison start: 2026-06-07"
-                body shouldContain "Effective Buy &amp; Hold baseline: 2026-06-08T03:09:55.608Z"
+                body shouldContain "Effective comparison baseline: 2026-06-08T03:09:55.608Z"
                 body shouldNotContain "Automatic"
                 body shouldNotContain """hx-trigger="load""""
                 body shouldNotContain """hx-get="/fragments/settings-proposal""""

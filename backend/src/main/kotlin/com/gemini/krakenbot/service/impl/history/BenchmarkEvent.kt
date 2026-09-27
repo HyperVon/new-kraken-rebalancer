@@ -60,6 +60,22 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
         /** Source times of every ledger leg represented by this economic event. */
         val sourceEventTimestamps: Set<Instant> = setOf(event.time),
     ) : BenchmarkEvent()
+
+    /**
+     * One synthetic full-portfolio reallocation to an inferred configuration-regime change.
+     *
+     * Emitted once per [InferredRegimeTransition] at that transition's settled anchor, using the
+     * Actual strategy's in-scope value proportions observed at that anchor. The benchmark keeps its
+     * own NAV: it copies the strategy's portfolio *decision* (proportions), never its units or its
+     * account value, and performs no other rebalancing between transitions.
+     *
+     * [targetWeights] maps normalized symbol to weight; weights are value proportions that sum to 1.
+     */
+    data class ConfigurationReset(
+        override val timestamp: Instant,
+        val targetWeights: Map<String, BigDecimal>,
+        val transition: InferredRegimeTransition,
+    ) : BenchmarkEvent()
 }
 
 /**

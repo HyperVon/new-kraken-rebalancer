@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -42,6 +43,9 @@ class TradeHistoryServiceTestAdapter(private val repository: TradeRepository) : 
     override suspend fun getSyncMetadata(key: String): String? = null
     override suspend fun setSyncMetadata(key: String, value: String) = Unit
     override suspend fun isHistorySeeded(): Boolean = false
-    override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
-        throw NotImplementedError()
+    override suspend fun getRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison = throw NotImplementedError()
 }

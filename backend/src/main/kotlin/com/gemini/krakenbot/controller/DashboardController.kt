@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -687,7 +688,19 @@ class DashboardController(
 
     private suspend fun RoutingContext.handleGetHistoryComparison() {
         val (from, to) = parseTimeRange(call)
-        respondJson(tradeHistoryService.getRebalancerComparison(from, to).toApiDto())
+        // The operator-facing comparison is the configuration-matched benchmark: it follows the
+        // strategy's own inferred major allocation changes and otherwise holds, which is the
+        // comparison that isolates routine rebalancing from asset selection. The fixed-inception
+        // benchmark is selectable as a forensic reference, which prices the opportunity cost of
+        // every later allocation decision rather than the value of routine rebalancing.
+        val method = call.request.queryParameters["benchmark"]
+            ?.let { requested ->
+                BenchmarkMethod.entries.firstOrNull { it.name == requested }
+            }
+            ?: BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD
+        respondJson(
+            tradeHistoryService.getRebalancerComparison(from, to, method).toApiDto(),
+        )
     }
 
     private suspend fun RoutingContext.handleGetHistoryRewards() {

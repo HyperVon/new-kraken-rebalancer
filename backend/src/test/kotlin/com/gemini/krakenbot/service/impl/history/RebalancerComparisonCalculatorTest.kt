@@ -2,9 +2,11 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures.assetSnapshot
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.ConfigurationEvidence
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceFailure
@@ -100,7 +102,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         ledgerContext: List<LedgerEvent> = emptyList(),
         configuredAssetUniverse: Set<String>? = null,
         assetMetadata: List<KrakenAssetMetadata> = testAssetMetadata,
+        benchmarkMethod: BenchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
     ): RebalancerComparison = RebalancerComparisonCalculator.calculate(
+        benchmarkMethod = benchmarkMethod,
         snapshots = snapshots,
         trades = trades,
         assetMetadata = assetMetadata,
@@ -8699,6 +8703,55 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.BASELINE_MISMATCH
             result.unavailableAt shouldBe baseline.timestamp
+        }
+
+        "the inferred configuration-matched benchmark reports inferred evidence separately from accounting" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf("BTC" to assetRow("10.00", "100.00", "1000.00")),
+            )
+            val next = snapshot(
+                now.plusSeconds(3600),
+                "1000.00",
+                mapOf("BTC" to assetRow("10.00", "100.00", "1000.00")),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, next),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(emptyMap()),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            // Reconciled accounting must not imply proven historical configuration.
+            result.configurationEvidence shouldBe ConfigurationEvidence.INFERRED
+            result.benchmarkMethod shouldBe BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD
+        }
+
+        "the fixed-inception benchmark reports no configuration evidence" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf("BTC" to assetRow("10.00", "100.00", "1000.00")),
+            )
+            val next = snapshot(
+                now.plusSeconds(3600),
+                "1000.00",
+                mapOf("BTC" to assetRow("10.00", "100.00", "1000.00")),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, next),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(emptyMap()),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.configurationEvidence shouldBe ConfigurationEvidence.NOT_APPLICABLE
+            result.benchmarkMethod shouldBe BenchmarkMethod.FIXED_INCEPTION_HOLD
         }
 
         "a total-to-row residual beyond the row-count persistence envelope fails closed" {
