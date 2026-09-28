@@ -2213,5 +2213,85 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain "Preview only"
             }
         }
+
+        "allocationsPreview_UsesExplicitPositiveSleeve" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("50", "50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.0", "9.0"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("80"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "value=\"40.00\""
+            }
+        }
+
+        "allocationsPreview_FallsBackToTotalTargetWhenScoredTargetsAreZero" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "USD"),
+                            FormFields.TARGETS to listOf("0", "100"),
+                            FormFields.COLORS to listOf("#ff0000", "#0000ff"),
+                            FormFields.SCORES to listOf("9.0", ""),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf(""),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "100.00%"
+            }
+        }
+
+        "allocationsPreview_RejectsWhenAllTargetsZero" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("0", "0"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.0", "8.0"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("0"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.InternalServerError
+            }
+        }
     }
 }

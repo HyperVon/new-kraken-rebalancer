@@ -162,6 +162,81 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
                 .shouldContainExactly(Asset.BTC)
 
             coVerify(exactly = 1) { kraken.getOHLC(any(), any(), any()) }
+
+            // Beyond TTL, cache expires and queries backend again
+            instance.resolveAtRecentHigh(
+                allocations,
+                prices,
+                now + PortfolioManagerImpl.RECENT_HIGH_CACHE_TTL_SECONDS + 10,
+            ).shouldContainExactly(Asset.BTC)
+
+            coVerify(exactly = 2) { kraken.getOHLC(any(), any(), any()) }
+        }
+
+        "resolveAtRecentHigh falls back to dropping last bar when completed closes is empty and size > 1" {
+            val currentDayStart = now - (now % 86400)
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
+                currentDayStart + 10 to BigDecimal("55000"),
+                currentDayStart + 20 to BigDecimal("70000"),
+            )
+
+            // Current price is 60000; dropped-last candidate high is 55000 -> 60000 >= 55000 -> trending!
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+                .shouldContainExactly(Asset.BTC)
+        }
+
+        "resolveAtRecentHigh uses single bar when completed closes is empty and size == 1" {
+            val currentDayStart = now - (now % 86400)
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
+                currentDayStart + 10 to BigDecimal("60000"),
+            )
+
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+                .shouldContainExactly(Asset.BTC)
+        }
+
+        "resolveAtRecentHigh handles empty closes from backend cleanly" {
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns emptyList()
+
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+                .shouldBeEmpty()
+        }
+
+        "resolveAtRecentHigh skips symbol when price is zero, negative, or missing" {
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
+
+            val instance = manager(kraken)
+            instance.resolveAtRecentHigh(allocations, emptyMap(), now).shouldBeEmpty()
+            instance.resolveAtRecentHigh(
+                allocations,
+                mapOf(Asset.BTC to BigDecimal.ZERO, Asset.USD to BigDecimal.ONE),
+                now,
+            ).shouldBeEmpty()
+            instance.resolveAtRecentHigh(
+                allocations,
+                mapOf(Asset.BTC to BigDecimal("-100"), Asset.USD to BigDecimal.ONE),
+                now,
+            ).shouldBeEmpty()
+
+            coVerify(exactly = 0) { kraken.getOHLC(any(), any(), any()) }
+        }
+
+        "resolveAtRecentHigh queries backend when candidateSymbols contains the symbol" {
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
+
+            manager(kraken).resolveAtRecentHigh(
+                allocations,
+                prices,
+                now,
+                candidateSymbols = setOf(Asset.BTC),
+            ).shouldContainExactly(Asset.BTC)
+
+            coVerify(exactly = 1) { kraken.getOHLC(any(), any(), any()) }
         }
     }
 }
