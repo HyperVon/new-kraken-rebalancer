@@ -83,6 +83,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Agent-guidance model drift**: `.kilo/kilo.json` pins `kilo/openai/gpt-6-luna`, but
   `OPERATING.md`, `AGENTIC_DEVELOPMENT.md`, and two skills still documented
   `kilo/kilo-auto/efficient` and described Auto-tier behaviour the pinned route does not have.
+- **Settings rejections were invisible in the browser**: the server answers an invalid settings save —
+  and the allocation preview — with a fully rendered settings form plus an error banner and status
+  422, but htmx does not swap a non-2xx response by default. The body was discarded, so submitting
+  invalid input produced no feedback at all. This predates the preview and also affected the plain
+  save path. A scoped `htmx:beforeSwap` listener now admits status 422 when the response carries a
+  body, leaving every other error status to htmx's default handling.
 - **Largest-remainder proportional allocation**: `QualityAllocation.proportional` now uses standard
   Hare-Niemeyer largest-remainder allocation (`RoundingMode.DOWN` floor truncation plus descending remainder
   distribution) to guarantee non-negative residual integers and exact total percentage conservation.

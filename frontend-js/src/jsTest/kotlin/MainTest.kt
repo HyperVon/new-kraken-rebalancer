@@ -102,6 +102,23 @@ class MainTest : StringSpec() {
             }
         }
 
+        "a settings rejection is swapped, but an empty body or a real server fault is not" {
+            // htmx drops every non-2xx body by default, so a rendered settings form returned with
+            // 422 would never reach the operator. This is the decision the beforeSwap listener
+            // applies to each settings response; the listener's wiring is verified in the browser.
+            shouldSwapRejection(422, "<div class=\"error-banner\">nope</div>") shouldBe true
+
+            // Nothing worth rendering, so htmx's default handling stands.
+            shouldSwapRejection(422, "") shouldBe false
+            shouldSwapRejection(422, null) shouldBe false
+
+            // A genuine server fault is not a form rejection; swapping it would surface raw
+            // server output on the page.
+            shouldSwapRejection(500, "<div>boom</div>") shouldBe false
+            shouldSwapRejection(404, "<div>missing</div>") shouldBe false
+            shouldSwapRejection(null, null) shouldBe false
+        }
+
         "main registers DOMContentLoaded when body is null" {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }

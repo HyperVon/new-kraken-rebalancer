@@ -24,6 +24,7 @@ HtmlEvents:
   INPUT: "input"
   DOM_CONTENT_LOADED: "DOMContentLoaded"
   HTMX_AFTER_SWAP: "htmx:afterSwap"
+  HTMX_BEFORE_SWAP: "htmx:beforeSwap"
   BEFORE_UNLOAD: "beforeunload"
   VISIBILITY_CHANGE: "visibilitychange"
   VISIBILITY_HIDDEN: "hidden"
