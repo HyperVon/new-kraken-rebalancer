@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.CardFeePriceProvider
@@ -964,9 +965,9 @@ object RebalancerComparisonCalculator {
             val differencePercent = calculateDifferencePercent(differenceUSD, buyAndHoldValue)
             points += RebalancerComparisonPoint(
                 timestamp = snapshot.timestamp,
-                rebalancerValueUSD = rebalancerValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                buyAndHoldValueUSD = buyAndHoldValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                differenceUSD = differenceUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                rebalancerValueUSD = rebalancerValue.toUsdScale(),
+                buyAndHoldValueUSD = buyAndHoldValue.toUsdScale(),
+                differenceUSD = differenceUSD.toUsdScale(),
                 differencePercent = differencePercent.setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP),
             )
         }
@@ -977,10 +978,7 @@ object RebalancerComparisonCalculator {
             val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
                 .subtract(baselineFirstPoint.buyAndHoldValueUSD)
                 .abs()
-            val expectedInitialDifference = BigDecimal.ZERO.setScale(
-                PrecisionConstants.SCALE_USD,
-                RoundingMode.HALF_UP,
-            )
+            val expectedInitialDifference = BigDecimal.ZERO.toUsdScale()
             if (firstDiffFromCalc.subtract(expectedInitialDifference).abs() > baselineMismatchTolerance) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
@@ -993,15 +991,9 @@ object RebalancerComparisonCalculator {
         val correctedPoints = points.mapIndexed { index, point ->
             if (index == 0 && isStartingAtBaseline) {
                 point.copy(
-                    rebalancerValueUSD = baselineComparisonValue.setScale(
-                        PrecisionConstants.SCALE_USD,
-                        RoundingMode.HALF_UP,
-                    ),
-                    buyAndHoldValueUSD = baselineComparisonValue.setScale(
-                        PrecisionConstants.SCALE_USD,
-                        RoundingMode.HALF_UP,
-                    ),
-                    differenceUSD = BigDecimal.ZERO.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                    rebalancerValueUSD = baselineComparisonValue.toUsdScale(),
+                    buyAndHoldValueUSD = baselineComparisonValue.toUsdScale(),
+                    differenceUSD = BigDecimal.ZERO.toUsdScale(),
                     differencePercent = BigDecimal.ZERO.setScale(
                         PrecisionConstants.SCALE_PERCENT,
                         RoundingMode.HALF_UP,
@@ -3060,9 +3052,7 @@ object RebalancerComparisonCalculator {
             val recordedPrice = if (normalizedSymbol == Asset.USD) BigDecimal.ONE else asset.price
             if (hasRecordedPrice) {
                 val recordedValue = asset.balance.multiply(recordedPrice)
-                representedRecordedValue = representedRecordedValue.add(
-                    recordedValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                )
+                representedRecordedValue = representedRecordedValue.add(recordedValue.toUsdScale())
                 representedRawValue = representedRawValue.add(recordedValue)
                 continue
             }
@@ -3148,7 +3138,7 @@ object RebalancerComparisonCalculator {
                 .add(appliedSnapshotResidual)
                 .add(omittedRawValue)
                 .add(nonSpotRawValue)
-                .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                .toUsdScale(),
         )
     }
 
@@ -5272,9 +5262,8 @@ object RebalancerComparisonCalculator {
             replay.quote == Asset.USD &&
             (trade.source == TradeSource.API_FILL || trade.source == TradeSource.MANUAL) &&
             trade.price.signum() > 0 &&
-            trade.price.multiply(trade.volume)
-                .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-                .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) == 0
+            trade.price.multiply(trade.volume).toUsdScale()
+                .compareTo(trade.usdAmount.toUsdScale()) == 0
         if (canUseReportedTradeEconomics) {
             val baseDelta = if (replay.isBuy) trade.volume else trade.volume.negate()
             val baseBalance = balances[replay.base]
@@ -5374,10 +5363,7 @@ object RebalancerComparisonCalculator {
         if (trade.source != TradeSource.API_FILL && trade.source != TradeSource.MANUAL) return false
         if (trade.price.signum() <= 0) return false
         val preciseNotional = trade.price.multiply(trade.volume)
-        if (
-            preciseNotional.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-                .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) != 0
-        ) {
+        if (preciseNotional.toUsdScale().compareTo(trade.usdAmount.toUsdScale()) != 0) {
             return false
         }
         val preciseQuoteDelta = persistedQuoteDelta(replay.isBuy, preciseNotional, replay.fee)
@@ -5446,8 +5432,7 @@ object RebalancerComparisonCalculator {
             accountingMode != TradeAccountingMode.PRECISE_FILL_NOTIONAL &&
             hasSettledFillEconomics &&
             trade.price.signum() > 0 &&
-            preciseNotional.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-                .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) == 0
+            preciseNotional.toUsdScale().compareTo(trade.usdAmount.toUsdScale()) == 0
         ) {
             trade.usdAmount
         } else {

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl.history
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ConfigurationEvidence
 import io.kotest.core.spec.style.StringSpec
 import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
@@ -69,8 +70,7 @@ class ConfigurationMatchedHoldAcceptanceTest :
                         "Shipping inferred comparison unavailable: ${inferred.unavailableReason} at ${inferred.unavailableAt}"
                     }
                     check(
-                        inferred.configurationEvidence ==
-                            com.gemini.krakenbot.model.ConfigurationEvidence.INFERRED,
+                        inferred.configurationEvidence == ConfigurationEvidence.INFERRED,
                     )
                     check(inferred.benchmarkMethod == BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD)
 

@@ -1,14 +1,14 @@
 # Static Hold V2 — Independent Price & Capital-Flow Recovery
 
 **Analysis-only.** No production code, tests, databases, PR, or commits touched.
-**Source DB:** `/Users/charlesv/Downloads/kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · `mode=ro`.
+**Source DB:** `kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · `mode=ro`.
 **Scratch:** `/tmp/kraken-forensic/static-hold-v2/`
 
 ---
 
 ## 1. Executive verdict
 
-> # EVIDENCE_INSUFFICIENT
+> ## EVIDENCE_INSUFFICIENT
 >
 > **GATE A: PASS.** An independent, exchange-native, gap-free daily price series was obtained for all
 > 11 configured crypto assets covering the full window. This *resolves* the price blocker that made the
@@ -27,7 +27,7 @@ The prior `+$4,067.53` was not resurrected, re-derived, or nudged. No passive NA
 ## 2. Source integrity
 
 | item | value |
-|---|---|
+| --- | --- |
 | Source DB SHA-256 before/after | `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` ✅ |
 | `PRAGMA integrity_check` | `ok` |
 | Access mode | `mode=ro` only |
@@ -43,7 +43,7 @@ holdings, `target_percent`, or outcomes. **The red-team T0 allocation bug is irr
 ## 4. Independent price-source discovery
 
 | tier | source searched | result |
-|---|---|---|
+| --- | --- | --- |
 | A | Kraken public OHLC (`api.kraken.com/0/public/OHLC`, `interval=1440`) | **AVAILABLE — 11/11 assets** |
 | A | local `historical_ohlc_candles` (5,112 rows) | only `ADAUSD` + `MORPHOUSD` — **no configured asset** |
 | A | `historical_ohlc_fetches` (466) | metadata only, no candles |
@@ -55,7 +55,7 @@ Kraken is the same venue as the account's own fills, so the series is **exchange
 ## 5. Price coverage by asset
 
 | asset | Kraken key | pair | candles | first | last | daily gaps | raw artifact | SHA-256 |
-|---|---|---|---:|---|---|---|---|---|
+| --- | --- | --- | ---: | --- | --- | --- | --- | --- |
 | BTC | XXBTZUSD | XBT/USD | 295 | 2025-12-03 | 2026-09-23 | **0** | `ohlc_BTC.json` | `8b52ebe555d9…` |
 | SOL | SOLUSD | SOL/USD | 295 | 2025-12-03 | 2026-09-23 | **0** | `ohlc_SOL.json` | `9ccc23d4ad7e…` |
 | ETH | XETHZUSD | ETH/USD | 295 | 2025-12-03 | 2026-09-23 | **0** | `ohlc_ETH.json` | `6730b2b17477…` |
@@ -110,7 +110,7 @@ decision, and it is not a gate.
 T0 = 2025-12-05T17:00:56.973Z. Last completed daily candle = 2025-12-04 (a ~17 h stale but strictly
 causal observation):
 
-```
+```text
 BTC 92,142.60   SOL 139.04   ETH 3,133.94   XRP 2.09615   LINK 14.26088
 TAO    290.43   INJ   5.797  RENDER 1.712   PAXG 4,215.19  AVAX 14.41
 TRX      0.286256
@@ -128,7 +128,7 @@ Full-account value at T0 comes from snapshot 97881: **$1,861.21**. The immediate
 PENDLE and MORPHO (both out of the configured universe) plus an XMR buy/sell round trip.
 
 | line | amount |
-|---|---:|
+| --- | ---: |
 | In-scope capital at T0 (USD $1,490.5632 + BTC dust $0.2430) | $1,490.81 |
 | PENDLE liquidation proceeds | +$371.19 |
 | MORPHO liquidation proceeds | +$369.92 |
@@ -192,12 +192,14 @@ grouped normalisation legs reconcile, no internal transfer counted as new capita
 ## 18. Price gate result
 
 > ## PRICE_GATE: **PASS**
+>
 > 11/11 assets, exchange-native daily OHLC, 295 candles each, 2025-12-03 → 2026-09-23, **zero gaps**,
 > strictly causal convention declared in advance, T0 priceable for all 11 assets.
 
 ## 19. Flow gate result
 
 > ## FLOW_GATE: **FAIL**
+>
 > 43 external-flow rows carry 43 distinct refids; no normalisation grouping is recoverable; no
 > independent stablecoin prices; the net owner external capital figure is unverifiable. **This is a
 > material unresolved amount** — flows are ~$23k against a ~$2.2k starting base, so a misclassification
@@ -215,7 +217,7 @@ Producing them would mean inventing the capital base.
 
 ## 38. Recommendation
 
-> ## Do not publish any static-hold number yet.
+> ## Do not publish any static-hold number yet
 >
 > One of the two blockers is now cleared and the other is not. The honest position is
 > **`EVIDENCE_INSUFFICIENT`** — not a range, not a bound, not a provisional figure.

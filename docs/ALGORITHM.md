@@ -441,32 +441,23 @@ actually settled, so an order degrades to a smaller or dust-skipped buy rather
 than failing. If price history is unavailable or the lookup fails, the cycle
 fails open and trades exactly as it would without this rule.
 
-### 5. Recommended Operating Settings
+### 5. Operating Settings Trade-offs
 
-These are the values a replay of a real account against buy-and-hold favoured.
-They are a defensible operating point, not a tuned optimum — see the caveat.
+Rebalance parameters balance fee drag against deviation harvesting:
 
-| Setting | Recommended | Why |
-| :--- | :--- | :--- |
-| `deviationTriggerPercent` | **10** | Tighter triggers buy too many small edges and pay a 0.70% round-trip toll to collect them. Wider triggers cut trade count and fees. |
-| Recent-high lookback | **20 days** (default) | Suppresses sells into trends; validated to help in both halves of the replay window. |
-| `minimumOrderSizeUSD` | ≥ 20 | Keeps per-trade fees negligible against the deviation being corrected. |
+| Setting | Considerations |
+| :--- | :--- |
+| `deviationTriggerPercent` | Tighter triggers capture smaller mean-reverting deviations but trade more often, incurring exchange fee tolls (e.g. ~0.70% round-trip taker fees). Wider triggers reduce trade count and fee drag. |
+| Recent-high lookback | 20 days (default). Suppresses selling into continuation trends when assets reprice rather than oscillate. |
+| `minimumOrderSizeUSD` | ≥ \$20. Prevents generating dust orders where fees would consume the corrected deviation. |
 
-The measured effect, replayed through this engine on ~9.7 months of real
-history, as trailing difference against buy-and-hold on identical capital:
-
-| Configuration | Difference vs buy-and-hold |
-| :--- | ---: |
-| 5% trigger, no tail-stop | −508 |
-| 5% trigger, 20-day tail-stop | −321 |
-| **10% trigger, 20-day tail-stop** | **−68** |
-
-> **Caveat.** These come from one 9.7-month window on one allocation. The best
-> cell was re-checked on both halves of that window and held (−247 first half,
-> −68 full), but neighbouring cells in the grid are 3–5× worse, so treat it as a
-> **range** (trigger 7–10%, lookback 15–30 days) rather than a precise optimum.
-> Re-run the replay harness against a fresh fixture before re-tuning; on this
-> evidence rebalancing **reduced variance but did not beat buy-and-hold**.
+> **Caveat.** Historical replays over real account history indicate that routine
+> rebalancing frequently trails buy-and-hold because cumulative fee drag can
+> exceed the harvested volatility edge. The trend-aware tail-stop acts as a
+> **variance reducer** by curbing premature sales of strongly appreciating assets,
+> rather than a guarantee of outperforming buy-and-hold. Empirical parameter sweeps
+> are evaluated across multiple independent walk-forward models before operational
+> calibration guidelines are established.
 
 ---
 

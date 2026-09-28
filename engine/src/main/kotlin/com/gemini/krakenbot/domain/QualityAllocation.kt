@@ -47,21 +47,21 @@ object QualityAllocation {
         require(totalPower.signum() > 0) { "scores must not all be zero" }
 
         val exact = powered.mapValues { sleevePercent.multiply(it.value).divide(totalPower, 12, RoundingMode.DOWN) }
-        val rounded = exact.mapValues { it.value.setScale(PERCENT_SCALE, RoundingMode.HALF_UP) }
-        var residual = sleevePercent.setScale(PERCENT_SCALE, RoundingMode.HALF_UP)
-            .subtract(rounded.values.fold(BigDecimal.ZERO, BigDecimal::add))
+        val targetSleeve = sleevePercent.setScale(PERCENT_SCALE, RoundingMode.HALF_UP)
+        val truncated = exact.mapValues { it.value.setScale(PERCENT_SCALE, RoundingMode.DOWN) }
+        val totalTruncated = truncated.values.fold(BigDecimal.ZERO, BigDecimal::add)
+        var residual = targetSleeve.subtract(totalTruncated)
 
-        // Hand the leftover cents to the largest fractional remainders, largest first. The
-        // residual is bounded by half a cent per leg, so one pass over the legs always settles it.
-        val order = exact.entries.sortedByDescending {
-            it.value.subtract(it.value.setScale(PERCENT_SCALE, RoundingMode.HALF_UP))
+        // Hand the leftover cents to the largest fractional remainders, largest first.
+        // Because truncated <= exact, residual is always non-negative and bounded by the leg count.
+        val remainders = exact.entries.sortedByDescending { (symbol, exactVal) ->
+            exactVal.subtract(truncated.getValue(symbol))
         }
-        val adjusted = rounded.toMutableMap()
-        val step = if (residual.signum() >= 0) CENT else CENT.negate()
-        for (entry in order) {
-            if (residual.signum() == 0) break
-            adjusted[entry.key] = adjusted.getValue(entry.key).add(step)
-            residual = residual.subtract(step)
+        val adjusted = truncated.toMutableMap()
+        for ((symbol, _) in remainders) {
+            if (residual.signum() <= 0) break
+            adjusted[symbol] = adjusted.getValue(symbol).add(CENT)
+            residual = residual.subtract(CENT)
         }
         return adjusted
     }

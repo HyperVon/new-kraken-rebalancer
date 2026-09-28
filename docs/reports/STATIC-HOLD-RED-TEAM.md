@@ -1,13 +1,13 @@
 # Static-Hold Result — Independent Red-Team Reproduction
 
 **Forensic / analysis-only.** No production code, tests, databases, PR, or commits touched. Scratch under `/tmp/kraken-forensic/red-team/`.
-**Source DB:** `/Users/charlesv/Downloads/kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · `mode=ro` throughout.
+**Source DB:** `kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · `mode=ro` throughout.
 
 ---
 
 ## 1. Executive verdict
 
-> # RESULT_NOT_DEFENSIBLE
+> ## RESULT_NOT_DEFENSIBLE
 >
 > **The previous result is disproven.** I found a fatal capital-conservation defect: **$1,058.47 of the
 > $1,490.81 T0 cohort — 71% of the opening capital — was never allocated to anything.** It silently
@@ -38,12 +38,12 @@ SHA-256 `598576e1…` before and after; `integrity_check ok`; opened `mode=ro`; 
 `SnapshotHistoryCalculator`'s reverse-trade reconstruction.
 
 | provenance | rows | share | span |
-|---|---:|---:|---|
+| --- | ---: | ---: | --- |
 | **NULL → RECONSTRUCTED** | **4,312** | **89.9%** | 2025-12-05 → 2026-09-15 |
 | NON-NULL → **OBSERVED** | **482** | **10.1%** | 2026-09-15 → 2026-09-23 |
 
 | required input | snapshot id | provenance | independent? |
-|---|---:|---|---|
+| --- | ---: | --- | --- |
 | T0 NAV | 97881 | **NULL → reconstructed** | **NO** |
 | T0 asset prices | 97881 | **NULL → reconstructed** | **NO** |
 | every flow-allocation price | — | **NULL → reconstructed** | **NO** |
@@ -59,7 +59,7 @@ from the reconstruction.
 worse than observed-row prices, by comparing every snapshot price to the nearest real fill within 24h:
 
 | row class | n | median \|Δ\| | p95 | mean \|Δ\| | >1% off |
-|---|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: |
 | RECONSTRUCTED | 28,920 | 1.155% | 5.99% | 1.863% | 53.6% |
 | **OBSERVED** | 478 | **1.668%** | **10.35%** | **2.187%** | **53.1%** |
 
@@ -71,7 +71,7 @@ verify 89.9% of it against.
 ## 5. Terminal Actual NAV provenance
 
 | candidate | value | provenance | verdict |
-|---|---:|---|---|
+| --- | ---: | --- | --- |
 | observed snapshot 98021 | **$21,148.76** | `balances_observed_at = 1790177120160` | **PRIMARY** |
 | production replay output | $21,188.49 | depends on the defective replay | **rejected** |
 | previous report's figure | $21,148.75 | same as primary (rounding) | consistent |
@@ -88,7 +88,7 @@ a snapshot.
 
 I searched for an independent causal substitute — the last real fill at or before each event:
 
-```
+```text
 events with a real prior fill for all 11 configured assets : 0 of 43
 mean staleness of the best causal fill                     : 6,961.7 min  (4.8 days)
 max staleness                                               : 108,674 min  (79 days)
@@ -109,14 +109,14 @@ The T0 snapshot (id 97881) records **`price = 0` for 10 of the 11 configured cry
 carries a price.
 
 | symbol | T0 snapshot price | first real fill |
-|---|---:|---|
+| --- | ---: | --- |
 | BTC | 89,332.4 | 89,716 (17:39:57) |
 | SOL, ETH, XRP, LINK, TAO, INJ, RENDER, PAXG, AVAX, TRX | **0** | exists, but *after* T0 |
 
 The prior model contained `if(p) units[s] += notional/p;` — with `p = 0` this **skipped the
 purchase entirely**. So the T0 cohort allocated only:
 
-```
+```text
 BTC  24%  × $1,490.81 = $357.79  →  bought
 USD   5%  × $1,490.81 = $74.54   →  retained
                         ---------
@@ -141,7 +141,7 @@ counterfactual.** A static investor liquidating pre-existing positions to fund t
 exactly the action the counterfactual contemplates. The prior "exclude $741.11" treatment should be a
 sensitivity, not the primary case. On that basis the starting-capital bridge should be:
 
-```
+```text
 account economic value at T0              $2,232.69
   cash                                    $1,490.56
   BTC dust                                    $0.24
@@ -210,7 +210,7 @@ The prior report compared **Actual 2026 fees $348.66** against **passive lifetim
 reported a "3.1×" ratio. That is not like-for-like.
 
 | | lifetime | 2026 |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Actual trading fees | **$498.87** | **$348.66** |
 | Passive synthetic fees (prior, lifetime) | $111.45 | — |
 
@@ -225,7 +225,7 @@ narrative — that is the defect.
 opening cohort is mis-allocated. Reporting a matrix would imply the underlying model is sound.
 
 | requested row | status |
-|---|---|
+| --- | --- |
 | BASE_PREVIOUS | **disproven** — 71% of T0 capital vanished |
 | CONSERVATIVE_PASSIVE | blocked — no defensible price |
 | STRICT_CAUSAL_PRICE | **impossible** — 0/43 events have a causal price |
@@ -254,7 +254,7 @@ Break-even requires passive terminal NAV ≈ **$21,148.76** (the observed Actual
 above the prior $17,081.22.
 
 | maximum defensible contribution to passive | amount |
-|---|---:|
+| --- | ---: |
 | T0 allocation leak recovered | +$1,058 (starting capital) |
 | out-of-scope liquidation proceeds | +$738 (starting capital) |
 | passive staking credit (R2) | ≤ $120 |
@@ -282,7 +282,7 @@ Given in §8. It is the area that broke.
 ## 27. Failure-mode counts
 
 | condition | count among benchmark inputs | safe? |
-|---|---:|---|
+| --- | ---: | --- |
 | snapshot reconstructed (NULL provenance) | 4,312 rows = **89.9%** of the window | **NO** |
 | `balances_observed_at` non-null | 482 rows = 10.1% | YES |
 | price populated by observed row | 478 priced rows used for validation | YES |
@@ -294,7 +294,7 @@ Given in §8. It is the area that broke.
 ## 28. Acceptance criteria
 
 | # | criterion | result |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Snapshot/price provenance acceptable | **FAIL** (§4) |
 | 2 | No material lookahead | **FAIL** (§6) |
 | 3 | External capital reconciles | **UNVERIFIED** (§9) |
@@ -320,7 +320,7 @@ writing on the current evidence.**
 
 ## 30. Final verdict
 
-# RESULT_NOT_DEFENSIBLE
+### Result: not defensible
 
 **The previous result is disproven**, on two independent grounds:
 
@@ -412,6 +412,7 @@ whole exercise I consider fully clean.
 staking credit, W2 withdrawal semantics) might add a few hundred more. **I cannot rule the reversal out.**
 
 **Q12. Which previous explanatory claims were wrong or unsupported?**
+
 - **"Recorded snapshot" inputs were not independent** (§4) — the load-bearing error.
 - **"No future prices are used"** was false for all 43 events (§6).
 - **"71% of the T0 cohort" was silently dropped** and never noticed (§7).

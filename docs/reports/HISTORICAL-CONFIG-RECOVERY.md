@@ -1,7 +1,7 @@
 # Historical Configuration Recovery
 
-**Repo:** `/Users/charlesv/Projects/new-kraken-rebalancer` · HEAD `35f19587` · read-only pass, nothing modified.
-**Source DB:** `/Users/charlesv/Downloads/kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · opened `mode=ro` throughout.
+**Repo:** `new-kraken-rebalancer` · HEAD `35f19587` · read-only pass, nothing modified.
+**Source DB:** `kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · opened `mode=ro` throughout.
 
 ---
 
@@ -14,7 +14,7 @@ The application records `inception_config_fingerprint` in the database at incept
 (`InceptionRecoveryService.configurationFingerprint`, `:2273`) over the **current**
 `rebalancer-config.json`. The result is an **exact match**:
 
-```
+```text
 recorded inception_config_fingerprint  d913b1e3de066603c1943a90f914618a4c4627642b7eb933bc4d3562b9900478
 recomputed from current config         d913b1e3de066603c1943a90f914618a4c4627642b7eb933bc4d3562b9900478
 ```
@@ -22,7 +22,7 @@ recomputed from current config         d913b1e3de066603c1943a90f914618a4c4627642
 **Therefore the configured allocation has not changed at any point since inception.** The timeline is:
 
 | # | effective | provenance | BTC | SOL | ETH | XRP | LINK | TAO | USD | INJ | RENDER | PAXG | AVAX | TRX | Σ |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **REV 1** | **2025-12-05T17:00:56.973Z → present** | **AUTHORITATIVE_RECORDED** | 24 | 15 | 15 | 7 | 7 | 6 | 5 | 5 | 5 | 5 | 3 | 3 | **100** |
 
 **Zero later revisions. Zero membership changes. Zero weight changes.**
@@ -43,7 +43,7 @@ constant; the **deployment-rule parameters** have unknown history (see §14).
 ## 2. Search scope actually performed
 
 | # | Source | Performed | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | Repository current files | ✅ | Config model, write path, migration system, `target_percent` provenance |
 | 2 | Git history (`--all`, `-S`, deleted/renamed) | ✅ | Only the 3-asset **default template**; no user config ever committed |
 | 3 | Full historical DB (read-only) | ✅ | **Fingerprint match — the primary finding** |
@@ -60,7 +60,7 @@ identified as a next source (§22), not pursued blindly.
 
 ## 3. Current configuration persistence architecture
 
-```
+```text
 Allocation(symbol: Asset, targetPercent: Double, color: String?)   // common/.../config/Allocation.kt
 AppConfig(kraken, settings, allocations: List<Allocation>)          // common/.../config/AppConfig.kt
 ```
@@ -77,7 +77,7 @@ AppConfig(kraken, settings, allocations: List<Allocation>)          // common/..
 `rebalancer-config-template.json` is the **only** tracked config file. Its history is 8 commits; its
 current content is the **3-asset default**:
 
-```
+```text
 BTC 50, ETH 45, USD 5
 ```
 
@@ -112,7 +112,7 @@ configuration table.** No chronological-diff value exists.
 **The fingerprint is the one real record** (in `history_sync_metadata`):
 
 | Key | Value |
-|---|---|
+| --- | --- |
 | `inception_config_fingerprint` | `d913b1e3de066603c1943a90f914618a4c4627642b7eb933bc4d3562b9900478` |
 | `inception_auto_baseline_config_fingerprint` | *(identical)* |
 | `inception_account_scope_digest` | `6ec87aac39b0fb8d43055a55d42c714b62478e6bd1222dbb77b9cf3bfaa32450` |
@@ -126,7 +126,7 @@ Recomputing with the app's algorithm (SHA-256 over
 ## 6. Config-file / backup findings
 
 | Path | mtime | rows | Σ | Classification |
-|---|---|---:|---:|---|
+| --- | --- | ---: | ---: | --- |
 | `rebalancer-config.json` | 2026-09-11T23:38:52 | 12 | 100.0 | **AUTHORITATIVE_RECORDED** (current state) |
 | `backend/rebalancer-config.json` | 2026-09-15T18:37:20 | 12 | 100.0 | duplicate, same weights |
 | `rebalancer-config-template.json` | 2026-08-07T19:56:22 | 3 | 100.0 | default/example — **not** user config |
@@ -171,7 +171,7 @@ the configuration history would have been unrecoverable.
 ## 12. Evidence ledger
 
 | evidenceId | sourceType | sourcePath | timestamp | provenance | complete | weights |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | **EVID-001** | DB metadata digest | `history_sync_metadata.inception_config_fingerprint` | 2025-12-05T17:00:56.973Z | **AUTHORITATIVE_RECORDED** | **true** | indirect, via SHA-256 match to EVID-002 |
 | **EVID-002** | Live config file | `rebalancer-config.json` | mtime 2026-09-11T23:38:52 | **AUTHORITATIVE_RECORDED** | **true** | AVAX 3, BTC 24, ETH 15, INJ 5, LINK 7, PAXG 5, RENDER 5, SOL 15, TAO 6, TRX 3, USD 5, XRP 7 |
 | **EVID-003** | DB metadata digest | `inception_auto_baseline_config_fingerprint` | 2025-12-05T17:00:56.973Z | AUTHORITATIVE_RECORDED | true | corroborates EVID-001/002 |
@@ -226,7 +226,7 @@ investigation's candidate points differed only by *deployment timing* and not by
 ## 15. Coverage analysis
 
 | Metric | Value |
-|---|---|
+| --- | --- |
 | Earliest trustworthy **complete** configuration | **2025-12-05T17:00:56.973Z** |
 | Latest covered | **open (present)** |
 | Complete revisions | **1** |
@@ -273,7 +273,7 @@ adjusted in light of this cross-check.**
 ## 19. Remaining blockers
 
 | # | Blocker | Blocks | Independent of config recovery? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | Ledger/trade/snapshot reconstruction defect (10.3% replay gap) | Exact economic replay over **any** window | **Yes** — separate workstream |
 | 2 | Deployment-rule parameters uncovered by the fingerprint | A benchmark that must follow the drawdown-adjusted target schedule | **Yes** |
 | 3 | No Time Machine / no config backups | Recovery if the fingerprint had not matched | Mitigated — it matched |
@@ -282,7 +282,7 @@ adjusted in light of this cross-check.**
 ## 20. Overall classification
 
 | Scope | Classification |
-|---|---|
+| --- | --- |
 | **Asset selection and target weights** | **COMPLETE** — 100% coverage, one revision, cryptographically proven |
 | **Deployment-rule settings** | **PARTIAL_BUT_USABLE** — unknown pre-2026-09-11, but irrelevant to the asset-allocation question |
 | **Overall for the stated objective** | **MOSTLY_COMPLETE** |

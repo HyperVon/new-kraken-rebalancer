@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import io.kotest.core.spec.style.StringSpec
@@ -174,7 +175,7 @@ class ConfigurationResetEvidenceTest : StringSpec() {
             )
 
             outcome.shouldBeInstanceOf<RebalancerComparisonCalculator.ConfigurationResetOutcome.Failed>()
-            outcome.reason shouldBe com.gemini.krakenbot.model.ComparisonUnavailableReason.MISSING_PRICE
+            outcome.reason shouldBe ComparisonUnavailableReason.MISSING_PRICE
             // Nothing may be mutated before the failure is proven.
             balances.containsKey("AVAX") shouldBe false
         }

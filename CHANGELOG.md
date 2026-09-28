@@ -10,21 +10,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Inferred configuration-matched hold benchmark**: infers major, persistent allocation regime
+  changes from trading and balance behavior and labels them `INFERRED`, separating accounting
+  confidence from configuration evidence. `ConfigurationRegimeInference` identifies persistent
+  regimes (≥20 fills over ≥60 days and continuous economic presence) to synthesize resets anchored
+  to the strategy's in-scope value proportions. Cache version is bumped to 6 with benchmark identity
+  in the key, while the fixed-inception benchmark remains selectable via `?benchmark=` as a forensic reference.
 - **Trend-aware sell suppression**: a rebalance no longer trims an asset that is trading at its
   highest completed daily close over the last 20 days, the regime where mean-reversion trades
   historically lose to trend continuation. The suppressed leg is reported as
   `Skipping sell — at recent high for <SYM>` in the action log. The lookback resolves through
   `KrakenService.getOHLC` and fails open, so a missing or failing history leaves the cycle trading
-  exactly as before.
+  exactly as before. Queries are filtered to candidate sell symbols with a 1-hour TTL cache to avoid
+  redundant public OHLC polling across cycles.
 - **Fundamental quality scores**: settings carry an optional `qualityScores` map per allocation
   symbol. The dashboard allocation panel reports weighted quality score, largest single position,
   and effective independent bets, and renders nothing when no scores are configured.
 - **Score-derived allocation preview**: a `Calculate from scores` action in the settings form
   redistributes the scored sleeve proportionally to `score^emphasis` (emphasis 1-8) and fills the
   open form. It is preview-only — it never persists, and the operator can edit before saving.
-  Cash and gold keep fixed slots because they carry no score. `docs/ALGORITHM.md` records the
-  recommended operating settings derived from a replay against buy-and-hold, including the caveat
-  that they are a range rather than a tuned optimum.
+  Preserves target percentages for unscored assets and defaults the sleeve to the sum of scored targets.
+  `docs/ALGORITHM.md` records the operating settings trade-offs between fee drag and variance reduction,
+  including the caveat that tail-stop rebalancing reduces variance rather than guaranteeing outperformance against buy-and-hold.
 - **Historical replay harness** (`backend/src/test/kotlin/com/gemini/krakenbot/replay`): replays a
   price path and capital-flow schedule through the production `RebalancerEngine` and compares the
   rebalanced book with buy-and-hold on identical capital. Fixtures are loaded from
@@ -34,6 +41,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Largest-remainder proportional allocation**: `QualityAllocation.proportional` now uses standard
+  Hare-Niemeyer largest-remainder allocation (`RoundingMode.DOWN` floor truncation plus descending remainder
+  distribution) to guarantee non-negative residual integers and exact total percentage conservation.
 - **Fiat funding provenance**: a deposit or withdrawal whose Funding record exposes only a
   `method_id` — no method name, no transaction id, as is the case for every fiat rail on the modern
   Funding API — is no longer forced to `UNRESOLVED`. The stable funding-rail id is now carried on
@@ -42,6 +52,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Historical replay terminal day truncation**: add regression coverage in `ReplayComparisonTest`
   verifying that `lastDay` bounds both the rebalanced and buy-and-hold arms to the identical evaluation
   day, excluding subsequent funding flows and market movements from both books.
+- **Precision in score preview calculation**: convert percentages using `BigDecimal.valueOf` rather than
+  `BigDecimal(Double)` to eliminate IEEE 754 floating-point conversion artifacts.
 
 ## [6.17.83] - 2026-09-25
 

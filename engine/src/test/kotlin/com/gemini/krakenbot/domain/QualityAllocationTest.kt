@@ -44,6 +44,19 @@ class QualityAllocationTest : StringSpec() {
                 .shouldBeEqualComparingTo(BigDecimal("10.00"))
         }
 
+        "proportional allocation awards remainder cents to largest fractional remainder without inversion" {
+            val closeScores = mapOf(
+                "A" to BigDecimal("33.336"),
+                "B" to BigDecimal("33.336"),
+                "C" to BigDecimal("33.328"),
+            )
+            val weights = QualityAllocation.proportional(closeScores, BigDecimal("100.00"), emphasis = 1)
+            weights.values.fold(BigDecimal.ZERO, BigDecimal::add)
+                .shouldBeEqualComparingTo(BigDecimal("100.00"))
+            weights.getValue("C").shouldBeEqualComparingTo(BigDecimal("33.33"))
+            (weights.getValue("A").add(weights.getValue("B"))).shouldBeEqualComparingTo(BigDecimal("66.67"))
+        }
+
         "emphasis of one keeps close scores close together" {
             val weights = QualityAllocation.proportional(scores, sleeve, emphasis = 1)
             val btc = weights.getValue("BTC")

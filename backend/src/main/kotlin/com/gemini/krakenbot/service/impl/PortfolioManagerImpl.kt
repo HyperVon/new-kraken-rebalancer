@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
@@ -39,6 +40,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -60,7 +62,12 @@ class PortfolioManagerImpl(
 
         /** Days of completed daily closes that define "a recent high" for sell suppression. */
         const val RECENT_HIGH_LOOKBACK_DAYS = 20L
+
+        /** TTL for caching completed daily recent-high closes to avoid redundant public OHLC polling. */
+        const val RECENT_HIGH_CACHE_TTL_SECONDS = 3600L
     }
+
+    private val recentHighCache = ConcurrentHashMap<String, Pair<Long, BigDecimal>>()
 
     /**
      * Symbols currently trading at or above their highest completed close in the lookback
@@ -74,24 +81,48 @@ class PortfolioManagerImpl(
         allocations: List<Allocation>,
         prices: Map<String, BigDecimal>,
         nowEpochSecond: Long,
+        candidateSymbols: Set<String>? = null,
     ): Set<String> {
         val backend = krakenService ?: return emptySet()
+        if (candidateSymbols != null && candidateSymbols.isEmpty()) return emptySet()
         val since = nowEpochSecond - RECENT_HIGH_LOOKBACK_DAYS * 24 * 60 * 60
         val trending = mutableSetOf<String>()
+        val currentDayStart = nowEpochSecond - (nowEpochSecond % 86400)
         for (allocation in allocations) {
             val symbol = allocation.symbol
             if (symbol.isUsd) continue
+            if (candidateSymbols != null && !candidateSymbols.contains(symbol.value)) continue
             val currentPrice = prices[symbol.value] ?: continue
             if (currentPrice.signum() <= 0) continue
-            val closes = try {
-                backend.getOHLC(Asset.tradingPair(symbol.value), interval = 1440, since = since)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.debug("Recent-high lookup failed for {}; trading it as before", symbol.value, e)
-                continue
+
+            val pair = Asset.tradingPair(symbol.value)
+            val cached = recentHighCache[pair]
+            val recentHigh = if (cached != null && nowEpochSecond < cached.first) {
+                cached.second
+            } else {
+                val closes = try {
+                    backend.getOHLC(pair, interval = 1440, since = since)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.debug("Recent-high lookup failed for {}; trading it as before", symbol.value, e)
+                    continue
+                }
+                val completedCloses = closes.filter { it.first < currentDayStart }
+                val candidateCloses = if (completedCloses.isNotEmpty()) {
+                    completedCloses
+                } else if (closes.size > 1) {
+                    closes.dropLast(1)
+                } else {
+                    closes
+                }
+                val high = candidateCloses.maxOfOrNull { it.second } ?: continue
+                if (high.signum() > 0) {
+                    recentHighCache[pair] = Pair(nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS, high)
+                }
+                high
             }
-            val recentHigh = closes.maxOfOrNull { it.second } ?: continue
+
             if (recentHigh.signum() > 0 && currentPrice >= recentHigh) {
                 trending.add(symbol.value)
             }
@@ -564,12 +595,33 @@ class PortfolioManagerImpl(
         val cryptoScaleFactor =
             portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
 
+        val sellCandidates = config.allocations
+            .filter { !it.symbol.isUsd }
+            .filter { alloc ->
+                val targetPct = PortfolioCalculations.calculateTargetPercent(
+                    alloc.symbol,
+                    BigDecimal.valueOf(alloc.targetPercent),
+                    effectiveUsdTarget,
+                    cryptoScaleFactor,
+                )
+                val targetUsd = PortfolioCalculations.calculateTargetValue(targetPct, totalPortfolioValueUSD)
+                val currentUsd = currentValuesUSD[alloc.symbol.value] ?: BigDecimal.ZERO
+                currentUsd > targetUsd
+            }
+            .map { it.symbol.value }
+            .toSet()
+
         val plan = portfolioAnalyzer.analyzeDeviations(
             totalPortfolioValueUSD = totalPortfolioValueUSD,
             currentValuesUSD = currentValuesUSD,
             effectiveUsdTarget = effectiveUsdTarget,
             cryptoScaleFactor = cryptoScaleFactor,
-            trendingAssets = resolveAtRecentHigh(config.allocations, prices, preObservedAt.epochSecond),
+            trendingAssets = resolveAtRecentHigh(
+                allocations = config.allocations,
+                prices = prices,
+                nowEpochSecond = preObservedAt.epochSecond,
+                candidateSymbols = sellCandidates,
+            ),
         )
         val buyOrders = plan.buyOrders
         val sellOrders = plan.sellOrders

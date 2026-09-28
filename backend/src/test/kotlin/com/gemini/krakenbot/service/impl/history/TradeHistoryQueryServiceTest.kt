@@ -23,6 +23,7 @@ import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -8577,7 +8578,7 @@ private class CountingComparisonCache(private val delegate: RebalancerComparison
         fromEpochMillis: Long,
         toEpochMillis: Long,
         inputFingerprint: String,
-        comparison: com.gemini.krakenbot.model.RebalancerComparison,
+        comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
         ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {
@@ -8644,7 +8645,7 @@ internal class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
         fromEpochMillis: Long,
         toEpochMillis: Long,
         inputFingerprint: String,
-        comparison: com.gemini.krakenbot.model.RebalancerComparison,
+        comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
         ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {
@@ -8695,7 +8696,7 @@ private class ThrowingComparisonCache : RebalancerComparisonCacheRepository {
         fromEpochMillis: Long,
         toEpochMillis: Long,
         inputFingerprint: String,
-        comparison: com.gemini.krakenbot.model.RebalancerComparison,
+        comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
         ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
     ) {

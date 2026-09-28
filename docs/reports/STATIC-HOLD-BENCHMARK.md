@@ -1,7 +1,7 @@
 # Static Configuration Hold — Historical Benchmark
 
 **Read-only economic proof-of-concept.** No production code, tests, database, PR, or commit touched.
-**Source DB:** `/Users/charlesv/Downloads/kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · opened `mode=ro` throughout.
+**Source DB:** `kraken-rebalancer (5).db` · `598576e1121099163a2b27929b522b599f050b19a23636f8b81cd303385fde6c` · `integrity_check ok` · opened `mode=ro` throughout.
 
 ---
 
@@ -15,7 +15,7 @@ rows, and recorded prices. All four dependency tests answer **NO** (§13).
 **Result on the original history (2025-12-05 → 2026-09-23, 292 days):**
 
 | | |
-|---|---:|
+| --- | ---: |
 | Actual final NAV (recorded) | **$21,148.75** |
 | Static hold, frictionless | $17,137.73 |
 | **Static hold, fee-fair** | **$17,081.22** |
@@ -58,7 +58,7 @@ inventing parameters, which the task forbids. The dynamic variant is a legitimat
 ## 4. Configuration evidence
 
 | item | value | class |
-|---|---|---|
+| --- | --- | --- |
 | Allocation | BTC 24, SOL 15, ETH 15, XRP 7, LINK 7, TAO 6, USD 5, INJ 5, RENDER 5, PAXG 5, AVAX 3, TRX 3 | **AUTHORITATIVE_RECORDED** |
 | Σ | 100 | — |
 | Provenance | `inception_config_fingerprint` `d913b1e3…` == app-recomputed fingerprint of the current `rebalancer-config.json` | **AUTHORITATIVE_RECORDED** |
@@ -71,7 +71,7 @@ check that passed.
 ## 5. Required-input dependency audit
 
 | Input | Source | Direct / reconstructed | Reliability | Depends on broken trade replay? |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Inception timestamp | `settings.inceptionDate`; `detected_inception_epoch_ms` | Direct | AUTHORITATIVE_RECORDED | **No** |
 | Inception in-scope NAV | `portfolio_snapshots` 97881, per-asset `value_usd` | Direct | AUTHORITATIVE_RECORDED | **No** |
 | Starting cash | `asset_snapshots` USD row | Direct | AUTHORITATIVE_RECORDED | **No** |
@@ -102,7 +102,7 @@ I replaced it with the independently recomputed recorded-snapshot NAV.
 
 ## 7. Starting-capital reconstruction
 
-```
+```text
 STARTING_CAPITAL = in-scope NAV at T0
                  = $1,490.5632 (USD) + $0.2430 (BTC 2.72e-06 @ $89,332.40)
                  = $1,490.81
@@ -113,7 +113,7 @@ part of the configured universe, and the comparison scope excludes them consiste
 
 **Immediate-liquidation audit (§5 of the task).** The first fills are at the inception instant itself:
 
-```
+```text
 17:00:56.973  SELL PENDLE 154.342750  $371.19   <- out of scope
 17:00:57.074  BUY  XMR     0.561198  $222.06   <- out of scope
 17:01:16.952  SELL XMR     0.561198  $221.98   <- out of scope
@@ -131,7 +131,7 @@ sensitivity in §21 and reduces the result to **+$2,854** — it does not change
 40 post-inception capital-flow events (39 ledger rows + T0). Classification:
 
 | type | count | treatment |
-|---|---:|---|
+| --- | ---: | --- |
 | `deposit` | 35 | allocate at static weights at the event timestamp |
 | `withdrawal` | 4 | proportional scale-down of the whole book |
 
@@ -143,7 +143,7 @@ scope and has no recorded price. It is a $820.77 event, flagged in §21.
 
 ## 9. Contribution policy — additive only, never rebalanced
 
-```
+```text
 Before: portfolio has drifted to BTC 30%, ETH 12%, ...
 $1,000 contribution arrives  ->  buy $240 BTC, $150 SOL, $150 ETH, $70 XRP, $70 LINK,
                                    $60 TAO, $50 USD, $50 INJ, $50 RENDER, $50 PAXG,
@@ -167,7 +167,7 @@ The single bounded exception is XLM (§8), which is out of scope and has no reco
 ## 11. Reward / income policy
 
 | reward type | ledger rows | treatment |
-|---|---|---|
+| --- | --- | --- |
 | `staking/` (TAO, AVAX, SOL, ETH, INJ, TRX, BABY) | 210 | **C — strategy-specific.** Staking is an action the passive holder did not take. Not credited. |
 | `dividend/cashdividend` (USD) | 9 | **D — neutral external flow.** Excluded from both sides consistently. |
 | `receive/dustsweeping` | 33 | **A/D — dust, immaterial (< $0.05/row).** Excluded from both sides. |
@@ -184,7 +184,7 @@ crypto-spot fills within ±3 days** of that event — tier 4 of the hierarchy, u
 made the same kind of spot purchases at those times. Realized rates measured on 3,399 real fills:
 
 | period | rate |
-|---|---:|
+| --- | ---: |
 | 2025-12 | 0.2206% |
 | 2026 Q1 | 0.2770% |
 | 2026 Q2 | 0.3798% |
@@ -201,7 +201,7 @@ half the direct fees, because fees paid early bear more of the period's return.
 ## 13. Reconstruction-defect boundary test
 
 | Question | Answer |
-|---|---|
+| --- | --- |
 | Replaying Actual trades? | **NO** |
 | Reconstructing historical Actual balances from trades? | **NO** |
 | Using inconsistent per-asset ledger checkpoints? | **NO** — only `type='deposit'/'withdrawal'` rows, which are point-in-time flows, not balance checkpoints |
@@ -212,7 +212,7 @@ half the direct fees, because fees paid early bear more of the period's return.
 ## 14. Validation / invariants
 
 | Case | Expected | Result |
-|---|---|---|
+| --- | --- | --- |
 | A — constant prices, no flows | terminal = start − fees | Model is additive; verified via cohort sum (40 cohorts, capital reconciles to $24,146.60 gross in / $7,736 out) |
 | B — asset doubles, no rebalance | units unchanged | Units are never modified after acquisition; contributions only add |
 | C — $1,000 later contribution | existing units unchanged; new units only from $1,000 × weights | Confirmed — per-cohort allocations are discrete |
@@ -224,7 +224,7 @@ half the direct fees, because fees paid early bear more of the period's return.
 ## 15. Final per-asset decomposition (fee-fair passive vs Actual)
 
 | asset | passive units | final price | passive value | Actual value | Actual − passive |
-|---|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: |
 | BTC | 0.045733 | $84,557 | $3,867.09 | $5,085.67 | **+$1,218.57** |
 | ETH | 0.970308 | $2,678 | $2,598.11 | $3,131.51 | **+$533.41** |
 | SOL | 22.635729 | $115.18 | $2,608.32 | $3,253.84 | **+$645.53** |
@@ -246,7 +246,7 @@ Sum verified: **+$4,067.53** = Actual − passive, exactly.
 40 cohorts. Capital enters in bursts, so the first cohort is a small fraction of the book:
 
 | cohort | capital | synthetic fee | cumulative |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | T0 2025-12-05 | $1,490.81 | $5.23 | $1,490.81 |
 | 2025-12-06 (×4) | $1,012.45 | $3.56 | $2,503.26 |
 | 2025-12-07 withdrawal | −$2,774.16 | — | $5,277.42* |
@@ -283,7 +283,7 @@ target and cut a laggard. On this account and window, that added value.
 ## 18. Koinly reconciliation
 
 | Koinly 2026 | Amount |
-|---|---:|
+| --- | ---: |
 | Realized gains | ~$1,051 |
 | Trading fees | ~$355 |
 | Income | ~$224 |
@@ -302,7 +302,7 @@ taxable gains. Tax efficiency and performance are different questions.
 From the retained `trades` (3,399 successful non-dry fills, $173,926.39 notional, $498.87 fees):
 
 | bucket | fees |
-|---|---:|
+| --- | ---: |
 | crypto-spot | $477.24 |
 | stablecoin/fiat (USDG, USDT pairs) | $1.68 |
 | tokenized equity (STRCZUSD) | $0.00 |
@@ -332,7 +332,7 @@ Note the direction: Actual paid **3.1× more** in fees than the passive strategy
 ## 21. Uncertainty / error budget
 
 | # | Uncertainty | Best estimate | Lower bound | Upper bound | Effect on result |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 1 | Out-of-scope liquidation proceeds ($741.11) not counted as capital | excluded | passive $17,081 | passive $18,294 | result **+$2,854 … +$4,068** |
 | 2 | Synthetic fee rate | time-weighted ±3d | 0.20% | 0.5714% | result **+$4,045 … +$4,109** |
 | 3 | XLM valued at $0.30 (out of scope) | $0.30 | $0.20 | $0.50 | **<$2** on result |
@@ -346,7 +346,7 @@ Note the direction: Actual paid **3.1× more** in fees than the passive strategy
 ## 22. Robustness of sign
 
 | scenario | Actual − passive |
-|---|---:|
+| --- | ---: |
 | base (fee-fair) | **+$4,067.53** |
 | out-of-scope proceeds included | +$2,854.29 |
 | fee 0.20% | +$4,045.30 |
@@ -365,7 +365,7 @@ Note the direction: Actual paid **3.1× more** in fees than the passive strategy
 
 ## 24. git status / confirmation of no source edits
 
-```
+```text
  M backend/build.gradle.kts
  M …/history/BenchmarkEvent.kt
  M …/history/ConfigurationRegimeInference.kt
@@ -404,7 +404,7 @@ the number:
 ## 23 (final). Summary table
 
 | Metric | Actual | Static Hold Frictionless | Static Hold Fee-Fair |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Final NAV | $21,148.75 | $17,137.73 | **$17,081.22** |
 | Difference vs Actual | — | $4,011.02 | **$4,067.53** |
 | Difference % | — | 23.40% | **23.81%** |

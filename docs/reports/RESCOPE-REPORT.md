@@ -31,7 +31,7 @@ inventory.
 ## 2. Current local-change inventory
 
 | File | Δ | Classification | Rationale |
-|---|---:|---|---|
+| --- | ---: | --- | --- |
 | `backend/build.gradle.kts` | +35 | **KEEP** | `ACCEPTANCE_DB_PATH` + SHA-256 fingerprint as `:backend:test` task inputs. Fixes a real stale-cache defect, independent of the journal. |
 | `…/history/BenchmarkEvent.kt` | +57/−? | **MODIFY** | `ConfigurationResetTurnover` (preValue/postValue/delta/cryptoSell/cryptoBuy/cashDelta) is **exactly** the D3 model §7 wants — keep it. The `ConfigurationReset` event's `additionFundingShares`/`configurationAllocation` fields are inference-shaped — replace. |
 | `…/history/ConfigurationRegimeInference.kt` | +3 | **DELETE** | Only change is the `clusterStart` field added to support behavioral funding evidence. Inference itself is no longer an authoritative input. |
@@ -80,7 +80,7 @@ object PortfolioConfigurationTargetTable : Table("portfolio_configuration_target
 Required properties, each with the mechanism that enforces it:
 
 | Property | Mechanism |
-|---|---|
+| --- | --- |
 | Weights sum to expected total | validated in the service before insert (`== 100.00%` over the configured allocation set, matching existing `Allocation` validation) |
 | Revisions immutable | no `UPDATE` path exists; the repository exposes `insert` only |
 | Edits create a new revision | `ConfigServiceImpl.updateConfig` always inserts; it never mutates |
@@ -116,7 +116,7 @@ none, and that a revision is present for every revision returned by the journal.
 
 `SchemaMigration(16, "configuration-journal")` — **additive only**, no `DROP`, no data rewrite:
 
-```
+```sql
 CREATE TABLE IF NOT EXISTS portfolio_configuration_revisions (...)
 CREATE TABLE IF NOT EXISTS portfolio_configuration_targets (...)
 CREATE INDEX IF NOT EXISTS idx_pcr_effective ON portfolio_configuration_revisions(effective_at, id)
@@ -159,7 +159,7 @@ forward only**.
 
 ## 8. Same-membership weight change
 
-```
+```text
 Before:  BTC 30%  ETH 20%  SOL 10%
 New rev: BTC 20%  ETH 25%  SOL 15%
 ```
@@ -189,11 +189,12 @@ and carries forward unchanged.
 New reason, distinct from `HISTORICAL_COVERAGE_GAP` (which means price coverage, a genuinely
 different failure):
 
-```
+```text
 CONFIGURATION_HISTORY_UNAVAILABLE
 ```
 
 Rules:
+
 - requested interval begins **before** `journalStartTimestamp` → `UNAVAILABLE`
 - requested interval begins **at or after** `journalStartTimestamp` **and** a valid revision is
   effective at or before the start → `AVAILABLE`
@@ -274,7 +275,7 @@ fiction. I am flagging this rather than claiming it.
 ## 18. Stale economics pins removed/replaced
 
 | Pin | Action |
-|---|---|
+| --- | --- |
 | `finalActual == 21188.49` | **Removed** — Actual NAV is not a benchmark-semantics invariant and moves with the DB. |
 | `finalBenchmark == 25366.83` | **Removed** — certified a cash-hold definition now known to be wrong. |
 | `finalDifference == -4178.34` | **Removed** — same. |
@@ -292,14 +293,17 @@ economics only for a post-journal interval where the definition is authoritative
 > **Severity:** High (blocks all historical counterfactual work; independent of PR #367)
 >
 > **Observed symptoms**
+>
 > 1. Per-asset authoritative ledger balance checkpoints cannot be assembled into a coherent portfolio. At the *same instant* the derived NAV alternates between real values and `$0.01`:
->    ```
+>
+>    ```text
 >    2025-12-16T19:20Z  NAV $8,316.30  100% USD
 >    2025-12-16T19:20Z  NAV $0.01      100% USD
 >    2025-12-16T19:45Z  NAV $8,316.30  100% USD
 >    2025-12-16T19:45Z  NAV $0.01      100% USD
 >    2025-12-17 → 12-19 NAV $8,316.30 constant to the cent for three days
 >    ```
+>
 > 2. Trade replay does not reconcile with `asset_snapshots`. Replaying all successful non-dry fills from the inception snapshot overshoots the recorded terminal NAV by **$1,886 (10.3%)** and drives cash to **−$6,071**.
 > 3. Specific missing legs: BTC's balance change (−0.006915) reconciles only with the `XXBTZUSD` leg (−0.0069); the `XBTUSD` leg (+0.0766) is absent from balance evolution. XRP behaves identically — `XXRPZUSD` (+11.9021) reconciles, `XRPUSD` (+1,966.98) does not.
 > 4. LINK and PAXG reconcile **exactly** with volume-only movement (residual 0.00000000), proving fees are quote-side — so the convention is known, and the failures above are real data defects rather than convention confusion.
@@ -310,12 +314,14 @@ economics only for a post-journal interval where the definition is authoritative
 > fee or gross-effect figure derived from this history is trustworthy, and none should be published.
 >
 > **Proposed investigation areas**
+>
 > - Whether the retained `trades` rows are a complete superset of executed fills, or a partial/legacy import (check `source`, `has_valid_*`, `cycle_id` coverage, and `order_intents` reconciliation).
 > - Whether ledger `balance` checkpoints are per-asset-after-entry (interpolatable) or per-asset-account-wide, and which the reconstruction assumes.
 > - Whether `SnapshotHistoryCalculator` seeding and the trade application path disagree on fee currency or on cash settlement.
 > - Whether the `$0.01` states correspond to dust sweeps, card funding normalisation, or partial-universe legacy observation windows.
 >
 > **Acceptance criteria**
+>
 > 1. Replaying all successful non-dry fills from the inception snapshot reproduces the recorded terminal `asset_snapshots` balances per symbol to within the persisted 8-dp unit scale, with residual cash explained line by line.
 > 2. No derived portfolio state at any retained instant is incoherent (e.g. NAV oscillating between a real value and $0.01 at the same timestamp).
 > 3. A zero-fee Actual counterfactual reconciles to the recorded real-fee Actual within a documented tolerance, with the tolerance justified rather than chosen to fit.
@@ -326,7 +332,7 @@ economics only for a post-journal interval where the definition is authoritative
 behavioural-inference benchmark as the headline artefact.
 
 | PR | Contents | Reviewability | Risk |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **PR A** — configuration journal | Tables, migration 16, Exposed tables, repository, service, `ConfigServiceImpl.updateConfig` integration, 18 journal tests, cache fingerprint. Nothing benchmark-related. | Small, one concern, independently testable. Creates no new benchmark. | Migration risk, but additive-only and easy to review in isolation. |
 | **PR B** — configuration-matched hold benchmark | `CONFIGURATION_MATCHED_HOLD` consuming the journal, availability semantics, provenance, 5 availability tests, `FIXED_INCEPTION_HOLD` doc clarification, UI/API rename. | Depends on A, but the benchmark logic is then straightforward and reviewable. | Low once A is merged. |
 | **PR C** — data-reconstruction defect | The issue body in §19, then whatever the investigation finds. | Independent. | High and open-ended; must not block A or B. |
@@ -375,13 +381,13 @@ reviews of the plan above.
 
 ## 22. Validation
 
-```
+```text
 ./gradlew :backend:test jacocoTestCoverageVerification spotlessCheck   BUILD SUCCESSFUL
 git --no-pager diff --check                                           clean
 ```
 
 | Gate | Result |
-|---|---|
+| --- | --- |
 | Backend tests | **3,257 · 0 failures · 0 errors** |
 | Branch coverage | **0.9005** (≥ 0.90) |
 | Line coverage | **0.9671** (≥ 0.95) |
@@ -395,7 +401,7 @@ git --no-pager diff --check                                           clean
 
 ## 23. `git diff --stat`
 
-```
+```text
  backend/build.gradle.kts                           |  35 +
  .../service/impl/history/BenchmarkEvent.kt         |  57 +-
  .../impl/history/ConfigurationRegimeInference.kt    |   3 +
@@ -410,7 +416,7 @@ git --no-pager diff --check                                           clean
 
 ## 24. `git status`
 
-```
+```text
  M backend/build.gradle.kts
  M …/history/BenchmarkEvent.kt
  M …/history/ConfigurationRegimeInference.kt

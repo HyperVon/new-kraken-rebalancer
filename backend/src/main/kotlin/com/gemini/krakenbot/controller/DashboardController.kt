@@ -437,12 +437,16 @@ class DashboardController(
         }
         require(scored.isNotEmpty()) { ViewText.ALLOCATION_SCORE_REQUIRED }
 
-        // Default sleeve is whatever the form currently allocates, so previewing without
-        // filling the sleeve field redistributes the book that is already configured.
         val targetTotal = targets.fold(BigDecimal.ZERO) { acc, target ->
             acc.add(target.toBigDecimalOrNull() ?: BigDecimal.ZERO)
         }
-        val usableSleeve = requestedSleeve?.takeIf { it.signum() > 0 } ?: targetTotal
+        val scoredTargetTotal = symbols.indices
+            .filter { symbols[it] in scored }
+            .fold(BigDecimal.ZERO) { acc, i ->
+                acc.add(targets.getOrNull(i)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+            }
+        val usableSleeve = requestedSleeve?.takeIf { it.signum() > 0 }
+            ?: (if (scoredTargetTotal.signum() > 0) scoredTargetTotal else targetTotal)
         require(usableSleeve.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
         val computed = QualityAllocation.proportional(scored, usableSleeve, emphasis)
 
@@ -451,11 +455,13 @@ class DashboardController(
                 div {
                     id = HtmlIds.ALLOCATIONS_CONTAINER
                     symbols.forEachIndexed { index, symbol ->
+                        val targetForSymbol = computed[symbol]?.toPlainString()
+                            ?: targets.getOrNull(index).orEmpty()
                         unsafe {
                             +AllocationEditor.editRow(
                                 symbol = symbol,
                                 color = AssetColorAssigner.normalizeHex(colors[index]) ?: "#888888",
-                                targetPercent = (computed[symbol] ?: BigDecimal.ZERO).toPlainString(),
+                                targetPercent = targetForSymbol,
                                 score = scores.getOrNull(index).orEmpty(),
                             )
                         }
@@ -722,7 +728,7 @@ class DashboardController(
                     unresolvedIntents = unresolvedIntents,
                     csrfToken = csrfToken,
                     qualityScores = configService.getConfig().settings.qualityScores
-                        .mapValues { BigDecimal(it.value) },
+                        .mapValues { BigDecimal.valueOf(it.value) },
                 )
             }
         call.respondText(html, ContentType.Text.Html)

@@ -13,6 +13,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
@@ -130,6 +131,37 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             // USD's price equals its only close, so it would qualify were it not excluded.
             manager(kraken).resolveAtRecentHigh(allocations, prices, now)
                 .shouldContainExactly(Asset.BTC)
+        }
+
+        "resolveAtRecentHigh only queries candidate symbols when specified" {
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
+
+            val instance = manager(kraken)
+            instance.resolveAtRecentHigh(allocations, prices, now, candidateSymbols = emptySet())
+                .shouldBeEmpty()
+            coVerify(exactly = 0) { kraken.getOHLC(any(), any(), any()) }
+
+            instance.resolveAtRecentHigh(allocations, prices, now, candidateSymbols = setOf("ETH"))
+                .shouldBeEmpty()
+            coVerify(exactly = 0) { kraken.getOHLC(any(), any(), any()) }
+        }
+
+        "resolveAtRecentHigh caches completed daily recent high within TTL" {
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
+                1L to BigDecimal("50000"),
+                2L to BigDecimal("60000"),
+            )
+
+            val instance = manager(kraken)
+            instance.resolveAtRecentHigh(allocations, prices, now)
+                .shouldContainExactly(Asset.BTC)
+
+            instance.resolveAtRecentHigh(allocations, prices, now + 60)
+                .shouldContainExactly(Asset.BTC)
+
+            coVerify(exactly = 1) { kraken.getOHLC(any(), any(), any()) }
         }
     }
 }
