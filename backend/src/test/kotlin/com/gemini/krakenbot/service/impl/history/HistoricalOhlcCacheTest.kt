@@ -2114,6 +2114,43 @@ class HistoricalOhlcCacheTest : StringSpec() {
             updated.freshnessDeadlineEpochSecond - updated.fetchedAtEpochSecond shouldBe 600L
         }
 
+        "expired empty dependency detects a backfill while its covering proof remains fresh" {
+            val counter = AtomicInteger(0)
+            val wall0 = 2_000_000L
+            var clock = Instant.ofEpochSecond(wall0)
+            val upTo = wall0 - 100_000L
+            val since = upTo - 86_400L
+            val futureCandle = (wall0 - 90_000L) to BigDecimal("0.0180")
+            val backfilledCandle = (upTo - durationSeconds) to BigDecimal("0.0175")
+            var backfilled = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (backfilled) listOf(backfilledCandle, futureCandle) else listOf(futureCandle)
+                    }
+                },
+                nowProvider = { clock },
+            )
+
+            var recorded: ConsumedOhlcDependency? = null
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo), onDependencyResolved = { recorded = it })
+            val dependency = checkNotNull(recorded)
+            dependency.candleContentHash shouldBe "empty"
+            dependency.freshnessDeadlineEpochSecond - dependency.fetchedAtEpochSecond shouldBe 600L
+
+            clock = clock.plusSeconds(601L)
+            dependency.isFresh(clock.epochSecond) shouldBe false
+            // The future candle makes the covering fetch's own historical proof fresh;
+            // that proof still serves the old valuation without a provider call.
+            cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) shouldBe listOf(futureCandle)
+            counter.get() shouldBe 1
+
+            backfilled = true
+            cache.revalidateDependency(dependency) shouldBe OhlcRevalidationResult.ContentChanged
+            counter.get() shouldBe 2
+        }
+
         "failed empty revalidation retries on the short cadence despite an old union" {
             val counter = AtomicInteger(0)
             val wall0 = 2_000_000L

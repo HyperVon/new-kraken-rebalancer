@@ -5,6 +5,7 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.InternalTransferRecord
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.WithdrawStatusRecord
@@ -86,6 +87,8 @@ class DynamicKrakenService(
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices = currentBackend().getTickerPrices(pairs)
+
+    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = currentBackend().getAssetMetadata()
 
     override suspend fun executeOrder(
         pair: String,

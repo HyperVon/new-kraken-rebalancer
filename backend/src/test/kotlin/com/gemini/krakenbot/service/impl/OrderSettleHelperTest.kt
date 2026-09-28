@@ -2,14 +2,19 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.SpendableBalanceService
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
@@ -84,6 +89,39 @@ class OrderSettleHelperTest : StringSpec() {
             }
         }
 
+        "settleUsdAfterSells propagates cancellation from the balance peek" {
+            runTest {
+                val txid = "tx-cancelled-peek"
+                val trade = TradeRecord(
+                    timestamp = Instant.now(),
+                    pair = "XXBTZUSD",
+                    side = OrderSide.SELL.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("505.00"),
+                    success = true,
+                    dryRun = false,
+                    orderTxid = txid,
+                    fee = BigDecimal("5.00"),
+                    tradeId = "t-cancelled-peek",
+                )
+                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(trade)
+                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
+                coEvery { backend.getBalances() } throws CancellationException("settlement cancelled")
+
+                val thrown = shouldThrow<CancellationException> {
+                    OrderSettleHelper.settleUsdAfterSells(
+                        backend = backend,
+                        openingUsd = BigDecimal.ZERO,
+                        projectedCash = BigDecimal("520.00"),
+                        sellOrderTxids = listOf(txid),
+                    )
+                }
+
+                thrown.message shouldBe "settlement cancelled"
+            }
+        }
+
         "settleUsdAfterSells falls back to balance poll when sellOrderTxids is empty" {
             runTest {
                 coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("3000.00"))
@@ -146,6 +184,95 @@ class OrderSettleHelperTest : StringSpec() {
 
                 // The balance poll sees the full ledger effect and outbids the truncated fill total.
                 settled.shouldBeEqualComparingTo(BigDecimal("4990.00"))
+            }
+        }
+
+        "settleUsdAfterSells caps fill proceeds to spendable USD when ordinary USD is higher" {
+            runTest {
+                val txid = "tx-spendable"
+                val trade = TradeRecord(
+                    timestamp = Instant.now(),
+                    pair = "XXBTZUSD",
+                    side = OrderSide.SELL.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("5000.00"),
+                    success = true,
+                    dryRun = false,
+                    orderTxid = txid,
+                    fee = BigDecimal("10.00"),
+                    tradeId = "t-spendable",
+                )
+                val settlementBackend = object : KrakenService by backend, SpendableBalanceService {
+                    override suspend fun getSpendableBalances() = mapOf(TestFixtures.USD to BigDecimal("4800.00"))
+                }
+                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(trade)
+                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
+                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("9000.00"))
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = settlementBackend,
+                    openingUsd = BigDecimal("0.00"),
+                    projectedCash = BigDecimal("4990.00"),
+                    sellOrderTxids = listOf(txid),
+                )
+
+                settled.shouldBeEqualComparingTo(BigDecimal("4800.00"))
+            }
+        }
+
+        "settleUsdAfterSells continues a full unknown-total page at the next offset" {
+            runTest {
+                val pageSize = KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+                val txid = "tx-second-page"
+                val unrelatedTrade = TradeRecord(
+                    timestamp = Instant.now(),
+                    pair = "XXBTZUSD",
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("100.00"),
+                    success = true,
+                    dryRun = false,
+                    orderTxid = "tx-unrelated",
+                    fee = BigDecimal("0.00"),
+                    tradeId = "t-unrelated",
+                )
+                val matchingTrade = TradeRecord(
+                    timestamp = Instant.now(),
+                    pair = "XXBTZUSD",
+                    side = OrderSide.SELL.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("505.00"),
+                    success = true,
+                    dryRun = false,
+                    orderTxid = txid,
+                    fee = BigDecimal("5.00"),
+                    tradeId = "t-second-page",
+                )
+                val requestedOffsets = mutableListOf<Int?>()
+                coEvery { backend.getTradeHistory(any(), any()) } coAnswers {
+                    val offset = secondArg<Int?>()
+                    requestedOffsets += offset
+                    when (offset) {
+                        0 -> List(pageSize) { unrelatedTrade }
+                        pageSize -> listOf(matchingTrade)
+                        else -> emptyList()
+                    }
+                }
+                coEvery { backend.getLastTradeHistoryTotalCount() } returns 0
+                coEvery { backend.getBalances() } throws IOException("Balance peek unavailable")
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal("0.00"),
+                    projectedCash = BigDecimal("520.00"),
+                    sellOrderTxids = listOf(txid),
+                )
+
+                requestedOffsets shouldBe listOf(0, pageSize)
+                settled.shouldBeEqualComparingTo(BigDecimal("500.00"))
             }
         }
     }

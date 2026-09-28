@@ -517,6 +517,40 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "an authoritative zero ledger total with returned rows keeps recovery resumable" {
+            runTest {
+                val unexpectedLedger = LedgerEvent(
+                    ledgerId = "unexpected-zero-total-ledger",
+                    time = now.minusSeconds(1),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = Asset.BTC,
+                    amount = BigDecimal.ZERO,
+                )
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerTotalCountOverride = 0
+                krakenService.ledgerSupplier = { _, _, _, _ -> listOf(unexpectedLedger) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                status.ledgerTotal shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe
+                    "IN_PROGRESS"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe "0"
+                ledgerRepository.getLedgersInRange(Instant.EPOCH, now.plusSeconds(1))
+                    .map { it.ledgerId } shouldBe listOf(unexpectedLedger.ledgerId)
+                krakenService.getLedgersCallCount shouldBe InceptionRecoveryService.MAX_PAGES_PER_RUN
+                krakenService.getTradeHistoryCallCount shouldBe 0
+            }
+        }
+
         "unknown empty ledger pages do not create reusable zero coverage" {
             runTest {
                 newService().prepareForCurrentConfiguration(null) shouldBe true
@@ -634,6 +668,69 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.ledgerOffset shouldBe "100"
                 ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe
                     "FAILED"
+            }
+        }
+
+        "a trade beyond the inclusive recovery horizon fails without importing or advancing" {
+            runTest {
+                val outOfHorizonTrade = apiTrade("after-horizon", now.plusSeconds(1))
+                var requestedOffset: Int? = null
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "50")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "51")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 51
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    requestedOffset = offset
+                    if (offset == 50) listOf(outOfHorizonTrade) else emptyList()
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                requestedOffset shouldBe 50
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "50"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "FAILED"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "50"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(2))
+                    .none { it.tradeId == outOfHorizonTrade.tradeId } shouldBe true
+            }
+        }
+
+        "a ledger beyond the inclusive recovery horizon fails without persisting or advancing" {
+            runTest {
+                val outOfHorizonLedger = LedgerEvent(
+                    ledgerId = "ledger-after-horizon",
+                    time = now.plusSeconds(1),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = Asset.BTC,
+                    amount = BigDecimal.ZERO,
+                )
+                var requestedOffset: Int? = null
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "101")
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerTotalCountOverride = 51
+                krakenService.ledgerSupplier = { _, offset, _, _ ->
+                    requestedOffset = offset
+                    if (offset == 50) listOf(outOfHorizonLedger) else emptyList()
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                requestedOffset shouldBe 50
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.ledgerOffset shouldBe "100"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "FAILED"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "100"
+                ledgerRepository.getLedgersInRange(Instant.EPOCH, now.plusSeconds(2))
+                    .none { it.ledgerId == outOfHorizonLedger.ledgerId } shouldBe true
             }
         }
 
@@ -939,6 +1036,43 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 status.reason shouldBe "configured asset universe changed"
+            }
+        }
+
+        "approved baseline without a recorded wallet universe is reconstructed" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.5"), Asset.USD to BigDecimal("1000.00")),
+                        timestamp = requestedStart,
+                    ),
+                )
+                val legacySnapshotId = repository.getSnapshotId(requestedStart) ?: error("missing approved snapshot")
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID,
+                    legacySnapshotId.toString(),
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE, "")
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(requestedStart.minusSeconds(901).epochSecond to BigDecimal("100.00"))
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("missing reconstructed baseline id")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("missing reconstructed baseline")
+                baseline.timestamp shouldBe requestedStart
+                baseline.balancesObservedAt.shouldBeNull()
+                baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("0.5"))
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE) shouldBe "BTC,USD"
             }
         }
 
@@ -5009,6 +5143,155 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val pending = newService().getLocalInceptionDisplayInfo()
                 pending.status shouldBe InceptionDisplayStatus.APPROVED_PENDING
                 pending.message shouldBe ViewText.INCEPTION_APPROVED_BASELINE_PENDING
+            }
+        }
+
+        "approved unavailable display omits a blank recovery reason" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01T00:00:00Z"))
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.UNAVAILABLE,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, "")
+
+                val display = newService().getLocalInceptionDisplayInfo()
+
+                display.status shouldBe InceptionDisplayStatus.APPROVED_UNAVAILABLE
+                display.message shouldBe "No trustworthy baseline could be established for the approved start:"
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.getOHLCCallCount shouldBe 0
+            }
+        }
+
+        "fresh automatic display reports not started without a configuration fingerprint" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = ""))
+
+                val display = newService().getLocalInceptionDisplayInfo()
+
+                display.status shouldBe InceptionDisplayStatus.NOT_DETECTED
+                display.message shouldBe "Auto-detected inception: Not yet detected"
+                display.dateText.shouldBeNull()
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).shouldBeNull()
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+            }
+        }
+
+        "whitespace inception displays local automatic evidence without an inference row" {
+            runTest {
+                val detectedAt = Instant.parse("2026-04-30T12:30:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = " "))
+                val service = newService()
+                service.prepareForCurrentConfiguration(null) shouldBe true
+                val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
+                val inferenceFingerprint = service.inferenceFingerprint(config, scopeDigest)
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_INFERENCE_VERSION,
+                    InceptionRecoveryService.CURRENT_INFERENCE_VERSION,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT, inferenceFingerprint)
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION,
+                    InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    detectedAt.toEpochMilli().toString(),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_SOURCE,
+                    "auto-recovered",
+                )
+                repository.findInceptionInferenceEvidence(inferenceFingerprint).shouldBeNull()
+
+                val display = service.getLocalInceptionDisplayInfo()
+
+                display.status shouldBe InceptionDisplayStatus.CONFIRMED
+                display.dateText shouldBe "2026-04-30"
+                display.source shouldBe "auto-recovered"
+                display.message shouldBe "Leave this field blank to use the auto-detected date."
+                display.inferredStartText.shouldBeNull()
+                display.firstPositiveText.shouldBeNull()
+                display.coverageText.shouldBeNull()
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.getOHLCCallCount shouldBe 0
+            }
+        }
+
+        "a confirmed automatic inception in the future displays as unavailable" {
+            runTest {
+                val futureEpoch = now.plusSeconds(1).toEpochMilli().toString()
+                val service = newService()
+                service.prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION,
+                    InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS, futureEpoch)
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_SOURCE,
+                    "auto-recovered",
+                )
+
+                val display = service.getLocalInceptionDisplayInfo()
+
+                display.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                display.dateText.shouldBeNull()
+                display.message shouldBe
+                    "Auto-detection unavailable — current account/history trust is unavailable."
+                repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe futureEpoch
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS) shouldBe
+                    InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.getOHLCCallCount shouldBe 0
+            }
+        }
+
+        "confirmed automatic display rejects a date with an approved-only source" {
+            runTest {
+                val service = newService()
+                service.prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION,
+                    InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    now.minusSeconds(60).toEpochMilli().toString(),
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE, "approved")
+
+                val display = service.getLocalInceptionDisplayInfo()
+
+                display.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                display.dateText.shouldBeNull()
+                display.message shouldBe
+                    "Auto-detection unavailable — current account/history trust is unavailable."
+                repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE) shouldBe "approved"
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.getOHLCCallCount shouldBe 0
             }
         }
 

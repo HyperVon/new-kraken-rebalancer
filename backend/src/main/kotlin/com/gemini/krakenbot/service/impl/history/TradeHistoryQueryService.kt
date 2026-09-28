@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.HistoryStats
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
@@ -341,7 +342,7 @@ class TradeHistoryQueryService(
         internal const val MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST = 8
 
         /** Bump when the serialized comparison payload or its cache invalidation contract changes. */
-        private const val COMPARISON_CACHE_VERSION = "4"
+        private const val COMPARISON_CACHE_VERSION = "5"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
@@ -425,7 +426,11 @@ class TradeHistoryQueryService(
         )
         val snapshots = loadComparisonSnapshots(accountingFrom, to)
         if (snapshots.size < 2) {
-            return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = emptyList(),
+                assetMetadata = emptyList(),
+            )
         }
         val orderedSnapshots = snapshots.sortedBy { it.timestamp }
         // Stale reconstructed history must never appear VERIFIED: if the reconstruction contract
@@ -438,6 +443,7 @@ class TradeHistoryQueryService(
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
+                assetMetadata = emptyList(),
                 rewards = emptyList(),
                 knownInceptionTime = orderedSnapshots.first().timestamp,
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
@@ -542,10 +548,13 @@ class TradeHistoryQueryService(
 
         val cacheFrom = evaluationSnapshots.first().timestamp
         val cacheTo = evaluationSnapshots.last().timestamp
+        val assetMetadata = loadComparisonAssetMetadata()
+        val assetMetadataDigest = comparisonAssetMetadataDigest(assetMetadata)
         val cacheFingerprint = comparisonCacheFingerprint(
             stableThrough = stableThrough,
             inceptionResolution = inceptionResolution,
             snapshots = evaluationSnapshots,
+            assetMetadataDigest = assetMetadataDigest,
         )
         if (cacheFingerprint != null) {
             when (val outcome = loadCachedComparison(cacheFrom, cacheTo, cacheFingerprint)) {
@@ -582,6 +591,7 @@ class TradeHistoryQueryService(
                 val calculated = calculateComparison(
                     evaluationSnapshots,
                     inceptionResolution,
+                    assetMetadata = assetMetadata,
                     eventUpperBound = certifiedEventUpperBound(stableThrough),
                     suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                     onOhlcDependencyConsumed = { consumedDependencies.add(it) },
@@ -602,6 +612,7 @@ class TradeHistoryQueryService(
                         stableThrough = stableThrough,
                         inceptionResolution = inceptionResolution,
                         snapshots = evaluationSnapshots,
+                        assetMetadataDigest = assetMetadataDigest,
                         comparison = calculated,
                         ohlcDependencies = consumedDependencies.toList(),
                         ohlcReachabilityDependencies = reachabilityDependencies.toList(),
@@ -710,10 +721,26 @@ class TradeHistoryQueryService(
      * recovery, and prepared funding identities participate separately because they are not
      * all row writes.
      */
+    private suspend fun loadComparisonAssetMetadata(): List<KrakenAssetMetadata> = try {
+        krakenService?.getAssetMetadata().orEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn("Kraken asset metadata unavailable; comparison classification will fail closed", e)
+        emptyList()
+    }
+
+    private fun comparisonAssetMetadataDigest(assetMetadata: List<KrakenAssetMetadata>): String = sha256Hex(
+        assetMetadata.map { metadata ->
+            "${Asset.normalizeLedgerAsset(metadata.assetId).uppercase()}:${metadata.assetClass.trim().lowercase()}"
+        }.sorted().joinToString(separator = "\u0000"),
+    )
+
     private suspend fun comparisonCacheFingerprint(
         stableThrough: Instant,
         inceptionResolution: InceptionResolution?,
         snapshots: List<PortfolioSnapshot>,
+        assetMetadataDigest: String,
     ): String? {
         if (comparisonCacheRepository == null) return null
         val fundingToken = when {
@@ -752,6 +779,7 @@ class TradeHistoryQueryService(
                 append(consumedEvidenceDigest).append('\u0000')
                 append(fundingToken).append('\u0000')
                 append(configuredUniverse).append('\u0000')
+                append(assetMetadataDigest).append('\u0000')
                 append(reconstructionRevision).append('\u0000')
                 append(inceptionResolution?.inceptionTime).append('|')
                     .append(inceptionResolution?.isAutoDetected).append('|')
@@ -1145,6 +1173,7 @@ class TradeHistoryQueryService(
         stableThrough: Instant,
         inceptionResolution: InceptionResolution?,
         snapshots: List<PortfolioSnapshot>,
+        assetMetadataDigest: String,
         comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
         ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
@@ -1181,6 +1210,7 @@ class TradeHistoryQueryService(
             stableThrough = stableThrough,
             inceptionResolution = inceptionResolution,
             snapshots = snapshots,
+            assetMetadataDigest = assetMetadataDigest,
         ) ?: return
         try {
             cache.save(
@@ -1388,10 +1418,13 @@ class TradeHistoryQueryService(
         }
         val settingsCacheFrom = stableSnapshots.first().timestamp
         val settingsCacheTo = stableSnapshots.last().timestamp
+        val assetMetadata = loadComparisonAssetMetadata()
+        val assetMetadataDigest = comparisonAssetMetadataDigest(assetMetadata)
         val settingsCacheFingerprint = comparisonCacheFingerprint(
             stableThrough = stableThrough,
             inceptionResolution = inceptionResolution,
             snapshots = stableSnapshots,
+            assetMetadataDigest = assetMetadataDigest,
         )
         val cachedSettingsComparison = settingsCacheFingerprint?.let { fingerprint ->
             when (val outcome = loadCachedComparison(settingsCacheFrom, settingsCacheTo, fingerprint)) {
@@ -1414,6 +1447,7 @@ class TradeHistoryQueryService(
                     val calculated = calculateComparison(
                         stableSnapshots,
                         inceptionResolution,
+                        assetMetadata = assetMetadata,
                         eventUpperBound = certifiedEventUpperBound(stableThrough),
                         suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
@@ -1428,6 +1462,7 @@ class TradeHistoryQueryService(
                             stableThrough = stableThrough,
                             inceptionResolution = inceptionResolution,
                             snapshots = stableSnapshots,
+                            assetMetadataDigest = assetMetadataDigest,
                             comparison = calculated,
                             ohlcDependencies = consumedDependencies.toList(),
                             ohlcReachabilityDependencies = reachabilityDependencies.toList(),
@@ -2005,6 +2040,7 @@ class TradeHistoryQueryService(
     private suspend fun calculateComparison(
         orderedSnapshots: List<PortfolioSnapshot>,
         inceptionResolution: InceptionResolution?,
+        assetMetadata: List<KrakenAssetMetadata>,
         preparedFundingProvenance: FundingProvenanceResolver? = null,
         // Every caller supplies the certified or otherwise explicitly bounded evidence horizon;
         // replaying events beyond that bound could make an uncertified live tail look verified.
@@ -2053,6 +2089,7 @@ class TradeHistoryQueryService(
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
+                assetMetadata = emptyList(),
                 rewards = emptyList(),
                 knownInceptionTime = inceptionResolution.inceptionTime,
                 inceptionUnavailableReason = inceptionResolution.unavailableReason
@@ -2067,6 +2104,7 @@ class TradeHistoryQueryService(
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
+                assetMetadata = emptyList(),
                 rewards = emptyList(),
                 anchorSnapshot = null,
                 inceptionSnapshot = null,
@@ -2111,6 +2149,7 @@ class TradeHistoryQueryService(
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
+                assetMetadata = emptyList(),
                 rewards = emptyList(),
                 knownInceptionTime = orderedSnapshots.first().timestamp,
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
@@ -2228,6 +2267,7 @@ class TradeHistoryQueryService(
             knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
             provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
+            assetMetadata = assetMetadata,
             configuredAssetUniverse = configService?.getConfig()?.allocations
                 ?.map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
                 ?.toSet(),
@@ -2572,6 +2612,11 @@ class TradeHistoryQueryService(
             val candidates = allCandidates.filter {
                 it.timestamp.toEpochMilli() <= appliedEvidenceHorizon
             }
+            val assetMetadata = if (candidates.isEmpty()) {
+                emptyList()
+            } else {
+                loadComparisonAssetMetadata()
+            }
             val storedFundingEvidenceFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT,
             ).orEmpty()
@@ -2636,6 +2681,7 @@ class TradeHistoryQueryService(
                                         inceptionSnapshot = candidates[verifiedIndex],
                                         isAutoDetected = false,
                                     ),
+                                    assetMetadata = assetMetadata,
                                     preparedFundingProvenance = preparedFundingProvenance,
                                     eventUpperBound = eventUpperBound,
                                     ohlcCallOwner = ohlcCallOwner,
@@ -2722,6 +2768,7 @@ class TradeHistoryQueryService(
                         inceptionSnapshot = frontierCandidate,
                         isAutoDetected = false,
                     ),
+                    assetMetadata = assetMetadata,
                     preparedFundingProvenance = preparedFundingProvenance,
                     eventUpperBound = eventUpperBound,
                     ohlcCallOwner = ohlcCallOwner,
@@ -2816,6 +2863,7 @@ class TradeHistoryQueryService(
                         inceptionSnapshot = candidate,
                         isAutoDetected = false,
                     ),
+                    assetMetadata = assetMetadata,
                     preparedFundingProvenance = preparedFundingProvenance,
                     eventUpperBound = eventUpperBound,
                     ohlcCallOwner = ohlcCallOwner,

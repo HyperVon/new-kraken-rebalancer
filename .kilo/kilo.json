@@ -1,6 +1,6 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
-  "model": "kilo/kilo-auto/efficient",
+  "model": "kilo/openai/gpt-6-luna",
   "instructions": [
     ".opencode/shell-strategy.md",
     ".agents/AGENTS.md",

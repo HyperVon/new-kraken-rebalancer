@@ -339,15 +339,23 @@ achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the exact recorded comparison anchor across all view windows: the
   trusted strategy baseline when one exists, or—when lifetime recovery is unresolved—the earliest
-  genuinely recorded snapshot on or after the bounded passive evidence floor. Every positive anchor
-  holding keeps its recorded balance, historical price, and normalized value weight. Current target
-  edits, later configuration changes, trade ownership labels, and internal conversions do not rewrite
-  those lots, so the initial difference normally starts at zero within rounding tolerance.
+  genuinely recorded snapshot on or after the bounded passive evidence floor. The comparison
+  includes USD and Kraken assets classified as `currency`, including crypto outside the current
+  allocation; `tokenized_asset` securities are excluded from both comparison values and do not need
+  historical price marks. A missing or conflicting classification for a material asset makes the
+  comparison unavailable. Every positive in-scope anchor holding keeps its recorded balance,
+  historical price, and normalized value weight. Current target edits, later configuration changes,
+  trade ownership labels, and internal conversions do not rewrite those lots, so the initial strategy
+  difference normally starts at zero within rounding tolerance. The full wallet is still reconciled;
+  this scope rule applies to comparison NAV, not to wallet-history validation.
   Successful trades are still reconciled against the actual snapshots, but no trade is mirrored into
   the passive basket. Holding-dependent rewards replay in-kind only when the basket already holds the
   credited asset; an otherwise unheld reward remains actual-only. Explicitly classified account-level
-  promotion or airdrop credits may introduce an unheld credited asset. Generic USD/equity cash
-  dividends are excluded because the crypto/cash thesis has no underlying equity position.
+  promotion or airdrop credits may introduce an unheld credited asset. Held crypto rewards and
+  dividends remain performance. A USD cash dividend with explicit evidence that it came from an
+  excluded security is treated as a neutral contribution, net of its fee and invested using fixed
+  anchor weights. An unclassified material USD dividend makes the comparison unavailable rather
+  than being guessed as capital or crypto performance.
   Complete conversions and complete linked `spend`/`receive` groups are validated and consumed as
   plumbing, not replayed as synthetic transformations. Unlinked or singleton consumer passthrough
   rows are excluded from the passive event stream because their missing counterpart cannot prove an
@@ -487,8 +495,9 @@ A dedicated chart below the comparison shows the cumulative USD value of
 `staking`, `dividend`, top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward` ledger entries for tracked assets in the selected
 range, with one series per asset and a total shown beside the title. Values are
 aligned to portfolio snapshots and use each snapshot's asset price; the chart is
-empty until ledger data has been synchronized. Untracked asset cash dividends credited
-in USD are accounted for in portfolio comparison but omitted from crypto staking asset series.
+empty until ledger data has been synchronized. A USD cash dividend with an explicitly identified
+out-of-scope security source is neutralized in portfolio comparison and omitted from crypto staking
+asset series; an unclassified material USD dividend makes the comparison unavailable.
 Earn allocation mechanics are retained for account reconstruction but are not
 shown as rewards or treated as performance.
 A caption below the chart reads:

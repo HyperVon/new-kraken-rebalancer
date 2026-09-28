@@ -133,6 +133,7 @@ class ApprovedStartComparisonIntegrationTest :
             repository = repository,
             portfolioStatsRepository = statsRepository,
             ledgerRepository = ledgerRepository,
+            krakenService = krakenService,
             inceptionDiscoveryService = discoveryService,
             nowProvider = { now },
         )

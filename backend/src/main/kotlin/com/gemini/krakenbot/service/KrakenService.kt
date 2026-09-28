@@ -5,6 +5,7 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.InternalTransferRecord
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.WithdrawStatusRecord
@@ -14,6 +15,9 @@ interface KrakenService {
     suspend fun getBalances(): RawBalances
 
     suspend fun getTickerPrices(pairs: String): RawPrices
+
+    /** Returns exchange-reported asset IDs and classes; backends without metadata return none. */
+    suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = emptyList()
 
     /**
      * @param dryRun is required and captured by the caller for this order so a mid-cycle settings

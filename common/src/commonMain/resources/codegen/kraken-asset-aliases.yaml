@@ -10,6 +10,9 @@ KrakenAssetAliases:
   ETH: "ETH"
   XETH: "XETH"
 
+  SOL: "SOL"
+  SOL03: "SOL03"
+
   LTC: "LTC"
   XLTC: "XLTC"
 

@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.KrakenApiPermissionDeniedException
@@ -40,6 +41,9 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 class KrakenServiceTest : KrakenServiceTestBase() {
+
+    private fun assetFixture(name: String): String =
+        checkNotNull(javaClass.getResource("/kraken-assets/$name")).readText()
 
     init {
         "getBalances_Success" {
@@ -78,6 +82,50 @@ class KrakenServiceTest : KrakenServiceTestBase() {
 
                 prices[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("65000.0"))
                 prices["XETHZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("3200.0"))
+            }
+        }
+
+        "getAssetMetadata queries both public asset classes through the public limiter" {
+            runTest {
+                val responseBodies = listOf(
+                    assetFixture("assets-currency.json"),
+                    assetFixture("assets-tokenized-asset.json"),
+                )
+                val requestPaths = mutableListOf<String>()
+                var responseIndex = 0
+                val publicRateLimiter = object : PublicRateLimiter(minIntervalMs = 0) {
+                    var acquireCount = 0
+
+                    override suspend fun acquire() {
+                        acquireCount++
+                        super.acquire()
+                    }
+                }
+                val engine = MockEngine { request ->
+                    requestPaths += request.url.toString().removePrefix("https://api.kraken.com")
+                    respond(
+                        content = responseBodies[responseIndex++],
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                }
+                val service = KrakenServiceImpl(
+                    configService = mockk(relaxed = true),
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(engine),
+                    publicRateLimiter = publicRateLimiter,
+                )
+
+                service.getAssetMetadata() shouldBe listOf(
+                    KrakenAssetMetadata("XXBT", "currency"),
+                    KrakenAssetMetadata("ZUSD", "currency"),
+                    KrakenAssetMetadata("TOKENIZED_ASSET_1", "tokenized_asset"),
+                )
+                requestPaths shouldBe listOf(
+                    "/0/public/Assets?aclass=currency",
+                    "/0/public/Assets?aclass=tokenized_asset",
+                )
+                publicRateLimiter.acquireCount shouldBe 2
             }
         }
 

@@ -1,12 +1,15 @@
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.service.AthTrustFailureReason
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.view.util.FormFields
 import io.kotest.matchers.shouldBe
@@ -25,6 +28,7 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.slot
 import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
 import java.time.Instant
@@ -149,6 +153,38 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                     "Kraken txid O-123",
                     "O-123",
                 )
+            }
+        }
+
+        "whitespace order txid resolves as absent exchange evidence" {
+            every { configService.getConfig() } returns TestFixtures.config()
+            coEvery {
+                orderIntentService.resolve(7, OrderIntentState.CONFIRMED, "Kraken response checked")
+            } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/api/order-intents/7/resolve") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.ORDER_INTENT_STATE to listOf("CONFIRMED"),
+                            FormFields.ORDER_INTENT_EVIDENCE to listOf("Kraken response checked"),
+                            FormFields.ORDER_INTENT_ORDER_TXID to listOf(" \t "),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "\"resolved\":true"
+                response.bodyAsText() shouldContain "\"state\":\"CONFIRMED\""
+            }
+
+            coVerify {
+                orderIntentService.resolve(7, OrderIntentState.CONFIRMED, "Kraken response checked")
             }
         }
 
@@ -367,6 +403,113 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
             coVerify { configService.updateConfig(any()) }
         }
 
+        "settings POST accepts a blank allocation color as no color" {
+            every { configService.getConfig() } returns TestFixtures.config()
+            val updatedConfig = slot<AppConfig>()
+            coEvery { configService.updateConfig(capture(updatedConfig)) } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("USD"),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf(""),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.headers["HX-Redirect"] shouldBe "/"
+            }
+
+            updatedConfig.captured.allocations.single().color shouldBe null
+        }
+
+        "settings POST treats a whitespace deployment threshold as zero" {
+            every { configService.getConfig() } returns TestFixtures.config(
+                settings = TestFixtures.settings().copy(fiatDeploymentThresholdPercent = 12.5),
+            )
+            val updatedConfig = slot<AppConfig>()
+            coEvery { configService.updateConfig(capture(updatedConfig)) } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf(" \t "),
+                            FormFields.SYMBOLS to listOf("USD"),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.headers["HX-Redirect"] shouldBe "/"
+            }
+
+            updatedConfig.captured.settings.fiatDeploymentThresholdPercent shouldBe 0.0
+        }
+
+        "settings POST rejects a verified comparison proposal without its snapshot id" {
+            every { configService.getConfig() } returns TestFixtures.config()
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = null,
+            )
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("USD"),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain "comparison start must be a valid ISO-8601"
+            }
+
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
         "settings POST without CSRF token is forbidden" {
             every { configService.getConfig() } returns TestFixtures.config()
 
@@ -580,6 +723,34 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "health stays up while readiness reports an ordinary diagnostic failure" {
+            coEvery { tradeHistoryService.getHistoryStats() } throws
+                IllegalStateException("history diagnostic unavailable")
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns null
+            coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+            coEvery { orderIntentService.countUnresolvedIntents() } returns 0L
+            coEvery { tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) } returns null
+            every { portfolioManager.isLoopPaused() } returns false
+            every { portfolioManager.isLoopRunning() } returns true
+            every { portfolioManager.getOperationalStatus() } returns RebalanceOperationalStatus()
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val healthResponse = client.get("/api/health")
+                healthResponse.status shouldBe HttpStatusCode.OK
+                healthResponse.bodyAsText() shouldContain "\"status\":\"UP\""
+                healthResponse.bodyAsText() shouldContain "\"readinessReason\":\"DIAGNOSTICS_UNAVAILABLE\""
+
+                val readinessResponse = client.get("/api/readiness")
+                readinessResponse.status shouldBe HttpStatusCode.ServiceUnavailable
+                readinessResponse.bodyAsText() shouldContain "\"status\":\"UP\""
+                readinessResponse.bodyAsText() shouldContain "\"readiness\":\"NOT_READY\""
+                readinessResponse.bodyAsText() shouldContain "\"readinessReason\":\"DIAGNOSTICS_UNAVAILABLE\""
             }
         }
 

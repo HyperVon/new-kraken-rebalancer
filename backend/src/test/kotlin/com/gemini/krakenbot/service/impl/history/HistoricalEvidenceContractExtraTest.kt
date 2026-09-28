@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.hasValidEconomicFields
+import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.impl.KrakenParsers
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -56,7 +57,13 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
             val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
             val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
+            val svc = TradeHistoryQueryService(
+                mockTrades,
+                mockStats,
+                mockLedgers,
+                null,
+                krakenService = FakeKrakenService(),
+            )
             val s1 = TestFixtures.emptySnapshot(fixedNow, BigDecimal("100000")).copy(
                 assets = mapOf(
                     "BTC" to
@@ -573,7 +580,13 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
             val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
             val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
+            val svc = TradeHistoryQueryService(
+                mockTrades,
+                mockStats,
+                mockLedgers,
+                null,
+                krakenService = FakeKrakenService(),
+            )
             val reconStart = fixedNow.minusSeconds(86400)
             val reconThrough = fixedNow.plusSeconds(86400)
             val c1 = contractSnapshot(reconThrough.plusSeconds(1000))

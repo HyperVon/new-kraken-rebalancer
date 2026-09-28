@@ -2644,5 +2644,74 @@ class TradeHistorySyncServiceTest : StringSpec() {
             val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
             trades.size shouldBe 1
         }
+
+        "count-less incremental sync advances watermark without advancing certified coverage" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                fixedNow.minus(96, ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, baseTime.epochSecond.toString())
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns false
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 0
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 0
+            coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+
+            val sync = service()
+            sync.syncTradesFromKraken()
+
+            sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe fixedNow.epochSecond.toString()
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                baseTime.epochSecond.toString()
+            coVerify(exactly = 1) {
+                krakenService.getTradeHistory(baseTime.minusSeconds(300).epochSecond, 0)
+            }
+        }
+
+        "does not heuristically reconcile a local estimate with a different orderTxid" {
+            stubStableBackend()
+            stubConfig()
+            repository.saveTrade(localEstimate().copy(orderTxid = "O-LOCAL"))
+            val apiTrade = apiFill(0).copy(orderTxid = "O-KRAKEN")
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiTrade)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.single { it.source == TradeSource.LOCAL_ESTIMATE }.orderTxid shouldBe "O-LOCAL"
+            val imported = trades.single { it.source == TradeSource.API_FILL }
+            imported.tradeId shouldBe "api-fill-0"
+            imported.orderTxid shouldBe "O-KRAKEN"
+            imported.cycleId shouldBe null
+        }
+
+        "deduplicates repeated id-less fills while preserving distinct legs in one response" {
+            stubStableBackend()
+            stubConfig()
+            val firstFill = apiFill(0).copy(tradeId = null, orderTxid = "O-LEGACY")
+            val secondFill = firstFill.copy(timestamp = baseTime.plusSeconds(1))
+            coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(firstFill, secondFill, firstFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 3
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 3
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.all { it.tradeId == null && it.orderTxid == "O-LEGACY" } shouldBe true
+            trades.map { it.timestamp }.toSet() shouldBe setOf(baseTime, baseTime.plusSeconds(1))
+        }
     }
 }

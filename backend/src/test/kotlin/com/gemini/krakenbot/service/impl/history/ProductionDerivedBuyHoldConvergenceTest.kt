@@ -132,6 +132,7 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 inceptionDiscoveryService = discoveryService,
                 nowProvider = { now },
                 configService = configService,
+                krakenService = krakenService,
             )
 
         suspend fun seedSnapshot(
@@ -211,6 +212,20 @@ class ProductionDerivedBuyHoldConvergenceTest :
         }
 
         suspend fun seedProductionDatabase() {
+            // The fixture deliberately omits baseline-only MORPHO from later portfolio rows;
+            // seed a retained daily market-price source so complete-wallet valuation can price it.
+            krakenService.ohlcSupplier = { pair, interval, since ->
+                val dailyPrice = when (pair) {
+                    Asset("MORPHO").tradingPair -> BigDecimal("1.2917")
+                    Asset("XMR").tradingPair -> BigDecimal("395.69")
+                    else -> null
+                }
+                if (dailyPrice != null && interval == 1440 && since != null) {
+                    listOf((since + 86_400L) to dailyPrice)
+                } else {
+                    emptyList()
+                }
+            }
             // Seed coverage and account scope metadata
             repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC, t0.epochSecond.toString())
