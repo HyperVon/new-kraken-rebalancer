@@ -2,6 +2,7 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmlQueries
 import kotlinx.browser.document
 import kotlinx.browser.window
 
@@ -22,6 +23,18 @@ private const val HTTP_UNPROCESSABLE_ENTITY = 422
 internal fun shouldSwapRejection(status: Int?, responseText: String?): Boolean =
     status == HTTP_UNPROCESSABLE_ENTITY && !responseText.isNullOrBlank()
 
+/**
+ * Brings a freshly rendered form rejection into view.
+ *
+ * A rejection swaps the whole form, but its trigger can sit far down the page — the allocation
+ * preview button is at the bottom — so a banner rendered at the top would land above the fold with
+ * no indication anything happened. Scoping to a banner that is already rendered means ordinary
+ * swaps never move the page.
+ */
+private fun revealFormError() {
+    document.querySelector(HtmlQueries.FORM_ERROR_BANNER)?.scrollIntoView()
+}
+
 fun main() {
     registerDashboardGlobals()
     registerSettingsGlobals()
@@ -33,6 +46,14 @@ fun main() {
         if (document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) != null) {
             initSettings()
         }
+        revealFormError()
+    })
+
+    // A rejection belongs to the attempt that produced it, so a new submission clears the previous
+    // message before the request goes out. Doing it here rather than on the response means a
+    // successful swap cannot leave a stale banner above freshly rendered content.
+    document.addEventListener(HtmlEvents.HTMX_BEFORE_REQUEST, {
+        document.querySelector(HtmlQueries.FORM_ERROR_BANNER)?.remove()
     })
 
     // htmx refuses to swap a non-2xx response, so a 422 that already carries a fully rendered

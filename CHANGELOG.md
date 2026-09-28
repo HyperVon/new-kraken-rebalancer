@@ -89,6 +89,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   invalid input produced no feedback at all. This predates the preview and also affected the plain
   save path. A scoped `htmx:beforeSwap` listener now admits status 422 when the response carries a
   body, leaving every other error status to htmx's default handling.
+- **A settings rejection could render off-screen and outlive its attempt**: the rejection swaps the
+  whole form, but its trigger can sit far down the page (the allocation preview button is at the
+  bottom), leaving a banner rendered at the top above the fold. The banner now scrolls into view
+  when a swap renders one. A rejection message also belonged to the attempt that produced it, so a
+  new submission clears the previous one instead of a successful swap leaving it above freshly
+  rendered content. Scoped to form-level banners, so the dashboard's own error region is untouched.
 - **Largest-remainder proportional allocation**: `QualityAllocation.proportional` now uses standard
   Hare-Niemeyer largest-remainder allocation (`RoundingMode.DOWN` floor truncation plus descending remainder
   distribution) to guarantee non-negative residual integers and exact total percentage conservation.
@@ -106,6 +112,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Allocation preview figures are measured over the whole portfolio**: the three preview metrics were
+  all computed over the scored sleeve, so `Largest single position` reported BTC as 86.27% when its
+  actual share of the book was 81.96%, and `Effective independent bets` silently ignored the
+  unscored legs it was being read next to. Concentration is a statement about the portfolio, so both
+  now count every leg the preview will produce. The quality score genuinely cannot include an
+  unscored asset — there is no score to average — so it is labelled `scored assets only` rather than
+  being presented as a portfolio figure. With BTC 81.96 / ETH 13.04 / USD 5.0 the figures read
+  81.96% and 1.45 instead of 86.27% and 1.31.
+- **Allocation rows are labelled and no longer squeezed**: the `score` and `target` fields sat side
+  by side as identical boxes told apart only by a `%` suffix, and the placeholder was truncated to
+  `sc` at laptop width. Each numeric field now carries a visible label above it, the placeholder
+  reads `0–10`, and `Remove` is right-aligned instead of crowding the fields. The list keeps its
+  column layout, but the columns are auto-fitting with a 30rem floor rather than forced to three at
+  1024px, which had squeezed each row to 386px — narrow enough to truncate the score field and run
+  the two labels into each other.
+- **The score controls and add-asset control are separate labelled groups** rather than sharing one
+  dashed box, and the sleeve input no longer borrows the `Target Allocations` heading text as its
+  placeholder, which read as a duplicate heading directly beneath the real one. Inputs keep a fixed
+  width so `Add Asset` is no longer the largest control in the section. The preview's three figures
+  are separate labelled cells, each carrying its own scope note, instead of one run-on line.
 - **Docs**: the 20-day recent-high lookback is documented as a provisional compiled-in parameter in
   a new `ALGORITHM.md` §6 rather than a settings row, since the sweep that chose it is contradicted
   by an independent re-implementation at the same settings.

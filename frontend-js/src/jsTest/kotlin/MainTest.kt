@@ -119,6 +119,37 @@ class MainTest : StringSpec() {
             shouldSwapRejection(null, null) shouldBe false
         }
 
+        "a new submission clears the previous rejection banner" {
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <form>
+                  <div class="error-banner">a previous rejection</div>
+                  <input name="targets" value="50.0">
+                </form>
+                <div class="error-banner">a dashboard error, not a form one</div>
+            """.trimIndent()
+            document.body!!.appendChild(container)
+
+            try {
+                main()
+                document.querySelectorAll(".error-banner").length shouldBe 2
+
+                val event = document.createEvent("Event")
+                event.initEvent(type = "htmx:beforeRequest", bubbles = true, cancelable = true)
+                document.dispatchEvent(event)
+
+                // The stale attempt message goes, so a successful swap cannot leave it above
+                // freshly rendered content; the dashboard's own region is untouched.
+                (document.querySelector("form .error-banner") == null) shouldBe true
+                document.querySelectorAll(".error-banner").length shouldBe 1
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                document.body!!.removeChild(container)
+            }
+        }
+
         "main registers DOMContentLoaded when body is null" {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }

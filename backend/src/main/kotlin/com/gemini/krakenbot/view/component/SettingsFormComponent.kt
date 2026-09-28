@@ -573,47 +573,61 @@ class SettingsFormComponent {
                 }
             }
 
-            div(CssClass.Form.AddAssetBox) {
-                input(CssClass.Form.InputGlass, type = number) {
-                    id = HtmlIds.SCORE_EMPHASIS_INPUT
-                    name = FormFields.SCORE_EMPHASIS
-                    value = "4"
-                    min = "1"
-                    max = QualityAllocation.MAX_EMPHASIS.toString()
-                    placeholder = ViewText.ALLOCATION_SCORE_EMPHASIS
-                }
-                input(CssClass.Form.InputGlass, type = number) {
-                    id = HtmlIds.SCORE_SLEEVE_INPUT
-                    name = FormFields.SCORE_SLEEVE_PERCENT
-                    step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
-                    placeholder = ViewText.TARGET_ALLOCATIONS
-                }
-                button(
-                    CssClass.Button.Secondary,
-                    type = button,
-                ) {
-                    attributes[HtmxAttrs.HX_POST] = Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW
-                    attributes[HtmxAttrs.HX_INCLUDE] = "closest form"
-                    attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.ALLOCATIONS_CONTAINER}"
-                    attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
-                    span { +ViewText.ALLOCATIONS_FROM_SCORES }
+            // The score controls and the add-asset control used to share one dashed box, which read
+            // as a single form of related fields. They are separate jobs, so they are separate
+            // labelled groups, and the sleeve input no longer borrows the "Target Allocations"
+            // heading text as its placeholder.
+            div(CssClass.Form.AllocationControlRow) {
+                div(CssClass.Form.AllocationControlGroup) {
+                    span(CssClass.Form.AllocationControlLabel) { +ViewText.ALLOCATION_SLEEVE_FIELD }
+                    div(CssClass.Form.AllocationControlInputs) {
+                        input(CssClass.Form.InputGlass, type = number) {
+                            id = HtmlIds.SCORE_EMPHASIS_INPUT
+                            name = FormFields.SCORE_EMPHASIS
+                            value = "4"
+                            min = "1"
+                            max = QualityAllocation.MAX_EMPHASIS.toString()
+                            placeholder = ViewText.ALLOCATION_SCORE_EMPHASIS
+                        }
+                        input(CssClass.Form.InputGlass, type = number) {
+                            id = HtmlIds.SCORE_SLEEVE_INPUT
+                            name = FormFields.SCORE_SLEEVE_PERCENT
+                            step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
+                            placeholder = ViewText.ALLOCATION_SLEEVE_PLACEHOLDER
+                        }
+                        button(
+                            CssClass.Button.Secondary,
+                            type = button,
+                        ) {
+                            attributes[HtmxAttrs.HX_POST] = Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW
+                            attributes[HtmxAttrs.HX_INCLUDE] = "closest form"
+                            attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.ALLOCATIONS_CONTAINER}"
+                            attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
+                            span { +ViewText.ALLOCATIONS_FROM_SCORES }
+                        }
+                    }
+                    span(CssClass.Form.AllocationControlHint) { +ViewText.ALLOCATION_SCORE_HINT }
                 }
             }
 
-            div(CssClass.Form.AddAssetBox) {
-                input(CssClass.Form.InputGlass, type = text) {
-                    id = HtmlIds.NEW_SYMBOL_INPUT
-                    placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
-                    attributes[HtmlAttrs.ONKEYDOWN] =
-                        "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
-                }
-                button(
-                    CssClass.Button.Secondary,
-                    type = button,
-                ) {
-                    attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
-                    icon(Icons.PLUS)
-                    span { +ViewText.ADD_ASSET }
+            div(CssClass.Form.AllocationControlRow) {
+                div(CssClass.Form.AllocationControlGroup) {
+                    div(CssClass.Form.AllocationControlInputs) {
+                        input(CssClass.Form.InputGlass, type = text) {
+                            id = HtmlIds.NEW_SYMBOL_INPUT
+                            placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
+                            attributes[HtmlAttrs.ONKEYDOWN] =
+                                "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+                        }
+                        button(
+                            CssClass.Button.Secondary,
+                            type = button,
+                        ) {
+                            attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
+                            icon(Icons.PLUS)
+                            span { +ViewText.ADD_ASSET }
+                        }
+                    }
                 }
             }
         }

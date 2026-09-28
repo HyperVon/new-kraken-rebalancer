@@ -427,38 +427,25 @@ class DashboardController(
         }
 
         call.respondHtml(HttpStatusCode.OK) {
+            // The trigger swaps the inner HTML of #allocations-container, so the response is that
+            // container's contents. Re-wrapping them in a second element with the same id would nest
+            // a duplicate id and, carrying no list class, drop the rows out of the grid into a plain
+            // block.
             body {
-                div {
-                    id = HtmlIds.ALLOCATIONS_CONTAINER
-                    preview.symbols.forEachIndexed { index, symbol ->
-                        val targetForSymbol = preview.computed[symbol]?.toPlainString()
-                            ?: preview.targets.getOrNull(index).orEmpty()
-                        unsafe {
-                            +AllocationEditor.editRow(
-                                symbol = symbol,
-                                color = AssetColorAssigner.normalizeHex(preview.colors[index]) ?: "#888888",
-                                targetPercent = targetForSymbol,
-                                score = preview.scores.getOrNull(index).orEmpty(),
-                            )
-                        }
+                preview.symbols.forEachIndexed { index, symbol ->
+                    val targetForSymbol = preview.computed[symbol]?.toPlainString()
+                        ?: preview.targets.getOrNull(index).orEmpty()
+                    unsafe {
+                        +AllocationEditor.editRow(
+                            symbol = symbol,
+                            color = AssetColorAssigner.normalizeHex(preview.colors[index]) ?: "#888888",
+                            targetPercent = targetForSymbol,
+                            score = preview.scores.getOrNull(index).orEmpty(),
+                        )
                     }
-                    p(CssClass.Form.SectionSubtitle) {
-                        +buildString {
-                            append(ViewText.ALLOCATION_QUALITY_SCORE)
-                            append(": ")
-                            append(QualityAllocation.weightedScore(preview.computed, preview.scored).toPlainString())
-                            append(" · ")
-                            append(ViewText.ALLOCATION_MAX_WEIGHT)
-                            append(": ")
-                            append(QualityAllocation.maxWeightPercent(preview.computed).toPlainString())
-                            append("% · ")
-                            append(ViewText.ALLOCATION_EFFECTIVE_BETS)
-                            append(": ")
-                            append(QualityAllocation.effectiveAssetCount(preview.computed).toPlainString())
-                        }
-                    }
-                    p(CssClass.Form.SectionSubtitle) { +ViewText.ALLOCATION_PREVIEW_WARNING }
                 }
+                allocationSummary(preview)
+                p(CssClass.Form.SectionSubtitle) { +ViewText.ALLOCATION_PREVIEW_WARNING }
             }
         }
     }
@@ -512,14 +499,59 @@ class DashboardController(
             ?: (if (scoredTargetTotal.signum() > 0) scoredTargetTotal else targetTotal)
         require(usableSleeve.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
 
+        val computed = QualityAllocation.proportional(scored, usableSleeve, emphasis)
         return AllocationPreview(
             symbols = symbols,
             targets = targets,
             colors = colors,
             scores = scores,
             scored = scored,
-            computed = QualityAllocation.proportional(scored, usableSleeve, emphasis),
+            computed = computed,
+            // Concentration is a statement about the whole portfolio, so it is measured over every
+            // leg the preview will produce: the redistributed scored sleeve plus the unscored
+            // targets it preserved. Measuring it over the sleeve alone reported BTC as 86.27% of
+            // "largest position" when its actual share of the book was 81.96%.
+            combined = buildMap {
+                symbols.forEachIndexed { index, symbol ->
+                    val weight = computed[symbol] ?: targets.getOrNull(index)?.toBigDecimalOrNull()
+                    if (weight != null && weight.signum() > 0) put(symbol, weight)
+                }
+            },
         )
+    }
+
+    /**
+     * Renders the preview's three figures as separate labelled cells rather than one run-on line.
+     *
+     * The quality score can only average assets that carry a score, so it is labelled as scoped to
+     * the scored sleeve; the concentration figures are measured over the whole portfolio and say so.
+     * They are omitted rather than crashing when nothing parses to a positive weight.
+     */
+    private fun kotlinx.html.FlowContent.allocationSummary(preview: AllocationPreview) {
+        // No guard on an empty total: computeAllocationPreview already requires a non-empty scored
+        // map and a positive sleeve, so proportional always returns positive weights and `combined`
+        // is never empty. Both figures therefore have a value to report.
+        val scoreValue = QualityAllocation.weightedScore(preview.computed, preview.scored).toPlainString()
+        val maxWeight = QualityAllocation.maxWeightPercent(preview.combined).toPlainString() + "%"
+        val bets = QualityAllocation.effectiveAssetCount(preview.combined).toPlainString()
+
+        div(CssClass.Form.AllocationStatRow.value) {
+            div(CssClass.Form.AllocationStat.value) {
+                div(CssClass.Form.AllocationStatValue.value) { +scoreValue }
+                div(CssClass.Form.AllocationStatLabel.value) { +ViewText.ALLOCATION_QUALITY_SCORE }
+                div(CssClass.Form.AllocationStatNote.value) { +ViewText.ALLOCATION_SCORED_ONLY }
+            }
+            div(CssClass.Form.AllocationStat.value) {
+                div(CssClass.Form.AllocationStatValue.value) { +maxWeight }
+                div(CssClass.Form.AllocationStatLabel.value) { +ViewText.ALLOCATION_MAX_WEIGHT }
+                div(CssClass.Form.AllocationStatNote.value) { +ViewText.ALLOCATION_WHOLE_BOOK }
+            }
+            div(CssClass.Form.AllocationStat.value) {
+                div(CssClass.Form.AllocationStatValue.value) { +bets }
+                div(CssClass.Form.AllocationStatLabel.value) { +ViewText.ALLOCATION_EFFECTIVE_BETS }
+                div(CssClass.Form.AllocationStatNote.value) { +ViewText.ALLOCATION_WHOLE_BOOK }
+            }
+        }
     }
 
     /**
@@ -545,7 +577,10 @@ class DashboardController(
         val colors: List<String>,
         val scores: List<String>,
         val scored: Map<String, BigDecimal>,
+        /** Redistributed weights for the scored sleeve only. */
         val computed: Map<String, BigDecimal>,
+        /** Every leg the preview will produce, including preserved unscored targets. */
+        val combined: Map<String, BigDecimal>,
     )
 
     private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {

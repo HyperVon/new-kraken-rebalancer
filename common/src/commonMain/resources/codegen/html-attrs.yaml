@@ -24,6 +24,7 @@ HtmlEvents:
   INPUT: "input"
   DOM_CONTENT_LOADED: "DOMContentLoaded"
   HTMX_AFTER_SWAP: "htmx:afterSwap"
+  HTMX_BEFORE_REQUEST: "htmx:beforeRequest"
   HTMX_BEFORE_SWAP: "htmx:beforeSwap"
   BEFORE_UNLOAD: "beforeunload"
   VISIBILITY_CHANGE: "visibilitychange"
@@ -85,6 +86,7 @@ HtmlTags:
   TBODY: "tbody"
   OPTION: "option"
   LABEL: "label"
+  FORM: "form"
 HtmlIds:
   CSRF_TOKEN: "csrf-token"
   SAVE_BUTTON: "save-button"

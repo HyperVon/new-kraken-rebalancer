@@ -16,6 +16,7 @@ import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.SettingsComparisonStatus
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -2028,8 +2029,18 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.OK
                 val body = response.bodyAsText()
                 body shouldContain "Preview only"
-                body shouldContain "Weighted quality score"
-                // USD carries no score, so only BTC and ETH are redistributed.
+                // Concentration is a claim about the whole portfolio, so it counts the unscored USD
+                // leg too. The sleeve is 80 (50 + 30) and emphasis 2 splits it 9.5^2 : 8.5^2 =
+                // 90.25 : 72.25, giving BTC 44.43 and ETH 35.57 with USD held at 20. The three legs
+                // sum to 100, so the largest position is 44.43% of the book and 2.75 effective bets
+                // — not the 55.54% and 1.98 the old scored-sleeve denominator reported.
+                body shouldContain "44.43"
+                body shouldContain "2.75"
+                body shouldContain "of the whole book"
+                body shouldContain "scored assets only"
+                // The response is the container's contents, so it must not re-wrap them in a
+                // second element carrying the same id.
+                body shouldNotContain """id="${HtmlIds.ALLOCATIONS_CONTAINER}"""
                 body shouldContain "name=\"${FormFields.TARGETS}\""
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
@@ -2411,7 +2422,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "100.00%"
+                val body = response.bodyAsText()
+                // The fallback gives the one scored leg the whole 100 sleeve, which is what this
+                // case is about. USD keeps its own 100 target, so the book totals 200 and the
+                // whole-book concentration figures report that rather than the sleeve's 100%.
+                body shouldContain "value=\"100.00\""
+                body shouldContain "50.00%"
             }
         }
 

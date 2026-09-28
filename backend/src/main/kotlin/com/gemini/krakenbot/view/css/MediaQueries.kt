@@ -52,9 +52,6 @@ import kotlinx.css.width
 object MediaQueries {
     fun CssBuilder.applyMediaQueries() {
         "@media (min-width: 640px)" {
-            ".${CssClass.Form.AllocationListContainer}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
-            }
             ".${CssClass.History.StatsGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
             }
@@ -98,9 +95,6 @@ object MediaQueries {
         "@media (min-width: 1024px)" {
             ".${CssClass.Layout.DetailGrid}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
-            }
-            ".${CssClass.Form.AllocationListContainer}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
             }
             ".${CssClass.History.StatsGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(6, 1fr)")

@@ -13,4 +13,11 @@ object HtmlQueries {
     val CHART_SCRUBBERS = CssClass.History.ChartScrubberInput.querySelector
     const val TARGET_INPUTS = "${HtmlTags.INPUT}[name=\"${FormFields.TARGETS}\"]"
     const val SYMBOL_INPUTS = "${HtmlTags.INPUT}[name=\"${FormFields.SYMBOLS}\"]"
+
+    /**
+     * A form-level rejection banner, scoped to a form so the dashboard's separate error region is
+     * left alone when its fragment refreshes. The space is a descendant combinator — the entries
+     * above are compound selectors (a `th` that is also `.sortable`).
+     */
+    val FORM_ERROR_BANNER = HtmlTags.FORM + " " + CssClass.Utility.ErrorBanner.querySelector
 }

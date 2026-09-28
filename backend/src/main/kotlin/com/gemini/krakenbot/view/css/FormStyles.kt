@@ -267,28 +267,40 @@ object FormStyles {
 
         ".${CssClass.Form.AllocationListContainer}" {
             display = Display.grid
-            gridTemplateColumns = GridTemplateColumns("1fr")
+            // Auto-fitting columns with a 30rem floor, rather than fixed 2/3-column breakpoints: a
+            // row needs about that much for symbol, swatch, both labelled number fields and the
+            // remove action, and a fixed 3-column rule at 1024px squeezed each row to 386px, which
+            // truncated the score field and ran the two field labels into each other.
+            gridTemplateColumns = GridTemplateColumns("repeat(auto-fit, minmax(30rem, 1fr))")
             gap = 0.75.rem
             marginBottom = 1.25.rem
         }
 
+        // symbol | swatch | score | target | remove. The numeric fields are fixed-width so their
+        // labels line up down the column and a placeholder is never truncated, and the remove action
+        // takes the remaining track so it sits at the far right rather than crowding the fields.
         ".${CssClass.Form.AllocationEditRow}" {
-            display = Display.flex
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("5rem 2rem 7.5rem 7.5rem 1fr")
             alignItems = Align.center
-            gap = 0.75.rem
+            gap = 0.875.rem
             minWidth = 0.px
             background = CssTheme.colorSurface2.value
-            padding = Padding(0.5.rem, 0.75.rem)
+            padding = Padding(0.625.rem, 0.875.rem)
             borderRadius = CssTheme.radiusLg
             solidBorder(CssTheme.colorSurface2Border)
             boxShadowRaw("0 4px 12px -4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(186,220,255,0.08)")
         }
 
+        "${CssClass.Form.AllocationEditRow.querySelector} ${CssClass.Button.DangerGhost.querySelector}" {
+            justifySelfRaw("end")
+        }
+
         ".${CssClass.Form.AllocationEditSymbol}" {
-            width = 3.5.rem
             fontWeight = FontWeight.w700
             fontSize = 0.9375.rem
             color = CssTheme.colorTextPrimary
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.Form.AllocationColorSwatch}" {
@@ -316,23 +328,142 @@ object FormStyles {
 
         ".${CssClass.Form.AllocationEditInputWrapper}" {
             position = Position.relative
-            flexGrow = 1.0
             minWidth = 0.px
+            display = Display.flex
+            flexDirection = FlexDirection.column
+            gap = 0.25.rem
         }
 
         ".${CssClass.Form.AllocationEditInputWrapper} input" {
             width = 100.pct
+        }
+
+        // The target field carries a "%" suffix, so it needs the room the score field does not.
+        ".${CssClass.Form.AllocationEditInputWrapper} input[name=\"targets\"]" {
             paddingRight = 1.75.rem
+        }
+
+        // Labels sit above their field so the score and target boxes are told apart by position and
+        // by name, not only by the "%" suffix, which the score field has no reason to carry.
+        ".${CssClass.Form.AllocationFieldLabel}" {
+            display = Display.block
+            fontSize = 0.6875.rem
+            fontWeight = FontWeight.w600
+            letterSpacingRaw("0.04em")
+            textTransformRaw("uppercase")
+            color = CssTheme.colorTextMuted
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.Form.PercentSuffix}" {
             position = Position.absolute
             right = 0.75.rem
-            top = 50.pct
+            // Offset by the label so the suffix stays centred on the input, not the whole cell.
+            topRaw("calc(50% + 0.5rem)")
             transform { translateY((-50).pct) }
             color = CssTheme.colorTextMuted
             fontWeight = FontWeight.w500
             fontSize = 0.8125.rem
+        }
+
+        // Preview figures as separate cells, each value-over-label, so a three-figure summary does
+        // not read as one run-on line and each figure can carry its own scope note.
+        // The rows are grid items of the list container, so the summary and its note have to span
+        // every column rather than land in whatever cell follows the last asset.
+        ".${CssClass.Form.AllocationStatRow}" {
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("repeat(3, minmax(0, 1fr))")
+            gridColumnRaw("1 / -1")
+            gap = 0.75.rem
+            marginTop = 0.25.rem
+        }
+
+        ".${CssClass.Form.AllocationStat}" {
+            background = CssTheme.colorSurface2.value
+            solidBorder(CssTheme.colorSurface2Border)
+            borderRadius = CssTheme.radiusMd
+            padding = Padding(0.625.rem, 0.75.rem)
+            minWidth = 0.px
+        }
+
+        ".${CssClass.Form.AllocationStatValue}" {
+            fontSize = 1.125.rem
+            fontWeight = FontWeight.w700
+            color = CssTheme.colorTextPrimary
+            lineHeightRaw("1.2")
+        }
+
+        ".${CssClass.Form.AllocationStatLabel}" {
+            fontSize = 0.8125.rem
+            color = CssTheme.colorTextSecondary
+            marginTop = 0.125.rem
+        }
+
+        ".${CssClass.Form.AllocationStatNote}" {
+            fontSize = 0.6875.rem
+            color = CssTheme.colorTextMuted
+            marginTop = 0.125.rem
+        }
+
+        ".${CssClass.Form.AllocationControlRow}" {
+            marginBottom = 0.75.rem
+        }
+
+        ".${CssClass.Form.AllocationControlGroup}" {
+            borderWidth = 1.px
+            borderStyle = BorderStyle.dashed
+            borderColor = CssTheme.colorBorderInput
+            background = CssTheme.colorGlassSurfaceFaint.value
+            borderRadius = CssTheme.radiusLg
+            padding = Padding(0.75.rem)
+        }
+
+        ".${CssClass.Form.AllocationControlLabel}" {
+            display = Display.block
+            fontSize = 0.6875.rem
+            fontWeight = FontWeight.w600
+            letterSpacingRaw("0.04em")
+            textTransformRaw("uppercase")
+            color = CssTheme.colorTextMuted
+            marginBottom = 0.5.rem
+        }
+
+        ".${CssClass.Form.AllocationControlInputs}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.625.rem
+        }
+
+        // Inputs keep their own width instead of growing, so Add Asset is not the largest control
+        // in the section and the row of score controls holds a predictable shape.
+        ".${CssClass.Form.AllocationControlInputs} input" {
+            width = 7.rem
+            flexShrinkRaw("0")
+        }
+
+        ".${CssClass.Form.AllocationControlInputs} input[type=\"text\"]" {
+            width = 12.rem
+        }
+
+        ".${CssClass.Form.AllocationControlInputs} button" {
+            flexShrinkRaw("0")
+        }
+
+        ".${CssClass.Form.AllocationControlHint}" {
+            display = Display.block
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextMuted
+            lineHeightRaw("1.45")
+            marginTop = 0.5.rem
+        }
+
+        // The preview note is a statement about the whole preview, so it spans the section rather
+        // than inheriting the narrower measure the standalone subtitle style carries — otherwise it
+        // reads as a caption on the first stat card.
+        "${CssClass.Form.AllocationStatRow.querySelector} + .${CssClass.Form.SectionSubtitle.querySelector}" {
+            gridColumnRaw("1 / -1")
+            marginTop = 0.625.rem
+            maxWidth = 100.pct
         }
 
         ".${CssClass.Form.AddAssetBox}" {
