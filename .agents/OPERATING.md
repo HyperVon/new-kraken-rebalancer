@@ -88,8 +88,8 @@ or a background process for the complete fan-out, then poll results. Do not
 start one foreground worker, wait for it, and only then start the next; that is
 sequential delegation, not parallel fan-out.
 
-For Kilo sessions, `.kilo/kilo.json` selects `kilo/kilo-auto/efficient` as the
-project default. That is a host-supported Auto tier, not a claim about which
+For Kilo sessions, `.kilo/kilo.json` pins `kilo/openai/gpt-6-luna` as the
+project default. That is a host-supported route, not a claim about which
 underlying model will answer a particular request.
 
 ### Parent-model inheritance for subagents
@@ -335,13 +335,11 @@ repository-wide audit merely because the baseline is always active.
 ## 8. Native model selection
 
 Kilo sessions use the project default in `.kilo/kilo.json`:
-`kilo/kilo-auto/efficient`. Kilo Auto Efficient classifies each request and
-chooses the least expensive benchmarked model expected to complete it. Its
-underlying mappings are server-side and can change; do not hardcode them in
-repository skills or scripts.
+`kilo/openai/gpt-6-luna`. Its underlying mappings are server-side and can
+change; do not hardcode them in repository skills or scripts.
 
 Use the host's native tiers for the parent session's own work: the project
-default in `.kilo/kilo.json` selects `kilo/kilo-auto/efficient`, and hosts may
+default in `.kilo/kilo.json` selects `kilo/openai/gpt-6-luna`, and hosts may
 expose stronger or smaller tiers for high-risk or bounded routine work. Tier
 mappings are server-side and can change; do not hardcode them in repository
 skills or scripts.

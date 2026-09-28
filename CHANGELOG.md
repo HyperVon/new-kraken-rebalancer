@@ -37,10 +37,52 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rebalanced book with buy-and-hold on identical capital. Fixtures are loaded from
   `REPLAY_FIXTURE_PATH` and are never committed. The harness also reports a lookback × trigger
   surface and re-checks the best cell on both halves of the window, so a spike is not mistaken for
-  a setting.
+  a setting. When no fixture is configured the two fixture-gated specs are reported as skipped
+  rather than passing vacuously, so CI never claims a measurement it did not make.
 
 ### Fixed
 
+- **Quality scores could persist a non-finite value and brick the dashboard**: the settings form
+  gated a score on `toDoubleOrNull()` plus `> 0.0`, but Kotlin's `toDoubleOrNull` only screens the
+  literal's syntax and delegates to `Double.parseDouble`, which returns `Infinity` on exponent
+  overflow rather than throwing. `1e400` therefore persisted to `rebalancer-config.json`, and
+  `BigDecimal.valueOf` then threw on every dashboard fragment render until the file was hand-edited.
+  Scores now go through the same `requiredFiniteDouble` guard every other numeric setting uses, a
+  malformed score is reported instead of silently dropped, and `validateSettings` rejects a
+  non-finite or non-positive score so a hand-edited config fails at load.
+- **Allocation preview errors were invisible**: the preview endpoint raised bare `require` failures
+  that reached the client as a JSON error the HTMX trigger never swaps, so `Calculate from scores`
+  silently did nothing on bad input. Validation now responds 422 with the settings form and the
+  `ViewText` message, retargeted at the body exactly like the expired-CSRF path. The tests asserted
+  a 500 that only the test harness (which does not install `StatusPages`) could produce; they now
+  assert the shipped 422 contract.
+- **Every comparison request paid two paced public calls**: Kraken asset metadata is now memoized
+  for an hour under a single-flight lock, instead of two `/0/public/Assets` requests behind the
+  1 s public limiter on every request — including full comparison cache hits, since the metadata
+  digest is part of the cache fingerprint. A failed fetch is deliberately not memoized, so a
+  transient Kraken outage cannot pin a fail-closed empty result into the fingerprint.
+- **A lone funding-rail id could bypass the internal-rail veto**: `hasExternalProof` vetoes on the
+  resolved method *name*, so a rail whose name failed to resolve skipped the veto and was then
+  accepted as external owner capital on the strength of the id alone — and this backend cannot
+  source internal-transfer evidence to correct it. The rail id is now surfaced only when the
+  funding-method registry was read **in full**, so an unreachable, truncated, or partially-parsed
+  registry leaves the row `UNRESOLVED` as before. The registry is read at most once per status page
+  however many records it holds, so a Kraken degradation cannot multiply private requests.
+- **The comparison chart could be labelled with the wrong benchmark**: the series label and the page
+  captions were static text naming the configuration-matched benchmark regardless of what the
+  request served. `BenchmarkMethod` and `ConfigurationEvidence` moved to `:common`, the chart label
+  is now derived from the response's `benchmarkMethod`, and the page captions describe both
+  benchmarks without claiming which is plotted. A comparison that ran no benchmark — an
+  unavailable one, in particular — no longer defaults to the forensic reference on the wire.
+- **A cached recent high could cross trading modes**: the 1-hour OHLC cache was keyed by trading
+  pair alone, so a high resolved against live candles decided whether a simulated sell was
+  suppressed for up to an hour. The cache is now scoped to the active trading mode.
+- **A malformed score emphasis was silently absorbed**: `scoreEmphasis` defaulted any unparseable
+  value to the flattest weighting while refusing an out-of-range one. Both are now rejected, so a
+  typo cannot quietly change what the preview shows.
+- **Agent-guidance model drift**: `.kilo/kilo.json` pins `kilo/openai/gpt-6-luna`, but
+  `OPERATING.md`, `AGENTIC_DEVELOPMENT.md`, and two skills still documented
+  `kilo/kilo-auto/efficient` and described Auto-tier behaviour the pinned route does not have.
 - **Largest-remainder proportional allocation**: `QualityAllocation.proportional` now uses standard
   Hare-Niemeyer largest-remainder allocation (`RoundingMode.DOWN` floor truncation plus descending remainder
   distribution) to guarantee non-negative residual integers and exact total percentage conservation.
@@ -48,12 +90,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `method_id` — no method name, no transaction id, as is the case for every fiat rail on the modern
   Funding API — is no longer forced to `UNRESOLVED`. The stable funding-rail id is now carried on
   funding records and accepted as external proof on a terminal-status record that already matched
-  the ledger row. Internal method markers continue to veto external classification.
+  the ledger row **and only when the funding-method registry answered and cleared the rail**; an
+  internal method marker still vetoes external classification.
 - **Historical replay terminal day truncation**: add regression coverage in `ReplayComparisonTest`
   verifying that `lastDay` bounds both the rebalanced and buy-and-hold arms to the identical evaluation
   day, excluding subsequent funding flows and market movements from both books.
 - **Precision in score preview calculation**: convert percentages using `BigDecimal.valueOf` rather than
   `BigDecimal(Double)` to eliminate IEEE 754 floating-point conversion artifacts.
+
+### Changed
+
+- **Docs**: the 20-day recent-high lookback is documented as a provisional compiled-in parameter in
+  a new `ALGORITHM.md` §6 rather than a settings row, since the sweep that chose it is contradicted
+  by an independent re-implementation at the same settings.
 
 ## [6.17.83] - 2026-09-25
 

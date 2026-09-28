@@ -686,6 +686,34 @@ class ConfigServiceTest : StringSpec() {
             }
         }
 
+        "validateConfig_RejectsNonFiniteOrNonPositiveQualityScores" {
+            runTest {
+                val originalConfig = configService.getConfig()
+                val originalDiskContent = tempFile.readText()
+                listOf(
+                    Double.NaN,
+                    Double.POSITIVE_INFINITY,
+                    Double.NEGATIVE_INFINITY,
+                    0.0,
+                    -1.0,
+                ).forEach { value ->
+                    withClue("qualityScore=$value") {
+                        shouldThrow<InvalidConfigurationException> {
+                            configService.updateConfig(
+                                originalConfig.copy(
+                                    settings = originalConfig.settings.copy(
+                                        qualityScores = mapOf("BTC" to value),
+                                    ),
+                                ),
+                            )
+                        }
+                    }
+                    configService.getConfig() shouldBe originalConfig
+                    tempFile.readText() shouldBe originalDiskContent
+                }
+            }
+        }
+
         "validateConfig_BadSettings" {
             runTest {
                 val settings = configService.getConfig().settings

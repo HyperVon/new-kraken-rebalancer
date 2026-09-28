@@ -16,6 +16,7 @@ import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.SettingsComparisonStatus
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -2080,7 +2081,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
 
-                response.status shouldBe HttpStatusCode.InternalServerError
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                // The trigger swaps the allocations container, so the error has to be retargeted
+                // at the body to become visible at all.
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.ALLOCATION_SCORE_REQUIRED
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
@@ -2106,8 +2111,69 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
 
-                response.status shouldBe HttpStatusCode.InternalServerError
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsOutOfRangeEmphasis" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("50", "50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.5", "8.5"),
+                            // Above QualityAllocation.MAX_EMPHASIS; the form's max attribute is
+                            // client-side only, so the server has to reject it itself.
+                            FormFields.SCORE_EMPHASIS to listOf("99"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_EMPHASIS
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsNonNumericEmphasis" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("50", "50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.5", "8.5"),
+                            // Treated the same as an out-of-range value rather than silently
+                            // becoming the flattest weighting the operator did not ask for.
+                            FormFields.SCORE_EMPHASIS to listOf("not-a-number"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_EMPHASIS
             }
         }
 
@@ -2143,8 +2209,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC", "TAO", "USD"),
                             FormFields.TARGETS to listOf("50", "30", "20"),
                             FormFields.COLORS to listOf("#ff0000", "#00ff00", "#94A3B8"),
-                            // A zero and a non-numeric entry are dropped rather than persisted.
-                            FormFields.SCORES to listOf("9.5", "0", "not-a-number"),
+                            // A zero score is dropped and a blank clears; a malformed entry is a
+                            // validation error rather than a silent drop (see the test below).
+                            FormFields.SCORES to listOf("9.5", "0", ""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -2152,6 +2219,86 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 captured.captured.settings.qualityScores shouldBe mapOf("BTC" to 9.5)
+            }
+        }
+
+        "postSettings_RejectsNonNumericQualityScore" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("20.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("20.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SYMBOLS to listOf("BTC", "TAO"),
+                            FormFields.TARGETS to listOf("50", "30"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.5", "oops"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_SCORE
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings_RejectsOverflowingQualityScore" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("20.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("20.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SYMBOLS to listOf("BTC", "TAO"),
+                            FormFields.TARGETS to listOf("50", "30"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            // Kotlin's toDoubleOrNull screens the literal's syntax but delegates to
+                            // Double.parseDouble, which returns Infinity on exponent overflow
+                            // instead of throwing. Persisting that would make BigDecimal.valueOf
+                            // throw on every dashboard fragment render.
+                            FormFields.SCORES to listOf("1e400", "8.0"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_SCORE
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 
@@ -2171,7 +2318,6 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.COLORS to listOf("#ff0000", "#00ff00", "#0000ff"),
                             // Shorter than the symbol list: the trailing leg has no score entry.
                             FormFields.SCORES to listOf("9.5", "0"),
-                            FormFields.SCORE_EMPHASIS to listOf("not-a-number"),
                             FormFields.SCORE_SLEEVE_PERCENT to listOf("0"),
                         ).formUrlEncode(),
                     )
@@ -2179,8 +2325,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
 
-                // Only BTC carries a usable score, and the malformed fields fall back rather
-                // than failing the preview.
+                // A malformed target, a zero score, a short score list and a zero sleeve all fall
+                // back rather than failing the preview: only BTC carries a usable score. Emphasis is
+                // not among them, because an unusable weighting silently flattens the result.
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Preview only"
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -2290,7 +2437,10 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
 
-                response.status shouldBe HttpStatusCode.InternalServerError
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_TARGET
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
     }

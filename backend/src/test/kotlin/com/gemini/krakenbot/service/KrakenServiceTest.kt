@@ -20,6 +20,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.ktor.client.*
@@ -746,6 +747,149 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val service = KrakenServiceImpl(configService, objectMapper, client)
 
                 service.getWithdrawStatus().single().method shouldBe null
+            }
+        }
+
+        "getDepositStatus_surfaces_method_id_when_the_registry_answered" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-FIAT",
+                            "method_id": "fiat-rail",
+                            "status": "success",
+                            "amount": {
+                              "asset": {"class": "currency", "name": "USD"},
+                              "amount": "100.00"
+                            },
+                            "fee": {
+                              "asset": {"class": "currency", "name": "USD"},
+                              "amount": "0.00"
+                            },
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                    """.trimIndent(),
+                    // The rail is not listed, so no name resolves, but the registry answered and
+                    // did not flag it as internal. The id is therefore usable as external proof.
+                    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT to """
+                        {"methods":[{"method_id":"other-rail","method_name":"ACH"}]}
+                    """.trimIndent(),
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        respond(
+                            content = responses[request.url.encodedPath]
+                                ?: """{"error":[],"result":[]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val record = service.getDepositStatus().single()
+                record.method shouldBe null
+                record.methodId shouldBe "fiat-rail"
+            }
+        }
+
+        "getDepositStatus reads the funding-method registry once per page, not once per record" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+
+                // A failed registry read must still be attempted only once per page: each attempt
+                // can drive retryWithFlow backoff up to 15 minutes, and a page can carry hundreds of
+                // records, so per-record retries would turn one degradation into thousands of
+                // private requests. Compared across page sizes so the assertion does not depend on
+                // how many internal attempts a single fetch makes.
+                suspend fun registryReadsFor(recordCount: Int): Int {
+                    val deposits = (1..recordCount).joinToString(",\n") { index ->
+                        """
+                        {
+                          "deposit_id": "DEP-$index",
+                          "method_id": "internal-rail",
+                          "status": "success",
+                          "amount": {
+                            "asset": {"class": "currency", "name": "USD"},
+                            "amount": "100.00"
+                          },
+                          "fee": {
+                            "asset": {"class": "currency", "name": "USD"},
+                            "amount": "0.00"
+                          },
+                          "create_time": "2023-11-14T22:13:20Z"
+                        }
+                        """.trimIndent()
+                    }
+                    var registryReads = 0
+                    val client = HttpClient(
+                        MockEngine { request ->
+                            when (request.url.encodedPath) {
+                                KrakenApiConstants.PATH_FUNDING_DEPOSITS -> respond(
+                                    content = """{"deposits": [$deposits]}""",
+                                    status = HttpStatusCode.OK,
+                                    headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                                )
+
+                                KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT -> {
+                                    registryReads++
+                                    respond(
+                                        content = """{"error":["EAPI:Rate limit exceeded"]}""",
+                                        status = HttpStatusCode.OK,
+                                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                                    )
+                                }
+
+                                else -> respond(
+                                    content = """{"error":[],"result":[]}""",
+                                    status = HttpStatusCode.OK,
+                                    headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                                )
+                            }
+                        },
+                    )
+
+                    val records = KrakenServiceImpl(configService, objectMapper, client).getDepositStatus()
+                    records.size shouldBe recordCount
+                    // The rail id stays withheld: this backend cannot source internal transfers, so
+                    // nothing downstream could correct a row classified on an unchecked id.
+                    records.forEach { record ->
+                        record.method shouldBe null
+                        record.methodId shouldBe null
+                    }
+                    return registryReads
+                }
+
+                val singleRecord = registryReadsFor(1)
+                val manyRecords = registryReadsFor(25)
+                // Equal counts prove the fetch is page-scoped: any per-record retry would scale with
+                // the 25-record page. Greater than zero proves the registry was actually consulted,
+                // so the test cannot pass by never asking.
+                singleRecord shouldBe manyRecords
+                manyRecords shouldBeGreaterThan 0
             }
         }
 

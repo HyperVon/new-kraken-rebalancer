@@ -89,10 +89,12 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
+import java.time.Duration
 import java.time.Instant
 import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 // Map-stubbed tests answer every sync-metadata read from a local map; these keys fall back
 // to far-future certified coverage so evaluation tests exercise the stable-history path.
@@ -310,6 +312,48 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison memoizes asset metadata and does not memoize a failed fetch" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val kraken = FakeKrakenService()
+                val memoizing = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                )
+                memoizing.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                memoizing.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                // The metadata digest is read before the comparison cache lookup, so without
+                // memoization every request pays the paced public fetch even on a full cache hit.
+                kraken.getAssetMetadataCallCount shouldBe 1
+
+                // A fetch that fails must not be memoized: caching the empty fail-closed result
+                // would pin a transient Kraken outage into the comparison fingerprint.
+                val failing = FakeKrakenService().apply {
+                    assetMetadataSupplier = { throw IllegalStateException("asset metadata outage") }
+                }
+                val degrading = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = failing,
+                )
+                degrading.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                degrading.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                failing.getAssetMetadataCallCount shouldBe 2
+            }
+        }
+
         "getRebalancerComparison_StakingRewardExplainsDelta_Reconciled" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
@@ -479,6 +523,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
                 val cache = InMemoryComparisonCache()
                 val kraken = FakeKrakenService()
+                val clock = AtomicReference(now)
                 val cachedService = TradeHistoryQueryService(
                     repository = repository,
                     portfolioStatsRepository = statsRepository,
@@ -486,17 +531,24 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     krakenService = kraken,
                     comparisonCacheRepository = cache,
+                    nowProvider = { clock.get() },
                 )
 
                 cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
 
-                // If metadata changes, a prior NAV is no longer valid even when history is unchanged.
+                // Within the metadata memo's TTL the classification is intentionally reused, so the
+                // second request is served from the comparison cache without a refetch.
                 kraken.assetMetadataSupplier = { emptyList() }
                 cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+
+                // Once the memo expires, a reclassification invalidates a prior NAV even when the
+                // history itself is unchanged.
+                clock.set(now.plus(Duration.ofHours(2)))
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
-                cache.loadCount shouldBe 2
                 cache.saveCount shouldBe 1
             }
         }
@@ -511,6 +563,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
                 val cache = InMemoryComparisonCache()
                 val kraken = FakeKrakenService()
+                val clock = AtomicReference(now)
                 val cachedService = TradeHistoryQueryService(
                     repository = repository,
                     portfolioStatsRepository = statsRepository,
@@ -518,6 +571,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     krakenService = kraken,
                     comparisonCacheRepository = cache,
+                    nowProvider = { clock.get() },
                 )
                 val from = Instant.EPOCH
                 val through = snap2.timestamp
@@ -526,7 +580,10 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
 
+                // An outage is not memoized, so once the metadata memo expires the failure is seen
+                // and the comparison fails closed rather than reusing a row keyed on a stale digest.
                 kraken.assetMetadataSupplier = { throw IllegalStateException("metadata unavailable") }
+                clock.set(now.plus(Duration.ofHours(2)))
                 cachedService.getRebalancerComparison(from, through).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
                 cache.saveCount shouldBe 1

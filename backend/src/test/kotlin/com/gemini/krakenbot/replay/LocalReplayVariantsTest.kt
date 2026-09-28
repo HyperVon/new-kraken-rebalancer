@@ -5,6 +5,8 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.Asset
+import io.kotest.assertions.withClue
+import io.kotest.core.annotation.EnabledIf
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -16,9 +18,11 @@ import java.math.RoundingMode
  * Compares allocation/trigger variants on a locally supplied historical fixture, all through
  * the production [ReplayComparator] so every decision is the engine's own.
  *
- * Fixture path comes from `REPLAY_FIXTURE_PATH`; without it the spec passes trivially so CI
- * never depends on private data. The fixture is never committed.
+ * Fixture path comes from `REPLAY_FIXTURE_PATH`. Without it the spec is **reported as skipped** by
+ * `ReplayFixtureConfiguredCondition` rather than passing vacuously, so CI never depends on private
+ * data and never claims a measurement it did not make. The fixture is never committed.
  */
+@EnabledIf(ReplayFixtureConfiguredCondition::class)
 class LocalReplayVariantsTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -78,11 +82,7 @@ class LocalReplayVariantsTest : StringSpec() {
      * only wins on the full sample is a spike, not a setting.
      */
     private fun validateSurfaceWinner() {
-        val path = System.getenv("REPLAY_FIXTURE_PATH")
-        if (path.isNullOrBlank()) {
-            true.shouldBeTrue()
-            return
-        }
+        val path = requireNotNull(replayFixturePath())
         val fixture = ObjectMapper().readValue(File(path), Fixture::class.java)
         val closes = fixture.closes.mapValues { (_, series) -> series.map(::BigDecimal) }
         val flows = fixture.flows.map { ReplayComparator.Flow(it.dayIndex, BigDecimal(it.usd)) }
@@ -118,6 +118,7 @@ class LocalReplayVariantsTest : StringSpec() {
                     }
                 },
             )
+            assertReplayArmsAreReal(opening, outcome)
             return outcome.nav.subtract(outcome.buyAndHoldNav)
         }
 
@@ -131,15 +132,16 @@ class LocalReplayVariantsTest : StringSpec() {
         println("=== CANDIDATE VALIDATION (negative = rebalancing trails buy-and-hold) ===")
         println("    %-24s %12s %12s".format("candidate", "first half", "full window"))
         for ((trigger, lookback, label) in candidates) {
+            val firstHalf = deltaFor(trigger, lookback, midpoint)
+            val fullWindow = deltaFor(trigger, lookback, days - 1)
             println(
                 "    %-24s %12s %12s".format(
                     label,
-                    deltaFor(trigger, lookback, midpoint).setScale(0, RoundingMode.HALF_UP),
-                    deltaFor(trigger, lookback, days - 1).setScale(0, RoundingMode.HALF_UP),
+                    firstHalf.setScale(0, RoundingMode.HALF_UP),
+                    fullWindow.setScale(0, RoundingMode.HALF_UP),
                 ),
             )
         }
-        true.shouldBeTrue()
     }
 
     /**
@@ -147,11 +149,7 @@ class LocalReplayVariantsTest : StringSpec() {
      * the surface is the deliverable, and no single cell is a claim about the future.
      */
     private fun sweepSurface() {
-        val path = System.getenv("REPLAY_FIXTURE_PATH")
-        if (path.isNullOrBlank()) {
-            true.shouldBeTrue()
-            return
-        }
+        val path = requireNotNull(replayFixturePath())
         val fixture = ObjectMapper().readValue(File(path), Fixture::class.java)
         val closes = fixture.closes.mapValues { (_, series) -> series.map(::BigDecimal) }
         val flows = fixture.flows.map { ReplayComparator.Flow(it.dayIndex, BigDecimal(it.usd)) }
@@ -184,6 +182,7 @@ class LocalReplayVariantsTest : StringSpec() {
                     }
                 },
             )
+            assertReplayArmsAreReal(opening, outcome)
             return outcome.nav.subtract(outcome.buyAndHoldNav)
         }
 
@@ -227,16 +226,11 @@ class LocalReplayVariantsTest : StringSpec() {
         )
         val spread = best.third.subtract(worst.third)
         println("    surface spread: ${spread.setScale(2, RoundingMode.HALF_UP)}")
-        true.shouldBeTrue()
     }
 
     /** Compares the current allocation with and without the tail-stop on two independent halves. */
     private fun compareHalves() {
-        val path = System.getenv("REPLAY_FIXTURE_PATH")
-        if (path.isNullOrBlank()) {
-            true.shouldBeTrue()
-            return
-        }
+        val path = requireNotNull(replayFixturePath())
         val fixture = ObjectMapper().readValue(File(path), Fixture::class.java)
         val closes = fixture.closes.mapValues { (_, series) -> series.map(::BigDecimal) }
         val flows = fixture.flows.map { ReplayComparator.Flow(it.dayIndex, BigDecimal(it.usd)) }
@@ -272,6 +266,7 @@ class LocalReplayVariantsTest : StringSpec() {
                     }
                 },
             )
+            assertReplayArmsAreReal(opening, outcome)
             return outcome.nav.subtract(outcome.buyAndHoldNav)
         }
 
@@ -301,16 +296,10 @@ class LocalReplayVariantsTest : StringSpec() {
         if (improvedFirst != improvedFull) {
             println("    WARNING: the tail-stop benefit is NOT stable across the split")
         }
-        true.shouldBeTrue()
     }
 
     private fun compareVariants() {
-        val path = System.getenv("REPLAY_FIXTURE_PATH")
-        if (path.isNullOrBlank()) {
-            // No private fixture available: nothing to measure, and nothing to fail.
-            true.shouldBeTrue()
-            return
-        }
+        val path = requireNotNull(replayFixturePath())
         run {
             val fixture = ObjectMapper().readValue(File(path), Fixture::class.java)
             val closes = fixture.closes.mapValues { (_, series) -> series.map(::BigDecimal) }
@@ -379,8 +368,24 @@ class LocalReplayVariantsTest : StringSpec() {
             run("D score-derived + tail-stop", scoreDerived, lookback = 20)
             run("E current, wider 10% trig", baseline, trigger = 10.0)
             run("F score-derived, 10% trig", scoreDerived, trigger = 10.0)
-
-            true.shouldBeTrue()
         }
+    }
+}
+
+/**
+ * A reported cell is only meaningful if both arms are real portfolios. This is the one property
+ * asserted for every cell, because a sweep cell is a report rather than a claim: a harness that
+ * silently produced an empty or non-positive arm would otherwise print a plausible-looking delta.
+ */
+private fun assertReplayArmsAreReal(opening: BigDecimal, outcome: ReplayComparator.Outcome) {
+    withClue("rebalanced NAV must stay positive") { (outcome.nav > BigDecimal.ZERO).shouldBeTrue() }
+    withClue("buy-and-hold NAV must stay positive") {
+        (outcome.buyAndHoldNav > BigDecimal.ZERO).shouldBeTrue()
+    }
+    withClue("rebalanced NAV must not exceed opening capital by more than 10x") {
+        (outcome.nav <= opening.multiply(BigDecimal.TEN)).shouldBeTrue()
+    }
+    withClue("buy-and-hold NAV must not exceed opening capital by more than 10x") {
+        (outcome.buyAndHoldNav <= opening.multiply(BigDecimal.TEN)).shouldBeTrue()
     }
 }

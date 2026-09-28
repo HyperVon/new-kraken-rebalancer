@@ -336,6 +336,17 @@ class ConfigServiceImpl internal constructor(
                 ) to
                 "Inception date must be valid ISO-8601 or YYYY-MM-DD format.",
         )
+
+        // Scores are optional per symbol, but a persisted one is rendered through
+        // BigDecimal.valueOf, which rejects a non-finite Double at render time. Reject it here
+        // so a hand-edited config fails at load with a usable message instead of bricking the
+        // dashboard fragment on every poll.
+        settings.qualityScores.forEach { (symbol, score) ->
+            requireValidations(
+                score.isFinite() to "Quality score for $symbol must be finite.",
+                (score > 0.0) to "Quality score for $symbol must be positive.",
+            )
+        }
     }
 
     private fun validateAllocations(config: AppConfig) {

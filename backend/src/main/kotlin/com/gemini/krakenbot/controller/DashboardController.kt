@@ -76,6 +76,9 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+/** Score weighting used when the allocation preview request supplies no emphasis at all. */
+private const val DEFAULT_SCORE_EMPHASIS = 1
+
 class DashboardController(
     private val tradeHistoryService: TradeHistoryService,
     private val configService: ConfigService,
@@ -416,6 +419,56 @@ class DashboardController(
             return
         }
 
+        val preview = try {
+            computeAllocationPreview(params)
+        } catch (e: IllegalArgumentException) {
+            respondAllocationsPreviewError(e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK)
+            return
+        }
+
+        call.respondHtml(HttpStatusCode.OK) {
+            body {
+                div {
+                    id = HtmlIds.ALLOCATIONS_CONTAINER
+                    preview.symbols.forEachIndexed { index, symbol ->
+                        val targetForSymbol = preview.computed[symbol]?.toPlainString()
+                            ?: preview.targets.getOrNull(index).orEmpty()
+                        unsafe {
+                            +AllocationEditor.editRow(
+                                symbol = symbol,
+                                color = AssetColorAssigner.normalizeHex(preview.colors[index]) ?: "#888888",
+                                targetPercent = targetForSymbol,
+                                score = preview.scores.getOrNull(index).orEmpty(),
+                            )
+                        }
+                    }
+                    p(CssClass.Form.SectionSubtitle) {
+                        +buildString {
+                            append(ViewText.ALLOCATION_QUALITY_SCORE)
+                            append(": ")
+                            append(QualityAllocation.weightedScore(preview.computed, preview.scored).toPlainString())
+                            append(" · ")
+                            append(ViewText.ALLOCATION_MAX_WEIGHT)
+                            append(": ")
+                            append(QualityAllocation.maxWeightPercent(preview.computed).toPlainString())
+                            append("% · ")
+                            append(ViewText.ALLOCATION_EFFECTIVE_BETS)
+                            append(": ")
+                            append(QualityAllocation.effectiveAssetCount(preview.computed).toPlainString())
+                        }
+                    }
+                    p(CssClass.Form.SectionSubtitle) { +ViewText.ALLOCATION_PREVIEW_WARNING }
+                }
+            }
+        }
+    }
+
+    /**
+     * Redistributes the scored sleeve proportionally to `score^emphasis`, preserving the targets of
+     * unscored assets. Pure with respect to configuration: nothing here is persisted, and every
+     * rejection is an [IllegalArgumentException] carrying a `ViewText` message the caller renders.
+     */
+    private fun computeAllocationPreview(params: Parameters): AllocationPreview {
         val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
         val targets = params.getAll(FormFields.TARGETS).orEmpty()
         val colors = params.getAll(FormFields.COLORS).orEmpty()
@@ -424,7 +477,17 @@ class DashboardController(
             ViewText.INVALID_ALLOCATION_FIELDS
         }
 
-        val emphasis = params[FormFields.SCORE_EMPHASIS]?.toIntOrNull() ?: 1
+        // An absent emphasis means "not chosen" and falls back to the flattest weighting; a supplied
+        // one is rejected unless it is an in-range integer, so a typo cannot be silently absorbed
+        // while an out-of-range value is refused.
+        val emphasisField = params[FormFields.SCORE_EMPHASIS]?.trim().takeUnless { it.isNullOrEmpty() }
+        val emphasis = if (emphasisField == null) {
+            DEFAULT_SCORE_EMPHASIS
+        } else {
+            emphasisField.toIntOrNull()
+                ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_EMPHASIS)
+        }
+        require(emphasis in 1..QualityAllocation.MAX_EMPHASIS) { ViewText.INVALID_ALLOCATION_EMPHASIS }
         val requestedSleeve = params[FormFields.SCORE_SLEEVE_PERCENT]?.toBigDecimalOrNull()
 
         val scored = mutableMapOf<String, BigDecimal>()
@@ -448,44 +511,42 @@ class DashboardController(
         val usableSleeve = requestedSleeve?.takeIf { it.signum() > 0 }
             ?: (if (scoredTargetTotal.signum() > 0) scoredTargetTotal else targetTotal)
         require(usableSleeve.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
-        val computed = QualityAllocation.proportional(scored, usableSleeve, emphasis)
 
-        call.respondHtml(HttpStatusCode.OK) {
-            body {
-                div {
-                    id = HtmlIds.ALLOCATIONS_CONTAINER
-                    symbols.forEachIndexed { index, symbol ->
-                        val targetForSymbol = computed[symbol]?.toPlainString()
-                            ?: targets.getOrNull(index).orEmpty()
-                        unsafe {
-                            +AllocationEditor.editRow(
-                                symbol = symbol,
-                                color = AssetColorAssigner.normalizeHex(colors[index]) ?: "#888888",
-                                targetPercent = targetForSymbol,
-                                score = scores.getOrNull(index).orEmpty(),
-                            )
-                        }
-                    }
-                    p(CssClass.Form.SectionSubtitle) {
-                        +buildString {
-                            append(ViewText.ALLOCATION_QUALITY_SCORE)
-                            append(": ")
-                            append(QualityAllocation.weightedScore(computed, scored).toPlainString())
-                            append(" · ")
-                            append(ViewText.ALLOCATION_MAX_WEIGHT)
-                            append(": ")
-                            append(QualityAllocation.maxWeightPercent(computed).toPlainString())
-                            append("% · ")
-                            append(ViewText.ALLOCATION_EFFECTIVE_BETS)
-                            append(": ")
-                            append(QualityAllocation.effectiveAssetCount(computed).toPlainString())
-                        }
-                    }
-                    p(CssClass.Form.SectionSubtitle) { +ViewText.ALLOCATION_PREVIEW_WARNING }
-                }
-            }
-        }
+        return AllocationPreview(
+            symbols = symbols,
+            targets = targets,
+            colors = colors,
+            scores = scores,
+            scored = scored,
+            computed = QualityAllocation.proportional(scored, usableSleeve, emphasis),
+        )
     }
+
+    /**
+     * A rejected preview is a form-level error, but the trigger swaps only the allocations
+     * container. Retargeting the response at the body is what puts the message where the operator
+     * can see it, and mirrors the expired-CSRF path above.
+     */
+    private suspend fun RoutingContext.respondAllocationsPreviewError(message: String) {
+        call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
+        call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
+        respondSettingsFormError(
+            config = configService.getConfig(),
+            message = message,
+            csrfToken = CsrfProtection.currentToken(call),
+            paused = portfolioManager.isLoopPaused(),
+            status = HttpStatusCode.UnprocessableEntity,
+        )
+    }
+
+    private data class AllocationPreview(
+        val symbols: List<String>,
+        val targets: List<String>,
+        val colors: List<String>,
+        val scores: List<String>,
+        val scored: Map<String, BigDecimal>,
+        val computed: Map<String, BigDecimal>,
+    )
 
     private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {
         val deviationTriggerPercent =
@@ -559,7 +620,7 @@ class DashboardController(
         symbols.forEachIndexed { index, symbol ->
             val raw = scores.getOrNull(index)?.trim().orEmpty()
             if (raw.isEmpty()) return@forEachIndexed
-            val value = raw.toDoubleOrNull() ?: return@forEachIndexed
+            val value = raw.requiredFiniteDouble(ViewText.INVALID_ALLOCATION_SCORE)
             if (value > 0.0) qualityScores[symbol] = value
         }
 

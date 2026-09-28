@@ -555,12 +555,15 @@ class SimpleFundingProvenanceResolver(
     private fun isStatusConfirmed(status: String): Boolean =
         status.equals("Success", ignoreCase = true) || status.equals("Settled", ignoreCase = true)
 
-    private fun hasExternalProof(txid: String?, method: String?, methodId: String? = null): Boolean =
+    private fun hasExternalProof(txid: String?, method: String?, methodId: String?): Boolean =
         // A known wallet/Futures marker is evidence against external capital.
         // Otherwise any of the three proofs the funding surface exposes is sufficient:
         // an on-chain transaction id, a named funding method, or — for fiat rails, which have
         // no transaction hash and whose method may no longer resolve to a name — the stable
         // funding-rail id on a terminal-status record that already matched this ledger row.
+        // The id is only surfaced by the backend once the funding-method registry has answered
+        // and cleared the rail, so reaching this branch with a non-blank id means the rail was
+        // actually checked; see KrakenServiceImpl.FundingRailResolver.
         !method.isInternalFundingMethod() &&
             (!txid.isNullOrBlank() || !method.isNullOrBlank() || !methodId.isNullOrBlank())
 

@@ -460,15 +460,10 @@ class KrakenServiceImpl(
             refid = { it.refid },
             metadata = { FundingMetadata(method = it.method, txid = it.txid) },
         )
-        var methodNames: Map<String, String>? = null
+        val railResolver = FundingRailResolver(KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT)
         return records.map { record ->
             val legacy = metadata[record.id]
-            val method = legacy?.method ?: record.methodId?.let { methodId ->
-                val names = methodNames
-                    ?: fetchFundingMethodNames(KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT)
-                        .also { methodNames = it }
-                names[methodId]
-            }
+            val rail = railResolver.resolve(legacy?.method, record.methodId)
             DepositStatusRecord(
                 refid = record.id,
                 txid = legacy?.txid,
@@ -477,9 +472,9 @@ class KrakenServiceImpl(
                 fee = record.fee,
                 time = record.time,
                 status = record.status,
-                method = method,
+                method = rail.method,
                 hasAuthoritativeFee = record.hasAuthoritativeFee,
-                methodId = record.methodId,
+                methodId = rail.methodId,
             )
         }
     }
@@ -500,15 +495,10 @@ class KrakenServiceImpl(
             refid = { it.refid },
             metadata = { FundingMetadata(method = it.method, txid = it.txid) },
         )
-        var methodNames: Map<String, String>? = null
+        val railResolver = FundingRailResolver(KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW)
         return records.map { record ->
             val legacy = metadata[record.id]
-            val method = legacy?.method ?: record.methodId?.let { methodId ->
-                val names = methodNames
-                    ?: fetchFundingMethodNames(KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW)
-                        .also { methodNames = it }
-                names[methodId]
-            }
+            val rail = railResolver.resolve(legacy?.method, record.methodId)
             WithdrawStatusRecord(
                 refid = record.id,
                 txid = legacy?.txid,
@@ -517,9 +507,9 @@ class KrakenServiceImpl(
                 fee = record.fee,
                 time = record.time,
                 status = record.status,
-                method = method,
+                method = rail.method,
                 hasAuthoritativeFee = record.hasAuthoritativeFee,
-                methodId = record.methodId,
+                methodId = rail.methodId,
             )
         }
     }
@@ -534,7 +524,47 @@ class KrakenServiceImpl(
     override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> =
         emptyList()
 
+    /**
+     * A funding-method registry read. [complete] is false when the fetch failed, an entry was
+     * unparseable, or the page budget truncated the read, so callers know an absent id is unknown
+     * rather than genuinely unknown to Kraken.
+     */
+    private data class FundingMethodNames(val names: Map<String, String>, val complete: Boolean)
+
     private data class FundingMetadata(val method: String? = null, val txid: String? = null)
+
+    /**
+     * Resolves funding-rail names across one status page, issuing at most one registry request
+     * however many records the page holds. The lookup stays lazy: a page whose records all carry a
+     * legacy method name never issues it.
+     *
+     * The registry's completeness is part of the result, not an implementation detail. A fiat rail
+     * exposes neither a transaction id nor a resolvable name, so the raw rail id is the only
+     * external proof available and the resolver accepts it as such. That is only sound once the
+     * registry has been fully read and has not flagged the rail as internal — which is exactly the
+     * check that cannot run when the read failed, was truncated, or was never needed. So a rail id
+     * is surfaced only on a complete read, leaving the row UNRESOLVED otherwise. This backend
+     * cannot source internal-transfer evidence at all (see [getInternalTransfers]), so nothing
+     * downstream can correct a row classified on an unchecked id.
+     */
+    private inner class FundingRailResolver(private val path: String) {
+        private var registry: FundingMethodNames? = null
+        private var lookupAttempted = false
+
+        suspend fun resolve(legacyMethod: String?, recordMethodId: String?): FundingRail {
+            val name = legacyMethod ?: recordMethodId?.let { methodId ->
+                if (!lookupAttempted) {
+                    lookupAttempted = true
+                    registry = fetchFundingMethodNames(path)
+                }
+                registry?.names?.get(methodId)
+            }
+            val vouchable = registry?.complete == true
+            return FundingRail(method = name, methodId = recordMethodId.takeIf { vouchable })
+        }
+    }
+
+    private data class FundingRail(val method: String?, val methodId: String?)
 
     private suspend fun fetchV1FundingRecords(
         path: String,
@@ -625,10 +655,16 @@ class KrakenServiceImpl(
         }
     }
 
-    private suspend fun fetchFundingMethodNames(path: String): Map<String, String> {
+    /**
+     * Returns the registry and whether it was read in full. A `null` [FundingMethodNames.names] is
+     * never returned: a failed read is reported as an empty, incomplete registry so a page issues
+     * the request at most once rather than once per record.
+     */
+    private suspend fun fetchFundingMethodNames(path: String): FundingMethodNames {
         return try {
             val names = mutableMapOf<String, String>()
             val seenCursors = mutableSetOf<String>()
+            var complete = true
             var cursor: String? = null
             var pageIndex = 0
             while (pageIndex < MAX_FUNDING_PAGES) {
@@ -637,19 +673,27 @@ class KrakenServiceImpl(
                 val page = KrakenParsers.parseFundingMethodsPage(queryPrivateGet(path, params))
                 if (page.rawCount != page.records.size) {
                     log.warn("Funding method list {} returned unparseable entries; names may be incomplete.", path)
+                    complete = false
                 }
                 page.records.forEach { names.putIfAbsent(it.methodId, it.methodName) }
-                val nextCursor = page.nextCursor?.trim()?.takeIf(String::isNotEmpty) ?: return names
-                if (!seenCursors.add(nextCursor)) return names
+                val nextCursor = page.nextCursor?.trim()?.takeIf(String::isNotEmpty)
+                    ?: return FundingMethodNames(names, complete)
+                if (!seenCursors.add(nextCursor)) return FundingMethodNames(names, complete)
                 cursor = nextCursor
                 pageIndex++
             }
-            names
+            // The page budget ran out with a cursor still outstanding, so the registry is a prefix:
+            // an internal rail beyond it would look absent. Not complete, so not vouchable.
+            if (cursor != null) {
+                log.warn("Funding method list {} exceeded the page budget; names may be incomplete.", path)
+                complete = false
+            }
+            FundingMethodNames(names, complete)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.warn("Funding method list fetch failed for {}; funding records may lack external proof.", path, e)
-            emptyMap()
+            FundingMethodNames(emptyMap(), complete = false)
         }
     }
 

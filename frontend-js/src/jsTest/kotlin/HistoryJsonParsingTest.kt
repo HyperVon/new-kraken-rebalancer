@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.benchmarkSeriesLabel
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -150,6 +151,29 @@ class HistoryJsonParsingTest : StringSpec() {
             parsed.latestDifferenceUSD shouldBe "5000.00"
             parsed.proposedBaselineTimestamp shouldBe null
             parsed.proposalSearchStatus shouldBe null
+            // Absent method/evidence must resolve to the primary benchmark, never the reference.
+            parsed.benchmarkMethod shouldBe "INFERRED_CONFIGURATION_MATCHED_HOLD"
+            parsed.configurationEvidence shouldBe "INFERRED"
+        }
+
+        "parseRebalancerComparison carries the served benchmark through to the series label" {
+            val raw = json(
+                "availability" to "AVAILABLE",
+                "confidence" to "RECONCILED",
+                "baselineTimestamp" to "2026-07-01T12:00:00Z",
+                "points" to emptyArray<dynamic>(),
+                "benchmarkMethod" to "FIXED_INCEPTION_HOLD",
+                "configurationEvidence" to "NOT_APPLICABLE",
+            )
+
+            val parsed = parseRebalancerComparison(raw)
+            parsed.benchmarkMethod shouldBe "FIXED_INCEPTION_HOLD"
+            benchmarkSeriesLabel(parsed.benchmarkMethod) shouldBe "Fixed-Inception Hold (Reference)"
+        }
+
+        "an unrecognized benchmark name falls back to the primary label" {
+            benchmarkSeriesLabel("NOT_A_BENCHMARK") shouldBe "Configuration-Matched Hold (Inferred)"
+            benchmarkSeriesLabel(null) shouldBe "Configuration-Matched Hold (Inferred)"
         }
 
         "parseRebalancerComparison preserves later-start proposal state" {

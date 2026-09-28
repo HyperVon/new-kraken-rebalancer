@@ -41,7 +41,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
     init {
         "resolveAtRecentHigh returns nothing without a Kraken service" {
             manager(krakenService = null)
-                .resolveAtRecentHigh(allocations, prices, now)
+                .resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -54,7 +54,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             )
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, prices, now)
+                .resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldContainExactly(Asset.BTC)
         }
 
@@ -66,7 +66,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             )
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, prices, now)
+                .resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -75,7 +75,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("1"))
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, mapOf(Asset.USD to BigDecimal.ONE), now)
+                .resolveAtRecentHigh(allocations, mapOf(Asset.USD to BigDecimal.ONE), now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -84,7 +84,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("1"))
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, mapOf(Asset.BTC to BigDecimal.ZERO), now)
+                .resolveAtRecentHigh(allocations, mapOf(Asset.BTC to BigDecimal.ZERO), now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -93,7 +93,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } throws RuntimeException("ohlc outage")
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, prices, now)
+                .resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -102,7 +102,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns emptyList()
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, prices, now)
+                .resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -111,7 +111,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal.ZERO)
 
             manager(kraken)
-                .resolveAtRecentHigh(allocations, prices, now)
+                .resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -120,7 +120,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } throws CancellationException("stop")
 
             runCatching {
-                manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+                manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
             }.exceptionOrNull().shouldBeInstanceOf<CancellationException>()
         }
 
@@ -129,7 +129,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("1"))
 
             // USD's price equals its only close, so it would qualify were it not excluded.
-            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldContainExactly(Asset.BTC)
         }
 
@@ -138,11 +138,11 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
 
             val instance = manager(kraken)
-            instance.resolveAtRecentHigh(allocations, prices, now, candidateSymbols = emptySet())
+            instance.resolveAtRecentHigh(allocations, prices, now, candidateSymbols = emptySet(), simulation = false)
                 .shouldBeEmpty()
             coVerify(exactly = 0) { kraken.getOHLC(any(), any(), any()) }
 
-            instance.resolveAtRecentHigh(allocations, prices, now, candidateSymbols = setOf("ETH"))
+            instance.resolveAtRecentHigh(allocations, prices, now, candidateSymbols = setOf("ETH"), simulation = false)
                 .shouldBeEmpty()
             coVerify(exactly = 0) { kraken.getOHLC(any(), any(), any()) }
         }
@@ -155,10 +155,10 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             )
 
             val instance = manager(kraken)
-            instance.resolveAtRecentHigh(allocations, prices, now)
+            instance.resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldContainExactly(Asset.BTC)
 
-            instance.resolveAtRecentHigh(allocations, prices, now + 60)
+            instance.resolveAtRecentHigh(allocations, prices, now + 60, simulation = false)
                 .shouldContainExactly(Asset.BTC)
 
             coVerify(exactly = 1) { kraken.getOHLC(any(), any(), any()) }
@@ -168,7 +168,27 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
                 allocations,
                 prices,
                 now + PortfolioManagerImpl.RECENT_HIGH_CACHE_TTL_SECONDS + 10,
+                simulation = false,
             ).shouldContainExactly(Asset.BTC)
+
+            coVerify(exactly = 2) { kraken.getOHLC(any(), any(), any()) }
+        }
+
+        "resolveAtRecentHigh does not share a cached high across trading modes" {
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
+                1L to BigDecimal("50000"),
+                2L to BigDecimal("60000"),
+            )
+
+            val instance = manager(kraken)
+            instance.resolveAtRecentHigh(allocations, prices, now, simulation = false)
+                .shouldContainExactly(Asset.BTC)
+
+            // Simulation serves its own prices, so a high resolved against live candles must not
+            // decide whether a simulated sell is suppressed.
+            instance.resolveAtRecentHigh(allocations, prices, now, simulation = true)
+                .shouldContainExactly(Asset.BTC)
 
             coVerify(exactly = 2) { kraken.getOHLC(any(), any(), any()) }
         }
@@ -182,7 +202,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             )
 
             // Current price is 60000; dropped-last candidate high is 55000 -> 60000 >= 55000 -> trending!
-            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldContainExactly(Asset.BTC)
         }
 
@@ -193,7 +213,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
                 currentDayStart + 10 to BigDecimal("60000"),
             )
 
-            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldContainExactly(Asset.BTC)
         }
 
@@ -201,7 +221,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns emptyList()
 
-            manager(kraken).resolveAtRecentHigh(allocations, prices, now)
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldBeEmpty()
         }
 
@@ -210,16 +230,18 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
 
             val instance = manager(kraken)
-            instance.resolveAtRecentHigh(allocations, emptyMap(), now).shouldBeEmpty()
+            instance.resolveAtRecentHigh(allocations, emptyMap(), now, simulation = false).shouldBeEmpty()
             instance.resolveAtRecentHigh(
                 allocations,
                 mapOf(Asset.BTC to BigDecimal.ZERO, Asset.USD to BigDecimal.ONE),
                 now,
+                simulation = false,
             ).shouldBeEmpty()
             instance.resolveAtRecentHigh(
                 allocations,
                 mapOf(Asset.BTC to BigDecimal("-100"), Asset.USD to BigDecimal.ONE),
                 now,
+                simulation = false,
             ).shouldBeEmpty()
 
             coVerify(exactly = 0) { kraken.getOHLC(any(), any(), any()) }
@@ -234,6 +256,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
                 prices,
                 now,
                 candidateSymbols = setOf(Asset.BTC),
+                simulation = false,
             ).shouldContainExactly(Asset.BTC)
 
             coVerify(exactly = 1) { kraken.getOHLC(any(), any(), any()) }

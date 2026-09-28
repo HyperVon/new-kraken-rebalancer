@@ -15,41 +15,6 @@ data class RebalancerComparisonPoint(
     val differencePercent: BigDecimal,
 )
 
-/**
- * Which synthetic benchmark the comparison ran against.
- *
- * Both methods measure the same Actual portfolio; they differ only in what the strategy's major
- * asset-selection decisions are assumed to have been worth.
- */
-enum class BenchmarkMethod {
-    /** Freezes the approved inception portfolio and holds it forever. Forensic reference. */
-    FIXED_INCEPTION_HOLD,
-
-    /**
-     * Follows the same major, persistent allocation changes the strategy made, applying one synthetic
-     * portfolio transition per inferred regime change and otherwise holding. This is the primary
-     * comparison because it isolates the value of routine rebalancing from asset selection.
-     */
-    INFERRED_CONFIGURATION_MATCHED_HOLD,
-}
-
-/**
- * Provenance of the allocation history a benchmark method relies on.
- *
- * Deliberately separate from [ComparisonConfidence]: a comparison can be fully reconciled
- * arithmetically while its configuration history is only inferred.
- */
-enum class ConfigurationEvidence {
-    /** No configuration history is used beyond the approved inception holdings. */
-    NOT_APPLICABLE,
-
-    /**
-     * Allocation changes were inferred from persistent trading and balance behavior because exact
-     * historical configuration changes were never retained. Not proven history.
-     */
-    INFERRED,
-}
-
 @GenerateApiMapper(ApiRebalancerComparison::class)
 data class RebalancerComparison(
     val availability: ComparisonAvailability,
@@ -64,13 +29,23 @@ data class RebalancerComparison(
     val proposedBaselineTimestamp: Instant? = null,
     /** Durable state of the bounded later-start search, or null when no search was requested. */
     val proposalSearchStatus: ComparisonProposalStatus? = null,
-    /** Which synthetic benchmark produced [points]. */
-    val benchmarkMethod: BenchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+    /**
+     * Which synthetic benchmark produced [points].
+     *
+     * Defaults to the primary method, which is what the endpoint defaults to, so a comparison that
+     * reports no benchmark — an unavailable one, in particular — never claims the forensic
+     * reference. This value reaches the API as a wire name, so it is the default that actually
+     * ships; the `:common` DTO default only covers a malformed response.
+     */
+    val benchmarkMethod: BenchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
     /**
      * How the allocation history behind [benchmarkMethod] was established. Kept separate from
      * [confidence] so a reconciled comparison is never read as proven configuration history.
+     *
+     * Defaults to [ConfigurationEvidence.INFERRED] to match the default [benchmarkMethod]: claiming
+     * `NOT_APPLICABLE` for a benchmark whose history is inferred would understate the uncertainty.
      */
-    val configurationEvidence: ConfigurationEvidence = ConfigurationEvidence.NOT_APPLICABLE,
+    val configurationEvidence: ConfigurationEvidence = ConfigurationEvidence.INFERRED,
 ) {
     init {
         when (availability) {

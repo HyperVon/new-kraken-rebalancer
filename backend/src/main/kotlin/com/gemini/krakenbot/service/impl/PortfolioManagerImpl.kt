@@ -67,7 +67,14 @@ class PortfolioManagerImpl(
         const val RECENT_HIGH_CACHE_TTL_SECONDS = 3600L
     }
 
-    private val recentHighCache = ConcurrentHashMap<String, Pair<Long, BigDecimal>>()
+    private val recentHighCache = ConcurrentHashMap<RecentHighCacheKey, Pair<Long, BigDecimal>>()
+
+    /**
+     * Recent-high cache scope. The trading mode selects the backend, and simulation has no OHLC
+     * history at all, so a high resolved under one mode must not suppress or fail to suppress a
+     * trade under the other for the rest of the TTL.
+     */
+    private data class RecentHighCacheKey(val pair: String, val simulation: Boolean)
 
     /**
      * Symbols currently trading at or above their highest completed close in the lookback
@@ -82,6 +89,7 @@ class PortfolioManagerImpl(
         prices: Map<String, BigDecimal>,
         nowEpochSecond: Long,
         candidateSymbols: Set<String>? = null,
+        simulation: Boolean,
     ): Set<String> {
         val backend = krakenService ?: return emptySet()
         if (candidateSymbols != null && candidateSymbols.isEmpty()) return emptySet()
@@ -95,13 +103,13 @@ class PortfolioManagerImpl(
             val currentPrice = prices[symbol.value] ?: continue
             if (currentPrice.signum() <= 0) continue
 
-            val pair = Asset.tradingPair(symbol.value)
-            val cached = recentHighCache[pair]
+            val cacheKey = RecentHighCacheKey(Asset.tradingPair(symbol.value), simulation)
+            val cached = recentHighCache[cacheKey]
             val recentHigh = if (cached != null && nowEpochSecond < cached.first) {
                 cached.second
             } else {
                 val closes = try {
-                    backend.getOHLC(pair, interval = 1440, since = since)
+                    backend.getOHLC(pair = cacheKey.pair, interval = 1440, since = since)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -118,7 +126,7 @@ class PortfolioManagerImpl(
                 }
                 val high = candidateCloses.maxOfOrNull { it.second } ?: continue
                 if (high.signum() > 0) {
-                    recentHighCache[pair] = Pair(nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS, high)
+                    recentHighCache[cacheKey] = Pair(nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS, high)
                 }
                 high
             }
@@ -621,6 +629,7 @@ class PortfolioManagerImpl(
                 prices = prices,
                 nowEpochSecond = preObservedAt.epochSecond,
                 candidateSymbols = sellCandidates,
+                simulation = config.settings.simulation,
             ),
         )
         val buyOrders = plan.buyOrders

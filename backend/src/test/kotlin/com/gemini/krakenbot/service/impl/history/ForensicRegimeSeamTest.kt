@@ -3,10 +3,12 @@ package com.gemini.krakenbot.service.impl.history
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.ConfigurationEvidence
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.assertions.withClue
@@ -15,6 +17,7 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
+import com.gemini.krakenbot.api.RebalancerComparison as ApiRebalancerComparison
 
 /**
  * The forensic seam exists only to price an alternative interpretation of unavailable configuration
@@ -273,6 +276,41 @@ class ForensicRegimeSeamTest : StringSpec() {
             BenchmarkMethod.entries.map { it.name } shouldBe
                 listOf("FIXED_INCEPTION_HOLD", "INFERRED_CONFIGURATION_MATCHED_HOLD")
             ConfigurationEvidence.entries.map { it.name } shouldBe listOf("NOT_APPLICABLE", "INFERRED")
+        }
+
+        "a comparison that ran no benchmark never claims the forensic reference" {
+            // `benchmarkMethod` and `configurationEvidence` reach the API as wire names, so the
+            // model's defaults are what an UNAVAILABLE comparison actually emits. They must agree
+            // with the endpoint's default benchmark, or a chart that later reads the field from an
+            // unavailable response is told the fixed-inception reference was plotted.
+            RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = null,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = Instant.parse("2026-01-01T00:00:00Z"),
+            ).let { unavailable ->
+                unavailable.benchmarkMethod shouldBe BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD
+                unavailable.configurationEvidence shouldBe ConfigurationEvidence.INFERRED
+                // The API default is the second guard: a malformed response with the field stripped
+                // must not read as the reference either.
+                ApiRebalancerComparison(
+                    availability = ComparisonAvailability.UNAVAILABLE.name,
+                    confidence = null,
+                    baselineTimestamp = null,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name,
+                    unavailableAt = Instant.parse("2026-01-01T00:00:00Z").toString(),
+                ).let { dto ->
+                    dto.benchmarkMethod shouldBe BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD.name
+                    dto.configurationEvidence shouldBe ConfigurationEvidence.INFERRED.name
+                }
+            }
         }
 
         "supplied forensic epochs do not change what generic inference derives" {

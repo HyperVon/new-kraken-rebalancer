@@ -134,6 +134,11 @@ class TradeHistoryQueryService(
 ) {
     private val proposalSearchMutex = Mutex()
 
+    /** Single-flight owner of the Kraken asset-class snapshot; see [loadComparisonAssetMetadata]. */
+    private val assetMetadataCacheMutex = Mutex()
+
+    private val assetMetadataCache = AtomicReference<AssetMetadataSnapshot?>(null)
+
     private val log = LoggerFactory.getLogger(TradeHistoryQueryService::class.java)
 
     private val proposalContinuationActive = AtomicBoolean(false)
@@ -160,6 +165,9 @@ class TradeHistoryQueryService(
         val revision: String,
         val digest: String,
     )
+
+    /** Memoized Kraken asset-class snapshot; its content changes on Kraken's listing schedule. */
+    private data class AssetMetadataSnapshot(val expiresAtEpochMillis: Long, val metadata: List<KrakenAssetMetadata>)
 
     private val comparisonInFlight =
         ConcurrentHashMap<String, CompletableDeferred<RebalancerComparison>>()
@@ -407,6 +415,14 @@ class TradeHistoryQueryService(
          */
         private const val MAX_COVERAGE_GAP_SECONDS = 86_400L
         private val OPEN_ENDED_RANGE_END = Instant.ofEpochMilli(Long.MAX_VALUE)
+
+        /**
+         * Kraken's asset class is a listing attribute, not a market observable, so the snapshot
+         * only needs to be fresh enough to notice a newly listed or reclassified asset. The fetch
+         * costs two public requests against a 1 s floor, which every comparison request would
+         * otherwise pay even on a full cache hit.
+         */
+        private const val ASSET_METADATA_TTL_MILLIS = 3_600_000L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
@@ -789,13 +805,36 @@ class TradeHistoryQueryService(
      * recovery, and prepared funding identities participate separately because they are not
      * all row writes.
      */
-    private suspend fun loadComparisonAssetMetadata(): List<KrakenAssetMetadata> = try {
-        krakenService?.getAssetMetadata().orEmpty()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        log.warn("Kraken asset metadata unavailable; comparison classification will fail closed", e)
-        emptyList()
+    private suspend fun loadComparisonAssetMetadata(): List<KrakenAssetMetadata> {
+        val cached = assetMetadataCache.get()
+        if (cached != null && cached.expiresAtEpochMillis > nowProvider().toEpochMilli()) return cached.metadata
+
+        // Serialize refreshes so a burst of History requests makes one flight, not one per caller.
+        return assetMetadataCacheMutex.withLock {
+            val recheck = assetMetadataCache.get()
+            if (recheck != null && recheck.expiresAtEpochMillis > nowProvider().toEpochMilli()) {
+                return@withLock recheck.metadata
+            }
+            try {
+                val metadata = krakenService?.getAssetMetadata().orEmpty()
+                // Only a successful fetch is memoized: caching the empty fail-closed result would
+                // pin a transient Kraken outage into the comparison fingerprint for a full TTL.
+                if (metadata.isNotEmpty()) {
+                    assetMetadataCache.set(
+                        AssetMetadataSnapshot(
+                            expiresAtEpochMillis = nowProvider().toEpochMilli() + ASSET_METADATA_TTL_MILLIS,
+                            metadata = metadata,
+                        ),
+                    )
+                }
+                metadata
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Kraken asset metadata unavailable; comparison classification will fail closed", e)
+                emptyList()
+            }
+        }
     }
 
     private fun comparisonAssetMetadataDigest(assetMetadata: List<KrakenAssetMetadata>): String = sha256Hex(

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import io.kotest.core.annotation.EnabledIf
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -21,9 +22,11 @@ import java.math.BigDecimal
  * ```
  *
  * and it reports the rebalanced-versus-buy-and-hold comparison for that history. Without the
- * variable the spec passes trivially so CI never depends on private data. This mirrors the
- * `SCENARIOS_REPORT_PATH` convention used by the evaluation suite.
+ * variable the spec is **reported as skipped** by `ReplayFixtureConfiguredCondition` rather than
+ * passing vacuously, so CI never depends on private data and never claims a measurement it did
+ * not make. This mirrors the `SCENARIOS_REPORT_PATH` convention used by the evaluation suite.
  */
+@EnabledIf(ReplayFixtureConfiguredCondition::class)
 class LocalReplayFixtureTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -53,13 +56,7 @@ class LocalReplayFixtureTest : StringSpec() {
 
     init {
         "historical replay compares the rebalancer with buy-and-hold on real data" {
-            val path = System.getenv("REPLAY_FIXTURE_PATH")
-            if (path.isNullOrBlank()) {
-                // No private fixture available: nothing to measure, and nothing to fail.
-                true.shouldBeTrue()
-            } else {
-                replay(path)
-            }
+            replay(requireNotNull(replayFixturePath()))
         }
     }
 

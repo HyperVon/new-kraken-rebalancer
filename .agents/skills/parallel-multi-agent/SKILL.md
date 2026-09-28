@@ -129,12 +129,12 @@ actual routes and state explicitly when no independent route was obtained.
 
 ### Native Kilo model selection
 
-Kilo sessions inherit the project default `kilo/kilo-auto/efficient` from
-`.kilo/kilo.json`. Select `kilo/kilo-auto/frontier` through the host for a
-high-risk or disputed review, or `kilo/kilo-auto/small` for bounded routine
-work. Auto tiers choose their underlying models and server-side fallbacks; do
-not add a launcher, catalog parser, connectivity probe, or hardcoded
-underlying-model pool to reproduce that behavior.
+Kilo sessions inherit the project default `kilo/openai/gpt-6-luna` from
+`.kilo/kilo.json`. Select a stronger host route for a high-risk or disputed
+review, or a smaller one for bounded routine work. Hosts choose their underlying
+models and server-side fallbacks; do not add a launcher, catalog parser,
+connectivity probe, or hardcoded underlying-model pool to reproduce that
+behavior.
 
 If a subagent launch fails for a transient host reason, relaunch the same
 track as a subagent (a corrected role or a host-default-routed subagent); cover

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.benchmarkSeriesLabel
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -113,7 +114,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
             fill = false,
         ),
         lineDataset(
-            label = ViewText.BUY_AND_HOLD,
+            label = benchmarkSeriesLabel(comparison.benchmarkMethod),
             data = buyAndHoldData,
             borderColor = ChartProps.COLOR_AMBER,
             backgroundColor = ChartProps.TRANSPARENT,
