@@ -54,6 +54,7 @@ class ConfigurationInferenceSensitivityTest :
     )
 
     private fun transition(end: String, removals: Set<String>, additions: Set<String>) = InferredRegimeTransition(
+        clusterStart = at(end),
         clusterEnd = at(end),
         removals = removals,
         additions = additions,

@@ -94,6 +94,8 @@ HtmlIds:
   LOOP_CONTROL: "loop-control"
   TOTAL_ALLOCATED_DISPLAY: "total-allocated-display"
   ALLOCATIONS_CONTAINER: "allocations-container"
+  SCORE_EMPHASIS_INPUT: "score-emphasis-input"
+  SCORE_SLEEVE_INPUT: "score-sleeve-input"
   NEW_SYMBOL_INPUT: "new-symbol-input"
   MODE_PLATE: "mode-plate"
   MODE_PLATE_LABEL: "mode-plate-label"

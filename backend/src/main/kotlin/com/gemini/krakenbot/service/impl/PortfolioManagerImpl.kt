@@ -1,8 +1,10 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
@@ -55,6 +57,46 @@ class PortfolioManagerImpl(
 
     companion object {
         const val CYCLE_ID_MDC_KEY = "cycleId"
+
+        /** Days of completed daily closes that define "a recent high" for sell suppression. */
+        const val RECENT_HIGH_LOOKBACK_DAYS = 20L
+    }
+
+    /**
+     * Symbols currently trading at or above their highest completed close in the lookback
+     * window. Selling an asset in that regime is where mean-reversion has historically lost to
+     * trend continuation, so those overweight legs are held rather than trimmed.
+     *
+     * Fails open: any symbol whose history cannot be resolved is simply omitted, which leaves
+     * the cycle trading exactly as it did before this rule existed.
+     */
+    internal suspend fun resolveAtRecentHigh(
+        allocations: List<Allocation>,
+        prices: Map<String, BigDecimal>,
+        nowEpochSecond: Long,
+    ): Set<String> {
+        val backend = krakenService ?: return emptySet()
+        val since = nowEpochSecond - RECENT_HIGH_LOOKBACK_DAYS * 24 * 60 * 60
+        val trending = mutableSetOf<String>()
+        for (allocation in allocations) {
+            val symbol = allocation.symbol
+            if (symbol.isUsd) continue
+            val currentPrice = prices[symbol.value] ?: continue
+            if (currentPrice.signum() <= 0) continue
+            val closes = try {
+                backend.getOHLC(Asset.tradingPair(symbol.value), interval = 1440, since = since)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.debug("Recent-high lookup failed for {}; trading it as before", symbol.value, e)
+                continue
+            }
+            val recentHigh = closes.maxOfOrNull { it.second } ?: continue
+            if (recentHigh.signum() > 0 && currentPrice >= recentHigh) {
+                trending.add(symbol.value)
+            }
+        }
+        return trending
     }
 
     // The monitor covers synchronous start/stop Job ownership; the Mutex rejects duplicate coroutine callers.
@@ -527,6 +569,7 @@ class PortfolioManagerImpl(
             currentValuesUSD = currentValuesUSD,
             effectiveUsdTarget = effectiveUsdTarget,
             cryptoScaleFactor = cryptoScaleFactor,
+            trendingAssets = resolveAtRecentHigh(config.allocations, prices, preObservedAt.epochSecond),
         )
         val buyOrders = plan.buyOrders
         val sellOrders = plan.sellOrders

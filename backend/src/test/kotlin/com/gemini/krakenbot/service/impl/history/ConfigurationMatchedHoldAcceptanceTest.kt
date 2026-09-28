@@ -74,6 +74,13 @@ class ConfigurationMatchedHoldAcceptanceTest :
                     )
                     check(inferred.benchmarkMethod == BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD)
 
+                    // Economics are deliberately NOT pinned here. This benchmark infers configuration
+                    // from observed portfolio behaviour, which the configuration-journal workstream
+                    // is replacing: the inception baseline on real history is pre-funding and nearly
+                    // all cash, so the inferred additions have no evidence-backed funding source and
+                    // the result degenerates to a cash hold. A pinned figure would certify a
+                    // definition known to be wrong, and a green test is not a reason to keep it.
+
                     val warmStart = System.nanoTime()
                     val warm = query.getRebalancerComparison(
                         Instant.EPOCH,

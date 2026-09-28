@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.84] - 2026-09-28
+
+### Added
+
+- **Trend-aware sell suppression**: a rebalance no longer trims an asset that is trading at its
+  highest completed daily close over the last 20 days, the regime where mean-reversion trades
+  historically lose to trend continuation. The suppressed leg is reported as
+  `Skipping sell — at recent high for <SYM>` in the action log. The lookback resolves through
+  `KrakenService.getOHLC` and fails open, so a missing or failing history leaves the cycle trading
+  exactly as before.
+- **Fundamental quality scores**: settings carry an optional `qualityScores` map per allocation
+  symbol. The dashboard allocation panel reports weighted quality score, largest single position,
+  and effective independent bets, and renders nothing when no scores are configured.
+- **Score-derived allocation preview**: a `Calculate from scores` action in the settings form
+  redistributes the scored sleeve proportionally to `score^emphasis` (emphasis 1-8) and fills the
+  open form. It is preview-only — it never persists, and the operator can edit before saving.
+  Cash and gold keep fixed slots because they carry no score.
+- **Historical replay harness** (`backend/src/test/kotlin/com/gemini/krakenbot/replay`): replays a
+  price path and capital-flow schedule through the production `RebalancerEngine` and compares the
+  rebalanced book with buy-and-hold on identical capital. Fixtures are loaded from
+  `REPLAY_FIXTURE_PATH` and are never committed.
+
+### Fixed
+
+- **Fiat funding provenance**: a deposit or withdrawal whose Funding record exposes only a
+  `method_id` — no method name, no transaction id, as is the case for every fiat rail on the modern
+  Funding API — is no longer forced to `UNRESOLVED`. The stable funding-rail id is now carried on
+  funding records and accepted as external proof on a terminal-status record that already matched
+  the ledger row. Internal method markers continue to veto external classification.
+
 ## [6.17.83] - 2026-09-25
 
 ### Fixed

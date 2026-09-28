@@ -128,6 +128,7 @@ class ForensicComparisonCacheIsolationTest : StringSpec() {
                     second.timestamp,
                     listOf(
                         InferredRegimeTransition(
+                            clusterStart = now.plusSeconds(60),
                             clusterEnd = now.plusSeconds(60),
                             removals = emptySet(),
                             additions = setOf("BTC"),

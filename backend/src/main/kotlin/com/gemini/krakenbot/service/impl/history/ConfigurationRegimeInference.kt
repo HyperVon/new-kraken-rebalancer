@@ -43,12 +43,14 @@ data class AssetRegimeActivity(
 /**
  * One inferred configuration-regime change.
  *
+ * @param clusterStart the first membership-changing event belonging to this transition's local cluster.
  * @param clusterEnd the last membership-changing event belonging to this transition's local cluster.
  * @param removals prior-regime members observed leaving.
  * @param additions newly persistent members observed entering.
  * @param confidence how strongly the retained behavior supports a deliberate regime change.
  */
 data class InferredRegimeTransition(
+    val clusterStart: Instant,
     val clusterEnd: Instant,
     val removals: Set<String>,
     val additions: Set<String>,
@@ -157,6 +159,7 @@ object ConfigurationRegimeInference {
             val removals = cluster.filter { it.isRemoval }.mapTo(sortedSetOf()) { it.symbol }
             val additions = cluster.filterNot { it.isRemoval }.mapTo(sortedSetOf()) { it.symbol }
             InferredRegimeTransition(
+                clusterStart = cluster.minOf { it.at },
                 clusterEnd = cluster.maxOf { it.at },
                 removals = removals,
                 additions = additions,

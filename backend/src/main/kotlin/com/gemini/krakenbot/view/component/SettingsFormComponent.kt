@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.service.AutomaticBaselineStatus
@@ -8,6 +9,7 @@ import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.SettingsComparisonStatus
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
@@ -556,9 +558,45 @@ class SettingsFormComponent {
 
             div(CssClass.Form.AllocationListContainer) {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
+                val scores = config.settings.qualityScores
                 config.allocations.forEach { alloc ->
                     val rowColor = alloc.color ?: ChartProps.SOLID_FALLBACK
-                    unsafe { +AllocationEditor.editRow(alloc.symbol.value, rowColor, alloc.targetPercent.toString()) }
+                    val score = scores[alloc.symbol.value]
+                    unsafe {
+                        +AllocationEditor.editRow(
+                            symbol = alloc.symbol.value,
+                            color = rowColor,
+                            targetPercent = alloc.targetPercent.toString(),
+                            score = score?.toString().orEmpty(),
+                        )
+                    }
+                }
+            }
+
+            div(CssClass.Form.AddAssetBox) {
+                input(CssClass.Form.InputGlass, type = number) {
+                    id = HtmlIds.SCORE_EMPHASIS_INPUT
+                    name = FormFields.SCORE_EMPHASIS
+                    value = "4"
+                    min = "1"
+                    max = QualityAllocation.MAX_EMPHASIS.toString()
+                    placeholder = ViewText.ALLOCATION_SCORE_EMPHASIS
+                }
+                input(CssClass.Form.InputGlass, type = number) {
+                    id = HtmlIds.SCORE_SLEEVE_INPUT
+                    name = FormFields.SCORE_SLEEVE_PERCENT
+                    step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
+                    placeholder = ViewText.TARGET_ALLOCATIONS
+                }
+                button(
+                    CssClass.Button.Secondary,
+                    type = button,
+                ) {
+                    attributes[HtmxAttrs.HX_POST] = Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW
+                    attributes[HtmxAttrs.HX_INCLUDE] = "closest form"
+                    attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.ALLOCATIONS_CONTAINER}"
+                    attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
+                    span { +ViewText.ALLOCATIONS_FROM_SCORES }
                 }
             }
 

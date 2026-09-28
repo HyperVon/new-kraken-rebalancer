@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.OrderIntentState
@@ -26,6 +27,7 @@ import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
+import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
@@ -35,6 +37,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.symbolColorMap
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -57,11 +60,13 @@ import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.html.body
 import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.id
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
+import kotlinx.html.unsafe
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
@@ -129,6 +134,10 @@ class DashboardController(
 
             get(Routes.FRAGMENT_SETTINGS_PROPOSAL) {
                 handleGetSettingsProposalFragment()
+            }
+
+            post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                handlePostSettingsAllocationsPreview()
             }
 
             get(Routes.FRAGMENT_DASHBOARD) {
@@ -383,6 +392,95 @@ class DashboardController(
         restoreFailure
     }
 
+    /**
+     * Recomputes allocation targets from the quality scores currently in the settings form and
+     * renders the replacement rows.
+     *
+     * Purely a preview: nothing is persisted and no config is touched. The response only swaps
+     * the open form's row list, so the operator can keep editing before saving.
+     */
+    private suspend fun RoutingContext.handlePostSettingsAllocationsPreview() {
+        val params = call.receiveParameters()
+        if (!CsrfProtection.isValid(call, params)) {
+            val token = CsrfProtection.rotateToken(call)
+            call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
+            call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
+            call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
+            respondSettingsFormError(
+                config = configService.getConfig(),
+                message = ViewText.CSRF_SESSION_EXPIRED,
+                csrfToken = token,
+                paused = portfolioManager.isLoopPaused(),
+                status = HttpStatusCode.Forbidden,
+            )
+            return
+        }
+
+        val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
+        val targets = params.getAll(FormFields.TARGETS).orEmpty()
+        val colors = params.getAll(FormFields.COLORS).orEmpty()
+        val scores = params.getAll(FormFields.SCORES).orEmpty()
+        require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
+            ViewText.INVALID_ALLOCATION_FIELDS
+        }
+
+        val emphasis = params[FormFields.SCORE_EMPHASIS]?.toIntOrNull() ?: 1
+        val requestedSleeve = params[FormFields.SCORE_SLEEVE_PERCENT]?.toBigDecimalOrNull()
+
+        val scored = mutableMapOf<String, BigDecimal>()
+        for ((index, symbol) in symbols.withIndex()) {
+            val raw = scores.getOrNull(index)?.trim().orEmpty()
+            if (raw.isEmpty()) continue
+            val value = raw.toBigDecimalOrNull() ?: continue
+            if (value.signum() <= 0) continue
+            scored[symbol] = value
+        }
+        require(scored.isNotEmpty()) { ViewText.ALLOCATION_SCORE_REQUIRED }
+
+        // Default sleeve is whatever the form currently allocates, so previewing without
+        // filling the sleeve field redistributes the book that is already configured.
+        val targetTotal = targets.fold(BigDecimal.ZERO) { acc, target ->
+            acc.add(target.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+        }
+        val usableSleeve = requestedSleeve?.takeIf { it.signum() > 0 } ?: targetTotal
+        require(usableSleeve.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
+        val computed = QualityAllocation.proportional(scored, usableSleeve, emphasis)
+
+        call.respondHtml(HttpStatusCode.OK) {
+            body {
+                div {
+                    id = HtmlIds.ALLOCATIONS_CONTAINER
+                    symbols.forEachIndexed { index, symbol ->
+                        unsafe {
+                            +AllocationEditor.editRow(
+                                symbol = symbol,
+                                color = AssetColorAssigner.normalizeHex(colors[index]) ?: "#888888",
+                                targetPercent = (computed[symbol] ?: BigDecimal.ZERO).toPlainString(),
+                                score = scores.getOrNull(index).orEmpty(),
+                            )
+                        }
+                    }
+                    p(CssClass.Form.SectionSubtitle) {
+                        +buildString {
+                            append(ViewText.ALLOCATION_QUALITY_SCORE)
+                            append(": ")
+                            append(QualityAllocation.weightedScore(computed, scored).toPlainString())
+                            append(" · ")
+                            append(ViewText.ALLOCATION_MAX_WEIGHT)
+                            append(": ")
+                            append(QualityAllocation.maxWeightPercent(computed).toPlainString())
+                            append("% · ")
+                            append(ViewText.ALLOCATION_EFFECTIVE_BETS)
+                            append(": ")
+                            append(QualityAllocation.effectiveAssetCount(computed).toPlainString())
+                        }
+                    }
+                    p(CssClass.Form.SectionSubtitle) { +ViewText.ALLOCATION_PREVIEW_WARNING }
+                }
+            }
+        }
+    }
+
     private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {
         val deviationTriggerPercent =
             params.requiredSingle(FormFields.DEVIATION_TRIGGER_PERCENT, ViewText.INVALID_DEVIATION_TRIGGER)
@@ -435,6 +533,7 @@ class DashboardController(
         val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
         val targets = params.getAll(FormFields.TARGETS).orEmpty()
         val colors = params.getAll(FormFields.COLORS).orEmpty()
+        val scores = params.getAll(FormFields.SCORES).orEmpty()
         require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
             ViewText.INVALID_ALLOCATION_FIELDS
         }
@@ -450,9 +549,17 @@ class DashboardController(
                 Allocation(symbol, target, color)
             }
 
+        val qualityScores = mutableMapOf<String, Double>()
+        symbols.forEachIndexed { index, symbol ->
+            val raw = scores.getOrNull(index)?.trim().orEmpty()
+            if (raw.isEmpty()) return@forEachIndexed
+            val value = raw.toDoubleOrNull() ?: return@forEachIndexed
+            if (value > 0.0) qualityScores[symbol] = value
+        }
+
         return AppConfig(
             kraken = currentConfig.kraken,
-            settings = settings,
+            settings = settings.copy(qualityScores = qualityScores),
             allocations = allocations,
         )
     }
@@ -614,6 +721,8 @@ class DashboardController(
                     delta24h = delta24h,
                     unresolvedIntents = unresolvedIntents,
                     csrfToken = csrfToken,
+                    qualityScores = configService.getConfig().settings.qualityScores
+                        .mapValues { BigDecimal(it.value) },
                 )
             }
         call.respondText(html, ContentType.Text.Html)

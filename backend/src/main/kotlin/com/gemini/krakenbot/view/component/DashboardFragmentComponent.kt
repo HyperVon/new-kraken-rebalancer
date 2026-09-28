@@ -51,6 +51,7 @@ class DashboardFragmentComponent(
         delta24h: BigDecimal? = null,
         unresolvedIntents: List<OrderIntent> = emptyList(),
         csrfToken: String? = null,
+        qualityScores: Map<String, BigDecimal> = emptyMap(),
     ) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
@@ -69,7 +70,7 @@ class DashboardFragmentComponent(
         overviewGridComponent.render(latest, history, delta24h)
 
         div.div(CssClass.Layout.DetailGrid) {
-            allocationChartComponent.render(latest, allocations)
+            allocationChartComponent.render(latest, allocations, qualityScores)
             performanceTableComponent.render(latest)
         }
 

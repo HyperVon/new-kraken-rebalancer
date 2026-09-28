@@ -115,6 +115,7 @@ interface PortfolioAnalyzer {
         currentValuesUSD: AssetValues,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
+        trendingAssets: Set<String> = emptySet(),
     ): RebalancePlan
 
     fun buildSnapshot(

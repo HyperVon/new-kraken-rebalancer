@@ -479,6 +479,7 @@ class KrakenServiceImpl(
                 status = record.status,
                 method = method,
                 hasAuthoritativeFee = record.hasAuthoritativeFee,
+                methodId = record.methodId,
             )
         }
     }
@@ -518,11 +519,18 @@ class KrakenServiceImpl(
                 status = record.status,
                 method = method,
                 hasAuthoritativeFee = record.hasAuthoritativeFee,
+                methodId = record.methodId,
             )
         }
     }
 
-    /** Spot REST has no historical Futures-transfer query to call here. */
+    /**
+     * Spot REST exposes no historical Futures/wallet-transfer query, so this backend cannot
+     * source internal-transfer evidence today. The consequence is one-sided and deliberate:
+     * `FundingEvidence.INTERNAL` is never produced here, so a funding row that fails the
+     * external test stays `UNRESOLVED` rather than being assumed internal. Keep the evidence
+     * type — a backend that can source these records should supply it and restore the balance.
+     */
     override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> =
         emptyList()
 

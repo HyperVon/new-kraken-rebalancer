@@ -287,6 +287,65 @@ class RebalancerEngineTest : StringSpec() {
                 .any { it.symbol == Asset.BTC && it.deviationPercent.compareTo(BigDecimal("20")) == 0 } shouldBe true
         }
 
+        "analyzeDeviations suppresses the sell leg for an asset at a recent high" {
+            val plan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("10000.00"),
+                currentValuesUSD = mapOf(
+                    Asset.BTC to BigDecimal("6000.00"),
+                    Asset.ETH to BigDecimal("3000.00"),
+                    Asset.USD to BigDecimal("1000.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
+                trendingAssets = setOf(Asset.BTC),
+            )
+
+            plan.sellOrders.shouldBeEmpty()
+            plan.events.filterIsInstance<RebalanceEvent.TrendSuppressedSell>()
+                .map { it.symbol } shouldContain Asset.BTC
+        }
+
+        "analyzeDeviations still sells an overweight asset that is not at a recent high" {
+            val plan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("10000.00"),
+                currentValuesUSD = mapOf(
+                    Asset.BTC to BigDecimal("6000.00"),
+                    Asset.ETH to BigDecimal("3000.00"),
+                    Asset.USD to BigDecimal("1000.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
+                trendingAssets = setOf(Asset.ETH),
+            )
+
+            plan.sellOrders.shouldContainKey(Asset.BTC)
+            plan.sellOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+        }
+
+        "analyzeDeviations never suppresses a buy for a trending asset" {
+            val plan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("10000.00"),
+                currentValuesUSD = mapOf(
+                    Asset.BTC to BigDecimal("4000.00"),
+                    Asset.ETH to BigDecimal("3000.00"),
+                    Asset.USD to BigDecimal("1000.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
+                trendingAssets = setOf(Asset.BTC),
+            )
+
+            plan.sellOrders.shouldBeEmpty()
+            plan.buyOrders.shouldContainKey(Asset.BTC)
+            plan.buyOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+        }
+
         "analyzeDeviationsPlan emits typed events before legacy log formatting" {
             val plan = RebalancerEngine.analyzeDeviationsPlan(
                 totalPortfolioValueUSD = BigDecimal("10000.00"),

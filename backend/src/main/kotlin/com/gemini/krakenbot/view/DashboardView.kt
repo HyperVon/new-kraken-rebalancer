@@ -115,7 +115,16 @@ class DashboardView(
         delta24h: BigDecimal? = null,
         unresolvedIntents: List<OrderIntent> = emptyList(),
         csrfToken: String? = null,
+        qualityScores: Map<String, BigDecimal> = emptyMap(),
     ) {
-        fragmentComponent.render(latest, history, allocations, delta24h, unresolvedIntents, csrfToken)
+        fragmentComponent.render(
+            latest,
+            history,
+            allocations,
+            delta24h,
+            unresolvedIntents,
+            csrfToken,
+            qualityScores,
+        )
     }
 }

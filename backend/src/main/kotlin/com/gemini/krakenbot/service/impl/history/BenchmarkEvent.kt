@@ -62,21 +62,64 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     ) : BenchmarkEvent()
 
     /**
-     * One synthetic full-portfolio reallocation to an inferred configuration-regime change.
+     * One synthetic reallocation for a single inferred configuration-regime change.
      *
-     * Emitted once per [InferredRegimeTransition] at that transition's settled anchor, using the
-     * Actual strategy's in-scope value proportions observed at that anchor. The benchmark keeps its
-     * own NAV: it copies the strategy's portfolio *decision* (proportions), never its units or its
-     * account value, and performs no other rebalancing between transitions.
+     * The reset is **membership-scoped**: it moves only what [InferredRegimeTransition] actually
+     * states changed, and nothing else.
      *
-     * [targetWeights] maps normalized symbol to weight; weights are value proportions that sum to 1.
+     * - [InferredRegimeTransition.removals] leave the synthetic benchmark entirely. Their synthetic
+     *   value is released and becomes this reset's funding pool.
+     * - [InferredRegimeTransition.additions] are bought from that pool, split by
+     *   [additionFundingShares].
+     * - Every asset named by neither set keeps its exact existing units. Routine Actual drift at the
+     *   anchor never rewrites it, and a transiently zero Actual balance never removes it.
+     * - Benchmark cash changes only by this reset's own arithmetic: released value is spent on the
+     *   additions and any unspent remainder, or all of it when there are no additions, lands in USD.
+     *   Actual's incidental cash buffer is never copied.
+     *
+     * The benchmark keeps its own NAV throughout, so a reallocation is value-preserving by
+     * construction. The full book is never liquidated, which is why the economically required
+     * turnover is the sum of the value deltas rather than the portfolio twice over.
+     *
+     * @param additionFundingShares share of the released value assigned to each named addition.
+     *   Derived from retained evidence and normalized across the addition set alone; never from
+     *   whole-portfolio proportions. Empty when the transition names no additions.
+     * @param configurationAllocation the benchmark's configuration allocation after this transition,
+     *   used to invest later owner contributions. It carries forward the surviving relative weights
+     *   unchanged and adds or removes only the assets this transition names.
      */
     data class ConfigurationReset(
         override val timestamp: Instant,
-        val targetWeights: Map<String, BigDecimal>,
         val transition: InferredRegimeTransition,
+        val additionFundingShares: Map<String, BigDecimal>,
+        val configurationAllocation: Map<String, BigDecimal>,
     ) : BenchmarkEvent()
 }
+
+/**
+ * Economically required synthetic turnover for one configuration reset.
+ *
+ * A reset is a value-preserving reallocation, so only the per-asset *deltas* are trades. Liquidating
+ * and repurchasing the whole book would describe trades the benchmark never needs to make, and would
+ * inflate any future fee estimate proportionally.
+ */
+data class ConfigurationResetTurnover(
+    /** Synthetic value per asset immediately before the reset, valued at reset-time prices. */
+    val preValue: Map<String, BigDecimal>,
+    /** Synthetic value per asset immediately after the reset, at the same prices. */
+    val postValue: Map<String, BigDecimal>,
+    /** [postValue] minus [preValue] per asset. A named removal is a negative crypto delta. */
+    val delta: Map<String, BigDecimal>,
+    /** Crypto value that must be sold to reach [postValue]. */
+    val cryptoSellNotional: BigDecimal,
+    /** Crypto value that must be bought to reach [postValue]. */
+    val cryptoBuyNotional: BigDecimal,
+    /**
+     * Cash movement. This is settlement capital, not a trade: released value that was not spent on
+     * additions, or the cash raised to fund them. It must never be charged a trading fee.
+     */
+    val cashDelta: BigDecimal,
+)
 
 /**
  * Contribution-time market prices for Buy & Hold owner-flow allocation.

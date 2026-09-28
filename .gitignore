@@ -48,3 +48,6 @@ __pycache__/
 /codegen/bin/
 
 .agents/skills/comprehensive-quality-overhaul/results/
+
+# Local replay fixtures: real account prices and funding history, never committed.
+.replay-data/

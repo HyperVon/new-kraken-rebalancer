@@ -135,6 +135,7 @@ class ForensicRegimeSeamTest : StringSpec() {
     private val trackedSymbols = setOf("BTC", "USD")
 
     private fun btcEstablishment(at: Instant) = InferredRegimeTransition(
+        clusterStart = at,
         clusterEnd = at,
         removals = emptySet(),
         additions = setOf("BTC"),

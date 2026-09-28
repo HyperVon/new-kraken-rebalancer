@@ -75,6 +75,14 @@ object RebalancerComparisonCalculator {
     // Synthetic contribution units: crypto scale 8 like the rest of the engine.
     private const val ALLOCATION_UNIT_SCALE = 8
 
+    /**
+     * How many retained observations past a transition's cluster end may be examined for a settled
+     * anchor. Retained snapshots are minutes to hours apart and a rebalance cycle completes well
+     * inside a day, so this spans far more than one cycle and normally finds a settled candidate,
+     * while bounding how far an earlier transition can be postponed by later, unrelated activity.
+     */
+    private const val ANCHOR_SETTLEMENT_OBSERVATION_WINDOW = 24
+
     // Withdrawal shrink factor: 10 decimals so proportional cuts stay exact.
     private const val WITHDRAWAL_FACTOR_SCALE = 10
 
@@ -640,35 +648,41 @@ object RebalancerComparisonCalculator {
         // persistent allocation changes, each anchored to the earliest trustworthy state at or after
         // that change's local cluster completes. Contributions always use the epoch already in force
         // at their own timestamp, so capital is never invested using a not-yet-observable regime.
-        val anchoredRegimes = if (benchmarkMethod == BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD) {
-            val inferred = buildInferredRegimes(
-                trades = trades,
-                ledgerEvents = spotRewards,
-                snapshots = effectiveSnapshots,
-                baseline = baseline,
-                comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
-            )
+        val inferredRegimes = if (benchmarkMethod == BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD) {
             if (forensicRegimes == null) {
-                inferred
+                buildInferredRegimes(
+                    trades = trades,
+                    ledgerEvents = spotRewards,
+                    snapshots = effectiveSnapshots,
+                    baseline = baseline,
+                    comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
+                )
             } else {
                 anchorSuppliedRegimes(
                     transitions = forensicRegimes,
                     snapshots = effectiveSnapshots,
                     baseline = baseline,
                     comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
+                    trades = trades,
                 )
             }
         } else {
             emptyList()
         }
+        // Owner contributions are invested by the synthetic configuration actually in force, which
+        // only ever moves what an inferred transition names. It never inherits Actual drift, a
+        // transiently zero Actual balance, or Actual's incidental cash weight.
+        val anchoredRegimes = attachConfigurationAllocations(inferredRegimes, inceptionWeights)
         val epochWeightsAt: (Instant) -> Map<String, BigDecimal> = { timestamp ->
-            anchoredRegimes.lastOrNull { it.anchor.timestamp <= timestamp }?.weights ?: inceptionWeights
+            anchoredRegimes.lastOrNull { it.anchor.timestamp <= timestamp }?.configurationAllocation
+                ?: inceptionWeights
         }
         val configurationResetEvents = anchoredRegimes.map { regime ->
             BenchmarkEvent.ConfigurationReset(
                 timestamp = regime.anchor.timestamp,
-                targetWeights = regime.weights,
                 transition = regime.transition,
+                additionFundingShares = regime.additionFundingShares,
+                configurationAllocation = regime.configurationAllocation,
             )
         }
 
@@ -3716,13 +3730,18 @@ object RebalancerComparisonCalculator {
     }
 
     /**
-     * Infer persistent configuration-regime changes from retained behavior, then anchor each to the
-     * earliest trustworthy state at or after its local cluster completes.
+     * Infer persistent configuration-regime changes from retained behavior, then anchor each to a
+     * settled observation of it.
      *
      * Anchors are deliberately local: a later, unrelated regime change must not postpone an earlier
-     * transition, because holding a stale regime until an unrelated change settles would bias the
-     * benchmark. Later evidence is used only to *classify* a transition as high confidence, never to
-     * delay its economic application.
+     * transition. The anchor supplies the reset's prices and, only when the cluster itself bought
+     * nothing, the relative values across the addition set. No other Actual portfolio state is read,
+     * so ordinary drift, a transiently zero balance, and Actual's cash buffer cannot reach the
+     * synthetic book.
+     *
+     * A candidate is confirmed by the observation that follows it, which is how a still-moving
+     * rebalance is told apart from a settled one. That is deliberately the only forward-looking step:
+     * it gates *which* snapshot is chosen, never the value of anything held.
      */
     private fun buildInferredRegimes(
         trades: List<TradeRecord>,
@@ -3746,6 +3765,7 @@ object RebalancerComparisonCalculator {
             snapshots = snapshots,
             baseline = baseline,
             comparisonAssetSymbols = comparisonAssetSymbols,
+            fundingEvidence = ClusterFundingEvidence(trades),
         )
     }
 
@@ -3759,62 +3779,314 @@ object RebalancerComparisonCalculator {
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
+        trades: List<TradeRecord>,
     ): List<AnchoredRegimeTransition> = anchorRegimes(
         transitions = transitions,
         snapshots = snapshots,
         baseline = baseline,
         comparisonAssetSymbols = comparisonAssetSymbols,
+        fundingEvidence = ClusterFundingEvidence(trades),
     )
+
+    /**
+     * Retained funding evidence for a transition's named additions.
+     *
+     * Only the *addition set* is ever consulted. Whole-portfolio proportions are deliberately not
+     * available here, so no funding decision can be smuggled in from unrelated Actual drift.
+     */
+    private class ClusterFundingEvidence(private val trades: List<TradeRecord>) {
+        private val signedUsdBySymbolAndTime: List<Triple<String, Instant, BigDecimal>> by lazy {
+            trades.filter { it.success && !it.dryRun && it.usdAmount.signum() >= 0 }.map { trade ->
+                Triple(
+                    trade.symbol.uppercase(),
+                    trade.timestamp,
+                    if (trade.side.equals("BUY", ignoreCase = true)) {
+                        trade.usdAmount
+                    } else {
+                        trade.usdAmount.negate()
+                    },
+                )
+            }
+        }
+
+        /**
+         * Net USD value actually acquired for [additions] between the transition's own cluster
+         * bounds. Returns null when the cluster did not establish every addition positively, because
+         * a negative or absent leg is not evidence of how to split the funding.
+         */
+        fun netAcquiredUsd(
+            transition: InferredRegimeTransition,
+            additions: Collection<String>,
+        ): Map<String, BigDecimal>? {
+            if (additions.isEmpty()) return emptyMap()
+            val acquired = mutableMapOf<String, BigDecimal>()
+            for ((symbol, time, signed) in signedUsdBySymbolAndTime) {
+                if (symbol !in additions) continue
+                // The cluster's own membership events sit at its start instant, so the window is
+                // open on the left and closed on the right.
+                if (time < transition.clusterStart || time > transition.clusterEnd) continue
+                acquired[symbol] = acquired.getOrElse(symbol) { BigDecimal.ZERO }.add(signed)
+            }
+            if (additions.any { (acquired[it] ?: BigDecimal.ZERO).signum() <= 0 }) return null
+            return additions.associateWith { acquired.getValue(it) }
+        }
+    }
 
     private fun anchorRegimes(
         transitions: List<InferredRegimeTransition>,
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
+        fundingEvidence: ClusterFundingEvidence,
     ): List<AnchoredRegimeTransition> {
         val ordered = snapshots.filter { it.timestamp >= baseline.timestamp }
         // Epoch resolution picks the latest anchor at or before a timestamp, so the list must be in
-        // anchor order regardless of how the transitions were supplied. Two transitions settling on
-        // the same snapshot would otherwise reapply an identical reallocation.
+        // anchor order regardless of how the transitions were supplied. Two transitions may settle on
+        // one snapshot: they are distinct membership changes, so both apply, in cluster order, and the
+        // configuration fold composes them. Sorting on cluster end as well as anchor time keeps that
+        // composition independent of the order the transitions were supplied in.
         return transitions.mapNotNull { transition ->
             if (transition.confidence != RegimeTransitionConfidence.HIGH) return@mapNotNull null
-            val anchor = ordered.firstOrNull { it.timestamp >= transition.clusterEnd } ?: return@mapNotNull null
-            val weights = observedInScopeValueWeights(anchor, comparisonAssetSymbols) ?: return@mapNotNull null
-            AnchoredRegimeTransition(transition = transition, anchor = anchor, weights = weights)
-        }.sortedBy { it.anchor.timestamp }.distinctBy { it.anchor.timestamp }
+            val anchor = settledAnchorAtOrAfter(ordered, transition) ?: return@mapNotNull null
+            val shares = additionFundingShares(
+                transition = transition,
+                anchor = anchor,
+                comparisonAssetSymbols = comparisonAssetSymbols,
+                fundingEvidence = fundingEvidence,
+            ) ?: return@mapNotNull null
+            AnchoredRegimeTransition(
+                transition = transition,
+                anchor = anchor,
+                additionFundingShares = shares,
+            )
+        }.sortedWith(compareBy({ it.anchor.timestamp }, { it.transition.clusterEnd }))
     }
 
-    private data class AnchoredRegimeTransition(
+    /**
+     * First observation at or after [clusterEnd] that is settled enough to carry transition evidence.
+     *
+     * The earliest retained snapshot after a cluster can land mid-cycle: a sell-first rebalance may
+     * have executed the removal leg but not yet re-established the additions, and a same-day balance
+     * can be transiently zero. A candidate must therefore satisfy two independent conditions:
+     *
+     * 1. **Completed.** Every named removal is drained and every named addition is established. This
+     *    is direct evidence that the transition itself actually landed, rather than being inferred
+     *    from a shape that a half-finished cycle also produces.
+     * 2. **Quiescent.** The named assets hold identical balances in the following retained snapshot,
+     *    which is evidence that no unresolved activity is still moving them. Where the series ends at
+     *    this candidate there is nothing later to compare against, so completion alone qualifies it.
+     *
+     * Only named assets are tested. Unnamed holdings are never read, so their ordinary drift cannot
+     * affect which snapshot is chosen.
+     *
+     * The search is bounded by [ANCHOR_SETTLEMENT_OBSERVATION_WINDOW] so an unrelated later regime
+     * cannot postpone an earlier transition indefinitely. Retained observations are minutes to hours
+     * apart and a rebalance cycle completes well inside a day, so a qualified candidate is normally
+     * found; when none qualifies in the window the transition is not applied, because its evidence
+     * never settled and guessing would be indistinguishable from copying arbitrary portfolio state.
+     */
+    private fun settledAnchorAtOrAfter(
+        candidates: List<PortfolioSnapshot>,
+        transition: InferredRegimeTransition,
+    ): PortfolioSnapshot? {
+        val removals = transition.removals.mapTo(linkedSetOf()) { canonical(it) }
+        val additions = transition.additions.mapTo(linkedSetOf()) { canonical(it) }
+        val start = candidates.indexOfFirst { it.timestamp >= transition.clusterEnd }
+        if (start < 0) return null
+        val end = minOf(candidates.lastIndex, start + ANCHOR_SETTLEMENT_OBSERVATION_WINDOW)
+        for (index in start..end) {
+            val current = candidates[index]
+            if (!transitionCompletedAt(current, removals, additions)) continue
+            val next = candidates.getOrNull(index + 1)
+            if (next == null || (removals + additions).all {
+                    balanceAt(current, it).compareTo(balanceAt(next, it)) == 0
+                }
+            ) {
+                return current
+            }
+        }
+        log.warn(
+            "Configuration transition ending {} has no settled observation within {} retained snapshots; " +
+                "it is not applied",
+            transition.clusterEnd,
+            ANCHOR_SETTLEMENT_OBSERVATION_WINDOW,
+        )
+        return null
+    }
+
+    /** A transition has landed once every named removal is drained and every named addition holds a balance. */
+    private fun transitionCompletedAt(
+        snapshot: PortfolioSnapshot,
+        removals: Set<String>,
+        additions: Set<String>,
+    ): Boolean = removals.all { balanceAt(snapshot, it).signum() == 0 } &&
+        additions.all { balanceAt(snapshot, it).signum() > 0 }
+
+    private fun balanceAt(snapshot: PortfolioSnapshot, symbol: String): BigDecimal {
+        var total = BigDecimal.ZERO
+        for ((rawSymbol, asset) in snapshot.assets) {
+            if (canonical(rawSymbol) == symbol) total = total.add(asset.balance)
+        }
+        return total.stripTrailingZeros()
+    }
+
+    /**
+     * How the value released by a transition's named removals is split across its named additions.
+     *
+     * Evidence hierarchy, strongest first:
+     *
+     * 1. Net USD value the Actual transition actually acquired for those additions inside the
+     *    transition's own cluster window. This is the transition's own funding behaviour, free of
+     *    anything that happened afterwards.
+     * 2. The additions' observed values at the settled anchor, normalized across the addition set
+     *    alone. Weaker, because the anchor also carries post-cluster drift, but still confined to
+     *    the assets the transition names.
+     *
+     * Returns null when neither source can prove a split, and the transition is then not applied:
+     * an addition must never be funded by whole-portfolio weights or hand-entered ratios.
+     */
+    private fun additionFundingShares(
+        transition: InferredRegimeTransition,
+        anchor: PortfolioSnapshot,
+        comparisonAssetSymbols: Set<String>,
+        fundingEvidence: ClusterFundingEvidence,
+    ): Map<String, BigDecimal>? {
+        val additions = transition.additions.mapTo(sortedSetOf()) { canonical(it) }
+            .filterNotTo(sortedSetOf()) { canonical(it) in transition.removals.map { canonical(it) } }
+        if (additions.isEmpty()) return emptyMap()
+
+        val fromCluster = fundingEvidence.netAcquiredUsd(transition, additions)
+        if (fromCluster != null) return normalizedValueWeights(fromCluster, sumOf(fromCluster))
+
+        val observed = observedInScopeValues(anchor, comparisonAssetSymbols, additions) ?: return null
+        if (additions.any { (observed[it] ?: BigDecimal.ZERO).signum() <= 0 }) return null
+        val scoped = additions.associateWith { observed.getValue(it) }
+        return normalizedValueWeights(scoped, sumOf(scoped))
+    }
+
+    private fun sumOf(values: Map<String, BigDecimal>): BigDecimal =
+        values.values.fold(BigDecimal.ZERO) { acc, value -> acc.add(value) }
+
+    internal data class AnchoredRegimeTransition(
         val transition: InferredRegimeTransition,
         val anchor: PortfolioSnapshot,
-        val weights: Map<String, BigDecimal>,
+        val additionFundingShares: Map<String, BigDecimal>,
+        /**
+         * Benchmark configuration allocation in force from this anchor onward. It is folded
+         * sequentially over the transitions by [attachConfigurationAllocations] and is what
+         * invests owner contributions, so capital is never placed by observed Actual drift.
+         */
+        val configurationAllocation: Map<String, BigDecimal> = emptyMap(),
     )
 
     /**
-     * Actual in-scope value proportions at a settled anchor, from that snapshot's own persisted
-     * balances and prices. These are *observed settled portfolio weights*, never historical
-     * configured target percentages, which were not retained.
+     * Observed in-scope values for exactly the requested symbols at a settled anchor.
+     *
+     * Confined to [only] so it can never be mistaken for a whole-portfolio composition. Symbols that
+     * are absent or unpriceable simply do not appear; callers decide whether that is fatal.
      */
-    private fun observedInScopeValueWeights(
+    private fun observedInScopeValues(
         snapshot: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
+        only: Collection<String>,
     ): Map<String, BigDecimal>? {
+        val wanted = only.mapTo(mutableSetOf()) { canonical(it) }
         val values = mutableMapOf<String, BigDecimal>()
         for ((rawSymbol, asset) in snapshot.assets) {
-            val symbol = Asset.normalizeLedgerAsset(rawSymbol).uppercase()
+            val symbol = canonical(rawSymbol)
+            if (symbol !in wanted) continue
             if (symbol !in comparisonAssetSymbols) continue
-            if (asset.balance.signum() == 0) continue
             val price = if (symbol == Asset.USD) BigDecimal.ONE else asset.price
-            // A held in-scope asset without a price cannot be valued, so the observed composition
-            // is unproven at this anchor and no transition may be anchored to it.
             if (price.signum() <= 0) return null
-            // Aliased symbols collapse onto one canonical entry, so their values must accumulate.
             values[symbol] = values.getOrElse(symbol) { BigDecimal.ZERO }
                 .add(asset.balance.multiply(price))
         }
-        if (values.isEmpty()) return null
-        val total = values.values.fold(BigDecimal.ZERO, BigDecimal::add)
-        return normalizedValueWeights(values, total)
+        return values
+    }
+
+    /**
+     * Fold the transitions in anchor order into the benchmark's configuration allocation.
+     *
+     * Each transition removes its named removals from the allocation and gives the released weight to
+     * its named additions. Surviving weights are carried through **unchanged**, so the configuration
+     * never absorbs Actual drift, a transient zero balance, or Actual's cash buffer. Released weight
+     * that no addition claims rests in USD, matching what the reset itself does to benchmark cash.
+     *
+     * Every regime reaching this fold is already applicable: an unresolvable funding split is dropped
+     * during anchoring, so there is no guard here to repeat.
+     *
+     * The allocation is a nominal statement of intended configuration, not a record of what the book
+     * happens to hold. The book can legitimately lag it — a named removal that carried configured
+     * weight but no value at replay time moves no value — and that is the intended behaviour: later
+     * owner capital is invested toward the configuration in force rather than toward incidental
+     * holdings.
+     */
+    private fun attachConfigurationAllocations(
+        regimes: List<AnchoredRegimeTransition>,
+        inceptionWeights: Map<String, BigDecimal>,
+    ): List<AnchoredRegimeTransition> {
+        var allocation = inceptionWeights
+        return regimes.map { regime ->
+            allocation = applyTransitionToAllocation(
+                allocation = allocation,
+                transition = regime.transition,
+                additionFundingShares = regime.additionFundingShares,
+            )
+            regime.copy(configurationAllocation = allocation)
+        }
+    }
+
+    private fun applyTransitionToAllocation(
+        allocation: Map<String, BigDecimal>,
+        transition: InferredRegimeTransition,
+        additionFundingShares: Map<String, BigDecimal>,
+    ): Map<String, BigDecimal> {
+        val removals = transition.removals.mapTo(linkedSetOf()) { canonical(it) }
+        val released = removals.fold(BigDecimal.ZERO) { acc, symbol ->
+            acc.add(allocation[symbol] ?: BigDecimal.ZERO)
+        }
+        val next = allocation.filterKeys { canonical(it) !in removals }.toMutableMap()
+        var allocated = BigDecimal.ZERO
+        for ((symbol, share) in additionFundingShares) {
+            val key = canonical(symbol)
+            val weight = released.multiply(share)
+            // A zero weight means the addition could not be funded here, which leaves the
+            // configuration exactly where the book also left it.
+            if (weight.signum() <= 0) continue
+            next[key] = (next[key] ?: BigDecimal.ZERO).add(weight)
+            allocated = allocated.add(weight)
+        }
+        // Weight no addition claimed rests in cash, matching what the reset does with released value.
+        val resting = released.subtract(allocated)
+        if (resting.signum() > 0) {
+            next[Asset.USD] = (next[Asset.USD] ?: BigDecimal.ZERO).add(resting)
+        }
+        // A non-empty live vector always has a positive total, because it is built from non-negative
+        // weights, so the per-entry division is safe without a separate guard.
+        val live = next.filterValues { it.signum() > 0 }
+        return exactOne(
+            live.mapValues { (_, weight) -> weight.divide(sumOf(live), WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP) },
+        )
+    }
+
+    /**
+     * Whether the transition's named additions can be funded at all.
+     *
+     * Shares must cover exactly the addition set and every share must be positive. A transition with
+     * no additions is trivially resolvable, and a removal-only transition simply holds its proceeds
+     * as cash. This predicate is the single definition used by both the reset and the configuration
+     * allocation, so the two can never disagree about whether a transition was applied.
+     */
+    private fun fundingResolvable(
+        transition: InferredRegimeTransition,
+        additionFundingShares: Map<String, BigDecimal>,
+    ): Boolean {
+        val removals = transition.removals.mapTo(linkedSetOf()) { canonical(it) }
+        val additions = transition.additions.mapTo(linkedSetOf()) { canonical(it) }
+            .filterNotTo(linkedSetOf()) { it in removals }
+        if (additions.isEmpty()) return true
+        val shares = additionFundingShares.mapKeys { canonical(it.key) }
+        return shares.keys == additions && shares.values.all { it.signum() > 0 }
     }
 
     /**
@@ -3827,14 +4099,26 @@ object RebalancerComparisonCalculator {
      * Callers must pass a non-empty [values] map with a positive [total], both already proven by
      * the caller, so this adds no defensive branches of its own.
      */
-    private fun normalizedValueWeights(values: Map<String, BigDecimal>, total: BigDecimal): Map<String, BigDecimal> {
-        val weights = values.mapValues { (_, value) ->
-            value.divide(total, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP)
-        }.toMutableMap()
-        val residualSymbol = weights.keys.last()
-        weights[residualSymbol] = weights.getValue(residualSymbol)
-            .add(BigDecimal.ONE.subtract(weights.values.fold(BigDecimal.ZERO, BigDecimal::add)))
-        return weights
+    private fun normalizedValueWeights(values: Map<String, BigDecimal>, total: BigDecimal): Map<String, BigDecimal> =
+        exactOne(
+            values.mapValues { (_, value) ->
+                value.divide(total, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP)
+            },
+        )
+
+    /**
+     * Fold a weight vector's rounding residual into its largest holding so it sums to exactly one.
+     *
+     * Which holding absorbs it is immaterial: the residual is a rounding artifact orders of magnitude
+     * below the persisted precision, not an allocation decision. Callers must pass a non-empty
+     * positive vector, so this adds no defensive branches of its own.
+     */
+    private fun exactOne(weights: Map<String, BigDecimal>): Map<String, BigDecimal> {
+        val scaled = weights.toMutableMap()
+        val residualSymbol = scaled.maxByOrNull { (_, weight) -> weight }?.key ?: return weights
+        scaled[residualSymbol] = scaled.getValue(residualSymbol)
+            .add(BigDecimal.ONE.subtract(scaled.values.fold(BigDecimal.ZERO) { acc, weight -> acc.add(weight) }))
+        return scaled
     }
 
     /**
@@ -4636,57 +4920,161 @@ object RebalancerComparisonCalculator {
             }
 
             is BenchmarkEvent.ConfigurationReset -> {
-                val failure = applyConfigurationReset(balances, event, priceProvider)
-                if (failure != null) return failure
+                when (val outcome = applyConfigurationReset(balances, event, priceProvider)) {
+                    is ConfigurationResetOutcome.Failed -> return outcome.reason to outcome.at
+
+                    // An unapplied transition is a documented non-event, not a failure: the
+                    // benchmark simply keeps holding what it had.
+                    is ConfigurationResetOutcome.Skipped -> log.warn(
+                        "Configuration transition at {} not applied: {}",
+                        event.timestamp,
+                        outcome.reason,
+                    )
+
+                    is ConfigurationResetOutcome.Applied -> Unit
+                }
             }
         }
         return null
     }
 
     /**
-     * Reallocate the synthetic portfolio once to an inferred configuration regime, preserving NAV.
+     * Apply one configuration reset, moving only the assets its transition names.
      *
-     * The benchmark keeps its own value: it is re-weighted to the Actual strategy's in-scope value
-     * proportions observed at the settled anchor, never to the Actual account value or units. A
-     * missing price for any currently held or newly targeted asset fails closed rather than
-     * silently dropping that leg and inventing performance.
+     * The benchmark's own NAV is preserved and its unnamed holdings are left untouched. A named
+     * removal is sold; its released value funds the named additions, and anything unspent stays as
+     * benchmark cash. Nothing here reads the Actual portfolio, so routine drift, a transiently zero
+     * Actual balance, and Actual's incidental cash weight cannot enter the synthetic portfolio.
+     *
+     * Required turnover is reported as value deltas, never as a full liquidation: the book is
+     * re-weighted in place, so only the differences are trades.
      */
     private suspend fun applyConfigurationReset(
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent.ConfigurationReset,
         priceProvider: HistoricalPriceProvider?,
-    ): Pair<ComparisonUnavailableReason, Instant>? {
+    ): ConfigurationResetOutcome {
+        val removals = event.transition.removals.mapTo(linkedSetOf()) { canonical(it) }
+        val additions = event.transition.additions.mapTo(linkedSetOf()) { canonical(it) }
+            .filterNotTo(linkedSetOf()) { it in removals }
+
+        val preValue = mutableMapOf<String, BigDecimal>()
         var nav = BigDecimal.ZERO
-        for ((symbol, balance) in balances) {
+        for ((rawSymbol, balance) in balances) {
+            val symbol = canonical(rawSymbol)
             if (balance.signum() == 0) continue
-            val price = if (symbol == Asset.USD) BigDecimal.ONE else priceProvider?.priceAt(symbol, event.timestamp)
-            if (price == null || price.signum() <= 0) {
-                return ComparisonUnavailableReason.MISSING_PRICE to event.timestamp
-            }
-            nav = nav.add(balance.multiply(price))
+            val price = priceOf(symbol, event.timestamp, priceProvider)
+                ?: return ConfigurationResetOutcome.Failed(
+                    ComparisonUnavailableReason.MISSING_PRICE,
+                    event.timestamp,
+                )
+            val value = balance.multiply(price)
+            // Every balance key is canonical: the baseline is extracted by canonical symbol and each
+            // replay path normalizes before writing, so no two keys can collapse onto one holding.
+            preValue[symbol] = value
+            nav = nav.add(value)
         }
         if (nav.signum() <= 0) {
-            return ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE to event.timestamp
+            return ConfigurationResetOutcome.Failed(
+                ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                event.timestamp,
+            )
         }
-        val rebalanced = mutableMapOf<String, BigDecimal>()
-        for ((symbol, weight) in event.targetWeights) {
-            // A non-positive weight would silently destroy that leg's share of NAV. The residual
-            // fold can push a vanishingly small final weight to zero, so reject rather than drop it.
-            if (weight.signum() <= 0) {
-                return ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE to event.timestamp
-            }
-            val price = if (symbol == Asset.USD) BigDecimal.ONE else priceProvider?.priceAt(symbol, event.timestamp)
-            if (price == null || price.signum() <= 0) {
-                return ComparisonUnavailableReason.MISSING_PRICE to event.timestamp
-            }
-            rebalanced[symbol] = nav.multiply(weight).divide(price, ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
+
+        var released = BigDecimal.ZERO
+        for (symbol in removals) released = released.add(preValue[symbol] ?: BigDecimal.ZERO)
+
+        if (additions.isNotEmpty() && !fundingResolvable(event.transition, event.additionFundingShares)) {
+            // An addition with no evidence-backed funding source must not be created out of thin
+            // value, and must not be funded by silently diluting holdings the transition never named.
+            // Leaving the transition unapplied keeps the book and the configuration in agreement.
+            return ConfigurationResetOutcome.Skipped(
+                "named additions ${additions.sorted()} have no usable funding evidence",
+            )
         }
-        if (rebalanced.isEmpty()) {
-            return ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE to event.timestamp
+        if (additions.isNotEmpty() && released.signum() <= 0) {
+            return ConfigurationResetOutcome.Skipped(
+                "named additions ${additions.sorted()} have no released value to fund them; " +
+                    "removals $removals released nothing",
+            )
         }
-        balances.clear()
-        balances.putAll(rebalanced)
-        return null
+
+        // Resolve every price and unit quantity before touching the book, so a refusal leaves the
+        // benchmark exactly as it was rather than half-reallocated.
+        val purchases = additions.map { symbol ->
+            val share = event.additionFundingShares.mapKeys { canonical(it.key) }.getValue(symbol)
+            val price = priceOf(symbol, event.timestamp, priceProvider)
+                ?: return ConfigurationResetOutcome.Failed(
+                    ComparisonUnavailableReason.MISSING_PRICE,
+                    event.timestamp,
+                )
+            val units = released.multiply(share).divide(price, ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
+            // Value actually written, not the nominal allocation: the unit quantity is rounded to the
+            // persisted precision, and the reported turnover must describe the book that exists.
+            Triple(symbol, units, units.multiply(price))
+        }
+
+        val postValue = preValue.toMutableMap()
+        for (symbol in removals) {
+            balances.remove(symbol)
+            postValue.remove(symbol)
+        }
+        var spent = BigDecimal.ZERO
+        for ((symbol, units, written) in purchases) {
+            // The addition is a funding event, not a re-creation: an existing holding in the same
+            // asset is topped up rather than overwritten, which is also what keeps a re-weighting
+            // value-preserving instead of liquidating that leg.
+            balances[symbol] = (balances[symbol] ?: BigDecimal.ZERO).add(units)
+            postValue[symbol] = (preValue[symbol] ?: BigDecimal.ZERO).add(written)
+            spent = spent.add(written)
+        }
+        val cashDelta = released.subtract(spent)
+        if (cashDelta.signum() != 0) {
+            balances[Asset.USD] = (balances[Asset.USD] ?: BigDecimal.ZERO).add(cashDelta)
+            postValue[Asset.USD] = (postValue[Asset.USD] ?: BigDecimal.ZERO).add(cashDelta)
+        }
+
+        val delta = (postValue.keys + preValue.keys).associateWith { symbol ->
+            (postValue[symbol] ?: BigDecimal.ZERO).subtract(preValue[symbol] ?: BigDecimal.ZERO)
+        }
+        var cryptoSell = BigDecimal.ZERO
+        var cryptoBuy = BigDecimal.ZERO
+        for ((symbol, value) in delta) {
+            if (symbol == Asset.USD) continue
+            if (value.signum() < 0) cryptoSell = cryptoSell.add(value.negate()) else cryptoBuy = cryptoBuy.add(value)
+        }
+        return ConfigurationResetOutcome.Applied(
+            ConfigurationResetTurnover(
+                preValue = preValue,
+                postValue = postValue,
+                delta = delta,
+                cryptoSellNotional = cryptoSell,
+                cryptoBuyNotional = cryptoBuy,
+                cashDelta = delta[Asset.USD] ?: BigDecimal.ZERO,
+            ),
+        )
+    }
+
+    private fun canonical(symbol: String): String = Asset.normalizeLedgerAsset(symbol).uppercase()
+
+    private suspend fun priceOf(
+        symbol: String,
+        timestamp: Instant,
+        priceProvider: HistoricalPriceProvider?,
+    ): BigDecimal? {
+        if (symbol == Asset.USD) return BigDecimal.ONE
+        val price = priceProvider?.priceAt(symbol, timestamp) ?: return null
+        return price.takeIf { it.signum() > 0 }
+    }
+
+    /** Outcome of one configuration reset: applied, deliberately unapplied, or failed closed. */
+    internal sealed interface ConfigurationResetOutcome {
+        data class Applied(val turnover: ConfigurationResetTurnover) : ConfigurationResetOutcome
+
+        /** The transition had no evidence-backed funding source, so it is not applied. */
+        data class Skipped(val reason: String) : ConfigurationResetOutcome
+
+        data class Failed(val reason: ComparisonUnavailableReason, val at: Instant) : ConfigurationResetOutcome
     }
 
     /**
@@ -5185,10 +5573,31 @@ object RebalancerComparisonCalculator {
     )
 
     /**
-     * Test seam for regime inference and anchoring. Exposed so the generic inference rules can be
-     * exercised against synthetic activity without a full production-sized replay, and so the
-     * observed-settled-proportion extraction is covered directly.
+     * Test seam for regime inference, anchoring, and the configuration allocation that results.
+     *
+     * Exposed so the generic inference rules, the settlement criterion, the addition-funding
+     * hierarchy, and the contribution-allocation state can all be exercised against synthetic
+     * activity without a full production-sized replay.
      */
+    internal fun anchoredRegimesForTest(
+        activities: List<AssetRegimeActivity>,
+        snapshots: List<PortfolioSnapshot>,
+        baseline: PortfolioSnapshot,
+        comparisonAssetSymbols: Set<String>,
+        inceptionWeights: Map<String, BigDecimal> = emptyMap(),
+        trades: List<TradeRecord> = emptyList(),
+    ): List<AnchoredRegimeTransition> = attachConfigurationAllocations(
+        buildInferredRegimes(
+            trades = trades,
+            ledgerEvents = emptyList(),
+            activitiesOverride = activities,
+            snapshots = snapshots,
+            baseline = baseline,
+            comparisonAssetSymbols = comparisonAssetSymbols,
+        ),
+        inceptionWeights,
+    )
+
     internal fun inferRegimesForTest(
         activities: List<AssetRegimeActivity>,
         snapshots: List<PortfolioSnapshot>,
@@ -5203,12 +5612,27 @@ object RebalancerComparisonCalculator {
         comparisonAssetSymbols = comparisonAssetSymbols,
     ).map { it.transition to it.anchor }
 
-    /** Test seam for the configuration-reset replay, which is otherwise only reached through a full replay. */
+    /**
+     * Test seam for the configuration-reset replay, which is otherwise only reached through a full
+     * replay. The full outcome is returned so callers can assert both the resulting holdings and the
+     * economically required turnover.
+     */
+    internal suspend fun replayConfigurationResetForTest(
+        balances: MutableMap<String, BigDecimal>,
+        event: BenchmarkEvent.ConfigurationReset,
+        priceProvider: HistoricalPriceProvider?,
+    ): ConfigurationResetOutcome = applyConfigurationReset(balances, event, priceProvider)
+
     internal suspend fun replayBenchmarkEventForTest(
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent.ConfigurationReset,
         priceProvider: HistoricalPriceProvider?,
-    ): Pair<ComparisonUnavailableReason, Instant>? = applyConfigurationReset(balances, event, priceProvider)
+    ): Pair<ComparisonUnavailableReason, Instant>? =
+        when (val outcome = applyConfigurationReset(balances, event, priceProvider)) {
+            is ConfigurationResetOutcome.Failed -> outcome.reason to outcome.at
+            is ConfigurationResetOutcome.Applied -> null
+            is ConfigurationResetOutcome.Skipped -> null
+        }
 
     internal suspend fun buildBenchmarkEventsForTest(
         ledgers: List<LedgerEvent>,

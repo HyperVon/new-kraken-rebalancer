@@ -28,7 +28,7 @@ object AllocationEditor {
      * (uppercase-alphanumeric symbols, normalized 6-digit hex colors, numeric targets), so the
      * escaping is a no-op for them but keeps the template safe against future less-trusted callers.
      */
-    fun editRow(symbol: String, color: String, targetPercent: String): String =
+    fun editRow(symbol: String, color: String, targetPercent: String, score: String = ""): String =
         """
         <div class="${CssClass.Form.AllocationEditRow}">
             <div class="${CssClass.Form.AllocationEditSymbol}">${escapeHtml(symbol)}</div>
@@ -41,6 +41,11 @@ object AllocationEditor {
             color,
         )}" oninput="$syncColorJs">
             </label>
+            <div class="${CssClass.Form.AllocationEditInputWrapper}">
+                <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.SCORES}"
+                  step="0.5" min="0" max="10" value="${escapeHtml(score)}"
+                  placeholder="${ViewText.ALLOCATION_SCORE_PLACEHOLDER}">
+            </div>
             <div class="${CssClass.Form.AllocationEditInputWrapper}">
                 <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.TARGETS}"
                   step="${PrecisionConstants.ALLOCATION_STEP_PERCENT}"

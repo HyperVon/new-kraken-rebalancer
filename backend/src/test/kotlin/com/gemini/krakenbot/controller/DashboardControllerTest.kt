@@ -47,6 +47,7 @@ private object Routes {
     const val SETTINGS = "/settings"
     const val FRAGMENT_DASHBOARD = "/fragments/dashboard"
     const val FRAGMENT_SETTINGS_PROPOSAL = "/fragments/settings-proposal"
+    const val FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW = "/fragments/settings-allocations-preview"
     const val API_STATUS_STREAM = "/api/status/stream"
     const val STATIC_STYLE_CSS = "/static/style.css"
     const val STATIC_REBALANCER_JS = "/static/rebalancer.js"
@@ -64,6 +65,9 @@ private object FormFields {
     const val SYMBOLS = "symbols"
     const val TARGETS = "targets"
     const val COLORS = "colors"
+    const val SCORES = "scores"
+    const val SCORE_EMPHASIS = "scoreEmphasis"
+    const val SCORE_SLEEVE_PERCENT = "scoreSleevePercent"
     const val INCEPTION_DATE = "inceptionDate"
     const val COMPARISON_START_DATE = "comparisonStartDate"
     const val FIAT_DEPLOYMENT_THRESHOLD_PERCENT = "fiatDeploymentThresholdPercent"
@@ -1995,6 +1999,218 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain "Waiting for first rebalance cycle"
                 response.bodyAsText() shouldContain
                     "The rebalancer is running. Portfolio data will appear here after the first cycle completes."
+            }
+        }
+
+        "allocationsPreview_RecomputesFromScoresWithoutSaving" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH", "USD"),
+                            FormFields.TARGETS to listOf("50", "30", "20"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00", "#0000ff"),
+                            FormFields.SCORES to listOf("9.5", "8.5", ""),
+                            FormFields.SCORE_EMPHASIS to listOf("2"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                val body = response.bodyAsText()
+                body shouldContain "Preview only"
+                body shouldContain "Weighted quality score"
+                // USD carries no score, so only BTC and ETH are redistributed.
+                body shouldContain "name=\"${FormFields.TARGETS}\""
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsMissingCsrfToken" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("100"),
+                            FormFields.COLORS to listOf("#ff0000"),
+                            FormFields.SCORES to listOf("9.5"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RequiresAtLeastOneScore" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("50", "50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("", "not-a-number"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.InternalServerError
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsMismatchedRowArrays" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.5", "8.5"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.InternalServerError
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings_PersistsQualityScores" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            val captured = slot<AppConfig>()
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(capture(captured)) } returns Unit
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("20.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("20.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SYMBOLS to listOf("BTC", "TAO", "USD"),
+                            FormFields.TARGETS to listOf("50", "30", "20"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00", "#94A3B8"),
+                            // A zero and a non-numeric entry are dropped rather than persisted.
+                            FormFields.SCORES to listOf("9.5", "0", "not-a-number"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                captured.captured.settings.qualityScores shouldBe mapOf("BTC" to 9.5)
+            }
+        }
+
+        "allocationsPreview_ToleratesMalformedOptionalFields" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH", "SOL"),
+                            FormFields.TARGETS to listOf("50", "not-a-target", "30"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00", "#0000ff"),
+                            // Shorter than the symbol list: the trailing leg has no score entry.
+                            FormFields.SCORES to listOf("9.5", "0"),
+                            FormFields.SCORE_EMPHASIS to listOf("not-a-number"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("0"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                // Only BTC carries a usable score, and the malformed fields fall back rather
+                // than failing the preview.
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "Preview only"
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_FallsBackToConfiguredTargetsWhenSleeveIsBlank" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "TAO"),
+                            FormFields.TARGETS to listOf("70", "30"),
+                            FormFields.COLORS to listOf("#ff0000", "not-a-color"),
+                            FormFields.SCORES to listOf("9.5", "6.0"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf(""),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "Preview only"
             }
         }
     }

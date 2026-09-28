@@ -13,6 +13,9 @@ object RebalanceEventFormatter {
         is RebalanceEvent.FiatCorrectionDistributed ->
             ActionLogFormatter.formatFiatCorrectionDistribution(event.usdAmount, event.candidateCount)
 
+        is RebalanceEvent.TrendSuppressedSell ->
+            ActionLogFormatter.formatTrendSuppressedSell(event.symbol)
+
         RebalanceEvent.NoCounterBalancingAssets -> ActionLogFormatter.formatNoCounterBalancingAssets()
     }
 }

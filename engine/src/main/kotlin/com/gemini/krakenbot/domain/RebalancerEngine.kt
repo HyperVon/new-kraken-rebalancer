@@ -199,6 +199,7 @@ object RebalancerEngine {
         cryptoScaleFactor: BigDecimal,
         allocations: List<Allocation>,
         settings: Settings,
+        trendingAssets: Set<String> = emptySet(),
     ): RebalancePlan {
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
@@ -248,7 +249,11 @@ object RebalancerEngine {
                 if (isTriggered) {
                     // Overweight (positive DevUSD) → sell excess; underweight → buy deficit.
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
-                        sellOrders[symbolVal] = metrics.deviationUSD
+                        if (symbolVal in trendingAssets) {
+                            events.add(RebalanceEvent.TrendSuppressedSell(symbolVal))
+                        } else {
+                            sellOrders[symbolVal] = metrics.deviationUSD
+                        }
                     } else {
                         buyOrders[symbolVal] = metrics.deviationUSD.abs()
                     }
@@ -266,6 +271,7 @@ object RebalancerEngine {
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
                 events = events,
+                trendingAssets = trendingAssets,
             )
         }
 
@@ -278,6 +284,7 @@ object RebalancerEngine {
         buyOrders: MutableRebalanceOrders,
         sellOrders: MutableRebalanceOrders,
         events: MutableList<RebalanceEvent>,
+        trendingAssets: Set<String> = emptySet(),
     ) {
         // Positive USD DevUSD = surplus cash (deposit) → buy underweights; negative = shortage → sell overweights.
         val deviationAbs = usdDev.abs()
@@ -287,6 +294,11 @@ object RebalancerEngine {
 
         for ((symbol, d) in allDevs) {
             if (symbol.equals(Asset.USD, ignoreCase = true)) continue
+
+            if (!isDeposit && symbol in trendingAssets) {
+                events.add(RebalanceEvent.TrendSuppressedSell(symbol))
+                continue
+            }
 
             if (isDeposit && d < BigDecimal.ZERO) {
                 candidates.add(symbol)
