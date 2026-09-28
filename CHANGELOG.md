@@ -39,6 +39,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Funding API — is no longer forced to `UNRESOLVED`. The stable funding-rail id is now carried on
   funding records and accepted as external proof on a terminal-status record that already matched
   the ledger row. Internal method markers continue to veto external classification.
+- **Historical replay terminal day truncation**: add regression coverage in `ReplayComparisonTest`
+  verifying that `lastDay` bounds both the rebalanced and buy-and-hold arms to the identical evaluation
+  day, excluding subsequent funding flows and market movements from both books.
 
 ## [6.17.83] - 2026-09-25
 

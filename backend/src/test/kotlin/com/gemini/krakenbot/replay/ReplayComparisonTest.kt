@@ -133,5 +133,46 @@ class ReplayComparisonTest : StringSpec() {
             withoutRule.suppressedSells shouldBe 0
             (withoutRule.tradeCount >= withRule.tradeCount).shouldBeTrue()
         }
+
+        "lastDay truncates both rebalanced and buy-and-hold arms to the same terminal day" {
+            val totalDays = 40
+            val splitDay = 15
+            // Prices flat at 100 for days 0..15, then spike to 500 for days 16..39.
+            val btcPrices = List(totalDays) { if (it <= splitDay) BigDecimal("100") else BigDecimal("500") }
+            val ethPrices = List(totalDays) { if (it <= splitDay) BigDecimal("100") else BigDecimal("500") }
+            val outcome = comparator.run(
+                closes = mapOf(Asset.BTC to btcPrices, Asset.ETH to ethPrices),
+                flows = listOf(
+                    ReplayComparator.Flow(5, BigDecimal("500")),
+                    // Flow after splitDay must be ignored by both arms
+                    ReplayComparator.Flow(25, BigDecimal("5000")),
+                ),
+                openingCapital = BigDecimal("2000"),
+                lastDay = splitDay,
+            )
+
+            // At splitDay (day 15), capital contributed is 2000 + 500 = 2500, prices are 100.
+            // Neither arm should see the day 25 flow ($5000) or the day 16..39 price spike (500).
+            outcome.buyAndHoldNav.add(outcome.buyAndHoldFees)
+                .shouldBeEqualComparingTo(BigDecimal("2500.00"))
+            outcome.nav.add(outcome.fees).subtract(BigDecimal("2500.00")).abs()
+                .shouldBeLessThan(BigDecimal("0.02"))
+
+            // Compare against a run that naturally only had 16 days (0..splitDay)
+            val baselineOutcome = comparator.run(
+                closes = mapOf(
+                    Asset.BTC to btcPrices.subList(0, splitDay + 1),
+                    Asset.ETH to ethPrices.subList(0, splitDay + 1),
+                ),
+                flows = listOf(ReplayComparator.Flow(5, BigDecimal("500"))),
+                openingCapital = BigDecimal("2000"),
+            )
+            outcome.buyAndHoldNav.shouldBeEqualComparingTo(baselineOutcome.buyAndHoldNav)
+            outcome.buyAndHoldFees.shouldBeEqualComparingTo(baselineOutcome.buyAndHoldFees)
+            outcome.nav.shouldBeEqualComparingTo(baselineOutcome.nav)
+            outcome.fees.shouldBeEqualComparingTo(baselineOutcome.fees)
+            outcome.tradeCount shouldBe baselineOutcome.tradeCount
+            outcome.suppressedSells shouldBe baselineOutcome.suppressedSells
+        }
     }
 }
