@@ -63,6 +63,171 @@ class LocalReplayVariantsTest : StringSpec() {
         "the tail-stop benefit holds up across both halves of the window" {
             compareHalves()
         }
+
+        "the lookback and trigger sweep reports a full delta surface" {
+            sweepSurface()
+        }
+
+        "the sweep winner is checked on both halves before being believed" {
+            validateSurfaceWinner()
+        }
+    }
+
+    /**
+     * Re-runs a handful of candidate cells on the first half and the full window. A cell that
+     * only wins on the full sample is a spike, not a setting.
+     */
+    private fun validateSurfaceWinner() {
+        val path = System.getenv("REPLAY_FIXTURE_PATH")
+        if (path.isNullOrBlank()) {
+            true.shouldBeTrue()
+            return
+        }
+        val fixture = ObjectMapper().readValue(File(path), Fixture::class.java)
+        val closes = fixture.closes.mapValues { (_, series) -> series.map(::BigDecimal) }
+        val flows = fixture.flows.map { ReplayComparator.Flow(it.dayIndex, BigDecimal(it.usd)) }
+        val opening = BigDecimal(fixture.openingCapital)
+        val baseline = fixture.allocations.map { Allocation(Asset(it.symbol), it.targetPercent) }
+        val days = closes.values.first().size
+        val midpoint = days / 2
+
+        fun deltaFor(trigger: Double, lookback: Int, lastDay: Int): BigDecimal {
+            val comparator = ReplayComparator(
+                allocations = baseline,
+                settings = TestFixtures.settings(
+                    dryRun = true,
+                    deviationTriggerPercent = trigger,
+                    minimumOrderSizeUSD = fixture.minimumOrderSizeUSD,
+                ),
+                feeRate = BigDecimal(fixture.feeRate),
+            )
+            val outcome = comparator.run(
+                closes = closes,
+                flows = flows,
+                openingCapital = opening,
+                lastDay = lastDay,
+                trendingSymbols = { day, prices ->
+                    if (lookback <= 0) {
+                        emptySet()
+                    } else {
+                        val from = maxOf(0, day - lookback + 1)
+                        closes.keys.filterTo(mutableSetOf()) { symbol ->
+                            val window = closes.getValue(symbol).subList(from, day + 1)
+                            window.isNotEmpty() && prices.getValue(symbol) >= window.max()
+                        }
+                    }
+                },
+            )
+            return outcome.nav.subtract(outcome.buyAndHoldNav)
+        }
+
+        val candidates = listOf(
+            Triple(5.0, 0, "current shipped default"),
+            Triple(5.0, 15, "5% / 15d"),
+            Triple(10.0, 20, "sweep best cell"),
+            Triple(15.0, 15, "15% / 15d"),
+            Triple(7.0, 10, "7% / 10d"),
+        )
+        println("=== CANDIDATE VALIDATION (negative = rebalancing trails buy-and-hold) ===")
+        println("    %-24s %12s %12s".format("candidate", "first half", "full window"))
+        for ((trigger, lookback, label) in candidates) {
+            println(
+                "    %-24s %12s %12s".format(
+                    label,
+                    deltaFor(trigger, lookback, midpoint).setScale(0, RoundingMode.HALF_UP),
+                    deltaFor(trigger, lookback, days - 1).setScale(0, RoundingMode.HALF_UP),
+                ),
+            )
+        }
+        true.shouldBeTrue()
+    }
+
+    /**
+     * Full lookback x trigger grid on the current allocation. Reported rather than asserted:
+     * the surface is the deliverable, and no single cell is a claim about the future.
+     */
+    private fun sweepSurface() {
+        val path = System.getenv("REPLAY_FIXTURE_PATH")
+        if (path.isNullOrBlank()) {
+            true.shouldBeTrue()
+            return
+        }
+        val fixture = ObjectMapper().readValue(File(path), Fixture::class.java)
+        val closes = fixture.closes.mapValues { (_, series) -> series.map(::BigDecimal) }
+        val flows = fixture.flows.map { ReplayComparator.Flow(it.dayIndex, BigDecimal(it.usd)) }
+        val opening = BigDecimal(fixture.openingCapital)
+        val baseline = fixture.allocations.map { Allocation(Asset(it.symbol), it.targetPercent) }
+
+        fun deltaFor(trigger: Double, lookback: Int): BigDecimal {
+            val comparator = ReplayComparator(
+                allocations = baseline,
+                settings = TestFixtures.settings(
+                    dryRun = true,
+                    deviationTriggerPercent = trigger,
+                    minimumOrderSizeUSD = fixture.minimumOrderSizeUSD,
+                ),
+                feeRate = BigDecimal(fixture.feeRate),
+            )
+            val outcome = comparator.run(
+                closes = closes,
+                flows = flows,
+                openingCapital = opening,
+                trendingSymbols = { day, prices ->
+                    if (lookback <= 0) {
+                        emptySet()
+                    } else {
+                        val from = maxOf(0, day - lookback + 1)
+                        closes.keys.filterTo(mutableSetOf()) { symbol ->
+                            val window = closes.getValue(symbol).subList(from, day + 1)
+                            window.isNotEmpty() && prices.getValue(symbol) >= window.max()
+                        }
+                    }
+                },
+            )
+            return outcome.nav.subtract(outcome.buyAndHoldNav)
+        }
+
+        val lookbacks = listOf(0, 5, 10, 15, 20, 30, 45, 60)
+        val triggers = listOf(3.0, 5.0, 7.0, 10.0, 15.0)
+        println("=== SWEEP: delta vs buy-and-hold (negative = rebalancing trails) ===")
+        print("    trig \\ lookback".padEnd(18))
+        lookbacks.forEach { print("%9d".format(it)) }
+        println()
+        var bestCell: Triple<Double, Int, BigDecimal>? = null
+        var worstCell: Triple<Double, Int, BigDecimal>? = null
+        for (trigger in triggers) {
+            print("    %-16.0f".format(trigger))
+            for (lookback in lookbacks) {
+                val delta = deltaFor(trigger, lookback)
+                print("%9s".format(delta.setScale(0, RoundingMode.HALF_UP)))
+                val currentBest = bestCell
+                if (currentBest == null || delta > currentBest.third) {
+                    bestCell = Triple(trigger, lookback, delta)
+                }
+                val currentWorst = worstCell
+                if (currentWorst == null || delta < currentWorst.third) {
+                    worstCell = Triple(trigger, lookback, delta)
+                }
+            }
+            println()
+        }
+        val best = requireNotNull(bestCell) { "sweep produced no cells" }
+        val worst = requireNotNull(worstCell) { "sweep produced no cells" }
+        println(
+            "    best  cell: trig=${best.first} lookback=${best.second} delta=${best.third.setScale(
+                2,
+                RoundingMode.HALF_UP,
+            )}",
+        )
+        println(
+            "    worst cell: trig=${worst.first} lookback=${worst.second} delta=${worst.third.setScale(
+                2,
+                RoundingMode.HALF_UP,
+            )}",
+        )
+        val spread = best.third.subtract(worst.third)
+        println("    surface spread: ${spread.setScale(2, RoundingMode.HALF_UP)}")
+        true.shouldBeTrue()
     }
 
     /** Compares the current allocation with and without the tail-stop on two independent halves. */

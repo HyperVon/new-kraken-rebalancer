@@ -425,6 +425,49 @@ Dust therefore filters **order generation**, not only execution.
       are furthest from their targets, effectively clearing dust
       thresholds.*
 
+### 4. Trend-Aware Sell Suppression
+
+An overweight leg is **not** trimmed while the asset is trading at its highest
+completed daily close over the trailing lookback window (20 days by default).
+That regime — where an asset is repricing rather than oscillating — is where a
+mean-reversion trade historically loses to continuation. Suppressed legs are
+reported in the action log as `Skipping sell — at recent high for <SYM>` so a
+quiet cycle is explainable rather than silent.
+
+Only the **sell** leg is ever suppressed; buys, targets, deviation gates and
+dust rules are unchanged. When cash is short because a sell was suppressed, the
+executor clamps each buy to the smaller of the cycle budget and the cash
+actually settled, so an order degrades to a smaller or dust-skipped buy rather
+than failing. If price history is unavailable or the lookup fails, the cycle
+fails open and trades exactly as it would without this rule.
+
+### 5. Recommended Operating Settings
+
+These are the values a replay of a real account against buy-and-hold favoured.
+They are a defensible operating point, not a tuned optimum — see the caveat.
+
+| Setting | Recommended | Why |
+| :--- | :--- | :--- |
+| `deviationTriggerPercent` | **10** | Tighter triggers buy too many small edges and pay a 0.70% round-trip toll to collect them. Wider triggers cut trade count and fees. |
+| Recent-high lookback | **20 days** (default) | Suppresses sells into trends; validated to help in both halves of the replay window. |
+| `minimumOrderSizeUSD` | ≥ 20 | Keeps per-trade fees negligible against the deviation being corrected. |
+
+The measured effect, replayed through this engine on ~9.7 months of real
+history, as trailing difference against buy-and-hold on identical capital:
+
+| Configuration | Difference vs buy-and-hold |
+| :--- | ---: |
+| 5% trigger, no tail-stop | −508 |
+| 5% trigger, 20-day tail-stop | −321 |
+| **10% trigger, 20-day tail-stop** | **−68** |
+
+> **Caveat.** These come from one 9.7-month window on one allocation. The best
+> cell was re-checked on both halves of that window and held (−247 first half,
+> −68 full), but neighbouring cells in the grid are 3–5× worse, so treat it as a
+> **range** (trigger 7–10%, lookback 15–30 days) rather than a precise optimum.
+> Re-run the replay harness against a fresh fixture before re-tuning; on this
+> evidence rebalancing **reduced variance but did not beat buy-and-hold**.
+
 ---
 
 ## Phase 3: Execution

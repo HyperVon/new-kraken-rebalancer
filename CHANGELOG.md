@@ -22,11 +22,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Score-derived allocation preview**: a `Calculate from scores` action in the settings form
   redistributes the scored sleeve proportionally to `score^emphasis` (emphasis 1-8) and fills the
   open form. It is preview-only — it never persists, and the operator can edit before saving.
-  Cash and gold keep fixed slots because they carry no score.
+  Cash and gold keep fixed slots because they carry no score. `docs/ALGORITHM.md` records the
+  recommended operating settings derived from a replay against buy-and-hold, including the caveat
+  that they are a range rather than a tuned optimum.
 - **Historical replay harness** (`backend/src/test/kotlin/com/gemini/krakenbot/replay`): replays a
   price path and capital-flow schedule through the production `RebalancerEngine` and compares the
   rebalanced book with buy-and-hold on identical capital. Fixtures are loaded from
-  `REPLAY_FIXTURE_PATH` and are never committed.
+  `REPLAY_FIXTURE_PATH` and are never committed. The harness also reports a lookback × trigger
+  surface and re-checks the best cell on both halves of the window, so a spike is not mistaken for
+  a setting.
 
 ### Fixed
 
