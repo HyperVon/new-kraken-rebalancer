@@ -19,7 +19,12 @@ import java.math.RoundingMode
 import java.time.Instant
 
 /** One page of a legacy Kraken funding-status response. */
-data class FundingStatusPage<T>(val records: List<T>, val nextCursor: String? = null, val rawCount: Int = records.size)
+data class FundingStatusPage<T>(
+    val records: List<T>,
+    val nextCursor: String? = null,
+    val rawCount: Int = records.size,
+    val containerWellFormed: Boolean = true,
+)
 
 /** One Funding (Beta) deposit or withdrawal record. */
 data class FundingV1Record(
@@ -351,7 +356,9 @@ object KrakenParsers {
 
     fun parseFundingMethodsPage(result: JsonNode): FundingStatusPage<FundingMethodRecord> {
         val resultNode = unwrapResult(result)
-        val entries = resultNode.path(KrakenApiConstants.FIELD_METHODS).takeIf { it.isArray }?.toList() ?: emptyList()
+        val methodsNode = resultNode.get(KrakenApiConstants.FIELD_METHODS)
+        val containerWellFormed = methodsNode?.isArray == true
+        val entries = methodsNode?.takeIf { it.isArray }?.toList().orEmpty()
         val records = entries.mapNotNull { node ->
             val methodId = optionalText(node, KrakenApiConstants.FIELD_METHOD_ID)
             val methodName = optionalText(node, KrakenApiConstants.FIELD_METHOD_NAME)
@@ -361,6 +368,7 @@ object KrakenParsers {
             records = records,
             nextCursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR),
             rawCount = entries.size,
+            containerWellFormed = containerWellFormed,
         )
     }
 

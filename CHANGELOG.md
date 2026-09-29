@@ -48,9 +48,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Unavailable comparisons could report the wrong benchmark provenance**: fixed-inception and
   inferred results now carry their selected method and its matching configuration evidence through
   fail-closed, cache-refresh, and API serialization paths.
-- **Incomplete funding-method pagination could vouch for an unchecked rail**: a repeated cursor now
-  marks the method registry incomplete and withholds raw method IDs, leaving unidentified funding
-  rows unresolved instead of counting them as external capital.
+- **Incomplete funding-method responses could vouch for an unchecked rail**: repeated cursors and
+  missing or malformed `methods` arrays now mark the registry incomplete and withhold raw method IDs,
+  leaving unidentified funding rows unresolved instead of counting them as external capital.
 - **The local replay oracle under-applied crypto-funded withdrawals**: each asset's withdrawal share
   now uses the original shortfall, preserving same-capital comparisons across multiple assets.
 - **Recent-high suppression used incomplete daily candles and could block withdrawal correction**:

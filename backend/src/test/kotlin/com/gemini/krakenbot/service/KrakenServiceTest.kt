@@ -1528,6 +1528,53 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "getDepositStatus_doesNotExposeMethodIdWhenRegistryContainerIsMissing" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to
+                        """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-MISSING-METHODS",
+                            "method_id": "method-unseen",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                            "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_DEPOSIT_STATUS to """{"error":[],"result":[]}""",
+                    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT to "{}",
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposit = service.getDepositStatus().single()
+
+                deposit.method shouldBe null
+                deposit.methodId shouldBe null
+            }
+        }
+
         "executeOrder_Success" {
             runTest {
                 val responseJson =

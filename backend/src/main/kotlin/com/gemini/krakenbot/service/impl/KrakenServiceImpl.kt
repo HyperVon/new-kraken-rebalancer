@@ -671,6 +671,10 @@ class KrakenServiceImpl(
                 val params = cursor?.let { mapOf(KrakenApiConstants.PARAM_CURSOR to it) }
                     ?: mapOf(KrakenApiConstants.PARAM_LIMIT to FUNDING_V1_PAGE_SIZE.toString())
                 val page = KrakenParsers.parseFundingMethodsPage(queryPrivateGet(path, params))
+                if (!page.containerWellFormed) {
+                    log.warn("Funding method list {} omitted its methods array; names may be incomplete.", path)
+                    complete = false
+                }
                 if (page.rawCount != page.records.size) {
                     log.warn("Funding method list {} returned unparseable entries; names may be incomplete.", path)
                     complete = false
