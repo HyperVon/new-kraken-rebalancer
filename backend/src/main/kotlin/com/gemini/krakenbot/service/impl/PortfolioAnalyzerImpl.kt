@@ -1714,6 +1714,7 @@ class PortfolioAnalyzerImpl(
         currentValuesUSD: AssetValues,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
+        trendingAssets: Set<String>,
     ): RebalancePlan {
         val config = configService.getConfig()
         return RebalancerEngine.analyzeDeviationsPlan(
@@ -1723,6 +1724,7 @@ class PortfolioAnalyzerImpl(
             cryptoScaleFactor = cryptoScaleFactor,
             allocations = config.allocations,
             settings = config.settings,
+            trendingAssets = trendingAssets,
         )
     }
 

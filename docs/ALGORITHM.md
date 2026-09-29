@@ -417,6 +417,9 @@ Dust therefore filters **order generation**, not only execution.
       assets only, proportional to their current USD deficit.
   - **Shortage (Withdrawal)**: Sells are distributed among **Overweight**
       assets only, proportional to their current USD surplus.
+  - Trend suppression does not veto a withdrawal correction. The correction
+      may sell an overweight asset at a recent high because restoring the
+      configured USD reserve takes precedence over postponing a routine trim.
   - Each share is rounded to USD scale (2 decimals) and drawn from a budget
       truncated to the same scale, so the shares can never sum above the fiat
       deviation being corrected. A share that rounds to `$0.00` is dropped
@@ -424,6 +427,55 @@ Dust therefore filters **order generation**, not only execution.
   - *Note: This concentrates the rebalancing power into the assets that
       are furthest from their targets, effectively clearing dust
       thresholds.*
+
+### 4. Trend-Aware Sell Suppression
+
+An overweight leg is **not** trimmed while the asset is trading at its highest
+completed daily close over the trailing lookback window (20 days). That regime —
+where an asset is repricing rather than oscillating — is where a mean-reversion
+trade historically loses to continuation. Suppressed legs are reported in the
+action log as `Skipping sell — at recent high for <SYM>` so a quiet cycle is
+explainable rather than silent.
+
+Only the **sell** leg is ever suppressed; buys, targets, deviation gates and
+dust rules are unchanged. When cash is short because a sell was suppressed, the
+executor clamps each buy to the smaller of the cycle budget and the cash
+actually settled, so an order degrades to a smaller or dust-skipped buy rather
+than failing. If price history is unavailable or the lookup fails, the cycle
+fails open and trades exactly as it would without this rule. Resolved recent
+highs are cached for an hour, scoped to the active trading mode, so a
+simulation cycle is never decided by live candles. A USD-withdrawal correction
+still sells eligible overweight assets at a recent high when needed to restore
+the configured reserve; trend suppression only postpones routine rebalance
+trims.
+
+### 5. Operating Settings Trade-offs
+
+Rebalance parameters balance fee drag against deviation harvesting:
+
+| Setting | Considerations |
+| :--- | :--- |
+| `deviationTriggerPercent` | Tighter triggers capture smaller mean-reverting deviations but trade more often, incurring exchange fee tolls (e.g. ~0.70% round-trip taker fees). Wider triggers reduce trade count and fee drag. |
+| `minimumOrderSizeUSD` | ≥ \$20. Prevents generating dust orders where fees would consume the corrected deviation. |
+
+> **Caveat.** Historical replays over real account history indicate that routine
+> rebalancing frequently trails buy-and-hold because cumulative fee drag can
+> exceed the harvested volatility edge. The trend-aware tail-stop acts as a
+> **variance reducer** by curbing premature sales of strongly appreciating assets,
+> rather than a guarantee of outperforming buy-and-hold. Empirical parameter sweeps
+> are evaluated across multiple independent walk-forward models before operational
+> calibration guidelines are established.
+
+### 6. Provisional Parameters
+
+Two parameters are **not** `Settings` fields and are compiled in
+(`PortfolioManagerImpl`); they are listed here rather than in §5 so the table above
+only claims operator-tunable settings.
+
+| Parameter | Value | Status |
+| :--- | :--- | :--- |
+| `RECENT_HIGH_LOOKBACK_DAYS` | 20 | **Provisional.** Chosen from a parameter sweep whose result an independent re-implementation contradicts at the same settings. The direction (a shorter lookback suppresses fewer sells) is consistent across both implementations; the specific value is not reconciled. Treat it as an uncalibrated default, not a tuned result. |
+| `RECENT_HIGH_CACHE_TTL_SECONDS` | 3600 | Not calibrated. Kraken's daily candle completes once a day, so any TTL between one and twenty-four hours sees the same data. |
 
 ---
 

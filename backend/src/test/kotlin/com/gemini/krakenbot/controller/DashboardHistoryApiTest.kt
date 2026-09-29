@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -15,6 +16,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flow
@@ -295,7 +297,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 unavailableReason = null,
                 unavailableAt = null,
             )
-            coEvery { tradeHistoryService.getRebalancerComparison(any(), any()) } returns comparison
+            coEvery { tradeHistoryService.getRebalancerComparison(any(), any(), any()) } returns comparison
             testApplication {
                 application {
                     configureTestEnv()
@@ -322,7 +324,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
             )
-            coEvery { tradeHistoryService.getRebalancerComparison(any(), any()) } returns comparison
+            coEvery { tradeHistoryService.getRebalancerComparison(any(), any(), any()) } returns comparison
             testApplication {
                 application {
                     configureTestEnv()
@@ -333,6 +335,49 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 body shouldContain "\"availability\":\"UNAVAILABLE\""
                 body shouldContain "\"unavailableReason\":\"INSUFFICIENT_SNAPSHOTS\""
                 body shouldContain "\"unavailableAt\":\"2026-07-01T12:00:00Z\""
+            }
+            coVerify(exactly = 1) {
+                tradeHistoryService.getRebalancerComparison(
+                    any(),
+                    any(),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+            }
+        }
+
+        "getApiHistoryComparison_UnavailableFixedBenchmarkPreservesProvenance" {
+            val comparison = DomainComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = null,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
+                benchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            coEvery {
+                tradeHistoryService.getRebalancerComparison(any(), any(), BenchmarkMethod.FIXED_INCEPTION_HOLD)
+            } returns comparison
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(
+                    "/api/history/comparison?range=${TimeRange.THIRTY_DAYS.key}" +
+                        "&benchmark=${BenchmarkMethod.FIXED_INCEPTION_HOLD.name}",
+                )
+                response.status shouldBe HttpStatusCode.OK
+                val body = response.bodyAsText()
+                body shouldContain "\"availability\":\"UNAVAILABLE\""
+                body shouldContain "\"benchmarkMethod\":\"FIXED_INCEPTION_HOLD\""
+                body shouldContain "\"configurationEvidence\":\"NOT_APPLICABLE\""
+            }
+
+            coVerify(exactly = 1) {
+                tradeHistoryService.getRebalancerComparison(any(), any(), BenchmarkMethod.FIXED_INCEPTION_HOLD)
             }
         }
 

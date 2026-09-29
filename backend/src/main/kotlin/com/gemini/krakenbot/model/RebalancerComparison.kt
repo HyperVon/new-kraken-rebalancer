@@ -29,6 +29,23 @@ data class RebalancerComparison(
     val proposedBaselineTimestamp: Instant? = null,
     /** Durable state of the bounded later-start search, or null when no search was requested. */
     val proposalSearchStatus: ComparisonProposalStatus? = null,
+    /**
+     * Which synthetic benchmark produced [points].
+     *
+     * Defaults to the primary method, which is what the endpoint defaults to, so a comparison that
+     * reports no benchmark — an unavailable one, in particular — never claims the forensic
+     * reference. This value reaches the API as a wire name, so it is the default that actually
+     * ships; the `:common` DTO default only covers a malformed response.
+     */
+    val benchmarkMethod: BenchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+    /**
+     * How the allocation history behind [benchmarkMethod] was established. Kept separate from
+     * [confidence] so a reconciled comparison is never read as proven configuration history.
+     *
+     * Defaults to the evidence associated with [benchmarkMethod], so unavailable results retain the
+     * same provenance as available results.
+     */
+    val configurationEvidence: ConfigurationEvidence = benchmarkMethod.configurationEvidence,
 ) {
     init {
         when (availability) {

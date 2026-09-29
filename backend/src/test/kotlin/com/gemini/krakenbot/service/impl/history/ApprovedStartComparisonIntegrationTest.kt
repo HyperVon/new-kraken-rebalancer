@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -243,7 +244,11 @@ class ApprovedStartComparisonIntegrationTest :
 
                 val discovery = newDiscoveryService(recovery)
                 val comparison =
-                    newQueryService(discovery).getRebalancerComparison(strategyStart, comparisonEnd)
+                    newQueryService(discovery).getRebalancerComparison(
+                        strategyStart,
+                        comparisonEnd,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe strategyStart
@@ -300,7 +305,11 @@ class ApprovedStartComparisonIntegrationTest :
                 val discovery = newDiscoveryService(recovery)
                 val query = newQueryService(discovery)
 
-                val blocked = query.getRebalancerComparison(strategyStart, comparisonEnd)
+                val blocked = query.getRebalancerComparison(
+                    strategyStart,
+                    comparisonEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 blocked.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 blocked.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -317,7 +326,11 @@ class ApprovedStartComparisonIntegrationTest :
                 acceptedDiscovery.resolveInception().inceptionTime shouldBe verifiedStart
                 recovery.getStatus().status shouldBe InceptionRecoveryStatus.CONFIRMED
                 val accepted = newQueryService(acceptedDiscovery)
-                    .getRebalancerComparison(strategyStart, comparisonEnd)
+                    .getRebalancerComparison(
+                        strategyStart,
+                        comparisonEnd,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
 
                 accepted.availability shouldBe ComparisonAvailability.AVAILABLE
                 accepted.baselineTimestamp shouldBe verifiedStart
@@ -346,7 +359,11 @@ class ApprovedStartComparisonIntegrationTest :
                 val query = newQueryService(newDiscoveryService(recovery))
 
                 // T0: Initial evaluation detects historical coverage gap
-                val blocked = query.getRebalancerComparison(strategyStart, comparisonEnd)
+                val blocked = query.getRebalancerComparison(
+                    strategyStart,
+                    comparisonEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 blocked.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 blocked.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
@@ -357,7 +374,11 @@ class ApprovedStartComparisonIntegrationTest :
 
                 // T0 + 45 days: Wall-clock advance without database changes must preserve HISTORICAL_COVERAGE_GAP
                 now = now.plusSeconds(45 * 86_400L)
-                val blockedAfterTimeAdvance = query.getRebalancerComparison(strategyStart, comparisonEnd)
+                val blockedAfterTimeAdvance = query.getRebalancerComparison(
+                    strategyStart,
+                    comparisonEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 blockedAfterTimeAdvance.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 blockedAfterTimeAdvance.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
                 blockedAfterTimeAdvance.proposedBaselineTimestamp.shouldBeNull()
@@ -367,7 +388,11 @@ class ApprovedStartComparisonIntegrationTest :
 
                 // Restart / reconstruction of query service preserves the gap
                 val reconstructedQuery = newQueryService(newDiscoveryService(recovery))
-                val blockedAfterRestart = reconstructedQuery.getRebalancerComparison(strategyStart, comparisonEnd)
+                val blockedAfterRestart = reconstructedQuery.getRebalancerComparison(
+                    strategyStart,
+                    comparisonEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 blockedAfterRestart.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 blockedAfterRestart.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
                 blockedAfterRestart.proposedBaselineTimestamp.shouldBeNull()
@@ -381,7 +406,11 @@ class ApprovedStartComparisonIntegrationTest :
                     settings = config.settings.copy(comparisonStartDate = laterStart.toString()),
                 )
                 val laterComparison = newQueryService(newDiscoveryService(recovery))
-                    .getRebalancerComparison(strategyStart, comparisonEnd)
+                    .getRebalancerComparison(
+                        strategyStart,
+                        comparisonEnd,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
                 laterComparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 laterComparison.baselineTimestamp shouldBe laterStart
             }
@@ -410,7 +439,11 @@ class ApprovedStartComparisonIntegrationTest :
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
                 val query = newQueryService(newDiscoveryService(recovery))
-                val comparison = query.getRebalancerComparison(freshStart, now)
+                val comparison = query.getRebalancerComparison(
+                    freshStart,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe freshStart
@@ -440,7 +473,11 @@ class ApprovedStartComparisonIntegrationTest :
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
                 val query = newQueryService(newDiscoveryService(recovery))
-                val comparison = query.getRebalancerComparison(strategyStart, evaluationEnd)
+                val comparison = query.getRebalancerComparison(
+                    strategyStart,
+                    evaluationEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
@@ -467,7 +504,11 @@ class ApprovedStartComparisonIntegrationTest :
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
                 val query = newQueryService(newDiscoveryService(recovery))
-                val comparison = query.getRebalancerComparison(strategyStart, now)
+                val comparison = query.getRebalancerComparison(
+                    strategyStart,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -492,7 +533,11 @@ class ApprovedStartComparisonIntegrationTest :
 
                 val discovery = newDiscoveryService(recovery)
                 val comparison =
-                    newQueryService(discovery).getRebalancerComparison(strategyStart, comparisonEnd)
+                    newQueryService(discovery).getRebalancerComparison(
+                        strategyStart,
+                        comparisonEnd,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 // The materiality rule discovers the Jan-4 snapshot ($6 of BTC) as an

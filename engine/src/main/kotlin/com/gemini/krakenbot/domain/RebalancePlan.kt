@@ -10,6 +10,12 @@ sealed interface RebalanceEvent {
     data class FiatCorrectionDistributed(val usdAmount: BigDecimal, val candidateCount: Int) : RebalanceEvent
 
     data object NoCounterBalancingAssets : RebalanceEvent
+
+    /**
+     * An overweight leg was intentionally not sold because the asset sits at a recent high,
+     * the regime where mean-reversion trades historically lose to trend continuation.
+     */
+    data class TrendSuppressedSell(val symbol: String) : RebalanceEvent
 }
 
 data class RebalancePlan(

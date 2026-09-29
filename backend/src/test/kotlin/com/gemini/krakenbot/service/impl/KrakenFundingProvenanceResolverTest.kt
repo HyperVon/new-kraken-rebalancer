@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
@@ -693,6 +694,7 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                         if (symbol == Asset.USD) BigDecimal.ONE else BigDecimal("50000.00")
                     },
                     provenanceResolver = prepared,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE

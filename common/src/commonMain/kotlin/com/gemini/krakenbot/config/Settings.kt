@@ -27,4 +27,15 @@ data class Settings(
      * Drawdown threshold percent deadband (0.0 to 100.0). No fiat is deployed until drawdown exceeds this value.
      */
     val fiatDeploymentThresholdPercent: Double = 0.0,
-)
+    /**
+     * Fundamental quality scores per allocation symbol, refreshed outside the bot. Persisted
+     * scores are positive and at most [MAX_QUALITY_SCORE]; the settings form treats zero or a blank
+     * value as clearing that symbol's score. Assets with no entry (cash, gold) are excluded from
+     * the weighted-quality metric rather than scored as zero.
+     */
+    val qualityScores: Map<String, Double> = emptyMap(),
+) {
+    companion object {
+        const val MAX_QUALITY_SCORE = 10.0
+    }
+}

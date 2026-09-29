@@ -102,6 +102,54 @@ class MainTest : StringSpec() {
             }
         }
 
+        "a settings rejection is swapped, but an empty body or a real server fault is not" {
+            // htmx drops every non-2xx body by default, so a rendered settings form returned with
+            // 422 would never reach the operator. This is the decision the beforeSwap listener
+            // applies to each settings response; the listener's wiring is verified in the browser.
+            shouldSwapRejection(422, "<div class=\"error-banner\">nope</div>") shouldBe true
+
+            // Nothing worth rendering, so htmx's default handling stands.
+            shouldSwapRejection(422, "") shouldBe false
+            shouldSwapRejection(422, null) shouldBe false
+
+            // A genuine server fault is not a form rejection; swapping it would surface raw
+            // server output on the page.
+            shouldSwapRejection(500, "<div>boom</div>") shouldBe false
+            shouldSwapRejection(404, "<div>missing</div>") shouldBe false
+            shouldSwapRejection(null, null) shouldBe false
+        }
+
+        "a new submission clears the previous rejection banner" {
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <form>
+                  <div class="error-banner">a previous rejection</div>
+                  <input name="targets" value="50.0">
+                </form>
+                <div class="error-banner">a dashboard error, not a form one</div>
+            """.trimIndent()
+            document.body!!.appendChild(container)
+
+            try {
+                main()
+                document.querySelectorAll(".error-banner").length shouldBe 2
+
+                val event = document.createEvent("Event")
+                event.initEvent(type = "htmx:beforeRequest", bubbles = true, cancelable = true)
+                document.dispatchEvent(event)
+
+                // The stale attempt message goes, so a successful swap cannot leave it above
+                // freshly rendered content; the dashboard's own region is untouched.
+                (document.querySelector("form .error-banner") == null) shouldBe true
+                document.querySelectorAll(".error-banner").length shouldBe 1
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                document.body!!.removeChild(container)
+            }
+        }
+
         "main registers DOMContentLoaded when body is null" {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }

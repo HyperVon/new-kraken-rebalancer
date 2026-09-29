@@ -1,5 +1,6 @@
 import org.gradle.api.tasks.JavaExec
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -112,13 +113,53 @@ val isFilteredTestRun =
 
 tasks.withType<Test> {
     useJUnitPlatform()
+
+    // Acceptance and forensic replays read a production-derived database supplied through the
+    // environment. Gradle does not track environment variables as task inputs, so without an
+    // explicit declaration a cached result produced against one database is served as if it were a
+    // fresh replay of another. Both the path and a content fingerprint are declared, so a different
+    // database can never share a cached acceptance result.
+    //
+    // The fingerprint is computed eagerly into a plain String rather than through a Provider: a
+    // lazily-evaluated closure would capture the script object, which the configuration cache
+    // refuses to serialize. The cost is one digest of the database per configuration, and only when
+    // the variable is actually set.
+    val acceptanceDbPath = providers.environmentVariable("ACCEPTANCE_DB_PATH").orElse("").get()
+    val acceptanceDbFingerprint = if (acceptanceDbPath.isBlank()) {
+        "unset"
+    } else {
+        val database = file(acceptanceDbPath)
+        if (!database.isFile) {
+            "missing:$acceptanceDbPath"
+        } else {
+            val digest = MessageDigest.getInstance("SHA-256")
+            database.inputStream().buffered().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
+    }
+    inputs.property("acceptanceDbPath", acceptanceDbPath)
+    inputs.property("acceptanceDbFingerprint", acceptanceDbFingerprint)
+
     if (!isFilteredTestRun) {
         finalizedBy(tasks.jacocoTestReport)
         finalizedBy(tasks.jacocoTestCoverageVerification)
     }
+    // Suite cost is concentrated, not spread evenly: the slowest specs dominate, so throughput
+    // saturates well below core count. Measured on a 12-core host (3,212 tests, 130 specs):
+    // 1 fork 162s, 2 forks 100s, 4 forks 79s, 6 forks 81s, 8 forks 73s, 12 forks 83s — past the
+    // knee, extra forks only duplicate per-fork JVM/Kotest startup and oversubscribe the CPU.
+    // A third of the cores lands on that knee and scales down on smaller hosts instead of pinning
+    // a magic ceiling. -PtestForks overrides this for constrained or oversized CI runners.
     maxParallelForks =
         providers.gradleProperty("testForks").orNull?.toIntOrNull()?.coerceAtLeast(1)
-            ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 2)
+            ?: (Runtime.getRuntime().availableProcessors() / 3).coerceAtLeast(1)
     maxHeapSize = providers.gradleProperty("testMaxHeap").orElse("2g").get()
     jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED")
     systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")

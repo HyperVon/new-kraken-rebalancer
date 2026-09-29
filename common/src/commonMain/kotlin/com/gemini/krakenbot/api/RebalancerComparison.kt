@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.api
 
+import com.gemini.krakenbot.model.BenchmarkMethod
+
 data class RebalancerComparison(
     val availability: String,
     val confidence: String?,
@@ -11,6 +13,24 @@ data class RebalancerComparison(
     val unavailableAt: String?,
     val proposedBaselineTimestamp: String? = null,
     val proposalSearchStatus: String? = null,
+    /**
+     * Which synthetic benchmark produced [points]. `FIXED_INCEPTION_HOLD` freezes the approved
+     * inception portfolio forever; `INFERRED_CONFIGURATION_MATCHED_HOLD` follows the strategy's own
+     * inferred major allocation changes and is the primary comparison.
+     *
+     * Defaults to the primary method — the same one the endpoint defaults to — so a response
+     * missing the field cannot be read as the forensic reference.
+     */
+    val benchmarkMethod: String = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD.name,
+    /**
+     * Provenance of the allocation history behind [benchmarkMethod]. `INFERRED` means allocation
+     * changes were inferred from persistent behavior, not retained as proven configuration history.
+     * Kept separate from [confidence] so a reconciled comparison is never read as proven history.
+     *
+     * Defaults to the evidence required by [benchmarkMethod], so a fixed-inception response does
+     * not claim inferred configuration history and an inferred response does not claim proven history.
+     */
+    val configurationEvidence: String = BenchmarkMethod.fromNameOrPrimary(benchmarkMethod).configurationEvidence.name,
 )
 
 data class RebalancerComparisonPoint(

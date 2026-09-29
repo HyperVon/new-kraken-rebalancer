@@ -251,7 +251,9 @@ class ConfigServiceImpl internal constructor(
     /** Canonicalizes and validates settings/allocations, then backfills missing or invalid colors. */
     private fun validateAndNormalize(config: AppConfig): AppConfig {
         try {
+            val canonicalQualityScores = normalizeQualityScoreKeys(config.settings.qualityScores)
             val canonicalConfig = config.copy(
+                settings = config.settings.copy(qualityScores = canonicalQualityScores),
                 allocations = config.allocations.map { allocation ->
                     allocation.copy(symbol = Asset(Asset.canonicalSymbol(allocation.symbol.value)))
                 },
@@ -263,6 +265,26 @@ class ConfigServiceImpl internal constructor(
         } catch (e: IllegalArgumentException) {
             throw InvalidConfigurationException(e.message)
         }
+    }
+
+    private fun normalizeQualityScoreKeys(qualityScores: Map<String, Double>): Map<String, Double> {
+        val normalizedEntries = qualityScores.map { (symbol, score) ->
+            val canonicalSymbol = Asset.canonicalSymbol(symbol)
+            require(Asset.isValidAllocationSymbol(canonicalSymbol)) {
+                "Invalid quality score symbol '$symbol'. Symbols must be uppercase alphanumeric and up to 16 characters long."
+            }
+            canonicalSymbol to score
+        }
+        val duplicateSymbols = normalizedEntries
+            .groupingBy { it.first }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+        require(duplicateSymbols.isEmpty()) {
+            "Duplicate quality score symbols after canonicalization are not allowed: " +
+                duplicateSymbols.joinToString(", ")
+        }
+        return normalizedEntries.toMap()
     }
 
     private fun writeConfigAtomically(config: AppConfig) {
@@ -336,6 +358,19 @@ class ConfigServiceImpl internal constructor(
                 ) to
                 "Inception date must be valid ISO-8601 or YYYY-MM-DD format.",
         )
+
+        // Scores are optional per symbol, but a persisted one is rendered through
+        // BigDecimal.valueOf, which rejects a non-finite Double at render time. Reject it here
+        // so a hand-edited config fails at load with a usable message instead of bricking the
+        // dashboard fragment on every poll.
+        settings.qualityScores.forEach { (symbol, score) ->
+            requireValidations(
+                score.isFinite() to "Quality score for $symbol must be finite.",
+                (score > 0.0) to "Quality score for $symbol must be positive.",
+                (score <= Settings.MAX_QUALITY_SCORE) to
+                    "Quality score for $symbol must not exceed ${Settings.MAX_QUALITY_SCORE}.",
+            )
+        }
     }
 
     private fun validateAllocations(config: AppConfig) {
@@ -344,7 +379,7 @@ class ConfigServiceImpl internal constructor(
         config.allocations.forEach { allocation ->
             requireValidations(
                 allocation.symbol.value.isNotBlank() to "Allocation symbols cannot be blank.",
-                (SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) to
+                Asset.isValidAllocationSymbol(allocation.symbol.value) to
                     (
                         "Invalid allocation symbol '${allocation.symbol.value}'. " +
                             "Symbols must be uppercase alphanumeric and up to 16 characters long."
@@ -400,6 +435,5 @@ class ConfigServiceImpl internal constructor(
         private const val MAX_DEPLOYMENT_EXPONENT = 100.0
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
-        private val SYMBOL_PATTERN = Asset.SYMBOL_PATTERN_STRING.toRegex()
     }
 }

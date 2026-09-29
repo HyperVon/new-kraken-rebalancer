@@ -63,6 +63,8 @@ data class DepositStatusRecord(
     val status: String,
     val method: String? = null,
     val hasAuthoritativeFee: Boolean = fee.signum() != 0,
+    /** Stable funding-rail id; the only proof the modern Funding API exposes for fiat rails. */
+    val methodId: String? = null,
 )
 
 /**
@@ -80,6 +82,8 @@ data class WithdrawStatusRecord(
     val status: String,
     val method: String? = null,
     val hasAuthoritativeFee: Boolean = fee.signum() != 0,
+    /** Stable funding-rail id; the only proof the modern Funding API exposes for fiat rails. */
+    val methodId: String? = null,
 )
 
 /**
@@ -543,19 +547,25 @@ class SimpleFundingProvenanceResolver(
     private data class Candidate(val evidence: FundingEvidence)
 
     private fun isConfirmedExternalDeposit(record: DepositStatusRecord): Boolean =
-        isStatusConfirmed(record.status) && hasExternalProof(record.txid, record.method)
+        isStatusConfirmed(record.status) && hasExternalProof(record.txid, record.method, record.methodId)
 
     private fun isConfirmedExternalWithdrawal(record: WithdrawStatusRecord): Boolean =
-        isStatusConfirmed(record.status) && hasExternalProof(record.txid, record.method)
+        isStatusConfirmed(record.status) && hasExternalProof(record.txid, record.method, record.methodId)
 
     private fun isStatusConfirmed(status: String): Boolean =
         status.equals("Success", ignoreCase = true) || status.equals("Settled", ignoreCase = true)
 
-    private fun hasExternalProof(txid: String?, method: String?): Boolean =
+    private fun hasExternalProof(txid: String?, method: String?, methodId: String?): Boolean =
         // A known wallet/Futures marker is evidence against external capital.
-        // An unmarked status record is the strongest external evidence exposed
-        // by this port; rows absent from that source remain unresolved.
-        !method.isInternalFundingMethod() && (!txid.isNullOrBlank() || !method.isNullOrBlank())
+        // Otherwise any of the three proofs the funding surface exposes is sufficient:
+        // an on-chain transaction id, a named funding method, or — for fiat rails, which have
+        // no transaction hash and whose method may no longer resolve to a name — the stable
+        // funding-rail id on a terminal-status record that already matched this ledger row.
+        // The id is only surfaced by the backend once the funding-method registry has answered
+        // and cleared the rail, so reaching this branch with a non-blank id means the rail was
+        // actually checked; see KrakenServiceImpl.FundingRailResolver.
+        !method.isInternalFundingMethod() &&
+            (!txid.isNullOrBlank() || !method.isNullOrBlank() || !methodId.isNullOrBlank())
 
     private fun String?.isInternalFundingMethod(): Boolean {
         val normalized = this?.lowercase() ?: return false

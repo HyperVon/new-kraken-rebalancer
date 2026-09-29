@@ -8,8 +8,10 @@ import com.gemini.krakenbot.api.RewardsOverTime
 import com.gemini.krakenbot.api.RewardsOverTimePoint
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.api.TradeRecord
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.ConfigurationEvidence
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import kotlin.js.Date
 import kotlin.js.JsName
@@ -180,6 +182,7 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
         }
     val pointsRaw = raw.points
     val points = parseArray(pointsRaw, ::parseRebalancerComparisonPoint)
+    val benchmark = BenchmarkMethod.fromNameOrPrimary(dynamicString(raw.benchmarkMethod))
     return RebalancerComparison(
         availability = availability,
         confidence = dynamicString(raw.confidence),
@@ -191,6 +194,16 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
         unavailableAt = dynamicString(raw.unavailableAt),
         proposedBaselineTimestamp = dynamicString(raw.proposedBaselineTimestamp),
         proposalSearchStatus = dynamicString(raw.proposalSearchStatus),
+        benchmarkMethod = benchmark.name,
+        // Derived from the benchmark when absent, matching the server's own encoding: the fixed
+        // inception reference uses no configuration history, the primary one is inferred. An
+        // unconditional fallback would understate the uncertainty of a stripped primary response.
+        configurationEvidence = dynamicString(raw.configurationEvidence)
+            ?: if (benchmark == BenchmarkMethod.FIXED_INCEPTION_HOLD) {
+                ConfigurationEvidence.NOT_APPLICABLE.name
+            } else {
+                ConfigurationEvidence.INFERRED.name
+            },
     )
 }
 

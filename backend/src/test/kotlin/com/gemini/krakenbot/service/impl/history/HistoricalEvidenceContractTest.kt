@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.KrakenApiConstants
@@ -174,7 +175,11 @@ class HistoricalEvidenceContractTest : StringSpec() {
             )
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
-            val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                fixedNow.plusSeconds(86400),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
         }
         "comparison fails closed on unsupported raw trade market" {
@@ -239,7 +244,11 @@ class HistoricalEvidenceContractTest : StringSpec() {
                 "test-scope"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
                 "test-scope"
-            val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                fixedNow.plusSeconds(86400),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
         }
@@ -448,7 +457,11 @@ class HistoricalEvidenceContractTest : StringSpec() {
                 fixedNow.plusSeconds(86400).epochSecond.toString()
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 fixedNow.epochSecond.toString()
-            val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                fixedNow.plusSeconds(86400),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
         }
     }

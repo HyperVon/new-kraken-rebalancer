@@ -199,10 +199,12 @@ object RebalancerEngine {
         cryptoScaleFactor: BigDecimal,
         allocations: List<Allocation>,
         settings: Settings,
+        trendingAssets: Set<String> = emptySet(),
     ): RebalancePlan {
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
         val events = mutableListOf<RebalanceEvent>()
+        val trendSuppressedSells = sortedSetOf<String>()
         var usdTriggered = false
         var usdDeviationAmount = BigDecimal.ZERO
         val allDeviations = mutableMapOf<String, BigDecimal>()
@@ -248,7 +250,11 @@ object RebalancerEngine {
                 if (isTriggered) {
                     // Overweight (positive DevUSD) → sell excess; underweight → buy deficit.
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
-                        sellOrders[symbolVal] = metrics.deviationUSD
+                        if (symbolVal in trendingAssets) {
+                            trendSuppressedSells.add(symbolVal)
+                        } else {
+                            sellOrders[symbolVal] = metrics.deviationUSD
+                        }
                     } else {
                         buyOrders[symbolVal] = metrics.deviationUSD.abs()
                     }
@@ -258,7 +264,8 @@ object RebalancerEngine {
 
         // Fiat correction only when USD alone triggered (deposit/withdrawal); skip if crypto
         // already produced orders so we do not double-spend the same cash move.
-        if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
+        val fiatCorrectionWillRun = buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered
+        if (fiatCorrectionWillRun) {
             events.add(RebalanceEvent.FiatCorrectionEnforced)
             distributeFiatCorrectionPlan(
                 usdDev = usdDeviationAmount,
@@ -267,6 +274,13 @@ object RebalancerEngine {
                 sellOrders = sellOrders,
                 events = events,
             )
+        }
+
+        // A withdrawal correction restores the configured USD reserve, so a trend cannot veto its
+        // necessary overweight sells. Do not log those same sells as suppressed after correcting them.
+        val correctingWithdrawal = fiatCorrectionWillRun && usdDeviationAmount.signum() < 0
+        if (!correctingWithdrawal) {
+            trendSuppressedSells.forEach { events.add(RebalanceEvent.TrendSuppressedSell(it)) }
         }
 
         return RebalancePlan(buyOrders, sellOrders, events)

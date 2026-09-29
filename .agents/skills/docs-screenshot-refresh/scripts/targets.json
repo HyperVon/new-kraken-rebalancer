@@ -64,13 +64,19 @@
       "position": "top"
     },
     {
+      "file": "settings-allocations.png",
+      "path": "/settings",
+      "await_text": ["Target Allocations", "Quality score", "Target", "Calculate from scores"],
+      "anchor": "Target Allocations"
+    },
+    {
       "file": "history.png",
       "path": "/history",
       "click_button": "30d",
       "await_text": [
         "Total Trades",
-        "Rebalancer vs Buy & Hold",
-        "Staking Rewards"
+        "Rebalancer vs Hold Benchmark",
+        "Staking, Promotion & Earn Rewards"
       ],
       "await_charts": 6,
       "position": "top"

@@ -48,3 +48,11 @@ __pycache__/
 /codegen/bin/
 
 .agents/skills/comprehensive-quality-overhaul/results/
+
+# Local replay fixtures: real account prices and funding history, never committed.
+.replay-data/
+
+# Working papers from an investigation, kept locally and never shipped: they carry real account
+# balances, asset keys, and intermediate conclusions that later contradict each other.
+# Ship the finding, not the working notes.
+/docs/reports/

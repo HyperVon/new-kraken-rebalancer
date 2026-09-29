@@ -89,7 +89,13 @@ class FakeKrakenService :
         }
     }
 
-    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = assetMetadataSupplier()
+    var getAssetMetadataCallCount = 0
+        private set
+
+    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> {
+        getAssetMetadataCallCount++
+        return assetMetadataSupplier()
+    }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         getTradeHistoryCallCount++

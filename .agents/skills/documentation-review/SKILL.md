@@ -110,9 +110,9 @@ decision before Step 1. Use [parallel-multi-agent](../parallel-multi-agent/SKILL
 | Build / configuration | `build.gradle.kts`, CI, templates, scripts, dependency/tooling claims |
 
 Before launching, select a host-supported route and effort when exposed for each
-track. Kilo sessions inherit `kilo/kilo-auto/efficient` from `.kilo/kilo.json`;
-select `kilo/kilo-auto/frontier` for high-risk or disputed documentation claims.
-Kilo Auto chooses its underlying model server-side, so do not claim a specific
+track. Kilo sessions inherit `kilo/openai/gpt-6-luna` from `.kilo/kilo.json`;
+select a stronger host route for high-risk or disputed documentation claims.
+Kilo chooses its underlying model server-side, so do not claim a specific
 underlying model or recreate its catalog and fallback logic in repository
 scripts. If a host Task accepts only a role and cannot expose a usable route,
 keep the audit parent-owned; never use an unverified role-only worker.

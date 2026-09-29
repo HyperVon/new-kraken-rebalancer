@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.util.PrecisionConstants
 
 /**
@@ -27,8 +28,12 @@ object AllocationEditor {
      * relying on callers to sanitize first. Current callers already restrict their inputs
      * (uppercase-alphanumeric symbols, normalized 6-digit hex colors, numeric targets), so the
      * escaping is a no-op for them but keeps the template safe against future less-trusted callers.
+     *
+     * The two numeric fields are labelled rather than left to their placeholders: "score" and
+     * "target" sat side by side in identical boxes, so a placeholder that also gets truncated at
+     * narrow widths left nothing to tell them apart.
      */
-    fun editRow(symbol: String, color: String, targetPercent: String): String =
+    fun editRow(symbol: String, color: String, targetPercent: String, score: String = ""): String =
         """
         <div class="${CssClass.Form.AllocationEditRow}">
             <div class="${CssClass.Form.AllocationEditSymbol}">${escapeHtml(symbol)}</div>
@@ -36,12 +41,19 @@ object AllocationEditor {
             <input type="hidden" name="${FormFields.COLORS}" class="${CssClass.Form.AllocationColorInput}" value="${escapeHtml(
             color,
         )}">
-            <label>
+            <label class="${CssClass.Form.AllocationFieldLabel}">
                 <input type="color" class="${CssClass.Form.AllocationColorSwatch}" value="${escapeHtml(
             color,
         )}" oninput="$syncColorJs">
             </label>
             <div class="${CssClass.Form.AllocationEditInputWrapper}">
+                <span class="${CssClass.Form.AllocationFieldLabel}">${ViewText.ALLOCATION_SCORE_FIELD}</span>
+                <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.SCORES}"
+                  step="0.5" min="0" max="${Settings.MAX_QUALITY_SCORE.toInt()}" value="${escapeHtml(score)}"
+                  placeholder="${ViewText.ALLOCATION_SCORE_PLACEHOLDER}">
+            </div>
+            <div class="${CssClass.Form.AllocationEditInputWrapper}">
+                <span class="${CssClass.Form.AllocationFieldLabel}">${ViewText.ALLOCATION_TARGET_FIELD}</span>
                 <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.TARGETS}"
                   step="${PrecisionConstants.ALLOCATION_STEP_PERCENT}"
                   min="${PrecisionConstants.ALLOCATION_MIN_PERCENT}"

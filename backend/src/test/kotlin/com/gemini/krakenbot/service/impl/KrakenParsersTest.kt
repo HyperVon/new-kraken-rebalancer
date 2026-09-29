@@ -1019,6 +1019,14 @@ class KrakenParsersTest : StringSpec() {
             absent.records shouldBe emptyList()
             absent.nextCursor shouldBe null
             absent.rawCount shouldBe 0
+            absent.containerWellFormed shouldBe false
+
+            val malformedContainer = KrakenParsers.parseFundingMethodsPage(
+                objectMapper.readTree("""{"methods": {"method_id": "m-1"}}"""),
+            )
+
+            malformedContainer.records shouldBe emptyList()
+            malformedContainer.containerWellFormed shouldBe false
 
             val incomplete = KrakenParsers.parseFundingMethodsPage(
                 objectMapper.readTree("""{"methods": [{"method_id": "m-1"}, {"method_name": "Wire"}]}"""),
@@ -1026,6 +1034,7 @@ class KrakenParsersTest : StringSpec() {
 
             incomplete.records shouldBe emptyList()
             incomplete.rawCount shouldBe 2
+            incomplete.containerWellFormed shouldBe true
         }
 
         "parses withdrawal status pages from the withdrawal container" {

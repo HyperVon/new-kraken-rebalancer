@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -133,6 +134,11 @@ class TradeHistoryQueryService(
 ) {
     private val proposalSearchMutex = Mutex()
 
+    /** Single-flight owner of the Kraken asset-class snapshot; see [loadComparisonAssetMetadata]. */
+    private val assetMetadataCacheMutex = Mutex()
+
+    private val assetMetadataCache = AtomicReference<AssetMetadataSnapshot?>(null)
+
     private val log = LoggerFactory.getLogger(TradeHistoryQueryService::class.java)
 
     private val proposalContinuationActive = AtomicBoolean(false)
@@ -159,6 +165,9 @@ class TradeHistoryQueryService(
         val revision: String,
         val digest: String,
     )
+
+    /** Memoized Kraken asset-class snapshot; its content changes on Kraken's listing schedule. */
+    private data class AssetMetadataSnapshot(val expiresAtEpochMillis: Long, val metadata: List<KrakenAssetMetadata>)
 
     private val comparisonInFlight =
         ConcurrentHashMap<String, CompletableDeferred<RebalancerComparison>>()
@@ -341,8 +350,14 @@ class TradeHistoryQueryService(
          */
         internal const val MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST = 8
 
-        /** Bump when the serialized comparison payload or its cache invalidation contract changes. */
-        private const val COMPARISON_CACHE_VERSION = "5"
+        /**
+         * Bump when the serialized comparison payload or its cache invalidation contract changes.
+         *
+         * Version 6 also separates benchmark identity: the inferred configuration-matched benchmark
+         * must never be served from, or stored in, a cache row produced by the fixed-inception
+         * benchmark, because the two answer different questions from the same Actual portfolio.
+         */
+        private const val COMPARISON_CACHE_VERSION = "6"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
@@ -400,20 +415,58 @@ class TradeHistoryQueryService(
          */
         private const val MAX_COVERAGE_GAP_SECONDS = 86_400L
         private val OPEN_ENDED_RANGE_END = Instant.ofEpochMilli(Long.MAX_VALUE)
+
+        /**
+         * Kraken's asset class is a listing attribute, not a market observable, so the snapshot
+         * only needs to be fresh enough to notice a newly listed or reclassified asset. The fetch
+         * costs two public requests against a 1 s floor, which every comparison request would
+         * otherwise pay even on a full cache hit.
+         */
+        private const val ASSET_METADATA_TTL_MILLIS = 3_600_000L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
 
-    suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
-        historyEvidenceCoordinator.withLock {
-            val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
-            getRebalancerComparisonLocked(from, to, inceptionResolution)
-        }
+    suspend fun getRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison = historyEvidenceCoordinator.withLock {
+        val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+        getRebalancerComparisonLocked(benchmarkMethod, from, to, inceptionResolution, forensicRegimes = null)
+    }
+
+    /**
+     * Forensic-only comparison used to price an alternative interpretation of unavailable
+     * configuration history against the shipping answer.
+     *
+     * It reuses the same evidence assembly, pricing, reconciliation and valuation as the shipping
+     * path, so a difference in the result is attributable to configuration history alone. It
+     * deliberately bypasses the comparison cache in both directions: a hand-derived epoch table is
+     * not a product benchmark and must never be served from, or persist into, a cache row that a
+     * later product request could read.
+     */
+    internal suspend fun getForensicRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        forensicRegimes: List<InferredRegimeTransition>,
+    ): RebalancerComparison = historyEvidenceCoordinator.withLock {
+        val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+        getRebalancerComparisonLocked(
+            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            from = from,
+            to = to,
+            inceptionResolution = inceptionResolution,
+            forensicRegimes = forensicRegimes,
+        )
+    }
 
     private suspend fun getRebalancerComparisonLocked(
+        benchmarkMethod: BenchmarkMethod,
         from: Instant,
         to: Instant,
         inceptionResolution: InceptionResolution?,
+        forensicRegimes: List<InferredRegimeTransition>? = null,
     ): RebalancerComparison {
         // The requested interval is a display range, not an accounting boundary. Load from the
         // known effective baseline when it predates the display start so every intermediate
@@ -430,6 +483,7 @@ class TradeHistoryQueryService(
                 snapshots = snapshots,
                 trades = emptyList(),
                 assetMetadata = emptyList(),
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val orderedSnapshots = snapshots.sortedBy { it.timestamp }
@@ -447,6 +501,7 @@ class TradeHistoryQueryService(
                 rewards = emptyList(),
                 knownInceptionTime = orderedSnapshots.first().timestamp,
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // History comparison operates against stable, coverage-confirmed history: a newest
@@ -487,6 +542,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val firstUncoveredIndex =
@@ -511,6 +567,7 @@ class TradeHistoryQueryService(
                     latestDifferencePercent = null,
                     unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                     unavailableAt = orderedSnapshots[firstUncoveredIndex].timestamp,
+                    benchmarkMethod = benchmarkMethod,
                 )
             }
             orderedSnapshots.take(firstUncoveredIndex)
@@ -533,6 +590,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
 
@@ -550,12 +608,19 @@ class TradeHistoryQueryService(
         val cacheTo = evaluationSnapshots.last().timestamp
         val assetMetadata = loadComparisonAssetMetadata()
         val assetMetadataDigest = comparisonAssetMetadataDigest(assetMetadata)
-        val cacheFingerprint = comparisonCacheFingerprint(
-            stableThrough = stableThrough,
-            inceptionResolution = inceptionResolution,
-            snapshots = evaluationSnapshots,
-            assetMetadataDigest = assetMetadataDigest,
-        )
+        // A forensic run must not read or write comparison cache state, so it opts out entirely
+        // rather than being keyed apart from product requests.
+        val cacheFingerprint = if (forensicRegimes == null) {
+            comparisonCacheFingerprint(
+                stableThrough = stableThrough,
+                inceptionResolution = inceptionResolution,
+                snapshots = evaluationSnapshots,
+                assetMetadataDigest = assetMetadataDigest,
+                benchmarkMethod = benchmarkMethod,
+            )
+        } else {
+            null
+        }
         if (cacheFingerprint != null) {
             when (val outcome = loadCachedComparison(cacheFrom, cacheTo, cacheFingerprint)) {
                 is CachedComparisonOutcome.Hit -> {
@@ -581,7 +646,29 @@ class TradeHistoryQueryService(
             }
         }
 
-        val flightKey = "${cacheFrom.toEpochMilli()}:${cacheTo.toEpochMilli()}:$cacheFingerprint"
+        if (forensicRegimes != null) {
+            return presentComparison(
+                calculateComparison(
+                    benchmarkMethod = benchmarkMethod,
+                    orderedSnapshots = evaluationSnapshots,
+                    inceptionResolution = inceptionResolution,
+                    assetMetadata = assetMetadata,
+                    eventUpperBound = certifiedEventUpperBound(stableThrough),
+                    suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+                    forensicRegimes = forensicRegimes,
+                    ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
+                ),
+                from,
+                to,
+            )
+        }
+
+        val flightKey = buildString {
+            append(benchmarkMethod.name).append(':')
+            append(cacheFrom.toEpochMilli()).append(':')
+            append(cacheTo.toEpochMilli()).append(':')
+            append(cacheFingerprint)
+        }
         val (flight, created) = startOrJoinComparisonFlight(flightKey)
         val reconciled = if (created) {
             try {
@@ -589,8 +676,9 @@ class TradeHistoryQueryService(
                 val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                 val ohlcHadFailures = AtomicBoolean(false)
                 val calculated = calculateComparison(
-                    evaluationSnapshots,
-                    inceptionResolution,
+                    benchmarkMethod = benchmarkMethod,
+                    orderedSnapshots = evaluationSnapshots,
+                    inceptionResolution = inceptionResolution,
                     assetMetadata = assetMetadata,
                     eventUpperBound = certifiedEventUpperBound(stableThrough),
                     suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
@@ -613,6 +701,7 @@ class TradeHistoryQueryService(
                         inceptionResolution = inceptionResolution,
                         snapshots = evaluationSnapshots,
                         assetMetadataDigest = assetMetadataDigest,
+                        benchmarkMethod = benchmarkMethod,
                         comparison = calculated,
                         ohlcDependencies = consumedDependencies.toList(),
                         ohlcReachabilityDependencies = reachabilityDependencies.toList(),
@@ -721,13 +810,36 @@ class TradeHistoryQueryService(
      * recovery, and prepared funding identities participate separately because they are not
      * all row writes.
      */
-    private suspend fun loadComparisonAssetMetadata(): List<KrakenAssetMetadata> = try {
-        krakenService?.getAssetMetadata().orEmpty()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        log.warn("Kraken asset metadata unavailable; comparison classification will fail closed", e)
-        emptyList()
+    private suspend fun loadComparisonAssetMetadata(): List<KrakenAssetMetadata> {
+        val cached = assetMetadataCache.get()
+        if (cached != null && cached.expiresAtEpochMillis > nowProvider().toEpochMilli()) return cached.metadata
+
+        // Serialize refreshes so a burst of History requests makes one flight, not one per caller.
+        return assetMetadataCacheMutex.withLock {
+            val recheck = assetMetadataCache.get()
+            if (recheck != null && recheck.expiresAtEpochMillis > nowProvider().toEpochMilli()) {
+                return@withLock recheck.metadata
+            }
+            try {
+                val metadata = krakenService?.getAssetMetadata().orEmpty()
+                // Only a successful fetch is memoized: caching the empty fail-closed result would
+                // pin a transient Kraken outage into the comparison fingerprint for a full TTL.
+                if (metadata.isNotEmpty()) {
+                    assetMetadataCache.set(
+                        AssetMetadataSnapshot(
+                            expiresAtEpochMillis = nowProvider().toEpochMilli() + ASSET_METADATA_TTL_MILLIS,
+                            metadata = metadata,
+                        ),
+                    )
+                }
+                metadata
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Kraken asset metadata unavailable; comparison classification will fail closed", e)
+                emptyList()
+            }
+        }
     }
 
     private fun comparisonAssetMetadataDigest(assetMetadata: List<KrakenAssetMetadata>): String = sha256Hex(
@@ -736,7 +848,27 @@ class TradeHistoryQueryService(
         }.sorted().joinToString(separator = "\u0000"),
     )
 
+    /**
+     * Test seam pinning the cache-identity contract: the fingerprint must distinguish benchmark
+     * methods, because a row stores one method's result. A regression here silently serves one
+     * benchmark's numbers for the other.
+     */
+    internal suspend fun comparisonCacheFingerprintForTest(
+        benchmarkMethod: BenchmarkMethod,
+        stableThrough: Instant,
+        inceptionResolution: InceptionResolution?,
+        snapshots: List<PortfolioSnapshot>,
+        assetMetadataDigest: String,
+    ): String? = comparisonCacheFingerprint(
+        benchmarkMethod = benchmarkMethod,
+        stableThrough = stableThrough,
+        inceptionResolution = inceptionResolution,
+        snapshots = snapshots,
+        assetMetadataDigest = assetMetadataDigest,
+    )
+
     private suspend fun comparisonCacheFingerprint(
+        benchmarkMethod: BenchmarkMethod,
         stableThrough: Instant,
         inceptionResolution: InceptionResolution?,
         snapshots: List<PortfolioSnapshot>,
@@ -775,6 +907,9 @@ class TradeHistoryQueryService(
             ).joinToString(separator = "\u0000")
             val material = buildString {
                 append(COMPARISON_CACHE_VERSION).append('\u0000')
+                // Benchmark identity is part of the cached value: the two benchmarks answer
+                // different questions from the same Actual portfolio and must never share a row.
+                append(benchmarkMethod.name).append('\u0000')
                 append(stableThrough).append('\u0000')
                 append(consumedEvidenceDigest).append('\u0000')
                 append(fundingToken).append('\u0000')
@@ -1162,6 +1297,7 @@ class TradeHistoryQueryService(
             latestDifferencePercent = null,
             unavailableReason = ComparisonUnavailableReason.EXTERNAL_EVIDENCE_REFRESHING,
             unavailableAt = to,
+            benchmarkMethod = entry.comparison.benchmarkMethod,
         )
 
     private fun ConsumedOhlcDependency.refreshKey(): OhlcRefreshKey =
@@ -1174,6 +1310,7 @@ class TradeHistoryQueryService(
         inceptionResolution: InceptionResolution?,
         snapshots: List<PortfolioSnapshot>,
         assetMetadataDigest: String,
+        benchmarkMethod: BenchmarkMethod,
         comparison: RebalancerComparison,
         ohlcDependencies: List<ConsumedOhlcDependency>,
         ohlcReachabilityDependencies: List<OhlcReachabilityDependency>,
@@ -1206,7 +1343,11 @@ class TradeHistoryQueryService(
         // calculation may fetch and persist historical OHLC evidence, which advances the
         // comparison revision; saving a pre-calculation fingerprint would invalidate this result
         // on the very next request.
+        // Must be the method that actually produced this result: storing an inferred comparison
+        // under the fixed-inception fingerprint would let a later fixed request match the row and
+        // be served the wrong benchmark.
         val fingerprint = comparisonCacheFingerprint(
+            benchmarkMethod = benchmarkMethod,
             stableThrough = stableThrough,
             inceptionResolution = inceptionResolution,
             snapshots = snapshots,
@@ -1421,6 +1562,7 @@ class TradeHistoryQueryService(
         val assetMetadata = loadComparisonAssetMetadata()
         val assetMetadataDigest = comparisonAssetMetadataDigest(assetMetadata)
         val settingsCacheFingerprint = comparisonCacheFingerprint(
+            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             stableThrough = stableThrough,
             inceptionResolution = inceptionResolution,
             snapshots = stableSnapshots,
@@ -1445,9 +1587,10 @@ class TradeHistoryQueryService(
                     val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                     val ohlcHadFailures = AtomicBoolean(false)
                     val calculated = calculateComparison(
-                        stableSnapshots,
-                        inceptionResolution,
+                        orderedSnapshots = stableSnapshots,
+                        inceptionResolution = inceptionResolution,
                         assetMetadata = assetMetadata,
+                        benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                         eventUpperBound = certifiedEventUpperBound(stableThrough),
                         suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
@@ -1463,6 +1606,7 @@ class TradeHistoryQueryService(
                             inceptionResolution = inceptionResolution,
                             snapshots = stableSnapshots,
                             assetMetadataDigest = assetMetadataDigest,
+                            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                             comparison = calculated,
                             ohlcDependencies = consumedDependencies.toList(),
                             ohlcReachabilityDependencies = reachabilityDependencies.toList(),
@@ -2051,6 +2195,8 @@ class TradeHistoryQueryService(
         // verification pivots on discovery re-anchoring at the candidate — suppressing it
         // there would make every trial reconcile the stale predecessor instead.
         suppressPassiveDiscovery: Boolean = false,
+        benchmarkMethod: BenchmarkMethod,
+        forensicRegimes: List<InferredRegimeTransition>? = null,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
         onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
         onOhlcSourceFailure: (() -> Unit)? = null,
@@ -2094,6 +2240,7 @@ class TradeHistoryQueryService(
                 knownInceptionTime = inceptionResolution.inceptionTime,
                 inceptionUnavailableReason = inceptionResolution.unavailableReason
                     ?: ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED && recordedBenchmarkAnchor == null) {
@@ -2110,6 +2257,7 @@ class TradeHistoryQueryService(
                 inceptionSnapshot = null,
                 knownInceptionTime = inceptionResolution.inceptionTime,
                 historyTruncated = true,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val inceptionSnapshot = recordedBenchmarkAnchor ?: inceptionResolution?.inceptionSnapshot
@@ -2153,6 +2301,7 @@ class TradeHistoryQueryService(
                 rewards = emptyList(),
                 knownInceptionTime = orderedSnapshots.first().timestamp,
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val eventQueryStart = listOfNotNull(
@@ -2224,6 +2373,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                 unavailableAt = unsupportedTrade.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // Malformed supported-market economics must fail closed, never become zero-value fills.
@@ -2242,6 +2392,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                 unavailableAt = invalidTrade.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // Contribution-time prices use the same retained market identities as inception recovery,
@@ -2257,21 +2408,43 @@ class TradeHistoryQueryService(
             onOhlcSourceFailure = onOhlcSourceFailure,
             ohlcCallOwner = ohlcCallOwner,
         )
-        return RebalancerComparisonCalculator.calculate(
-            snapshots = orderedSnapshots,
-            trades = trades,
-            rewards = ledgers,
-            ledgerContext = contextLedgers,
-            anchorSnapshot = anchorSnapshot,
-            inceptionSnapshot = inceptionSnapshot,
-            knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
-            priceProvider = priceProvider,
-            provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
-            assetMetadata = assetMetadata,
-            configuredAssetUniverse = configService?.getConfig()?.allocations
-                ?.map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
-                ?.toSet(),
-        )
+        val calculated = if (forensicRegimes != null) {
+            RebalancerComparisonCalculator.calculateWithForensicRegimes(
+                forensicRegimes = forensicRegimes,
+                snapshots = orderedSnapshots,
+                trades = trades,
+                rewards = ledgers,
+                ledgerContext = contextLedgers,
+                anchorSnapshot = anchorSnapshot,
+                inceptionSnapshot = inceptionSnapshot,
+                knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
+                priceProvider = priceProvider,
+                provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
+                assetMetadata = assetMetadata,
+                configuredAssetUniverse = configService?.getConfig()?.allocations
+                    ?.map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
+                    ?.toSet(),
+                benchmarkMethod = benchmarkMethod,
+            )
+        } else {
+            RebalancerComparisonCalculator.calculate(
+                benchmarkMethod = benchmarkMethod,
+                snapshots = orderedSnapshots,
+                trades = trades,
+                rewards = ledgers,
+                ledgerContext = contextLedgers,
+                anchorSnapshot = anchorSnapshot,
+                inceptionSnapshot = inceptionSnapshot,
+                knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
+                priceProvider = priceProvider,
+                provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
+                assetMetadata = assetMetadata,
+                configuredAssetUniverse = configService?.getConfig()?.allocations
+                    ?.map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
+                    ?.toSet(),
+            )
+        }
+        return calculated
     }
 
     /**
@@ -2683,6 +2856,7 @@ class TradeHistoryQueryService(
                                     ),
                                     assetMetadata = assetMetadata,
                                     preparedFundingProvenance = preparedFundingProvenance,
+                                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                                     eventUpperBound = eventUpperBound,
                                     ohlcCallOwner = ohlcCallOwner,
                                 )
@@ -2770,6 +2944,7 @@ class TradeHistoryQueryService(
                     ),
                     assetMetadata = assetMetadata,
                     preparedFundingProvenance = preparedFundingProvenance,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                     eventUpperBound = eventUpperBound,
                     ohlcCallOwner = ohlcCallOwner,
                 )
@@ -2865,6 +3040,7 @@ class TradeHistoryQueryService(
                     ),
                     assetMetadata = assetMetadata,
                     preparedFundingProvenance = preparedFundingProvenance,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                     eventUpperBound = eventUpperBound,
                     ohlcCallOwner = ohlcCallOwner,
                 )

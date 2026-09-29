@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -97,5 +98,9 @@ interface TradeHistoryService {
     suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
         SettingsComparisonStatus(proposal = getComparisonStartProposal(after))
 
-    suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
+    suspend fun getRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison
 }

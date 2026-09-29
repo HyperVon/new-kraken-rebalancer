@@ -54,7 +54,10 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "hx-post=\"/api/resume\""
             htmlString shouldContain "id=\"csrf-token\""
             htmlString shouldContain "https://unpkg.com/htmx.org@2.0.4"
-            htmlString shouldContain "Rebalancer vs Buy &amp; Hold"
+            htmlString shouldContain "Rebalancer vs Hold Benchmark"
+            // The page must not claim which benchmark is plotted; the legend names the served one.
+            htmlString shouldContain "Configuration-matched hold: follows the same major allocation changes"
+            htmlString shouldContain "This is the default comparison; the chart legend names the benchmark"
             htmlString shouldContain "comparison-latest-difference"
             htmlString shouldContain "comparison-chart-content"
             htmlString shouldContain "comparison-availability-message"

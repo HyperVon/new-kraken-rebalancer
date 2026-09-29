@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.KrakenApiConstants
@@ -356,7 +357,11 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 val queryService = newQueryService()
 
                 // History comparison automatically trims uncertified live tail at tStable
-                val comparison = queryService.getRebalancerComparison(t0, tTail)
+                val comparison = queryService.getRebalancerComparison(
+                    t0,
+                    tTail,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 // Must be AVAILABLE and anchored at Dec 5 baseline
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -384,7 +389,11 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 seedProductionDatabase()
                 val queryService = newQueryService()
 
-                val comparison = queryService.getRebalancerComparison(t0, tTail)
+                val comparison = queryService.getRebalancerComparison(
+                    t0,
+                    tTail,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 // A complete stable production-derived series must be AVAILABLE with no blocker.
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -435,7 +444,11 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 queryService.getSettingsComparisonStatus(t0, allowPersistedBaselineFastPath = false)
 
                 // History must NOT display HISTORICAL_COVERAGE_GAP
-                val comparison = queryService.getRebalancerComparison(t0, tTail)
+                val comparison = queryService.getRebalancerComparison(
+                    t0,
+                    tTail,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.unavailableReason.shouldBeNull()
                 comparison.baselineTimestamp shouldBe t0
@@ -448,7 +461,11 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 val queryService = newQueryService()
 
                 // Before catch-up: stable comparison evaluates through tStable
-                val beforeCatchUp = queryService.getRebalancerComparison(t0, tTail)
+                val beforeCatchUp = queryService.getRebalancerComparison(
+                    t0,
+                    tTail,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 beforeCatchUp.availability shouldBe ComparisonAvailability.AVAILABLE
                 beforeCatchUp.points.last().timestamp shouldBe tStable
 
@@ -513,7 +530,11 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 )
 
                 // Now after catch-up: evaluation includes tTail
-                val afterCatchUp = queryService.getRebalancerComparison(t0, tTail)
+                val afterCatchUp = queryService.getRebalancerComparison(
+                    t0,
+                    tTail,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 afterCatchUp.availability shouldBe ComparisonAvailability.AVAILABLE
                 afterCatchUp.points.last().timestamp shouldBe tTail
             }
@@ -528,27 +549,47 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 queryService.getSettingsComparisonStatus(t0, allowPersistedBaselineFastPath = false)
 
                 // 24 hours
-                val comp24h = queryService.getRebalancerComparison(now.minus(Duration.ofHours(24)), now)
+                val comp24h = queryService.getRebalancerComparison(
+                    now.minus(Duration.ofHours(24)),
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comp24h.availability shouldBe ComparisonAvailability.AVAILABLE
                 comp24h.points.shouldNotBeEmpty()
 
                 // 7 days
-                val comp7d = queryService.getRebalancerComparison(now.minus(Duration.ofDays(7)), now)
+                val comp7d = queryService.getRebalancerComparison(
+                    now.minus(Duration.ofDays(7)),
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comp7d.availability shouldBe ComparisonAvailability.AVAILABLE
                 comp7d.points.shouldNotBeEmpty()
 
                 // 30 days
-                val comp30d = queryService.getRebalancerComparison(now.minus(Duration.ofDays(30)), now)
+                val comp30d = queryService.getRebalancerComparison(
+                    now.minus(Duration.ofDays(30)),
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comp30d.availability shouldBe ComparisonAvailability.AVAILABLE
                 comp30d.points.shouldNotBeEmpty()
 
                 // 90 days
-                val comp90d = queryService.getRebalancerComparison(now.minus(Duration.ofDays(90)), now)
+                val comp90d = queryService.getRebalancerComparison(
+                    now.minus(Duration.ofDays(90)),
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comp90d.availability shouldBe ComparisonAvailability.AVAILABLE
                 comp90d.points.shouldNotBeEmpty()
 
                 // Lifetime
-                val compLifetime = queryService.getRebalancerComparison(t0, now)
+                val compLifetime = queryService.getRebalancerComparison(
+                    t0,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 compLifetime.availability shouldBe ComparisonAvailability.AVAILABLE
                 compLifetime.baselineTimestamp shouldBe t0
                 compLifetime.points.shouldNotBeEmpty()
@@ -595,7 +636,11 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 fastPathStatus.baselineTimestamp shouldBe t0.toString()
 
                 // History comparison immediately returns AVAILABLE
-                val comparison = restartedService.getRebalancerComparison(t0, tTail)
+                val comparison = restartedService.getRebalancerComparison(
+                    t0,
+                    tTail,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe t0
             }

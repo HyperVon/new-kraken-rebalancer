@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -121,7 +122,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
                 "test-scope"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
                 "test-scope"
-            val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                fixedNow.plusSeconds(86400),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
         }
@@ -198,7 +203,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
             // Current contract with empty evidence still returns a result (not stale-blocked).
-            val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                fixedNow.plusSeconds(86400),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             (
                 result.availability == ComparisonAvailability.AVAILABLE ||
                     result.availability == ComparisonAvailability.UNAVAILABLE
@@ -245,7 +254,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
                 reconThrough.epochSecond.toString()
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 fixedNow.epochSecond.toString()
-            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+            val result = svc.getRebalancerComparison(
+                live1.timestamp,
+                live2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             (
                 result.availability == com.gemini.krakenbot.model.ComparisonAvailability.AVAILABLE ||
                     result.availability == com.gemini.krakenbot.model.ComparisonAvailability.UNAVAILABLE
@@ -300,7 +313,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
-            val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                fixedNow.plusSeconds(86400),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             // Dry-run unsupported must not force UNSUPPORTED_TRADE.
             if (result.availability == ComparisonAvailability.UNAVAILABLE) {
                 (result.unavailableReason != ComparisonUnavailableReason.UNSUPPORTED_TRADE) shouldBe true
@@ -354,7 +371,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
                 reconThrough.epochSecond.toString()
 
-            val result = svc.getRebalancerComparison(fixedNow, s2.timestamp)
+            val result = svc.getRebalancerComparison(
+                fixedNow,
+                s2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
@@ -404,7 +425,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
                 reconThrough.epochSecond.toString()
 
-            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+            val result = svc.getRebalancerComparison(
+                live1.timestamp,
+                live2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
@@ -448,7 +473,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
                 reconThrough.epochSecond.toString()
 
-            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+            val result = svc.getRebalancerComparison(
+                live1.timestamp,
+                live2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
@@ -499,7 +528,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
                 reconThrough.epochSecond.toString()
 
-            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+            val result = svc.getRebalancerComparison(
+                live1.timestamp,
+                live2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
 
             (result.unavailableReason != ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP) shouldBe true
         }
@@ -532,7 +565,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
 
-            val result = svc.getRebalancerComparison(s1.timestamp, s2.timestamp)
+            val result = svc.getRebalancerComparison(
+                s1.timestamp,
+                s2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
 
             (result.unavailableReason != ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP) shouldBe true
         }
@@ -572,7 +609,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
 
-            val result = svc.getRebalancerComparison(s1.timestamp, s2.timestamp)
+            val result = svc.getRebalancerComparison(
+                s1.timestamp,
+                s2.timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
 
             (result.unavailableReason != ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP) shouldBe true
         }

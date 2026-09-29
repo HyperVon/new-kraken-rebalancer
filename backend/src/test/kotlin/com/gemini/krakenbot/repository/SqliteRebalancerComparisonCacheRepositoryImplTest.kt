@@ -7,6 +7,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
 import com.gemini.krakenbot.repository.impl.SqliteRebalancerComparisonCacheRepositoryImpl
@@ -112,7 +113,7 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
                     points = emptyList(),
                     latestDifferenceUSD = null,
                     latestDifferencePercent = null,
-                    unavailableReason = com.gemini.krakenbot.model.ComparisonUnavailableReason.MISSING_PRICE,
+                    unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
                     unavailableAt = Instant.EPOCH,
                 )
 

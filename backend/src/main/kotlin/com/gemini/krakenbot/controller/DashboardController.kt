@@ -8,6 +8,9 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.domain.QualityAllocation
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -23,8 +26,10 @@ import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
+import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
@@ -34,6 +39,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.symbolColorMap
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -56,11 +62,13 @@ import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.html.body
 import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.id
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
+import kotlinx.html.unsafe
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
@@ -128,6 +136,10 @@ class DashboardController(
 
             get(Routes.FRAGMENT_SETTINGS_PROPOSAL) {
                 handleGetSettingsProposalFragment()
+            }
+
+            post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                handlePostSettingsAllocationsPreview()
             }
 
             get(Routes.FRAGMENT_DASHBOARD) {
@@ -382,6 +394,251 @@ class DashboardController(
         restoreFailure
     }
 
+    /**
+     * Recomputes allocation targets from the quality scores currently in the settings form and
+     * renders the replacement rows.
+     *
+     * Purely a preview: nothing is persisted and no config is touched. The response only swaps
+     * the open form's row list, so the operator can keep editing before saving.
+     */
+    private suspend fun RoutingContext.handlePostSettingsAllocationsPreview() {
+        val params = call.receiveParameters()
+        if (!CsrfProtection.isValid(call, params)) {
+            val token = CsrfProtection.rotateToken(call)
+            call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
+            call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
+            call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
+            respondSettingsFormError(
+                config = configService.getConfig(),
+                message = ViewText.CSRF_SESSION_EXPIRED,
+                csrfToken = token,
+                paused = portfolioManager.isLoopPaused(),
+                status = HttpStatusCode.Forbidden,
+            )
+            return
+        }
+
+        val preview = try {
+            computeAllocationPreview(params)
+        } catch (e: IllegalArgumentException) {
+            respondAllocationsPreviewError(e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK)
+            return
+        }
+
+        call.respondHtml(HttpStatusCode.OK) {
+            // The trigger swaps the inner HTML of #allocations-container, so the response is that
+            // container's contents. Re-wrapping them in a second element with the same id would nest
+            // a duplicate id and, carrying no list class, drop the rows out of the grid into a plain
+            // block.
+            body {
+                preview.symbols.forEachIndexed { index, symbol ->
+                    val targetForSymbol = preview.computed[symbol]?.toPlainString()
+                        ?: preview.targets.getOrNull(index).orEmpty()
+                    unsafe {
+                        +AllocationEditor.editRow(
+                            symbol = symbol,
+                            color = AssetColorAssigner.normalizeHex(preview.colors[index]) ?: "#888888",
+                            targetPercent = targetForSymbol,
+                            score = preview.scores.getOrNull(index).orEmpty(),
+                        )
+                    }
+                }
+                allocationSummary(preview)
+                p(CssClass.Form.SectionSubtitle) { +ViewText.ALLOCATION_PREVIEW_WARNING }
+            }
+        }
+    }
+
+    /**
+     * Redistributes the scored sleeve proportionally to `score^emphasis`, preserving the targets of
+     * unscored assets. Pure with respect to configuration: nothing here is persisted, and every
+     * rejection is an [IllegalArgumentException] carrying a `ViewText` message the caller renders.
+     */
+    private fun computeAllocationPreview(params: Parameters): AllocationPreview {
+        val rows = params.requiredAllocationRows()
+        val symbols = rows.symbols
+        val targets = rows.targets
+        val colors = rows.colors
+        val scores = rows.scores
+        val targetValues = targets.map(::requiredAllocationTarget)
+        colors.forEach { requiredAllocationColor(it) }
+
+        // An absent emphasis means "not chosen" and falls back to the flattest weighting; a supplied
+        // one is rejected unless it is an in-range integer, so a typo cannot be silently absorbed
+        // while an out-of-range value is refused.
+        val emphasisField = params[FormFields.SCORE_EMPHASIS]?.trim().takeUnless { it.isNullOrEmpty() }
+        val emphasis = if (emphasisField == null) {
+            QualityAllocation.FALLBACK_EMPHASIS
+        } else {
+            emphasisField.toIntOrNull()
+                ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_EMPHASIS)
+        }
+        require(emphasis in 1..QualityAllocation.MAX_EMPHASIS) { ViewText.INVALID_ALLOCATION_EMPHASIS }
+        val requestedSleeve = params[FormFields.SCORE_SLEEVE_PERCENT]
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.let(::requiredAllocationTarget)
+            ?.also {
+                require(it.signum() > 0 && it <= BigDecimal.valueOf(PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE)) {
+                    ViewText.INVALID_ALLOCATION_TARGET
+                }
+            }
+
+        val scored = mutableMapOf<String, BigDecimal>()
+        for ((index, symbol) in symbols.withIndex()) {
+            parseQualityScore(scores[index])?.let { scored[symbol] = it }
+        }
+        require(scored.isNotEmpty()) { ViewText.ALLOCATION_SCORE_REQUIRED }
+
+        val scoredTargetTotal = symbols.indices
+            .filter { symbols[it] in scored }
+            .fold(BigDecimal.ZERO) { acc, i -> acc.add(targetValues[i]) }
+        val usableSleeve = requestedSleeve ?: scoredTargetTotal.also {
+            require(it.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
+        }
+
+        val computed = QualityAllocation.proportional(scored, usableSleeve, emphasis)
+        val previewTotal = symbols.indices.fold(BigDecimal.ZERO) { total, index ->
+            total.add(computed[symbols[index]] ?: targetValues[index])
+        }
+        val allowedDelta = BigDecimal.valueOf(PrecisionConstants.ALLOCATION_TOLERANCE_DELTA)
+        val totalDelta = previewTotal.subtract(BigDecimal.valueOf(PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE)).abs()
+        require(totalDelta <= allowedDelta) { ViewText.INVALID_ALLOCATION_TARGET }
+
+        return AllocationPreview(
+            symbols = symbols,
+            targets = targets,
+            colors = colors,
+            scores = scores,
+            scored = scored,
+            computed = computed,
+            // Concentration is a statement about the whole portfolio, so it is measured over every
+            // leg the preview will produce: the redistributed scored sleeve plus the unscored
+            // targets it preserved. Measuring it over the sleeve alone reported BTC as 86.27% of
+            // "largest position" when its actual share of the book was 81.96%.
+            combined = buildMap {
+                symbols.forEachIndexed { index, symbol ->
+                    val weight = computed[symbol] ?: targetValues[index]
+                    if (weight.signum() > 0) put(symbol, weight)
+                }
+            },
+        )
+    }
+
+    /**
+     * Renders the preview's three figures as separate labelled cells rather than one run-on line.
+     *
+     * The quality score can only average assets that carry a score, so it is labelled as scoped to
+     * the scored sleeve; the concentration figures are measured over the whole portfolio and say so.
+     * They are omitted rather than crashing when nothing parses to a positive weight.
+     */
+    private fun kotlinx.html.FlowContent.allocationSummary(preview: AllocationPreview) {
+        // No guard on an empty total: computeAllocationPreview already requires a non-empty scored
+        // map and a positive sleeve, so proportional always returns positive weights and `combined`
+        // is never empty. Both figures therefore have a value to report.
+        val scoreValue = QualityAllocation.weightedScore(preview.computed, preview.scored).toPlainString()
+        val maxWeight = QualityAllocation.maxWeightPercent(preview.combined).toPlainString() + "%"
+        val bets = QualityAllocation.effectiveAssetCount(preview.combined).toPlainString()
+
+        div(CssClass.Form.AllocationStatRow.value) {
+            div(CssClass.Form.AllocationStat.value) {
+                div(CssClass.Form.AllocationStatValue.value) { +scoreValue }
+                div(CssClass.Form.AllocationStatLabel.value) { +ViewText.ALLOCATION_QUALITY_SCORE }
+                div(CssClass.Form.AllocationStatNote.value) { +ViewText.ALLOCATION_SCORED_ONLY }
+            }
+            div(CssClass.Form.AllocationStat.value) {
+                div(CssClass.Form.AllocationStatValue.value) { +maxWeight }
+                div(CssClass.Form.AllocationStatLabel.value) { +ViewText.ALLOCATION_MAX_WEIGHT }
+                div(CssClass.Form.AllocationStatNote.value) { +ViewText.ALLOCATION_WHOLE_BOOK }
+            }
+            div(CssClass.Form.AllocationStat.value) {
+                div(CssClass.Form.AllocationStatValue.value) { +bets }
+                div(CssClass.Form.AllocationStatLabel.value) { +ViewText.ALLOCATION_EFFECTIVE_BETS }
+                div(CssClass.Form.AllocationStatNote.value) { +ViewText.ALLOCATION_WHOLE_BOOK }
+            }
+        }
+    }
+
+    /**
+     * A rejected preview is a form-level error, but the trigger swaps only the allocations
+     * container. Retargeting the response at the body is what puts the message where the operator
+     * can see it, and mirrors the expired-CSRF path above.
+     */
+    private suspend fun RoutingContext.respondAllocationsPreviewError(message: String) {
+        call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
+        call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
+        respondSettingsFormError(
+            config = configService.getConfig(),
+            message = message,
+            csrfToken = CsrfProtection.currentToken(call),
+            paused = portfolioManager.isLoopPaused(),
+            status = HttpStatusCode.UnprocessableEntity,
+        )
+    }
+
+    private data class AllocationPreview(
+        val symbols: List<String>,
+        val targets: List<String>,
+        val colors: List<String>,
+        val scores: List<String>,
+        val scored: Map<String, BigDecimal>,
+        /** Redistributed weights for the scored sleeve only. */
+        val computed: Map<String, BigDecimal>,
+        /** Every leg the preview will produce, including preserved unscored targets. */
+        val combined: Map<String, BigDecimal>,
+    )
+
+    private data class AllocationRows(
+        val symbols: List<String>,
+        val targets: List<String>,
+        val colors: List<String>,
+        val scores: List<String>,
+    )
+
+    private fun Parameters.requiredAllocationRows(): AllocationRows {
+        val symbols = getAll(FormFields.SYMBOLS).orEmpty()
+        val targets = getAll(FormFields.TARGETS).orEmpty()
+        val colors = getAll(FormFields.COLORS).orEmpty()
+        val scores = getAll(FormFields.SCORES).orEmpty()
+        require(
+            symbols.isNotEmpty() && symbols.size == targets.size &&
+                symbols.size == colors.size && symbols.size == scores.size,
+        ) { ViewText.INVALID_ALLOCATION_FIELDS }
+        require(symbols.map { Asset.canonicalSymbol(it) }.toSet().size == symbols.size) {
+            ViewText.INVALID_ALLOCATION_FIELDS
+        }
+        require(symbols.all { Asset.isValidAllocationSymbol(it) }) { ViewText.INVALID_ALLOCATION_FIELDS }
+        return AllocationRows(symbols, targets, colors, scores)
+    }
+
+    private fun requiredAllocationTarget(raw: String): BigDecimal {
+        val value = raw.trim().toBigDecimalOrNull()
+        require(value != null && value.signum() >= 0 && value.toDouble().isFinite()) {
+            ViewText.INVALID_ALLOCATION_TARGET
+        }
+        return value
+    }
+
+    private fun requiredAllocationColor(raw: String): String? {
+        val color = AssetColorAssigner.normalizeHex(raw)
+        require(raw.isBlank() || color != null) { ViewText.INVALID_ALLOCATION_COLOR }
+        return color
+    }
+
+    /** Blank and zero clear a score; every other value must match the persisted score contract. */
+    private fun parseQualityScore(raw: String): BigDecimal? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+        val value = trimmed.toBigDecimalOrNull()
+            ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_SCORE)
+        require(value.signum() >= 0 && value <= BigDecimal.valueOf(Settings.MAX_QUALITY_SCORE)) {
+            ViewText.INVALID_ALLOCATION_SCORE
+        }
+        val persistedValue = value.toDouble()
+        require(persistedValue.isFinite()) { ViewText.INVALID_ALLOCATION_SCORE }
+        return value.takeIf { persistedValue > 0.0 }
+    }
+
     private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {
         val deviationTriggerPercent =
             params.requiredSingle(FormFields.DEVIATION_TRIGGER_PERCENT, ViewText.INVALID_DEVIATION_TRIGGER)
@@ -431,27 +688,23 @@ class DashboardController(
                 comparisonStartDate = comparisonStartDate,
             )
 
-        val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
-        val targets = params.getAll(FormFields.TARGETS).orEmpty()
-        val colors = params.getAll(FormFields.COLORS).orEmpty()
-        require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
-            ViewText.INVALID_ALLOCATION_FIELDS
-        }
+        val rows = params.requiredAllocationRows()
 
         val allocations =
-            symbols.mapIndexed { index, symbol ->
-                val target = targets[index].requiredFiniteDouble(ViewText.INVALID_ALLOCATION_TARGET)
-                val rawColor = colors.getOrNull(index)
-                val color = AssetColorAssigner.normalizeHex(rawColor)
-                require(rawColor.isNullOrBlank() || color != null) {
-                    ViewText.INVALID_ALLOCATION_COLOR
-                }
+            rows.symbols.mapIndexed { index, symbol ->
+                val target = requiredAllocationTarget(rows.targets[index]).toDouble()
+                val color = requiredAllocationColor(rows.colors[index])
                 Allocation(symbol, target, color)
             }
 
+        val qualityScores = mutableMapOf<String, Double>()
+        rows.symbols.forEachIndexed { index, symbol ->
+            parseQualityScore(rows.scores[index])?.let { qualityScores[symbol] = it.toDouble() }
+        }
+
         return AppConfig(
             kraken = currentConfig.kraken,
-            settings = settings,
+            settings = settings.copy(qualityScores = qualityScores),
             allocations = allocations,
         )
     }
@@ -613,6 +866,8 @@ class DashboardController(
                     delta24h = delta24h,
                     unresolvedIntents = unresolvedIntents,
                     csrfToken = csrfToken,
+                    qualityScores = configService.getConfig().settings.qualityScores
+                        .mapValues { BigDecimal.valueOf(it.value) },
                 )
             }
         call.respondText(html, ContentType.Text.Html)
@@ -687,7 +942,19 @@ class DashboardController(
 
     private suspend fun RoutingContext.handleGetHistoryComparison() {
         val (from, to) = parseTimeRange(call)
-        respondJson(tradeHistoryService.getRebalancerComparison(from, to).toApiDto())
+        // The operator-facing comparison is the configuration-matched benchmark: it follows the
+        // strategy's own inferred major allocation changes and otherwise holds, which is the
+        // comparison that isolates routine rebalancing from asset selection. The fixed-inception
+        // benchmark is selectable as a forensic reference, which prices the opportunity cost of
+        // every later allocation decision rather than the value of routine rebalancing.
+        val method = call.request.queryParameters["benchmark"]
+            ?.let { requested ->
+                BenchmarkMethod.entries.firstOrNull { it.name == requested }
+            }
+            ?: BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD
+        respondJson(
+            tradeHistoryService.getRebalancerComparison(from, to, method).toApiDto(),
+        )
     }
 
     private suspend fun RoutingContext.handleGetHistoryRewards() {

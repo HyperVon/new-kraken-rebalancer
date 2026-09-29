@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.service.AutomaticBaselineStatus
@@ -8,6 +9,7 @@ import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.SettingsComparisonStatus
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
@@ -556,26 +558,81 @@ class SettingsFormComponent {
 
             div(CssClass.Form.AllocationListContainer) {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
+                val scores = config.settings.qualityScores
                 config.allocations.forEach { alloc ->
                     val rowColor = alloc.color ?: ChartProps.SOLID_FALLBACK
-                    unsafe { +AllocationEditor.editRow(alloc.symbol.value, rowColor, alloc.targetPercent.toString()) }
+                    val score = scores[alloc.symbol.value]
+                    unsafe {
+                        +AllocationEditor.editRow(
+                            symbol = alloc.symbol.value,
+                            color = rowColor,
+                            targetPercent = alloc.targetPercent.toString(),
+                            score = score?.toString().orEmpty(),
+                        )
+                    }
                 }
             }
 
-            div(CssClass.Form.AddAssetBox) {
-                input(CssClass.Form.InputGlass, type = text) {
-                    id = HtmlIds.NEW_SYMBOL_INPUT
-                    placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
-                    attributes[HtmlAttrs.ONKEYDOWN] =
-                        "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+            // The score controls and the add-asset control used to share one dashed box, which read
+            // as a single form of related fields. They are separate jobs, so they are separate
+            // groups. This one carries no group title: "scored sleeve" is the name of the second
+            // field, and titling the whole box with it made the emphasis field look unexplained.
+            // The hint leads instead, and each field names itself the way the rows do.
+            div(CssClass.Form.AllocationControlRow) {
+                div(CssClass.Form.AllocationControlGroup) {
+                    span(CssClass.Form.AllocationControlHint) { +ViewText.ALLOCATION_SCORE_HINT }
+                    div(CssClass.Form.AllocationControlInputs) {
+                        div(CssClass.Form.AllocationControlField) {
+                            span(CssClass.Form.AllocationFieldLabel) { +ViewText.ALLOCATION_SCORE_EMPHASIS }
+                            input(CssClass.Form.InputGlass, type = number) {
+                                id = HtmlIds.SCORE_EMPHASIS_INPUT
+                                name = FormFields.SCORE_EMPHASIS
+                                value = QualityAllocation.DEFAULT_EMPHASIS.toString()
+                                min = "1"
+                                max = QualityAllocation.MAX_EMPHASIS.toString()
+                            }
+                        }
+                        div(CssClass.Form.AllocationControlField) {
+                            span(CssClass.Form.AllocationFieldLabel) { +ViewText.ALLOCATION_SLEEVE_FIELD }
+                            input(CssClass.Form.InputGlass, type = number) {
+                                id = HtmlIds.SCORE_SLEEVE_INPUT
+                                name = FormFields.SCORE_SLEEVE_PERCENT
+                                step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
+                                placeholder = ViewText.ALLOCATION_SLEEVE_PLACEHOLDER
+                            }
+                        }
+                        button(
+                            CssClass.Button.Secondary,
+                            type = button,
+                        ) {
+                            attributes[HtmxAttrs.HX_POST] = Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW
+                            attributes[HtmxAttrs.HX_INCLUDE] = "closest form"
+                            attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.ALLOCATIONS_CONTAINER}"
+                            attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
+                            span { +ViewText.ALLOCATIONS_FROM_SCORES }
+                        }
+                    }
                 }
-                button(
-                    CssClass.Button.Secondary,
-                    type = button,
-                ) {
-                    attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
-                    icon(Icons.PLUS)
-                    span { +ViewText.ADD_ASSET }
+            }
+
+            div(CssClass.Form.AllocationControlRow) {
+                div(CssClass.Form.AllocationControlGroup) {
+                    div(CssClass.Form.AllocationControlInputs) {
+                        input(CssClass.Form.InputGlass, type = text) {
+                            id = HtmlIds.NEW_SYMBOL_INPUT
+                            placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
+                            attributes[HtmlAttrs.ONKEYDOWN] =
+                                "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+                        }
+                        button(
+                            CssClass.Button.Secondary,
+                            type = button,
+                        ) {
+                            attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
+                            icon(Icons.PLUS)
+                            span { +ViewText.ADD_ASSET }
+                        }
+                    }
                 }
             }
         }

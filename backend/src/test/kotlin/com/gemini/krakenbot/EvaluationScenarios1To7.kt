@@ -434,6 +434,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                             "symbols" to listOf(Asset.USD),
                             "targets" to listOf("100.0"),
                             "colors" to listOf("#94a3b8"),
+                            "scores" to listOf(""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -481,6 +482,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                             "symbols" to listOf(Asset.USD),
                             "targets" to listOf("90.0"), // 90% sum != 100%
                             "colors" to listOf("#94a3b8"),
+                            "scores" to listOf(""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())

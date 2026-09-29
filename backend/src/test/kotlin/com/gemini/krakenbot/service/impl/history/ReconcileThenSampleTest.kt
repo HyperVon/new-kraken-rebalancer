@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures.assetSnapshot
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.FundingEvidence
@@ -104,6 +105,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     priceProvider = HistoricalPriceProvider { symbol, _ ->
                         if (Asset.normalizeLedgerAsset(symbol).uppercase() == "USDG") BigDecimal.ONE else null
                     },
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
                 full.availability shouldBe ComparisonAvailability.AVAILABLE
                 full.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1389.28")
@@ -119,6 +121,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     rewards = ledgers,
                     ledgerContext = context,
                     provenanceResolver = provenance,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
                 merged.points.size shouldBe 2
             }
@@ -168,7 +171,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                 )
 
-                val comparison = service.getRebalancerComparison(t.minusSeconds(3600), t.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    t.minusSeconds(3600),
+                    t.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe t.minusSeconds(3600)
@@ -219,7 +226,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(now, now.plusSeconds(count * 60L))
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(count * 60L),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 val full = RebalancerComparisonCalculator.calculate(
                     snapshots = series,
@@ -228,6 +239,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     anchorSnapshot = null,
                     inceptionSnapshot = series.first(),
                     knownInceptionTime = series.first().timestamp,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -247,6 +259,7 @@ class ReconcileThenSampleTest : StringSpec() {
                 val exactDisplay = service.getRebalancerComparison(
                     now.plusSeconds(60),
                     now.plusSeconds(count * 60L),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
                 exactDisplay.points.size shouldBe 300
                 val fullByTimestamp = full.points.associateBy { it.timestamp }
@@ -332,8 +345,16 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val lifetime = service.getRebalancerComparison(baselineTime, displayEnd)
-                val shortRange = service.getRebalancerComparison(displayStart, displayEnd)
+                val lifetime = service.getRebalancerComparison(
+                    baselineTime,
+                    displayEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+                val shortRange = service.getRebalancerComparison(
+                    displayStart,
+                    displayEnd,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 lifetime.availability shouldBe ComparisonAvailability.AVAILABLE
                 shortRange.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -351,7 +372,11 @@ class ReconcileThenSampleTest : StringSpec() {
                 shortRange.latestDifferencePercent!! shouldBeEqualComparingTo
                     shortRange.points.last().differencePercent
 
-                val oneDisplayPoint = service.getRebalancerComparison(displayStart, displayStart)
+                val oneDisplayPoint = service.getRebalancerComparison(
+                    displayStart,
+                    displayStart,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 oneDisplayPoint.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 oneDisplayPoint.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
                 coVerify(atLeast = 1) {
@@ -387,7 +412,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -422,7 +451,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -457,7 +490,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -486,7 +523,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -520,7 +561,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -556,20 +601,32 @@ class ReconcileThenSampleTest : StringSpec() {
                 )
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "-1"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
                     "-1"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns
                     "4102444800"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
                     "4102444800"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
@@ -581,7 +638,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     "0"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
                     "100"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
@@ -590,7 +651,11 @@ class ReconcileThenSampleTest : StringSpec() {
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "100"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "4102444800"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
@@ -599,20 +664,32 @@ class ReconcileThenSampleTest : StringSpec() {
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "0"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "0"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "4102444800"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     null
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "4102444800"
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns null
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
@@ -622,14 +699,22 @@ class ReconcileThenSampleTest : StringSpec() {
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
                     null
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
                     "0"
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
                     "account-a"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
@@ -638,7 +723,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
                 } returns
                     "account-a"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
@@ -648,34 +737,54 @@ class ReconcileThenSampleTest : StringSpec() {
                 } returns
                     null
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "0"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "9223372036854775"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "9223372036854775"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "4102444800"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "-1"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "4102444800"
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "-1"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "0"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "4102444800"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
@@ -684,7 +793,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     "4102444800"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
                     "0"
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
 
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
@@ -696,7 +809,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     "account-a"
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
                     null
-                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
             }
         }
@@ -738,7 +855,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -778,7 +899,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -822,7 +947,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(now, uncertifiedTail.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    uncertifiedTail.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
             }
@@ -866,7 +995,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(now, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
             }
@@ -925,7 +1058,11 @@ class ReconcileThenSampleTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(first.timestamp, last.timestamp)
+                val comparison = service.getRebalancerComparison(
+                    first.timestamp,
+                    last.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 val certifiedEventEnd = stableThrough.plusNanos(999_999_999)

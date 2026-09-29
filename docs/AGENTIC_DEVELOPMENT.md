@@ -280,17 +280,14 @@ That omission is deliberate: model availability and quality change faster than
 the architecture and safety constraints of the application.
 
 Kilo sessions use the project default configured in `.kilo/kilo.json`:
-`kilo/kilo-auto/efficient`. Auto Efficient classifies each request and selects
-the least expensive benchmarked model expected to complete it. The underlying
-mapping is server-side and can change, so repository guidance must not claim that
-the Auto tier always uses a particular model or maintain a local route catalog.
-See the [Kilo Auto Model documentation](https://kilo.ai/docs/code-with-ai/agents/auto-model)
-for the current tier behavior and requirements.
-Select `kilo/kilo-auto/frontier` in Kilo for the highest-risk or disputed review;
-use `kilo/kilo-auto/small` only for bounded routine work. The `free` tier is
-reserved for non-sensitive experiments because upstream providers may use its
-prompts and outputs. Custom Efficient pools belong in Kilo profile or
-organization settings, not in this repository.
+`kilo/openai/gpt-6-luna`. That is a host-supported route whose underlying
+mapping is server-side and can change, so repository guidance must not claim it
+always resolves to a particular model or maintain a local route catalog.
+Select a stronger host tier for the highest-risk or disputed review, and a
+smaller one only for bounded routine work. The `free` tier is reserved for
+non-sensitive experiments because upstream providers may use its prompts and
+outputs. Custom pools belong in Kilo profile or organization settings, not in
+this repository.
 
 The project instead records model roles where diversity is valuable. The
 adversarial PR workflow first partitions the diff into independent concerns,

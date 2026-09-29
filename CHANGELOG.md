@@ -6,6 +6,188 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.85] - 2026-09-29
+
+### Changed
+
+- **Comparison callers must select a benchmark explicitly**: normal History and Settings proposal paths use
+  the inferred configuration-matched hold, while fixed-inception remains an intentional forensic choice.
+
+### Fixed
+
+- **Allocation previews could describe unsaveable books**: the preview now rejects malformed or misaligned rows,
+  invalid symbols, canonical duplicate symbols, or scored sleeves, and results whose full-book total is outside
+  allocation tolerance. Auto uses only the combined existing targets of scored assets and fails closed when that
+  sum is zero.
+- **Quality scores could detach from Kraken symbol aliases**: config normalization now canonicalizes score keys
+  with allocation symbols and rejects invalid keys or collisions before publishing or persisting settings.
+
+## [6.17.84] - 2026-09-28
+
+### Added
+
+- **Inferred configuration-matched hold benchmark**: infers major, persistent allocation regime
+  changes from trading and balance behavior and labels them `INFERRED`, separating accounting
+  confidence from configuration evidence. `ConfigurationRegimeInference` identifies persistent
+  regimes (≥20 fills over ≥60 days and continuous economic presence) to synthesize resets anchored
+  to the strategy's in-scope value proportions. Cache version is bumped to 6 with benchmark identity
+  in the key, while the fixed-inception benchmark remains selectable via `?benchmark=` as a forensic reference.
+- **Trend-aware sell suppression**: a rebalance no longer trims an asset that is trading at its
+  highest completed daily close over the last 20 days, the regime where mean-reversion trades
+  historically lose to trend continuation. The suppressed leg is reported as
+  `Skipping sell — at recent high for <SYM>` in the action log. The lookback resolves through
+  `KrakenService.getOHLC` and fails open, so a missing or failing history leaves the cycle trading
+  exactly as before. Queries are filtered to candidate sell symbols with a 1-hour TTL cache to avoid
+  redundant public OHLC polling across cycles.
+- **Fundamental quality scores**: settings carry an optional `qualityScores` map per allocation
+  symbol. The dashboard allocation panel reports weighted quality score, largest single position,
+  and effective independent bets, and renders nothing when no scores are configured.
+- **Score-derived allocation preview**: a `Calculate from scores` action in the settings form
+  redistributes the scored sleeve proportionally to `score^emphasis` (emphasis 1-8) and fills the
+  open form. It is preview-only — it never persists, and the operator can edit before saving.
+  Preserves target percentages for unscored assets and defaults the sleeve to the sum of scored targets.
+  `docs/ALGORITHM.md` records the operating settings trade-offs between fee drag and variance reduction,
+  including the caveat that tail-stop rebalancing reduces variance rather than guaranteeing outperformance against buy-and-hold.
+- **Historical replay harness** (`backend/src/test/kotlin/com/gemini/krakenbot/replay`): replays a
+  price path and capital-flow schedule through the production `RebalancerEngine` and compares the
+  rebalanced book with buy-and-hold on identical capital. Fixtures are loaded from
+  `REPLAY_FIXTURE_PATH` and are never committed. The harness also reports a lookback × trigger
+  surface and re-checks the best cell on both halves of the window, so a spike is not mistaken for
+  a setting. When no fixture is configured the two fixture-gated specs are reported as skipped
+  rather than passing vacuously, so CI never claims a measurement it did not make.
+
+### Fixed
+
+- **Configuration inference counted non-economic trade records as live fills**: regime activity now
+  counts only successful non-dry-run fills, so failed attempts and dry-run records cannot establish
+  a persistent configuration member or stretch its fill span.
+- **Unavailable comparisons could report the wrong benchmark provenance**: fixed-inception and
+  inferred results now carry their selected method and its matching configuration evidence through
+  fail-closed, cache-refresh, and API serialization paths.
+- **Incomplete funding-method responses could vouch for an unchecked rail**: repeated cursors and
+  missing or malformed `methods` arrays now mark the registry incomplete and withhold raw method IDs,
+  leaving unidentified funding rows unresolved instead of counting them as external capital.
+- **The local replay oracle under-applied crypto-funded withdrawals**: each asset's withdrawal share
+  now uses the original shortfall, preserving same-capital comparisons across multiple assets.
+- **Recent-high suppression used incomplete daily candles and could block withdrawal correction**:
+  only completed UTC-day closes in the full trailing window qualify, cache entries expire at the next
+  UTC day boundary, and an explicit USD-withdrawal correction can sell an overweight asset at a recent
+  high to restore the configured reserve.
+- **Allocation score inputs could exceed their displayed range and previews could merge duplicate
+  rows**: score values are now bounded by the displayed 0–10 range in preview, save, and configuration
+  checks; previews reject duplicate symbols case-insensitively, and the form explains that blank or
+  zero clears a score.
+- **Quality scores could persist a non-finite value and brick the dashboard**: the settings form
+  gated a score on `toDoubleOrNull()` plus `> 0.0`, but Kotlin's `toDoubleOrNull` only screens the
+  literal's syntax and delegates to `Double.parseDouble`, which returns `Infinity` on exponent
+  overflow rather than throwing. `1e400` therefore persisted to `rebalancer-config.json`, and
+  `BigDecimal.valueOf` then threw on every dashboard fragment render until the file was hand-edited.
+  Scores now go through the same `requiredFiniteDouble` guard every other numeric setting uses, a
+  malformed score is reported instead of silently dropped, and `validateSettings` rejects a
+  non-finite, non-positive, or over-10 score so a hand-edited config fails at load.
+- **Allocation preview errors were invisible**: the preview endpoint raised bare `require` failures
+  that reached the client as a JSON error the HTMX trigger never swaps, so `Calculate from scores`
+  silently did nothing on bad input. Validation now responds 422 with the settings form and the
+  `ViewText` message, retargeted at the body exactly like the expired-CSRF path. The tests asserted
+  a 500 that only the test harness (which does not install `StatusPages`) could produce; they now
+  assert the shipped 422 contract.
+- **Every comparison request paid two paced public calls**: Kraken asset metadata is now memoized
+  for an hour under a single-flight lock, instead of two `/0/public/Assets` requests behind the
+  1 s public limiter on every request — including full comparison cache hits, since the metadata
+  digest is part of the cache fingerprint. A failed fetch is deliberately not memoized, so a
+  transient Kraken outage cannot pin a fail-closed empty result into the fingerprint.
+- **A lone funding-rail id could bypass the internal-rail veto**: `hasExternalProof` vetoes on the
+  resolved method *name*, so a rail whose name failed to resolve skipped the veto and was then
+  accepted as external owner capital on the strength of the id alone — and this backend cannot
+  source internal-transfer evidence to correct it. The rail id is now surfaced only when the
+  funding-method registry was read **in full**, so an unreachable, truncated, or partially-parsed
+  registry leaves the row `UNRESOLVED` as before. The registry is read at most once per status page
+  however many records it holds, so a Kraken degradation cannot multiply private requests.
+- **The comparison chart could be labelled with the wrong benchmark**: the series label and the page
+  captions were static text naming the configuration-matched benchmark regardless of what the
+  request served. `BenchmarkMethod` and `ConfigurationEvidence` moved to `:common`, the chart label
+  is now derived from the response's `benchmarkMethod`, and the page captions describe both
+  benchmarks without claiming which is plotted. A comparison that ran no benchmark — an
+  unavailable one, in particular — no longer defaults to the forensic reference on the wire.
+- **A cached recent high could cross trading modes**: the 1-hour OHLC cache was keyed by trading
+  pair alone, so a high resolved against live candles decided whether a simulated sell was
+  suppressed for up to an hour. The cache is now scoped to the active trading mode.
+- **A malformed score emphasis was silently absorbed**: `scoreEmphasis` defaulted any unparseable
+  value to the flattest weighting while refusing an out-of-range one. Both are now rejected, so a
+  typo cannot quietly change what the preview shows.
+- **Agent-guidance model drift**: `.kilo/kilo.json` pins `kilo/openai/gpt-6-luna`, but
+  `OPERATING.md`, `AGENTIC_DEVELOPMENT.md`, and two skills still documented
+  `kilo/kilo-auto/efficient` and described Auto-tier behaviour the pinned route does not have.
+- **Settings rejections were invisible in the browser**: the server answers an invalid settings save —
+  and the allocation preview — with a fully rendered settings form plus an error banner and status
+  422, but htmx does not swap a non-2xx response by default. The body was discarded, so submitting
+  invalid input produced no feedback at all. This predates the preview and also affected the plain
+  save path. A scoped `htmx:beforeSwap` listener now admits status 422 when the response carries a
+  body, leaving every other error status to htmx's default handling.
+- **A settings rejection could render off-screen and outlive its attempt**: the rejection swaps the
+  whole form, but its trigger can sit far down the page (the allocation preview button is at the
+  bottom), leaving a banner rendered at the top above the fold. The banner now scrolls into view
+  when a swap renders one. A rejection message also belonged to the attempt that produced it, so a
+  new submission clears the previous one instead of a successful swap leaving it above freshly
+  rendered content. Scoped to form-level banners, so the dashboard's own error region is untouched.
+- **Largest-remainder proportional allocation**: `QualityAllocation.proportional` now uses standard
+  Hare-Niemeyer largest-remainder allocation (`RoundingMode.DOWN` floor truncation plus descending remainder
+  distribution) to guarantee non-negative residual integers and exact total percentage conservation.
+- **Fiat funding provenance**: a deposit or withdrawal whose Funding record exposes only a
+  `method_id` — no method name, no transaction id, as is the case for every fiat rail on the modern
+  Funding API — is no longer forced to `UNRESOLVED`. The stable funding-rail id is now carried on
+  funding records and accepted as external proof on a terminal-status record that already matched
+  the ledger row **and only when the funding-method registry answered and cleared the rail**; an
+  internal method marker still vetoes external classification.
+- **Historical replay terminal day truncation**: add regression coverage in `ReplayComparisonTest`
+  verifying that `lastDay` bounds both the rebalanced and buy-and-hold arms to the identical evaluation
+  day, excluding subsequent funding flows and market movements from both books.
+- **Precision in score preview calculation**: convert percentages using `BigDecimal.valueOf` rather than
+  `BigDecimal(Double)` to eliminate IEEE 754 floating-point conversion artifacts.
+
+### Changed
+
+- **The score preview controls were unexplained**: the emphasis field is pre-filled, so its
+  placeholder could never show and the operator saw a bare `4` with no label, range, or
+  indication that it is an optional preview rather than a saved setting. The group was also titled
+  `Scored sleeve`, which is the name of its *second* field. Both fields now carry their own visible
+  labels — `Emphasis (1–8)` and `Scored sleeve (%)` — the box is untitled, and a lead-in explains
+  what the group does. The pre-selected emphasis and the absent-field fallback are now named
+  constants in `QualityAllocation` rather than a hardcoded `4` in the markup and a private `1` in
+  the controller; they are deliberately different values, because an absent field means "not
+  chosen" rather than "chosen as the default".
+- **Docs**: refreshed `docs/images/*` from the current build so the gallery is no longer
+  mixed-vintage, and added a `settings-allocations.png` target for the rebuilt target-allocation
+  editor, which the existing top-anchored `settings.png` cropped out. The User Guide's *Target
+  allocations* section now documents the quality score and the preview controls — what they are, what
+  they deliberately do not do, a four-step how-to, and a worked example at emphasis 1 and 4 — plus
+  what scope each preview figure is measured over, and its comparison section documents the two
+  selectable benchmarks instead of assuming one. Two capture targets pointed at text the app no
+  longer renders (`Rebalancer vs Buy & Hold`, `Staking Rewards`) and were repointed.
+- **Allocation preview figures are measured over the whole portfolio**: the three preview metrics were
+  all computed over the scored sleeve, so `Largest single position` reported BTC as 86.27% when its
+  actual share of the book was 81.96%, and `Effective independent bets` silently ignored the
+  unscored legs it was being read next to. Concentration is a statement about the portfolio, so both
+  now count every leg the preview will produce. The quality score genuinely cannot include an
+  unscored asset — there is no score to average — so it is labelled `scored assets only` rather than
+  being presented as a portfolio figure. With BTC 81.96 / ETH 13.04 / USD 5.0 the figures read
+  81.96% and 1.45 instead of 86.27% and 1.31.
+- **Allocation rows are labelled and no longer squeezed**: the `score` and `target` fields sat side
+  by side as identical boxes told apart only by a `%` suffix, and the placeholder was truncated to
+  `sc` at laptop width. Each numeric field now carries a visible label above it, the placeholder
+  reads `0–10`, and `Remove` is right-aligned instead of crowding the fields. The list keeps its
+  column layout, but the columns are auto-fitting with a 30rem floor rather than forced to three at
+  1024px, which had squeezed each row to 386px — narrow enough to truncate the score field and run
+  the two labels into each other.
+- **The score controls and add-asset control are separate labelled groups** rather than sharing one
+  dashed box, and the sleeve input no longer borrows the `Target Allocations` heading text as its
+  placeholder, which read as a duplicate heading directly beneath the real one. Inputs keep a fixed
+  width so `Add Asset` is no longer the largest control in the section. The preview's three figures
+  are separate labelled cells, each carrying its own scope note, instead of one run-on line.
+- **Docs**: the 20-day recent-high lookback is documented as a provisional compiled-in parameter in
+  a new `ALGORITHM.md` §6 rather than a settings row, since the sweep that chose it is contradicted
+  by an independent re-implementation at the same settings.
+
 ## [6.17.83] - 2026-09-25
 
 ### Fixed

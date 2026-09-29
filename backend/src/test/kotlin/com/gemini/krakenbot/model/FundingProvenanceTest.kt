@@ -1803,5 +1803,66 @@ class FundingProvenanceTest : StringSpec() {
             resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
             resolver.explain(event) shouldBe null
         }
+
+        "fiat deposit proven only by a funding-rail id is external owner capital" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-FIAT-METHOD-ID",
+                asset = "USD",
+                amount = BigDecimal("10000.00"),
+                time = now,
+                status = "Success",
+                methodId = "052b01c3-046b-473d-a434-7eaf578d33eb",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(deposit))
+            val event = LedgerEvent(
+                ledgerId = "L-FIAT-METHOD-ID",
+                refid = deposit.refid,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("10000.00"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+            resolver.explain(event) shouldBe null
+        }
+
+        "a funding record naming an internal wallet route is never external" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-INTERNAL-METHOD",
+                asset = "USD",
+                amount = BigDecimal("500.00"),
+                time = now,
+                status = "Success",
+                method = "Spot to Futures wallet transfer",
+                methodId = "internal-rail-id",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(deposit))
+            val event = LedgerEvent(
+                ledgerId = "L-INTERNAL-METHOD",
+                refid = deposit.refid,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("500.00"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+            resolver.diagnose(event)?.hasTransactionProof shouldBe false
+        }
+
+        "a ledger row with no funding record stays unresolved" {
+            val resolver = SimpleFundingProvenanceResolver(deposits = emptyList())
+            val event = LedgerEvent(
+                ledgerId = "L-NO-RECORD",
+                refid = "REF-NO-RECORD",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("375.00"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+        }
     }
 }

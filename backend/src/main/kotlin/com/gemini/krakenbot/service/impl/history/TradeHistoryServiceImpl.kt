@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -173,6 +174,9 @@ class TradeHistoryServiceImpl(
     override suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
         queryService.getSettingsComparisonStatus(after)
 
-    override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
-        queryService.getRebalancerComparison(from, to)
+    override suspend fun getRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison = queryService.getRebalancerComparison(from, to, benchmarkMethod)
 }

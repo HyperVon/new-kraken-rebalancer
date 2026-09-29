@@ -1,8 +1,11 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
@@ -37,6 +40,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -55,6 +59,82 @@ class PortfolioManagerImpl(
 
     companion object {
         const val CYCLE_ID_MDC_KEY = "cycleId"
+
+        /** Days of completed daily closes that define "a recent high" for sell suppression. */
+        const val RECENT_HIGH_LOOKBACK_DAYS = 20L
+
+        /** TTL for caching completed daily recent-high closes to avoid redundant public OHLC polling. */
+        const val RECENT_HIGH_CACHE_TTL_SECONDS = 3600L
+
+        private const val SECONDS_PER_DAY = 86_400L
+    }
+
+    private val recentHighCache = ConcurrentHashMap<RecentHighCacheKey, Pair<Long, BigDecimal>>()
+
+    /**
+     * Recent-high cache scope. The trading mode selects the backend, and simulation has no OHLC
+     * history at all, so a high resolved under one mode must not suppress or fail to suppress a
+     * trade under the other for the rest of the TTL.
+     */
+    private data class RecentHighCacheKey(val pair: String, val simulation: Boolean)
+
+    /**
+     * Symbols currently trading at or above their highest completed close in the lookback
+     * window. Selling an asset in that regime is where mean-reversion has historically lost to
+     * trend continuation, so those overweight legs are held rather than trimmed.
+     *
+     * Fails open: any symbol whose history cannot be resolved is simply omitted, which leaves
+     * the cycle trading exactly as it did before this rule existed.
+     */
+    internal suspend fun resolveAtRecentHigh(
+        allocations: List<Allocation>,
+        prices: Map<String, BigDecimal>,
+        nowEpochSecond: Long,
+        candidateSymbols: Set<String>? = null,
+        simulation: Boolean,
+    ): Set<String> {
+        val backend = krakenService ?: return emptySet()
+        if (candidateSymbols != null && candidateSymbols.isEmpty()) return emptySet()
+        val currentDayStart = Math.floorDiv(nowEpochSecond, SECONDS_PER_DAY) * SECONDS_PER_DAY
+        val since = currentDayStart - RECENT_HIGH_LOOKBACK_DAYS * SECONDS_PER_DAY
+        val trending = mutableSetOf<String>()
+        for (allocation in allocations) {
+            val symbol = allocation.symbol
+            if (symbol.isUsd) continue
+            if (candidateSymbols != null && !candidateSymbols.contains(symbol.value)) continue
+            val currentPrice = prices[symbol.value] ?: continue
+            if (currentPrice.signum() <= 0) continue
+
+            val cacheKey = RecentHighCacheKey(Asset.tradingPair(symbol.value), simulation)
+            val cached = recentHighCache[cacheKey]
+            val recentHigh = if (cached != null && nowEpochSecond < cached.first) {
+                cached.second
+            } else {
+                val closes = try {
+                    backend.getOHLC(pair = cacheKey.pair, interval = 1440, since = since)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.debug("Recent-high lookup failed for {}; trading it as before", symbol.value, e)
+                    continue
+                }
+                val completedCloses = closes.filter { it.first >= since && it.first < currentDayStart }
+                val high = completedCloses.maxOfOrNull { it.second } ?: continue
+                if (high.signum() > 0) {
+                    val expiresAt = minOf(
+                        nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS,
+                        currentDayStart + SECONDS_PER_DAY,
+                    )
+                    recentHighCache[cacheKey] = Pair(expiresAt, high)
+                }
+                high
+            }
+
+            if (recentHigh.signum() > 0 && currentPrice >= recentHigh) {
+                trending.add(symbol.value)
+            }
+        }
+        return trending
     }
 
     // The monitor covers synchronous start/stop Job ownership; the Mutex rejects duplicate coroutine callers.
@@ -522,11 +602,34 @@ class PortfolioManagerImpl(
         val cryptoScaleFactor =
             portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
 
+        val sellCandidates = config.allocations
+            .filter { !it.symbol.isUsd }
+            .filter { alloc ->
+                val targetPct = PortfolioCalculations.calculateTargetPercent(
+                    alloc.symbol,
+                    BigDecimal.valueOf(alloc.targetPercent),
+                    effectiveUsdTarget,
+                    cryptoScaleFactor,
+                )
+                val targetUsd = PortfolioCalculations.calculateTargetValue(targetPct, totalPortfolioValueUSD)
+                val currentUsd = currentValuesUSD[alloc.symbol.value] ?: BigDecimal.ZERO
+                currentUsd > targetUsd
+            }
+            .map { it.symbol.value }
+            .toSet()
+
         val plan = portfolioAnalyzer.analyzeDeviations(
             totalPortfolioValueUSD = totalPortfolioValueUSD,
             currentValuesUSD = currentValuesUSD,
             effectiveUsdTarget = effectiveUsdTarget,
             cryptoScaleFactor = cryptoScaleFactor,
+            trendingAssets = resolveAtRecentHigh(
+                allocations = config.allocations,
+                prices = prices,
+                nowEpochSecond = preObservedAt.epochSecond,
+                candidateSymbols = sellCandidates,
+                simulation = config.settings.simulation,
+            ),
         )
         val buyOrders = plan.buyOrders
         val sellOrders = plan.sellOrders
