@@ -65,6 +65,8 @@ class PortfolioManagerImpl(
 
         /** TTL for caching completed daily recent-high closes to avoid redundant public OHLC polling. */
         const val RECENT_HIGH_CACHE_TTL_SECONDS = 3600L
+
+        private const val SECONDS_PER_DAY = 86_400L
     }
 
     private val recentHighCache = ConcurrentHashMap<RecentHighCacheKey, Pair<Long, BigDecimal>>()
@@ -93,9 +95,9 @@ class PortfolioManagerImpl(
     ): Set<String> {
         val backend = krakenService ?: return emptySet()
         if (candidateSymbols != null && candidateSymbols.isEmpty()) return emptySet()
-        val since = nowEpochSecond - RECENT_HIGH_LOOKBACK_DAYS * 24 * 60 * 60
+        val currentDayStart = Math.floorDiv(nowEpochSecond, SECONDS_PER_DAY) * SECONDS_PER_DAY
+        val since = currentDayStart - RECENT_HIGH_LOOKBACK_DAYS * SECONDS_PER_DAY
         val trending = mutableSetOf<String>()
-        val currentDayStart = nowEpochSecond - (nowEpochSecond % 86400)
         for (allocation in allocations) {
             val symbol = allocation.symbol
             if (symbol.isUsd) continue
@@ -116,17 +118,14 @@ class PortfolioManagerImpl(
                     log.debug("Recent-high lookup failed for {}; trading it as before", symbol.value, e)
                     continue
                 }
-                val completedCloses = closes.filter { it.first < currentDayStart }
-                val candidateCloses = if (completedCloses.isNotEmpty()) {
-                    completedCloses
-                } else if (closes.size > 1) {
-                    closes.dropLast(1)
-                } else {
-                    closes
-                }
-                val high = candidateCloses.maxOfOrNull { it.second } ?: continue
+                val completedCloses = closes.filter { it.first >= since && it.first < currentDayStart }
+                val high = completedCloses.maxOfOrNull { it.second } ?: continue
                 if (high.signum() > 0) {
-                    recentHighCache[cacheKey] = Pair(nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS, high)
+                    val expiresAt = minOf(
+                        nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS,
+                        currentDayStart + SECONDS_PER_DAY,
+                    )
+                    recentHighCache[cacheKey] = Pair(expiresAt, high)
                 }
                 high
             }

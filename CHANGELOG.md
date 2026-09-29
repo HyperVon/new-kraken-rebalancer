@@ -42,6 +42,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Configuration inference counted non-economic trade records as live fills**: regime activity now
+  counts only successful non-dry-run fills, so failed attempts and dry-run records cannot establish
+  a persistent configuration member or stretch its fill span.
+- **Unavailable comparisons could report the wrong benchmark provenance**: fixed-inception and
+  inferred results now carry their selected method and its matching configuration evidence through
+  fail-closed, cache-refresh, and API serialization paths.
+- **Recent-high suppression used incomplete daily candles and could block withdrawal correction**:
+  only completed UTC-day closes in the full trailing window qualify, cache entries expire at the next
+  UTC day boundary, and an explicit USD-withdrawal correction can sell an overweight asset at a recent
+  high to restore the configured reserve.
 - **Quality scores could persist a non-finite value and brick the dashboard**: the settings form
   gated a score on `toDoubleOrNull()` plus `> 0.0`, but Kotlin's `toDoubleOrNull` only screens the
   literal's syntax and delegates to `Double.parseDouble`, which returns `Infinity` on exponent

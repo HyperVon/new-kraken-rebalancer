@@ -50,15 +50,15 @@ class AssetRegimeActivityExtractionTest : StringSpec() {
         hasAuthoritativeBalance = true,
     )
 
-    private fun trade(time: Instant, symbol: String) = TradeRecord(
+    private fun trade(time: Instant, symbol: String, success: Boolean = true, dryRun: Boolean = false) = TradeRecord(
         timestamp = time,
         pair = "${symbol}USD",
         side = "BUY",
         symbol = symbol,
         volume = BigDecimal.ONE,
         usdAmount = BigDecimal.TEN,
-        success = true,
-        dryRun = false,
+        success = success,
+        dryRun = dryRun,
     )
 
     private fun activities(
@@ -245,18 +245,77 @@ class AssetRegimeActivityExtractionTest : StringSpec() {
             result.containsKey("SECURITY") shouldBe false
         }
 
-        "fill counts and spans come from successful trades" {
+        "failed and dry-run trades do not count or extend the successful live fill span" {
             val baseline = snapshot(
                 mapOf("AAA" to Triple("0.0", "10.00", "0.00")),
             )
             val result = activities(
                 baseline = baseline,
-                trades = listOf(trade(t0, "AAA"), trade(t0.plusSeconds(60), "AAA")),
+                trades = listOf(
+                    trade(t0, "AAA", success = false),
+                    trade(t0.plusSeconds(60), "AAA"),
+                    trade(t0.plusSeconds(120), "AAA"),
+                    trade(t0.plusSeconds(180), "AAA", dryRun = true),
+                ),
             )
 
-            result.getValue("AAA").fillCount shouldBe 2
-            result.getValue("AAA").firstFill shouldBe t0
-            result.getValue("AAA").lastFill shouldBe t0.plusSeconds(60)
+            val aaa = result.getValue("AAA")
+            aaa.fillCount shouldBe 2
+            aaa.firstFill shouldBe t0.plusSeconds(60)
+            aaa.lastFill shouldBe t0.plusSeconds(120)
+        }
+
+        "failed and dry-run records cannot create persistence despite sustained balance evidence" {
+            val spanSeconds = 90L * 86_400L
+            val invalidTrades = (0 until ConfigurationRegimeInference.MIN_FILLS + 1).map { index ->
+                val time = t0.plusSeconds(index.toLong() * spanSeconds / ConfigurationRegimeInference.MIN_FILLS)
+                if (index % 2 == 0) {
+                    trade(time, "AAA", success = false)
+                } else {
+                    trade(time, "AAA", dryRun = true)
+                }
+            }
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("0.0", "10.00", "0.00"))),
+                trades = invalidTrades,
+                ledgers = listOf(
+                    ledger("start", t0, "AAA", "10.0"),
+                    ledger("end", t0.plusSeconds(spanSeconds), "AAA", "10.0"),
+                ),
+                scope = setOf("AAA", "USD"),
+            )
+            val aaa = result.getValue("AAA")
+
+            aaa.fillCount shouldBe 0
+            aaa.firstFill shouldBe null
+            aaa.lastFill shouldBe null
+            aaa.economicallyPresentSpanMillis shouldBe spanSeconds * 1_000L
+            ConfigurationRegimeInference.infer(result.values) shouldBe emptyList()
+        }
+
+        "enough successful live fills still establish a persistent member" {
+            val spanSeconds = 90L * 86_400L
+            val liveFills = (0 until ConfigurationRegimeInference.MIN_FILLS).map { index ->
+                val time = t0.plusSeconds(
+                    index.toLong() * spanSeconds / (ConfigurationRegimeInference.MIN_FILLS - 1),
+                )
+                trade(time, "AAA")
+            }
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("0.0", "10.00", "0.00"))),
+                trades = liveFills,
+                ledgers = listOf(
+                    ledger("start", t0, "AAA", "10.0"),
+                    ledger("end", t0.plusSeconds(spanSeconds), "AAA", "10.0"),
+                ),
+                scope = setOf("AAA", "USD"),
+            )
+            val aaa = result.getValue("AAA")
+
+            aaa.fillCount shouldBe ConfigurationRegimeInference.MIN_FILLS
+            aaa.firstFill shouldBe t0
+            aaa.lastFill shouldBe t0.plusSeconds(spanSeconds)
+            ConfigurationRegimeInference.infer(result.values).single().additions shouldBe setOf("AAA")
         }
     }
 }

@@ -9,10 +9,12 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.ConfigurationEvidence
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceFailure
@@ -2209,8 +2211,14 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val budget = TradeHistoryQueryService.MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST
 
                 // Cold calculation records one dependency per valuation window.
-                val cold = queryService.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp)
+                val cold = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snapshots.last().timestamp,
+                    BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                )
                 cold.availability shouldBe ComparisonAvailability.AVAILABLE
+                cold.benchmarkMethod shouldBe BenchmarkMethod.FIXED_INCEPTION_HOLD
+                cold.configurationEvidence shouldBe ConfigurationEvidence.NOT_APPLICABLE
                 countingCache.saveCount shouldBe 1
                 val coldOhlcCalls = ohlcCalls
                 val fromMs = snapshots.first().timestamp.toEpochMilli()
@@ -2229,9 +2237,15 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 repeat(12) {
                     if (hit) return@repeat
                     val before = ohlcCalls
-                    val result = queryService.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp)
+                    val result = queryService.getRebalancerComparison(
+                        Instant.EPOCH,
+                        snapshots.last().timestamp,
+                        BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                    )
                     (ohlcCalls - before) shouldBeLessThanOrEqual budget
                     countingCache.saveCount shouldBe 1
+                    result.benchmarkMethod shouldBe BenchmarkMethod.FIXED_INCEPTION_HOLD
+                    result.configurationEvidence shouldBe ConfigurationEvidence.NOT_APPLICABLE
                     if (result.availability == ComparisonAvailability.AVAILABLE) {
                         hit = true
                     } else {

@@ -12,16 +12,16 @@ import com.gemini.krakenbot.view.util.ViewText
  * agree on the name. [seriesLabel] is what the chart legend renders, so the served benchmark is
  * always named from the response rather than assumed by the page.
  */
-enum class BenchmarkMethod(val seriesLabel: String) {
+enum class BenchmarkMethod(val seriesLabel: String, val configurationEvidence: ConfigurationEvidence) {
     /** Freezes the approved inception portfolio and holds it forever. Forensic reference. */
-    FIXED_INCEPTION_HOLD(ViewText.BUY_AND_HOLD_FIXED_INCEPTION),
+    FIXED_INCEPTION_HOLD(ViewText.BUY_AND_HOLD_FIXED_INCEPTION, ConfigurationEvidence.NOT_APPLICABLE),
 
     /**
      * Follows the same major, persistent allocation changes the strategy made, applying one synthetic
      * portfolio transition per inferred regime change and otherwise holding. This is the primary
      * comparison because it isolates the value of routine rebalancing from asset selection.
      */
-    INFERRED_CONFIGURATION_MATCHED_HOLD(ViewText.BUY_AND_HOLD_CONFIG_MATCHED),
+    INFERRED_CONFIGURATION_MATCHED_HOLD(ViewText.BUY_AND_HOLD_CONFIG_MATCHED, ConfigurationEvidence.INFERRED),
     ;
 
     companion object {

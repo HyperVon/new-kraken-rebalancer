@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.api
 
 import com.gemini.krakenbot.model.BenchmarkMethod
-import com.gemini.krakenbot.model.ConfigurationEvidence
 
 data class RebalancerComparison(
     val availability: String,
@@ -28,10 +27,10 @@ data class RebalancerComparison(
      * changes were inferred from persistent behavior, not retained as proven configuration history.
      * Kept separate from [confidence] so a reconciled comparison is never read as proven history.
      *
-     * Defaults to `INFERRED` to stay consistent with the default [benchmarkMethod], so a response
-     * that lost both fields cannot claim the reference uses no configuration history at all.
+     * Defaults to the evidence required by [benchmarkMethod], so a fixed-inception response does
+     * not claim inferred configuration history and an inferred response does not claim proven history.
      */
-    val configurationEvidence: String = ConfigurationEvidence.INFERRED.name,
+    val configurationEvidence: String = BenchmarkMethod.fromNameOrPrimary(benchmarkMethod).configurationEvidence.name,
 )
 
 data class RebalancerComparisonPoint(

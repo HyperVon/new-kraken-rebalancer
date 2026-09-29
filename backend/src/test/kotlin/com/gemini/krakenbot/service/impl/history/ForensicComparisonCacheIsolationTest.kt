@@ -185,12 +185,44 @@ class ForensicComparisonCacheIsolationTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                query.getRebalancerComparison(Instant.EPOCH, second.timestamp)
-                    .availability shouldBe ComparisonAvailability.AVAILABLE
+                for (method in BenchmarkMethod.entries) {
+                    val uncached = query.getRebalancerComparison(Instant.EPOCH, second.timestamp, method)
+                    val cached = query.getRebalancerComparison(Instant.EPOCH, second.timestamp, method)
+
+                    uncached.availability shouldBe ComparisonAvailability.AVAILABLE
+                    cached.availability shouldBe ComparisonAvailability.AVAILABLE
+                    uncached.benchmarkMethod shouldBe method
+                    cached.benchmarkMethod shouldBe method
+                    uncached.configurationEvidence shouldBe method.configurationEvidence
+                    cached.configurationEvidence shouldBe method.configurationEvidence
+                }
 
                 // The bypass is specific to forensic runs; the shipping path still caches, and the
                 // difference between the two is what makes the isolation meaningful.
                 cache.size shouldBe 1
+            }
+        }
+
+        "an unavailable comparison preserves the requested benchmark before cache lookup" {
+            runTest {
+                val repository = mockk<TradeRepository>(relaxed = true)
+                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+                val cache = InMemoryComparisonCache()
+                val query = service(repository, statsRepository, ledgerRepository, cache)
+                val first = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val second = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(first, second)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+
+                for (method in BenchmarkMethod.entries) {
+                    val result = query.getRebalancerComparison(Instant.EPOCH, second.timestamp, method)
+
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.benchmarkMethod shouldBe method
+                    result.configurationEvidence shouldBe method.configurationEvidence
+                }
+                cache.size shouldBe 0
             }
         }
     }

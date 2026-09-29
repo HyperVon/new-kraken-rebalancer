@@ -11,10 +11,12 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
 
@@ -37,6 +39,10 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
     private val allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0))
     private val prices = mapOf(Asset.BTC to BigDecimal("60000"), Asset.USD to BigDecimal.ONE)
     private val now = 1_800_000_000L
+    private val secondsPerDay = 86_400L
+
+    private fun completedCandle(daysAgo: Long, close: String) =
+        (Math.floorDiv(now, secondsPerDay) * secondsPerDay - daysAgo * secondsPerDay) to BigDecimal(close)
 
     init {
         "resolveAtRecentHigh returns nothing without a Kraken service" {
@@ -48,9 +54,9 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
         "resolveAtRecentHigh marks an asset trading at its highest completed close" {
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
-                1L to BigDecimal("50000"),
-                2L to BigDecimal("59000"),
-                3L to BigDecimal("60000"),
+                completedCandle(3, "50000"),
+                completedCandle(2, "59000"),
+                completedCandle(1, "60000"),
             )
 
             manager(kraken)
@@ -61,8 +67,8 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
         "resolveAtRecentHigh omits an asset trading below its recent high" {
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
-                1L to BigDecimal("50000"),
-                2L to BigDecimal("70000"),
+                completedCandle(2, "50000"),
+                completedCandle(1, "70000"),
             )
 
             manager(kraken)
@@ -108,7 +114,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
 
         "resolveAtRecentHigh fails open when a close is not positive" {
             val kraken = mockk<KrakenService>()
-            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal.ZERO)
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(completedCandle(1, "0"))
 
             manager(kraken)
                 .resolveAtRecentHigh(allocations, prices, now, simulation = false)
@@ -126,7 +132,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
 
         "resolveAtRecentHigh ignores the USD allocation leg" {
             val kraken = mockk<KrakenService>()
-            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("1"))
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(completedCandle(1, "1"))
 
             // USD's price equals its only close, so it would qualify were it not excluded.
             manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
@@ -150,8 +156,8 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
         "resolveAtRecentHigh caches completed daily recent high within TTL" {
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
-                1L to BigDecimal("50000"),
-                2L to BigDecimal("60000"),
+                completedCandle(2, "50000"),
+                completedCandle(1, "60000"),
             )
 
             val instance = manager(kraken)
@@ -174,11 +180,43 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coVerify(exactly = 2) { kraken.getOHLC(any(), any(), any()) }
         }
 
+        "resolveAtRecentHigh requests the full trailing window of completed daily candles" {
+            val currentDayStart = Math.floorDiv(now, secondsPerDay) * secondsPerDay
+            val since = slot<Long>()
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), capture(since)) } returns
+                listOf((currentDayStart - secondsPerDay) to BigDecimal("60000"))
+
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
+
+            since.captured shouldBe currentDayStart -
+                PortfolioManagerImpl.RECENT_HIGH_LOOKBACK_DAYS * secondsPerDay
+        }
+
+        "resolveAtRecentHigh refreshes the completed-candle set at the UTC day boundary" {
+            val currentDayStart = Math.floorDiv(now, secondsPerDay) * secondsPerDay
+            val justBeforeMidnight = currentDayStart + secondsPerDay - 600
+            val nextDayStart = currentDayStart + secondsPerDay
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returnsMany listOf(
+                listOf((currentDayStart - secondsPerDay) to BigDecimal("60000")),
+                listOf(currentDayStart to BigDecimal("65000")),
+            )
+            val instance = manager(kraken)
+
+            instance.resolveAtRecentHigh(allocations, prices, justBeforeMidnight, simulation = false)
+                .shouldContainExactly(Asset.BTC)
+            instance.resolveAtRecentHigh(allocations, prices, nextDayStart, simulation = false)
+                .shouldBeEmpty()
+
+            coVerify(exactly = 2) { kraken.getOHLC(any(), any(), any()) }
+        }
+
         "resolveAtRecentHigh does not share a cached high across trading modes" {
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
-                1L to BigDecimal("50000"),
-                2L to BigDecimal("60000"),
+                completedCandle(2, "50000"),
+                completedCandle(1, "60000"),
             )
 
             val instance = manager(kraken)
@@ -193,28 +231,39 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
             coVerify(exactly = 2) { kraken.getOHLC(any(), any(), any()) }
         }
 
-        "resolveAtRecentHigh falls back to dropping last bar when completed closes is empty and size > 1" {
-            val currentDayStart = now - (now % 86400)
+        "resolveAtRecentHigh ignores incomplete current-day candles when completed candles exist" {
+            val currentDayStart = Math.floorDiv(now, secondsPerDay) * secondsPerDay
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
-                currentDayStart + 10 to BigDecimal("55000"),
-                currentDayStart + 20 to BigDecimal("70000"),
+                currentDayStart - secondsPerDay to BigDecimal("55000"),
+                currentDayStart + 10 to BigDecimal("70000"),
             )
 
-            // Current price is 60000; dropped-last candidate high is 55000 -> 60000 >= 55000 -> trending!
             manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
                 .shouldContainExactly(Asset.BTC)
         }
 
-        "resolveAtRecentHigh uses single bar when completed closes is empty and size == 1" {
-            val currentDayStart = now - (now % 86400)
+        "resolveAtRecentHigh fails open when only one incomplete candle is returned" {
+            val currentDayStart = Math.floorDiv(now, secondsPerDay) * secondsPerDay
             val kraken = mockk<KrakenService>()
             coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
                 currentDayStart + 10 to BigDecimal("60000"),
             )
 
             manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
-                .shouldContainExactly(Asset.BTC)
+                .shouldBeEmpty()
+        }
+
+        "resolveAtRecentHigh fails open when multiple returned candles are all incomplete" {
+            val currentDayStart = Math.floorDiv(now, secondsPerDay) * secondsPerDay
+            val kraken = mockk<KrakenService>()
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(
+                currentDayStart + 10 to BigDecimal("55000"),
+                currentDayStart + 20 to BigDecimal("70000"),
+            )
+
+            manager(kraken).resolveAtRecentHigh(allocations, prices, now, simulation = false)
+                .shouldBeEmpty()
         }
 
         "resolveAtRecentHigh handles empty closes from backend cleanly" {
@@ -227,7 +276,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
 
         "resolveAtRecentHigh skips symbol when price is zero, negative, or missing" {
             val kraken = mockk<KrakenService>()
-            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(completedCandle(1, "50000"))
 
             val instance = manager(kraken)
             instance.resolveAtRecentHigh(allocations, emptyMap(), now, simulation = false).shouldBeEmpty()
@@ -249,7 +298,7 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
 
         "resolveAtRecentHigh queries backend when candidateSymbols contains the symbol" {
             val kraken = mockk<KrakenService>()
-            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(1L to BigDecimal("50000"))
+            coEvery { kraken.getOHLC(any(), any(), any()) } returns listOf(completedCandle(1, "50000"))
 
             manager(kraken).resolveAtRecentHigh(
                 allocations,

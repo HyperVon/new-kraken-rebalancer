@@ -7,7 +7,6 @@ import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
-import com.gemini.krakenbot.model.ConfigurationEvidence
 import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
@@ -194,6 +193,12 @@ object RebalancerComparisonCalculator {
         benchmarkMethod: BenchmarkMethod,
         forensicRegimes: List<InferredRegimeTransition>?,
     ): RebalancerComparison {
+        fun unavailable(
+            reason: ComparisonUnavailableReason,
+            unavailableAt: Instant?,
+            baselineTimestamp: Instant?,
+        ): RebalancerComparison = unavailableComparison(reason, unavailableAt, baselineTimestamp, benchmarkMethod)
+
         inceptionUnavailableReason?.let { reason ->
             return unavailable(
                 reason = reason,
@@ -292,10 +297,15 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        val universeError = validateAssetUniverse(effectiveSnapshots, baseline, configuredAssetUniverse)
+        val universeError = validateAssetUniverse(
+            effectiveSnapshots,
+            baseline,
+            configuredAssetUniverse,
+            benchmarkMethod,
+        )
         if (universeError != null) return universeError
 
-        val baselineError = validateBaseline(baseline)
+        val baselineError = validateBaseline(baseline, benchmarkMethod)
         if (baselineError != null) return baselineError
         val negativeSnapshot = effectiveSnapshots.firstOrNull { snapshot ->
             snapshot.totalValueUSD.signum() < 0 || snapshot.assets.values.any { asset ->
@@ -334,7 +344,13 @@ object RebalancerComparisonCalculator {
         }
 
         val priceError = try {
-            validatePrices(effectiveSnapshots, baseline, priceProvider, comparisonAssetScope.currencyAssets)
+            validatePrices(
+                effectiveSnapshots,
+                baseline,
+                priceProvider,
+                comparisonAssetScope.currencyAssets,
+                benchmarkMethod,
+            )
         } catch (e: HistoricalPriceSourceException) {
             return unavailable(
                 reason = ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
@@ -1017,11 +1033,7 @@ object RebalancerComparisonCalculator {
             unavailableReason = null,
             unavailableAt = null,
             benchmarkMethod = benchmarkMethod,
-            configurationEvidence = if (benchmarkMethod == BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD) {
-                ConfigurationEvidence.INFERRED
-            } else {
-                ConfigurationEvidence.NOT_APPLICABLE
-            },
+            configurationEvidence = benchmarkMethod.configurationEvidence,
         )
     }
 
@@ -1145,23 +1157,28 @@ object RebalancerComparisonCalculator {
         val accountingMode: TradeAccountingMode,
     )
 
-    private fun validateBaseline(baseline: PortfolioSnapshot): RebalancerComparison? {
+    private fun validateBaseline(
+        baseline: PortfolioSnapshot,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison? {
         val hasInvalidAsset = baseline.assets.values.any { asset ->
             asset.balance.signum() < 0 ||
                 asset.valueUSD.signum() < 0
         }
         if (hasInvalidAsset) {
-            return unavailable(
+            return unavailableComparison(
                 reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                 unavailableAt = baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         if (baseline.totalValueUSD <= BigDecimal.ZERO) {
-            return unavailable(
+            return unavailableComparison(
                 reason = ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
                 unavailableAt = baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // Portfolio totals are the cent-rounded aggregate of raw products while asset rows are
@@ -1170,10 +1187,11 @@ object RebalancerComparisonCalculator {
         if (recordedAssetValueTotal(baseline).subtract(baseline.totalValueUSD) >
             snapshotPersistenceRoundingEnvelope(baseline)
         ) {
-            return unavailable(
+            return unavailableComparison(
                 reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
                 unavailableAt = baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         return null
@@ -1186,21 +1204,24 @@ object RebalancerComparisonCalculator {
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         configuredAssetUniverse: Set<String>?,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison? {
         val requiredAssetUniverse = requiredConfiguredAssetUniverse(baseline, configuredAssetUniverse)
         if (!matchesConfiguredAssetUniverse(baseline, requiredAssetUniverse)) {
-            return unavailable(
+            return unavailableComparison(
                 reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                 unavailableAt = baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         for (snapshot in snapshots) {
             if (!matchesConfiguredAssetUniverse(snapshot, requiredAssetUniverse)) {
-                return unavailable(
+                return unavailableComparison(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = snapshot.timestamp,
                     baselineTimestamp = baseline.timestamp,
+                    benchmarkMethod = benchmarkMethod,
                 )
             }
         }
@@ -1221,6 +1242,7 @@ object RebalancerComparisonCalculator {
         baseline: PortfolioSnapshot,
         priceProvider: HistoricalPriceProvider?,
         comparisonAssetSymbols: Set<String>,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison? {
         val baselineKeys = baseline.assets
             .filter { (symbol, asset) ->
@@ -1239,20 +1261,22 @@ object RebalancerComparisonCalculator {
                     Asset.normalizeLedgerAsset(snapshotSymbol).uppercase() == symbol
                 }?.value ?: continue
                 if (assetRow.price.signum() < 0) {
-                    return unavailable(
+                    return unavailableComparison(
                         reason = ComparisonUnavailableReason.MISSING_PRICE,
                         unavailableAt = snapshot.timestamp,
                         baselineTimestamp = baseline.timestamp,
+                        benchmarkMethod = benchmarkMethod,
                     )
                 }
                 val hasPositivePrice = assetRow.price.signum() > 0
                 if (!hasPositivePrice) {
                     val historicalPrice = priceProvider?.priceAt(symbol, snapshot.timestamp)
                     if (historicalPrice == null || historicalPrice.signum() <= 0) {
-                        return unavailable(
+                        return unavailableComparison(
                             reason = ComparisonUnavailableReason.MISSING_PRICE,
                             unavailableAt = snapshot.timestamp,
                             baselineTimestamp = baseline.timestamp,
+                            benchmarkMethod = benchmarkMethod,
                         )
                     }
                 }
@@ -4135,10 +4159,11 @@ object RebalancerComparisonCalculator {
         baselinePrices: Map<String, BigDecimal>,
         comparisonAssetSymbols: Set<String>,
     ): List<AssetRegimeActivity> {
-        val symbols = (trades.map { it.symbol.uppercase() } + comparisonAssetSymbols)
+        val successfulLiveFills = trades.filter { it.success && !it.dryRun }
+        val symbols = (successfulLiveFills.map { it.symbol.uppercase() } + comparisonAssetSymbols)
             .filter { it in comparisonAssetSymbols }
             .toSortedSet()
-        val fillsBySymbol = trades.groupBy { it.symbol.uppercase() }
+        val fillsBySymbol = successfulLiveFills.groupBy { it.symbol.uppercase() }
         val ledgerBalanceSeries = mutableMapOf<String, MutableList<Pair<Instant, BigDecimal>>>()
         // Seed each symbol with its baseline holding. Without this, an asset that was fully sold in
         // the first post-baseline events has no positive ledger row at all and its exit is invisible,
@@ -5542,10 +5567,11 @@ object RebalancerComparisonCalculator {
             .multiply(BigDecimal(PrecisionConstants.HUNDRED_INT))
             .divide(buyAndHoldValue, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
 
-    private fun unavailable(
+    private fun unavailableComparison(
         reason: ComparisonUnavailableReason,
         unavailableAt: Instant?,
         baselineTimestamp: Instant?,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison = RebalancerComparison(
         availability = ComparisonAvailability.UNAVAILABLE,
         confidence = null,
@@ -5555,6 +5581,7 @@ object RebalancerComparisonCalculator {
         latestDifferencePercent = null,
         unavailableReason = reason,
         unavailableAt = unavailableAt,
+        benchmarkMethod = benchmarkMethod,
     )
 
     /**

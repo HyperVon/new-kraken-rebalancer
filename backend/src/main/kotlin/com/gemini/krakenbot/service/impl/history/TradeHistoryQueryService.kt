@@ -483,6 +483,7 @@ class TradeHistoryQueryService(
                 snapshots = snapshots,
                 trades = emptyList(),
                 assetMetadata = emptyList(),
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val orderedSnapshots = snapshots.sortedBy { it.timestamp }
@@ -500,6 +501,7 @@ class TradeHistoryQueryService(
                 rewards = emptyList(),
                 knownInceptionTime = orderedSnapshots.first().timestamp,
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // History comparison operates against stable, coverage-confirmed history: a newest
@@ -540,6 +542,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val firstUncoveredIndex =
@@ -564,6 +567,7 @@ class TradeHistoryQueryService(
                     latestDifferencePercent = null,
                     unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                     unavailableAt = orderedSnapshots[firstUncoveredIndex].timestamp,
+                    benchmarkMethod = benchmarkMethod,
                 )
             }
             orderedSnapshots.take(firstUncoveredIndex)
@@ -586,6 +590,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
 
@@ -1292,6 +1297,7 @@ class TradeHistoryQueryService(
             latestDifferencePercent = null,
             unavailableReason = ComparisonUnavailableReason.EXTERNAL_EVIDENCE_REFRESHING,
             unavailableAt = to,
+            benchmarkMethod = entry.comparison.benchmarkMethod,
         )
 
     private fun ConsumedOhlcDependency.refreshKey(): OhlcRefreshKey =
@@ -2235,6 +2241,7 @@ class TradeHistoryQueryService(
                 knownInceptionTime = inceptionResolution.inceptionTime,
                 inceptionUnavailableReason = inceptionResolution.unavailableReason
                     ?: ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED && recordedBenchmarkAnchor == null) {
@@ -2251,6 +2258,7 @@ class TradeHistoryQueryService(
                 inceptionSnapshot = null,
                 knownInceptionTime = inceptionResolution.inceptionTime,
                 historyTruncated = true,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val inceptionSnapshot = recordedBenchmarkAnchor ?: inceptionResolution?.inceptionSnapshot
@@ -2294,6 +2302,7 @@ class TradeHistoryQueryService(
                 rewards = emptyList(),
                 knownInceptionTime = orderedSnapshots.first().timestamp,
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         val eventQueryStart = listOfNotNull(
@@ -2365,6 +2374,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                 unavailableAt = unsupportedTrade.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // Malformed supported-market economics must fail closed, never become zero-value fills.
@@ -2383,6 +2393,7 @@ class TradeHistoryQueryService(
                 latestDifferencePercent = null,
                 unavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                 unavailableAt = invalidTrade.timestamp,
+                benchmarkMethod = benchmarkMethod,
             )
         }
         // Contribution-time prices use the same retained market identities as inception recovery,
@@ -2414,6 +2425,7 @@ class TradeHistoryQueryService(
                 configuredAssetUniverse = configService?.getConfig()?.allocations
                     ?.map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
                     ?.toSet(),
+                benchmarkMethod = benchmarkMethod,
             )
         } else {
             RebalancerComparisonCalculator.calculate(

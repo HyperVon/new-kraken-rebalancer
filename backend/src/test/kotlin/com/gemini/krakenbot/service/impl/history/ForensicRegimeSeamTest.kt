@@ -188,6 +188,21 @@ class ForensicRegimeSeamTest : StringSpec() {
             result.configurationEvidence shouldBe ConfigurationEvidence.NOT_APPLICABLE
         }
 
+        "unavailable calculations retain the requested benchmark identity" {
+            for (method in BenchmarkMethod.entries) {
+                val result = RebalancerComparisonCalculator.calculate(
+                    snapshots = emptyList(),
+                    trades = emptyList(),
+                    assetMetadata = emptyList(),
+                    benchmarkMethod = method,
+                )
+
+                result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                result.benchmarkMethod shouldBe method
+                result.configurationEvidence shouldBe method.configurationEvidence
+            }
+        }
+
         "forensic epochs are applied by the internal seam only" {
             val forensic = RebalancerComparisonCalculator.calculateWithForensicRegimes(
                 snapshots = listOf(baseline(), settled()),
@@ -310,6 +325,17 @@ class ForensicRegimeSeamTest : StringSpec() {
                     dto.benchmarkMethod shouldBe BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD.name
                     dto.configurationEvidence shouldBe ConfigurationEvidence.INFERRED.name
                 }
+                ApiRebalancerComparison(
+                    availability = ComparisonAvailability.UNAVAILABLE.name,
+                    confidence = null,
+                    baselineTimestamp = null,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name,
+                    unavailableAt = null,
+                    benchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD.name,
+                ).configurationEvidence shouldBe ConfigurationEvidence.NOT_APPLICABLE.name
             }
         }
 

@@ -417,6 +417,9 @@ Dust therefore filters **order generation**, not only execution.
       assets only, proportional to their current USD deficit.
   - **Shortage (Withdrawal)**: Sells are distributed among **Overweight**
       assets only, proportional to their current USD surplus.
+  - Trend suppression does not veto a withdrawal correction. The correction
+      may sell an overweight asset at a recent high because restoring the
+      configured USD reserve takes precedence over postponing a routine trim.
   - Each share is rounded to USD scale (2 decimals) and drawn from a budget
       truncated to the same scale, so the shares can never sum above the fiat
       deviation being corrected. A share that rounds to `$0.00` is dropped
@@ -441,7 +444,10 @@ actually settled, so an order degrades to a smaller or dust-skipped buy rather
 than failing. If price history is unavailable or the lookup fails, the cycle
 fails open and trades exactly as it would without this rule. Resolved recent
 highs are cached for an hour, scoped to the active trading mode, so a
-simulation cycle is never decided by live candles.
+simulation cycle is never decided by live candles. A USD-withdrawal correction
+still sells eligible overweight assets at a recent high when needed to restore
+the configured reserve; trend suppression only postpones routine rebalance
+trims.
 
 ### 5. Operating Settings Trade-offs
 

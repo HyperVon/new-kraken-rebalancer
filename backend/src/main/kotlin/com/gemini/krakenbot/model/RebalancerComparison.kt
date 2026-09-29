@@ -42,10 +42,10 @@ data class RebalancerComparison(
      * How the allocation history behind [benchmarkMethod] was established. Kept separate from
      * [confidence] so a reconciled comparison is never read as proven configuration history.
      *
-     * Defaults to [ConfigurationEvidence.INFERRED] to match the default [benchmarkMethod]: claiming
-     * `NOT_APPLICABLE` for a benchmark whose history is inferred would understate the uncertainty.
+     * Defaults to the evidence associated with [benchmarkMethod], so unavailable results retain the
+     * same provenance as available results.
      */
-    val configurationEvidence: ConfigurationEvidence = ConfigurationEvidence.INFERRED,
+    val configurationEvidence: ConfigurationEvidence = benchmarkMethod.configurationEvidence,
 ) {
     init {
         when (availability) {
