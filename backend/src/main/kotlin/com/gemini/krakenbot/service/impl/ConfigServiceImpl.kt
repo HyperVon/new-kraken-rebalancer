@@ -251,7 +251,9 @@ class ConfigServiceImpl internal constructor(
     /** Canonicalizes and validates settings/allocations, then backfills missing or invalid colors. */
     private fun validateAndNormalize(config: AppConfig): AppConfig {
         try {
+            val canonicalQualityScores = normalizeQualityScoreKeys(config.settings.qualityScores)
             val canonicalConfig = config.copy(
+                settings = config.settings.copy(qualityScores = canonicalQualityScores),
                 allocations = config.allocations.map { allocation ->
                     allocation.copy(symbol = Asset(Asset.canonicalSymbol(allocation.symbol.value)))
                 },
@@ -263,6 +265,26 @@ class ConfigServiceImpl internal constructor(
         } catch (e: IllegalArgumentException) {
             throw InvalidConfigurationException(e.message)
         }
+    }
+
+    private fun normalizeQualityScoreKeys(qualityScores: Map<String, Double>): Map<String, Double> {
+        val normalizedEntries = qualityScores.map { (symbol, score) ->
+            val canonicalSymbol = Asset.canonicalSymbol(symbol)
+            require(Asset.isValidAllocationSymbol(canonicalSymbol)) {
+                "Invalid quality score symbol '$symbol'. Symbols must be uppercase alphanumeric and up to 16 characters long."
+            }
+            canonicalSymbol to score
+        }
+        val duplicateSymbols = normalizedEntries
+            .groupingBy { it.first }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+        require(duplicateSymbols.isEmpty()) {
+            "Duplicate quality score symbols after canonicalization are not allowed: " +
+                duplicateSymbols.joinToString(", ")
+        }
+        return normalizedEntries.toMap()
     }
 
     private fun writeConfigAtomically(config: AppConfig) {

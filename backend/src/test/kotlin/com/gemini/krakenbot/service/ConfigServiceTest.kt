@@ -11,6 +11,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.ConfigFileAttributeViews
 import com.gemini.krakenbot.service.impl.ConfigFilePermissionStrategy
@@ -22,6 +23,7 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -39,6 +41,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.AclEntry
@@ -219,6 +222,110 @@ class ConfigServiceTest : StringSpec() {
                     Allocation(Asset.USD, 50.0),
                 )
             }
+        }
+
+        "updateConfig canonicalizes quality scores with allocation aliases and persists the canonical map" {
+            runTest {
+                listOf(
+                    "xbt" to Asset.BTC,
+                    "xdg" to Asset.DOGE,
+                    "btc" to Asset.BTC,
+                    "ETH" to Asset.ETH,
+                ).forEach { (rawSymbol, canonicalSymbol) ->
+                    val currentConfig = configService.getConfig()
+                    configService.updateConfig(
+                        currentConfig.copy(
+                            settings = currentConfig.settings.copy(qualityScores = mapOf(rawSymbol to 9.5)),
+                            allocations = listOf(
+                                Allocation(Asset.USD, 25.0),
+                                Allocation(rawSymbol, 75.0),
+                            ),
+                        ),
+                    )
+
+                    val inMemory = configService.getConfig()
+                    val expectedScores = mapOf(canonicalSymbol to 9.5)
+                    inMemory.allocations.map { it.symbol.value } shouldBe listOf(Asset.USD, canonicalSymbol)
+                    inMemory.settings.qualityScores shouldBe expectedScores
+
+                    val persisted = objectMapper.readValue(tempFile, AppConfig::class.java)
+                    persisted.allocations.map { it.symbol.value } shouldBe listOf(Asset.USD, canonicalSymbol)
+                    persisted.settings.qualityScores shouldBe expectedScores
+
+                    val reloaded = ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig()
+                    reloaded shouldBe inMemory
+                    reloaded.settings.qualityScores shouldBe expectedScores
+
+                    val scoreDecimals = reloaded.settings.qualityScores.mapValues { BigDecimal.valueOf(it.value) }
+                    val profile = QualityAllocation.profile(
+                        values = mapOf(Asset.USD to BigDecimal("25"), canonicalSymbol to BigDecimal("75")),
+                        scores = scoreDecimals,
+                    )
+                    profile.shouldNotBeNull().weightedScore.shouldBeEqualComparingTo(BigDecimal("9.5"))
+                }
+            }
+        }
+
+        "updateConfig rejects quality score keys that collide after canonicalization" {
+            runTest {
+                val originalConfig = configService.getConfig()
+                val originalDiskContent = tempFile.readText()
+                val collidingScoreMaps = listOf(
+                    mapOf("BTC" to 9.5, "XBT" to 8.0),
+                    mapOf("doge" to 9.0, "XDG" to 7.0),
+                    mapOf("btc" to 9.0, "BTC" to 8.0),
+                )
+
+                collidingScoreMaps.forEach { qualityScores ->
+                    withClue(qualityScores.keys.joinToString()) {
+                        shouldThrow<InvalidConfigurationException> {
+                            configService.updateConfig(
+                                originalConfig.copy(
+                                    settings = originalConfig.settings.copy(qualityScores = qualityScores),
+                                    allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+                                ),
+                            )
+                        }
+                        configService.getConfig() shouldBe originalConfig
+                        tempFile.readText() shouldBe originalDiskContent
+                    }
+                }
+            }
+        }
+
+        "loadConfig canonicalizes quality score keys from hand-edited config" {
+            val handEditedConfig = configService.getConfig().copy(
+                settings =
+                configService.getConfig().settings.copy(
+                    qualityScores = mapOf("xbt" to 9.5, "xdg" to 8.0, "eth" to 7.0),
+                ),
+                allocations = listOf(
+                    Allocation(Asset.USD, 25.0),
+                    Allocation("xbt", 25.0),
+                    Allocation("xdg", 25.0),
+                    Allocation("eth", 25.0),
+                ),
+            )
+            objectMapper.writeValue(tempFile, handEditedConfig)
+
+            val loadedConfig = ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig()
+
+            loadedConfig.allocations.map { it.symbol.value } shouldBe
+                listOf(Asset.USD, Asset.BTC, Asset.DOGE, Asset.ETH)
+            loadedConfig.settings.qualityScores shouldBe
+                mapOf(Asset.BTC to 9.5, Asset.DOGE to 8.0, Asset.ETH to 7.0)
+        }
+
+        "loadConfig rejects malformed quality score symbols" {
+            val invalidConfig = configService.getConfig().copy(
+                settings = configService.getConfig().settings.copy(qualityScores = mapOf("BTC-USD" to 9.5)),
+            )
+            objectMapper.writeValue(tempFile, invalidConfig)
+
+            val error = shouldThrow<InvalidConfigurationException> {
+                ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            }
+            error.message shouldContain "Invalid quality score symbol 'BTC-USD'"
         }
 
         "updateConfig persists the independent simulation flag through disk reload" {

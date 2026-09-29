@@ -19,6 +19,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   invalid symbols, canonical duplicate symbols, or scored sleeves, and results whose full-book total is outside
   allocation tolerance. Auto uses only the combined existing targets of scored assets and fails closed when that
   sum is zero.
+- **Quality scores could detach from Kraken symbol aliases**: config normalization now canonicalizes score keys
+  with allocation symbols and rejects invalid keys or collisions before publishing or persisting settings.
 
 ## [6.17.84] - 2026-09-28
 
