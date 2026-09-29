@@ -112,6 +112,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Docs**: refreshed `docs/images/*` from the current build so the gallery is no longer
+  mixed-vintage, and added a `settings-allocations.png` target for the rebuilt target-allocation
+  editor, which the existing top-anchored `settings.png` cropped out. The User Guide's *Target
+  allocations* section now documents the quality score, the Scored Sleeve controls, and the scope
+  of each preview figure, and its comparison section documents the two selectable benchmarks
+  instead of assuming one. Two capture targets pointed at text the app no longer renders
+  (`Rebalancer vs Buy & Hold`, `Staking Rewards`) and were repointed.
 - **Allocation preview figures are measured over the whole portfolio**: the three preview metrics were
   all computed over the scored sleeve, so `Largest single position` reported BTC as 86.27% when its
   actual share of the book was 81.96%, and `Effective independent bets` silently ignored the

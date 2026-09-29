@@ -232,8 +232,17 @@ active and the Settings form shows the validation error.
 
 ### Target allocations
 
-- Every allocation row is a symbol + target percent + optional color swatch,
-  bounded to **0–100%** by the percent input itself.
+<p><a href="images/settings-allocations.png"><img src="images/settings-allocations.png" alt="Settings - safety modes and the target allocation editor with quality scores" width="720"></a></p>
+
+Each allocation row carries a symbol, a color swatch, an optional **Quality
+score**, a **Target** percent, and **Remove**. Rows sit in auto-fitting columns
+that never narrow enough to crowd the fields, and the two numeric fields are
+labelled so a score is never mistaken for a target.
+
+- Target percent is bounded to **0–100%** by the percent input itself.
+- **Quality score** is optional and runs **0–10**. It is a preference input, not
+  a target: it never changes what you hold until you press **Calculate from
+  scores** and then save.
 - Colors persist in `rebalancer-config.json`. The Settings form accepts a blank
   swatch for automatic assignment but rejects malformed nonblank colors.
   Config-file load/save normalization still assigns known defaults for
@@ -241,6 +250,26 @@ active and the Settings form shows the validation error.
 - **Total** must read **100.00%** (green badge) before save succeeds.
 - **USD is required** — cash is part of the strategy, not optional.
 - **Add Asset** / **Remove** change the universe without restarting the app.
+
+#### Calculating targets from quality scores
+
+The **Scored Sleeve** group turns scores into suggested targets:
+
+| Control | Purpose |
+| :--- | :--- |
+| **Emphasis** | How sharply a higher score wins. Range **1–8**; leave blank for the flattest weighting. |
+| **Scored sleeve** | The percent to redistribute. Defaults to the combined target of the scored assets; **Auto** when blank. |
+| **Calculate from scores** | Previews the split. Nothing is saved until you save the form. |
+
+Only assets with a score take part, and they are reweighted between themselves
+in proportion to `score^emphasis`; assets without a score keep the target you
+already set. The preview then reports three figures:
+
+| Figure | Scope |
+| :--- | :--- |
+| **Weighted quality score** | Score-weighted average across the **scored assets only** — an unscored asset has no score to contribute. |
+| **Largest single position** | Largest leg as a share of the **whole book**, including the preserved unscored targets. |
+| **Effective independent bets** | `1 / Σ(share²)` over the **whole book** — equals the leg count when evenly weighted and 1 when fully concentrated. |
 
 Deeper behavior (drawdown deployment, sell-then-buy, dust) is documented in
 [ALGORITHM.md](ALGORITHM.md).
@@ -330,12 +359,19 @@ scrubber** below the chart becomes enabled. Use it to slide the visible window
 across the full selected time range. Dragging on the chart zooms; it does not
 pan. **Reset** returns to the full window and disables the scrubber again.
 
-### Rebalancer vs Buy & Hold
+### Rebalancer vs hold benchmark
 
-<p><a href="images/history.png"><img src="images/history.png" alt="History - rebalancer vs buy and hold comparison" width="720"></a></p>
+<p><a href="images/history.png"><img src="images/history.png" alt="History - rebalancer vs hold benchmark comparison" width="720"></a></p>
 
 The first chart below the summary cards compares what the rebalancer actually
-achieved against a **synthetic buy-and-hold** strategy:
+achieved against a **synthetic hold** strategy. The card is titled
+**Rebalancer vs Hold Benchmark** because two benchmarks exist and the request
+chooses between them; the chart legend names the one actually plotted:
+
+| Benchmark | Behaviour |
+| :--- | :--- |
+| **Configuration-matched hold** (default) | Follows the strategy's own major allocation changes, applying one synthetic transition per inferred regime change, and otherwise holds. Isolates the value of routine rebalancing from asset selection. Its allocation history is **inferred** from persistent trading behavior, not retained as proven configuration. |
+| **Fixed-inception hold** (forensic reference) | Freezes the approved inception portfolio and holds it forever. Requestable via `?benchmark=FIXED_INCEPTION_HOLD`. |
 
 - **Buy & Hold** starts from the exact recorded comparison anchor across all view windows: the
   trusted strategy baseline when one exists, or—when lifetime recovery is unresolved—the earliest
