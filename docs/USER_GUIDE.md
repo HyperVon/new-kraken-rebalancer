@@ -275,6 +275,8 @@ page.
    pre-selects **4**.
 3. Optionally set **Scored sleeve**, the amount of the book to redistribute.
    Leave it on **Auto** to use the combined current target of the scored assets.
+   If those targets sum to zero, the preview reports an error instead of taking
+   the whole book as a fallback.
 4. Press **Calculate from scores** and read the result.
 
 | Control | Purpose |
@@ -286,7 +288,9 @@ page.
 **How the split works.** Scored assets are reweighted *between themselves*, in
 proportion to `score^emphasis`, and that share of the book is then divided among
 them. Assets without a score keep the target you already set, which is why the
-total still has to come to **100.00%**.
+total still has to come to **100.00%**. The preview is returned only when the
+scored sleeve plus the preserved unscored targets stays within the same
+allocation tolerance used when saving the configuration.
 
 Worked example — the default targets BTC **50%**, ETH **45%**, USD **5%**, with
 BTC scored **9.5** and ETH scored **6.0**. The scored sleeve is 95%, and USD is

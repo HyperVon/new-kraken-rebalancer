@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
@@ -178,7 +179,11 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                     inception.toEpochMilli().toString()
 
                 // Query comparison from inception to now
-                val comparison = queryService.getRebalancerComparison(inception, now)
+                val comparison = queryService.getRebalancerComparison(
+                    inception,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 (comparison.points.size > 2) shouldBe true
             }

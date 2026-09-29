@@ -392,6 +392,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -425,6 +426,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("USD"),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf(""),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -461,6 +463,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("USD"),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -497,6 +500,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("USD"),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -549,6 +553,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -576,6 +581,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -604,6 +610,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -632,6 +639,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -660,6 +668,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0", "25.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -688,6 +697,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("not-a-color"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }
@@ -718,6 +728,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC"),
                             FormFields.TARGETS to listOf("50.0"),
                             FormFields.COLORS to listOf("#ffffff"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                 }

@@ -224,7 +224,7 @@ ViewText:
   INVALID_FIAT_DEPLOYMENT_EXPONENT: "Invalid settings field: fiat deployment exponent is required and must be a finite number."
   INVALID_FIAT_DEPLOYMENT_THRESHOLD: "Invalid settings field: drawdown activation threshold must be a finite number."
   INVALID_INCEPTION_DATE: "Invalid settings field: inception date must be a valid ISO-8601 date or timestamp."
-  INVALID_ALLOCATION_FIELDS: "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries, and symbols must be unique."
+  INVALID_ALLOCATION_FIELDS: "Invalid allocation fields: symbols must be valid and unique, and symbols, targets, colors, and scores must have matching entries."
   INVALID_ALLOCATION_TARGET: "Invalid settings field: every allocation target is required and must be a finite number."
   INVALID_ALLOCATION_COLOR: "Invalid allocation fields: supplied colors must use six-digit hex format."
   INVALID_ALLOCATION_SCORE: "Invalid allocation fields: a quality score must be finite and between 0 and 10; 0 or blank clears it."

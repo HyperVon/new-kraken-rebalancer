@@ -336,6 +336,13 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 body shouldContain "\"unavailableReason\":\"INSUFFICIENT_SNAPSHOTS\""
                 body shouldContain "\"unavailableAt\":\"2026-07-01T12:00:00Z\""
             }
+            coVerify(exactly = 1) {
+                tradeHistoryService.getRebalancerComparison(
+                    any(),
+                    any(),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+            }
         }
 
         "getApiHistoryComparison_UnavailableFixedBenchmarkPreservesProvenance" {

@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
@@ -169,7 +170,11 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.getAllSnapshotsInRange(from, to) } returns
                     listOf(TestFixtures.emptySnapshot(timestamp = from, totalValueUSD = BigDecimal.ONE))
 
-                tradeHistoryService.getRebalancerComparison(from, to)
+                tradeHistoryService.getRebalancerComparison(
+                    from,
+                    to,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 coVerify(exactly = 1) { repository.getAllSnapshotsInRange(from, to) }
                 coVerify(exactly = 0) { repository.getTradesInRange(any(), any()) }
@@ -201,7 +206,11 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                     ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
                 } returns "test-scope"
 
-                tradeHistoryService.getRebalancerComparison(from, to)
+                tradeHistoryService.getRebalancerComparison(
+                    from,
+                    to,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 coVerify(exactly = 1) {
                     repository.getTradesInRange(

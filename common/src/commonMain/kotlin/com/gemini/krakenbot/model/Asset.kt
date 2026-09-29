@@ -38,9 +38,12 @@ value class Asset(val value: String) {
 
         /** Allocation-symbol format gate shared by JVM config validation and the JS settings form. */
         const val SYMBOL_PATTERN_STRING = "^[A-Z0-9]{1,16}$"
+        private val ALLOCATION_SYMBOL_PATTERN = SYMBOL_PATTERN_STRING.toRegex()
 
         // Kraken's own ticker codes differ from common symbols for these two.
         operator fun invoke(value: String): Asset = Asset(value)
+
+        fun isValidAllocationSymbol(symbol: String): Boolean = ALLOCATION_SYMBOL_PATTERN.matches(symbol.uppercase())
 
         /** BTC→XBT, DOGE→XDG; other symbols pass through uppercased. */
         fun toKrakenTicker(symbol: String): String {

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.85] - 2026-09-29
+
+### Changed
+
+- **Comparison callers must select a benchmark explicitly**: normal History and Settings proposal paths use
+  the inferred configuration-matched hold, while fixed-inception remains an intentional forensic choice.
+
+### Fixed
+
+- **Allocation previews could describe unsaveable books**: the preview now rejects malformed or misaligned rows,
+  invalid symbols, canonical duplicate symbols, or scored sleeves, and results whose full-book total is outside
+  allocation tolerance. Auto uses only the combined existing targets of scored assets and fails closed when that
+  sum is zero.
+
 ## [6.17.84] - 2026-09-28
 
 ### Added

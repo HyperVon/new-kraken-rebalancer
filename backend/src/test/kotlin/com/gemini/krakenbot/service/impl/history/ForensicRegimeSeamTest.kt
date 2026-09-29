@@ -212,6 +212,7 @@ class ForensicRegimeSeamTest : StringSpec() {
                 inceptionSnapshot = baseline(),
                 priceProvider = prices,
                 forensicRegimes = listOf(btcEstablishment(t0.plusSeconds(30))),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             )
 
             withClue("reason=${forensic.unavailableReason} at=${forensic.unavailableAt}") {
@@ -236,6 +237,7 @@ class ForensicRegimeSeamTest : StringSpec() {
                 inceptionSnapshot = baseline(),
                 priceProvider = prices,
                 forensicRegimes = listOf(ambiguous),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             )
 
             // Without an applied reset the benchmark stays on the inception thesis.
@@ -256,6 +258,7 @@ class ForensicRegimeSeamTest : StringSpec() {
                 priceProvider = prices,
                 // Far beyond every retained snapshot, so no contemporaneous state can anchor it.
                 forensicRegimes = listOf(btcEstablishment(lateTrade)),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             )
 
             withClue("reason=${forensic.unavailableReason} at=${forensic.unavailableAt}") {
@@ -276,6 +279,7 @@ class ForensicRegimeSeamTest : StringSpec() {
                 inceptionSnapshot = baseline(),
                 priceProvider = prices,
                 forensicRegimes = listOf(unpriceable),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             )
 
             // Price fail-closed is not bypassable by supplying configuration history.

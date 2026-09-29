@@ -101,6 +101,6 @@ interface TradeHistoryService {
     suspend fun getRebalancerComparison(
         from: Instant,
         to: Instant,
-        benchmarkMethod: BenchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison
 }

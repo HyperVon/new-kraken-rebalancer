@@ -23,10 +23,12 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -86,6 +88,30 @@ private object HtmxValues {
     const val BODY = "body"
     const val INNER_HTML = "innerHTML"
     const val TRUE = "true"
+}
+
+private suspend fun HttpClient.postAllocationPreview(
+    csrfToken: String,
+    csrfCookie: String,
+    symbols: List<String> = listOf("BTC", "ETH"),
+    targets: List<String> = listOf("50", "50"),
+    colors: List<String> = listOf("#ff0000", "#00ff00"),
+    scores: List<String> = listOf("9.0", "8.0"),
+    sleeve: String? = null,
+): HttpResponse {
+    val fields = mutableListOf(
+        FormFields.CSRF_TOKEN to listOf(csrfToken),
+        FormFields.SYMBOLS to symbols,
+        FormFields.TARGETS to targets,
+        FormFields.COLORS to colors,
+        FormFields.SCORES to scores,
+    )
+    if (sleeve != null) fields += FormFields.SCORE_SLEEVE_PERCENT to listOf(sleeve)
+    return post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+        setBody(parametersOf(*fields.toTypedArray()).formUrlEncode())
+        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+        header(HttpHeaders.Cookie, csrfCookie)
+    }
 }
 
 class DashboardControllerTest : DashboardControllerTestBase() {
@@ -584,6 +610,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -653,6 +680,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94A3B8"),
+                                FormFields.SCORES to listOf(""),
                                 FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                                 FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                                 FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("4.5"),
@@ -717,6 +745,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                     header(
@@ -758,6 +787,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -806,6 +836,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                         ).formUrlEncode(),
                     )
@@ -856,6 +887,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2099-01-01"),
                         ).formUrlEncode(),
                     )
@@ -912,6 +944,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -977,6 +1010,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                         ).formUrlEncode(),
                     )
@@ -1038,6 +1072,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -1106,6 +1141,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -1168,6 +1204,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -1236,6 +1273,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                             FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                         ).formUrlEncode(),
@@ -1290,6 +1328,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
                         ).formUrlEncode(),
                     )
                     header(
@@ -1335,6 +1374,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                                 FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                             ).formUrlEncode(),
                         )
@@ -1362,6 +1402,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                             ).formUrlEncode(),
                         )
                         header(
@@ -1386,6 +1427,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                                 FormFields.INCEPTION_DATE to listOf("2026-06-06"),
                                 FormFields.COMPARISON_START_DATE to listOf("2026-06-05"),
                             ).formUrlEncode(),
@@ -1430,6 +1472,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8", "#fbbf24"),
+                            FormFields.SCORES to listOf("", ""),
                         ).formUrlEncode(),
                     )
                     header(
@@ -1454,6 +1497,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
                                 FormFields.COLORS to listOf("not-a-color"),
+                                FormFields.SCORES to listOf(""),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -1516,6 +1560,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                     FormFields.SYMBOLS to listOf(Asset.USD),
                                     FormFields.TARGETS to listOf(fields.getValue(FormFields.TARGETS)),
                                     FormFields.COLORS to listOf("#94a3b8"),
+                                    FormFields.SCORES to listOf(""),
                                 ).formUrlEncode(),
                             )
                             header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -1552,6 +1597,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
                                 FormFields.TARGETS to listOf("50.0", "50.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf("", ""),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -1587,6 +1633,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -1630,6 +1677,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("90.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                             ).formUrlEncode(),
                         )
                         header(
@@ -1738,6 +1786,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                             ).formUrlEncode(),
                         )
                         header(
@@ -1822,6 +1871,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.SCORES to listOf(""),
                             ).formUrlEncode(),
                         )
                         header(
@@ -1907,6 +1957,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC", "USD"),
                             FormFields.TARGETS to listOf("80.0", "20.0"),
                             FormFields.COLORS to listOf("#f7931a", "#85bb65"),
+                            FormFields.SCORES to listOf("", ""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -1940,6 +1991,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC", "USD"),
                             FormFields.TARGETS to listOf("80.0", "20.0"),
                             FormFields.COLORS to listOf("invalid-color", "#85bb65"),
+                            FormFields.SCORES to listOf("", ""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -1974,6 +2026,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC", "USD"),
                             FormFields.TARGETS to listOf("80.0", "20.0"),
                             FormFields.COLORS to listOf("#f7931a", "#85bb65"),
+                            FormFields.SCORES to listOf("", ""),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -2127,29 +2180,28 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
-        "allocationsPreview_RejectsDuplicateSymbolsCaseInsensitively" {
+        "allocationsPreview_RejectsDuplicateSymbolsAndCanonicalAliases" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
 
             testApplication {
                 application { configureTestEnv() }
                 val csrf = client.settingsCsrf()
-                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
-                    setBody(
-                        parametersOf(
-                            FormFields.CSRF_TOKEN to listOf(csrf.value),
-                            FormFields.SYMBOLS to listOf("BTC", "btc"),
-                            FormFields.TARGETS to listOf("50", "50"),
-                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
-                            FormFields.SCORES to listOf("9.5", "8.5"),
-                        ).formUrlEncode(),
+                listOf(
+                    listOf("BTC", "btc"),
+                    listOf("BTC", "XBT"),
+                    listOf("DOGE", "XDG"),
+                ).forEach { symbols ->
+                    val response = client.postAllocationPreview(
+                        csrf.value,
+                        csrf.cookie,
+                        symbols = symbols,
                     )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, csrf.cookie)
-                }
 
-                response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                    response.status shouldBe HttpStatusCode.UnprocessableEntity
+                    response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                    response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                }
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
@@ -2366,34 +2418,133 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
-        "allocationsPreview_ToleratesMalformedOptionalFields" {
+        "allocationsPreview_RejectsMalformedOrNegativeTargets" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
 
             testApplication {
                 application { configureTestEnv() }
                 val csrf = client.settingsCsrf()
-                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
-                    setBody(
-                        parametersOf(
-                            FormFields.CSRF_TOKEN to listOf(csrf.value),
-                            FormFields.SYMBOLS to listOf("BTC", "ETH", "SOL"),
-                            FormFields.TARGETS to listOf("50", "not-a-target", "30"),
-                            FormFields.COLORS to listOf("#ff0000", "#00ff00", "#0000ff"),
-                            // Shorter than the symbol list: the trailing leg has no score entry.
-                            FormFields.SCORES to listOf("9.5", "0"),
-                            FormFields.SCORE_SLEEVE_PERCENT to listOf("0"),
-                        ).formUrlEncode(),
+                listOf("not-a-target", "-1", "1e400").forEach { invalidTarget ->
+                    val response = client.postAllocationPreview(
+                        csrf.value,
+                        csrf.cookie,
+                        symbols = listOf("BTC", "ETH", "USD"),
+                        targets = listOf("50", invalidTarget, "20"),
+                        colors = listOf("#ff0000", "#00ff00", "#0000ff"),
+                        scores = listOf("9.5", "8.0", ""),
                     )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, csrf.cookie)
-                }
 
-                // A malformed target, a zero score, a short score list and a zero sleeve all fall
-                // back rather than failing the preview: only BTC carries a usable score. Emphasis is
-                // not among them, because an unusable weighting silently flattens the result.
-                response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "Preview only"
+                    response.status shouldBe HttpStatusCode.UnprocessableEntity
+                    response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                    response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_TARGET
+                }
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsShortScoreArray" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.postAllocationPreview(
+                    csrf.value,
+                    csrf.cookie,
+                    scores = listOf("9.0"),
+                )
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsSymbolsThatCannotBeSaved" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.postAllocationPreview(
+                    csrf.value,
+                    csrf.cookie,
+                    symbols = listOf("BTC!", "USD"),
+                )
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsUnsavableColors" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.postAllocationPreview(
+                    csrf.value,
+                    csrf.cookie,
+                    colors = listOf("invalid-color", "#00ff00"),
+                )
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_COLOR
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsInvalidExplicitSleeves" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                listOf("malformed", "0", "-1", "101").forEach { invalidSleeve ->
+                    val response = client.postAllocationPreview(
+                        csrf.value,
+                        csrf.cookie,
+                        sleeve = invalidSleeve,
+                    )
+
+                    response.status shouldBe HttpStatusCode.UnprocessableEntity
+                    response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                    response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_TARGET
+                }
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsExplicitSleeveThatBreaksWholeBookTotal" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.postAllocationPreview(
+                    csrf.value,
+                    csrf.cookie,
+                    symbols = listOf("BTC", "ETH", "USD"),
+                    targets = listOf("25", "25", "50"),
+                    colors = listOf("#ff0000", "#00ff00", "#0000ff"),
+                    scores = listOf("9.0", "8.0", ""),
+                    sleeve = "60",
+                )
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_TARGET
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
@@ -2411,7 +2562,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.CSRF_TOKEN to listOf(csrf.value),
                             FormFields.SYMBOLS to listOf("BTC", "TAO"),
                             FormFields.TARGETS to listOf("70", "30"),
-                            FormFields.COLORS to listOf("#ff0000", "not-a-color"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
                             FormFields.SCORES to listOf("9.5", "6.0"),
                             FormFields.SCORE_SLEEVE_PERCENT to listOf(""),
                         ).formUrlEncode(),
@@ -2436,11 +2587,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     setBody(
                         parametersOf(
                             FormFields.CSRF_TOKEN to listOf(csrf.value),
-                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
-                            FormFields.TARGETS to listOf("50", "50"),
-                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
-                            FormFields.SCORES to listOf("9.0", "9.0"),
-                            FormFields.SCORE_SLEEVE_PERCENT to listOf("80"),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH", "USD"),
+                            FormFields.TARGETS to listOf("25", "25", "50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00", "#0000ff"),
+                            FormFields.SCORES to listOf("9.0", "9.0", ""),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("50"),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -2448,11 +2599,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "value=\"40.00\""
+                response.bodyAsText() shouldContain "value=\"25.00\""
             }
         }
 
-        "allocationsPreview_FallsBackToTotalTargetWhenScoredTargetsAreZero" {
+        "allocationsPreview_RejectsAutoSleeveWhenScoredTargetsAreZero" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
 
@@ -2474,13 +2625,10 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
 
-                response.status shouldBe HttpStatusCode.OK
-                val body = response.bodyAsText()
-                // The fallback gives the one scored leg the whole 100 sleeve, which is what this
-                // case is about. USD keeps its own 100 target, so the book totals 200 and the
-                // whole-book concentration figures report that rather than the sleeve's 100%.
-                body shouldContain "value=\"100.00\""
-                body shouldContain "50.00%"
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_TARGET
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 

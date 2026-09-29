@@ -357,7 +357,7 @@ class ConfigServiceImpl internal constructor(
         config.allocations.forEach { allocation ->
             requireValidations(
                 allocation.symbol.value.isNotBlank() to "Allocation symbols cannot be blank.",
-                (SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) to
+                Asset.isValidAllocationSymbol(allocation.symbol.value) to
                     (
                         "Invalid allocation symbol '${allocation.symbol.value}'. " +
                             "Symbols must be uppercase alphanumeric and up to 16 characters long."
@@ -413,6 +413,5 @@ class ConfigServiceImpl internal constructor(
         private const val MAX_DEPLOYMENT_EXPONENT = 100.0
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
-        private val SYMBOL_PATTERN = Asset.SYMBOL_PATTERN_STRING.toRegex()
     }
 }

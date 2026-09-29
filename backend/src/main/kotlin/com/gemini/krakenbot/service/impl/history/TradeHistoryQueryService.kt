@@ -430,7 +430,7 @@ class TradeHistoryQueryService(
     suspend fun getRebalancerComparison(
         from: Instant,
         to: Instant,
-        benchmarkMethod: BenchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison = historyEvidenceCoordinator.withLock {
         val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
         getRebalancerComparisonLocked(benchmarkMethod, from, to, inceptionResolution, forensicRegimes = null)
@@ -1562,7 +1562,7 @@ class TradeHistoryQueryService(
         val assetMetadata = loadComparisonAssetMetadata()
         val assetMetadataDigest = comparisonAssetMetadataDigest(assetMetadata)
         val settingsCacheFingerprint = comparisonCacheFingerprint(
-            benchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             stableThrough = stableThrough,
             inceptionResolution = inceptionResolution,
             snapshots = stableSnapshots,
@@ -1587,9 +1587,10 @@ class TradeHistoryQueryService(
                     val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                     val ohlcHadFailures = AtomicBoolean(false)
                     val calculated = calculateComparison(
-                        stableSnapshots,
-                        inceptionResolution,
+                        orderedSnapshots = stableSnapshots,
+                        inceptionResolution = inceptionResolution,
                         assetMetadata = assetMetadata,
+                        benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                         eventUpperBound = certifiedEventUpperBound(stableThrough),
                         suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
@@ -1605,9 +1606,7 @@ class TradeHistoryQueryService(
                             inceptionResolution = inceptionResolution,
                             snapshots = stableSnapshots,
                             assetMetadataDigest = assetMetadataDigest,
-                            // The settings proposal search always prices the fixed-inception
-                            // benchmark, so it is persisted under that method's identity.
-                            benchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                             comparison = calculated,
                             ohlcDependencies = consumedDependencies.toList(),
                             ohlcReachabilityDependencies = reachabilityDependencies.toList(),
@@ -2196,7 +2195,7 @@ class TradeHistoryQueryService(
         // verification pivots on discovery re-anchoring at the candidate — suppressing it
         // there would make every trial reconcile the stale predecessor instead.
         suppressPassiveDiscovery: Boolean = false,
-        benchmarkMethod: BenchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+        benchmarkMethod: BenchmarkMethod,
         forensicRegimes: List<InferredRegimeTransition>? = null,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
         onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
@@ -2857,6 +2856,7 @@ class TradeHistoryQueryService(
                                     ),
                                     assetMetadata = assetMetadata,
                                     preparedFundingProvenance = preparedFundingProvenance,
+                                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                                     eventUpperBound = eventUpperBound,
                                     ohlcCallOwner = ohlcCallOwner,
                                 )
@@ -2944,6 +2944,7 @@ class TradeHistoryQueryService(
                     ),
                     assetMetadata = assetMetadata,
                     preparedFundingProvenance = preparedFundingProvenance,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                     eventUpperBound = eventUpperBound,
                     ohlcCallOwner = ohlcCallOwner,
                 )
@@ -3039,6 +3040,7 @@ class TradeHistoryQueryService(
                     ),
                     assetMetadata = assetMetadata,
                     preparedFundingProvenance = preparedFundingProvenance,
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                     eventUpperBound = eventUpperBound,
                     ohlcCallOwner = ohlcCallOwner,
                 )

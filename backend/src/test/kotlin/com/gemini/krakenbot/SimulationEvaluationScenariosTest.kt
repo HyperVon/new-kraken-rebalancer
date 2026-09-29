@@ -3,6 +3,7 @@ package com.gemini.krakenbot
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
@@ -127,6 +128,7 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                 val comparison = stack.tradeHistory.getRebalancerComparison(
                     Instant.now().minusSeconds(30L * 24L * 60L * 60L),
                     Instant.now().plusSeconds(60),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
 
                 comparison.unavailableReason shouldBe null

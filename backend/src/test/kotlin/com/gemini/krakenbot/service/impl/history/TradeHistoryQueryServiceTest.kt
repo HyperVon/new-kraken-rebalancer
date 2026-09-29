@@ -330,9 +330,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     krakenService = kraken,
                 )
-                memoizing.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                memoizing.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
-                memoizing.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                memoizing.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 // The metadata digest is read before the comparison cache lookup, so without
                 // memoization every request pays the paced public fetch even on a full cache hit.
@@ -350,8 +358,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     krakenService = failing,
                 )
-                degrading.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
-                degrading.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                degrading.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+                degrading.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 failing.getAssetMetadataCallCount shouldBe 2
             }
         }
@@ -367,7 +383,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ledgerEvent("L2", now.plusSeconds(1200), "STRC", "1.25", KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(staking, dividend)
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(1800))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(1800),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -403,11 +423,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     emptyList()
                 }
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cachedService.getRebalancerComparison(
                     Instant.EPOCH,
                     snap2.timestamp.plusSeconds(30),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
 
@@ -420,7 +445,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
                 } returns "changed"
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 3
                 cache.saveCount shouldBe 1
@@ -455,7 +484,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
                 } returns "4"
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
                 cache.loadCount shouldBe 4
                 cache.saveCount shouldBe 1
@@ -467,13 +500,21 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
                 } returns "5"
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 5
                 cache.saveCount shouldBe 1
                 ledgerRangeReads shouldBe 8
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 6
                 cache.saveCount shouldBe 1
@@ -505,9 +546,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
 
                 cache.loadCount shouldBe 2
@@ -536,20 +585,32 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     nowProvider = { clock.get() },
                 )
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
 
                 // Within the metadata memo's TTL the classification is intentionally reused, so the
                 // second request is served from the comparison cache without a refetch.
                 kraken.assetMetadataSupplier = { emptyList() }
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
 
                 // Once the memo expires, a reclassification invalidates a prior NAV even when the
                 // history itself is unchanged.
                 clock.set(now.plus(Duration.ofHours(2)))
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
                 cache.saveCount shouldBe 1
             }
@@ -578,7 +639,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val from = Instant.EPOCH
                 val through = snap2.timestamp
 
-                cachedService.getRebalancerComparison(from, through).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    from,
+                    through,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
 
@@ -586,7 +651,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // and the comparison fails closed rather than reusing a row keyed on a stale digest.
                 kraken.assetMetadataSupplier = { throw IllegalStateException("metadata unavailable") }
                 clock.set(now.plus(Duration.ofHours(2)))
-                cachedService.getRebalancerComparison(from, through).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    from,
+                    through,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
                 cache.saveCount shouldBe 1
 
@@ -594,7 +663,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 kraken.assetMetadataSupplier = { throw cancellation }
                 var propagated: CancellationException? = null
                 try {
-                    cachedService.getRebalancerComparison(from, through)
+                    cachedService.getRebalancerComparison(
+                        from,
+                        through,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
                 } catch (error: CancellationException) {
                     propagated = error
                 }
@@ -640,9 +713,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
-                cachedService.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
                 cache.loadCount shouldBe 2
@@ -654,7 +735,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
                 } returns "2"
-                cachedService.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
                 cache.loadCount shouldBe 3
@@ -668,11 +753,19 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
                 } returns "3"
-                cachedService.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 2
                 cache.loadCount shouldBe 4
-                cachedService.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 2
                 cache.loadCount shouldBe 5
@@ -727,7 +820,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 // Cold calculation consumes BTC OHLC evidence and caches the comparison.
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
                 val coldOhlcCalls = ohlcCalls
@@ -745,7 +842,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     mayBeTruncated = false,
                 ) shouldBe true
                 metadata[SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION] = "1"
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
                 ohlcCalls shouldBe coldOhlcCalls
@@ -753,10 +854,18 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // Mutating the CONSUMED BTC candle past expiry replays exactly once.
                 clock = clock.plusSeconds(3601)
                 btcClose = "55000"
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2
             }
@@ -823,7 +932,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     nowProvider = { clock },
                 )
 
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 val fromMs = snap1.timestamp.toEpochMilli()
                 val toMs = snap2.timestamp.toEpochMilli()
@@ -833,7 +946,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 ohlcCalls shouldBe 4
 
                 // Fresh selection evidence permits a true cache hit with no provider work.
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 ohlcCalls shouldBe 4
                 countingCache.saveCount shouldBe 1
@@ -853,7 +970,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     observedAtEpochSecond = storedFrontier.observedAtEpochSecond + 1,
                 )
                 ohlcRepository.saveReachabilityFrontier(movedBoundary)
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.deleteCount shouldBe 1
                 countingCache.saveCount shouldBe 2
@@ -877,7 +998,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val earliestRetry = retryTimes.min()
                 fifteenMinuteReachable = true
                 clock = Instant.ofEpochSecond(earliestRetry)
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 ohlcCalls shouldBe callsBeforeExpiry + 1
                 requestedIntervals.drop(requestedIntervals.size - 1) shouldBe listOf(15)
@@ -889,7 +1014,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 finerEntry.ohlcDependencies.map { it.intervalMinutes }.toSet() shouldBe setOf(15)
                 finerEntry.ohlcReachabilityDependencies.shouldBeEmpty()
                 val callsAfterFinerSelection = ohlcCalls
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 ohlcCalls shouldBe callsAfterFinerSelection
                 countingCache.saveCount shouldBe 3
@@ -965,7 +1094,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     )
 
                     // Cold calculation writes the current-contract entry with exact dependencies.
-                    val cold = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                    val cold = queryService.getRebalancerComparison(
+                        Instant.EPOCH,
+                        snap2.timestamp,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
                     cold.availability shouldBe ComparisonAvailability.AVAILABLE
                     countingCache.saveCount shouldBe 1
                     val fromMs = snap1.timestamp.toEpochMilli()
@@ -1030,7 +1163,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     val callsBeforeReplay = requestedIntervals.size
                     fifteenMinuteReachable = true
                     clock = Instant.ofEpochSecond(firstTierRetry)
-                    migratedQueryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    migratedQueryService.getRebalancerComparison(
+                        Instant.EPOCH,
+                        snap2.timestamp,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    ).availability shouldBe
                         ComparisonAvailability.AVAILABLE
                     requestedIntervals.drop(callsBeforeReplay) shouldBe listOf(15)
                     migratedCountingCache.saveCount shouldBe 1
@@ -1064,7 +1201,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         nowProvider = { clock },
                     )
                     val callsBeforeRestartHit = ohlcCalls
-                    restartedQueryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    restartedQueryService.getRebalancerComparison(
+                        Instant.EPOCH,
+                        snap2.timestamp,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    ).availability shouldBe
                         ComparisonAvailability.AVAILABLE
                     ohlcCalls shouldBe callsBeforeRestartHit
                     restartedCountingCache.saveCount shouldBe 0
@@ -1091,7 +1232,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     comparisonCacheRepository = brokenCache,
                     krakenService = FakeKrakenService(),
                 )
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
             }
         }
@@ -1153,7 +1298,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(deposit)
 
-                serviceA.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                serviceA.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 krakenA.getDepositStatusCallCount shouldBe 1
                 val originalFingerprint = persistedCacheFingerprint(database)
@@ -1172,7 +1321,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     historicalOhlcCache = HistoricalOhlcCache(krakenB, ohlcRepository),
                     comparisonCacheRepository = durableCache,
                 )
-                serviceB.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 krakenB.getDepositStatusCallCount shouldBe 0
                 persistedCacheFingerprint(database) shouldBe originalFingerprint
@@ -1184,7 +1337,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 depositMethod = "Swift"
                 resolverB.prepare(listOf(deposit))
                 krakenB.getDepositStatusCallCount shouldBe 1
-                serviceB.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 persistedCacheFingerprint(database) shouldNotBe originalFingerprint
             }
@@ -1320,7 +1477,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // 1. Initial cold load: authoritative replay, funding prepared, OHLC fetched, persisted.
                 val krakenA = fundingKraken()
                 val serviceA = buildService(krakenA)
-                val coldResult = serviceA.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val coldResult = serviceA.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 coldResult.availability shouldBe ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
                 krakenA.getDepositStatusCallCount shouldBe 1
@@ -1330,7 +1491,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coldOhlcCalls shouldBeGreaterThan 0
 
                 // 2. Immediate repeat: cache hit (0 replays, 0 OHLC, 0 funding).
-                serviceA.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                serviceA.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 2
                 cache.saveCount shouldBe 1
@@ -1340,7 +1505,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // 3. Append unstable live-tail snapshot: still a hit (0 replays).
                 snapshotRows += liveTailSnap
                 metadata[SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION] = "2"
-                serviceA.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceA.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 3
                 cache.saveCount shouldBe 1
@@ -1349,7 +1518,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // 4. Five minutes later with unchanged stable evidence: funding TTL expired, the
                 // durable identity still certifies the cached result. Still a hit (0 replays).
                 clock = clock.plusSeconds(300)
-                serviceA.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceA.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 4
                 cache.saveCount shouldBe 1
@@ -1360,7 +1533,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // stores, no funding or OHLC API calls merely to validate reuse (0 replays, 0 OHLC, 0 funding).
                 val krakenB = fundingKraken()
                 val serviceB = buildService(krakenB)
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 5
                 cache.saveCount shouldBe 1
@@ -1374,7 +1551,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 clock = clock.plusSeconds(3601)
                 val ohlcCallsBeforeStep6 = ohlcCalls
                 val updateOhlcBeforeStep6 = cache.updateOhlcCount
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 6
                 cache.saveCount shouldBe 1
@@ -1385,7 +1566,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // 7. Immediate repeat after OHLC revalidation:
                 // Fast path: all dependencies are now fresh in DB/memory.
                 // 0 calculation replays, 0 OHLC calls.
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 7
                 cache.saveCount shouldBe 1
@@ -1396,7 +1581,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // and executes exactly 1 authoritative calculation replay.
                 clock = clock.plusSeconds(3601)
                 ohlcClose = "51000"
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 8
                 cache.saveCount shouldBe 2
@@ -1406,7 +1595,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // 9. Immediate repeat after correction:
                 // Cache hit with newly persisted result and candle hashes.
                 // 0 calculation replays, 0 OHLC calls.
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 9
                 cache.saveCount shouldBe 2
@@ -1421,7 +1614,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     (snap2.timestamp.epochSecond + 7200L) to BigDecimal("53000"),
                 )
                 val updateOhlcBeforeStep9b = cache.updateOhlcCount
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 10
                 cache.saveCount shouldBe 2
@@ -1441,7 +1638,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     mayBeTruncated = false,
                 ) shouldBe true
                 metadata[SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION] = "1"
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 11
                 cache.saveCount shouldBe 2
@@ -1454,7 +1655,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
                     (now.epochSecond + 36_060L).toString()
                 metadata[SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION] = "3"
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 12
                 cache.saveCount shouldBe 3
@@ -1475,7 +1680,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 }
                 val ohlcBefore11 = ohlcCalls
                 val updateBefore11 = cache.updateOhlcCount
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 13
                 cache.saveCount shouldBe 3
@@ -1494,7 +1703,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val ohlcAfter11 = ohlcCalls
 
                 // 12. Immediate repeat: cache hit with 0 OHLC calls.
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 14
                 cache.saveCount shouldBe 3
@@ -1505,7 +1718,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // future candles) expired on the 1h record cadence: a hit with 0 calls.
                 // Union-driven TTLs would expire all four ranges here instead.
                 clock = clock.plusSeconds(7_200L)
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 15
                 cache.saveCount shouldBe 3
@@ -1518,7 +1735,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val retractedStart = snap2.timestamp.epochSecond + 7_200L + 24 * 900L
                 extraOhlc = extraOhlc.filter { it.first != retractedStart }
                 val ohlcBefore14 = ohlcCalls
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 16
                 cache.saveCount shouldBe 3
@@ -1542,7 +1763,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 dropSnap2Candle = true
                 clock = clock.plusSeconds(8 * 86_400L)
                 val ohlcBefore15 = ohlcCalls
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 17
                 cache.saveCount shouldBe 4
@@ -1556,7 +1781,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 series14.none { it.first == snap2.timestamp.epochSecond - 900L } shouldBe true
                 series14.any { it.first == snap2.timestamp.epochSecond - 1800L } shouldBe true
                 val ohlcAfter15 = ohlcCalls
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 18
                 cache.saveCount shouldBe 4
@@ -1571,7 +1800,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 emptyFifteenMinute = true
                 clock = clock.plusSeconds(8 * 86_400L)
                 val ohlcBefore16 = ohlcCalls
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 19
                 cache.saveCount shouldBe 5
@@ -1590,7 +1823,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )?.candles.orEmpty()
                 series60.any { it.first == snap2.timestamp.epochSecond - 1800L } shouldBe true
                 val ohlcAfter16 = ohlcCalls
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                serviceB.getRebalancerComparison(
+                    Instant.EPOCH,
+                    liveTailSnap.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 20
                 cache.saveCount shouldBe 5
@@ -1651,7 +1888,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 // Initial calculation
-                val initial = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val initial = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 initial.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
                 val initialOhlcCalls = ohlcCalls
@@ -1660,13 +1901,21 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 clock = clock.plusSeconds(3601)
                 ohlcClose = "55000"
 
-                val corrected = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val corrected = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 corrected.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2 // exactly 1 replay
                 ohlcCalls shouldBeGreaterThan initialOhlcCalls
 
                 // Subsequent call hits cache
-                val cached = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val cached = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 cached.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2 // 0 additional replays
             }
@@ -1725,7 +1974,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // One valuation falls back past its failed fine tier, so the manifest cannot
                 // prove the resolver would choose the same price again: serve the
                 // best-available result, but never persist it.
-                val degraded = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val degraded = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 degraded.availability shouldBe ComparisonAvailability.AVAILABLE
                 // The failed fine tier fell back to a coarser one for at least one valuation.
                 (60 in intervalsSeen) shouldBe true
@@ -1733,10 +1986,18 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 // The next request recomputes (nothing was cached), resolves every tier, and
                 // persists normally; the request after that hits.
-                val recovered = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val recovered = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 recovered.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
             }
@@ -1785,7 +2046,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     nowProvider = { clock },
                 )
 
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
 
@@ -1803,10 +2068,18 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             """[{"pair":"XXBTZUSD","intervalMinutes":15,"sinceEpochSecond":1,"fetchedAtEpochSecond":2,"freshnessDeadlineEpochSecond":3,"candleContentHash":"abc"}]"""
                     }
                 }
-                val replayed = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val replayed = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 replayed.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 2
             }
@@ -1863,7 +2136,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 // 1. Initially missing price: comparison is UNAVAILABLE (and NOT cached)
-                val initial = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val initial = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 initial.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 countingCache.saveCount shouldBe 0
 
@@ -1871,12 +2148,20 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 clock = clock.plusSeconds(601)
                 returnEmpty = false
 
-                val backfilled = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val backfilled = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 backfilled.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
 
                 // 3. Repeat is a cache hit
-                val cached = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val cached = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 cached.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
             }
@@ -1929,7 +2214,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 // Initial load
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
                 val initialOhlcCalls = ohlcCalls
@@ -1940,7 +2229,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // Concurrent queries hit the expired cache
                 val results = withContext(Dispatchers.IO) {
                     (1..4).map {
-                        async { queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp) }
+                        async {
+                            queryService.getRebalancerComparison(
+                                Instant.EPOCH,
+                                snap2.timestamp,
+                                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                            )
+                        }
                     }.awaitAll()
                 }
 
@@ -1998,7 +2293,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 // 1. Initial calculation populates cache
-                val initial = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val initial = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 initial.availability shouldBe ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
                 countingCache.updateOhlcCount shouldBe 0
@@ -2009,7 +2308,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 ohlcShouldFail = true
 
                 // 3. Request revalidation when provider fails -> serves stale cached comparison without db update
-                val cached = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val cached = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 cached.availability shouldBe ComparisonAvailability.AVAILABLE
                 cached.points shouldBe initial.points
                 countingCache.saveCount shouldBe 1 // 0 replays
@@ -2109,7 +2412,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 nowProvider = { clock.value },
             )
 
-            val cold = service.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp)
+            val cold = service.getRebalancerComparison(
+                Instant.EPOCH,
+                snapshots.last().timestamp,
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
             cold.availability shouldBe ComparisonAvailability.AVAILABLE
             comparisonCache.saveCount shouldBe 1
             val fromMs = snapshots.first().timestamp.toEpochMilli()
@@ -2132,8 +2439,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             )
         }
 
-        suspend fun OverBudgetHarness.requestLatest() =
-            service.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp)
+        suspend fun OverBudgetHarness.requestLatest() = service.getRebalancerComparison(
+            Instant.EPOCH,
+            snapshots.last().timestamp,
+            BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+        )
 
         suspend fun OverBudgetHarness.sortedDistinctSinces(): List<Long> {
             val (fromMs, toMs) = sourceWindow()
@@ -2316,7 +2626,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val budget = TradeHistoryQueryService.MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST
 
-                val cold = queryService.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp)
+                val cold = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snapshots.last().timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 cold.availability shouldBe ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
                 val coldOhlcCalls = ohlcCalls
@@ -2337,7 +2651,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // single background refresh completes the remainder with zero replays.
                 clock = clock.plusSeconds(8 * 86_400L)
                 val results = (1..4).map {
-                    async { queryService.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp) }
+                    async {
+                        queryService.getRebalancerComparison(
+                            Instant.EPOCH,
+                            snapshots.last().timestamp,
+                            BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                        )
+                    }
                 }.awaitAll()
                 // The first request always owns or joins before any validation completes, so it
                 // deterministically serves the transient; later ones may already observe the hit.
@@ -2354,7 +2674,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // exactly once, then a later request hits with zero further calls.
                 (ohlcCalls - coldOhlcCalls) shouldBe distinctKeys.size
                 cache.updateOhlcCount shouldBe 2
-                val hit = queryService.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp)
+                val hit = queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snapshots.last().timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 hit.availability shouldBe ComparisonAvailability.AVAILABLE
                 (ohlcCalls - coldOhlcCalls) shouldBe distinctKeys.size
                 cache.saveCount shouldBe 1
@@ -2723,7 +3047,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     nowProvider = { clock },
                 )
 
-                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                queryService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 countingCache.saveCount shouldBe 1
 
@@ -2733,7 +3061,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 btcClose = "55000"
                 val results = withContext(Dispatchers.IO) {
                     (1..4).map {
-                        async { queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp) }
+                        async {
+                            queryService.getRebalancerComparison(
+                                Instant.EPOCH,
+                                snap2.timestamp,
+                                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                            )
+                        }
                     }.awaitAll()
                 }
                 results.forEach { it.availability shouldBe ComparisonAvailability.AVAILABLE }
@@ -2784,9 +3118,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 1
                 cache.loadCount shouldBe 2
@@ -2797,11 +3139,19 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
                 } returns "7"
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 2
                 cache.loadCount shouldBe 3
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.saveCount shouldBe 2
                 cache.loadCount shouldBe 4
@@ -2839,9 +3189,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 // Degraded provenance fails the comparison closed, and an unavailable outcome
                 // is never cached: repeated requests keep replaying, never rehydrating.
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.UNAVAILABLE
                 cache.loadCount shouldBe 2
                 cache.saveCount shouldBe 0
@@ -2865,7 +3223,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                ).availability shouldBe
                     ComparisonAvailability.AVAILABLE
             }
         }
@@ -2918,7 +3280,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(deposit)
 
-                val comparison = productionBoundService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                val comparison = productionBoundService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2958,7 +3324,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-1"))
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3005,7 +3375,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities(orderTxids = setOf("TERMINAL-LATE-ORDER"))
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, last.plusSeconds(1))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    last.plusSeconds(1),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3058,7 +3432,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities(orderTxids = setOf("O-SKEW"))
 
-                val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3098,7 +3476,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     )
                 } returns listOf(boundaryLedger)
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 // The legacy boundary row predates the recorded baseline and must not be
@@ -3145,7 +3527,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3184,7 +3570,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities(orderTxids = emptySet())
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3221,7 +3611,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3235,7 +3629,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(
                     snapshot(now, "100000.00", btc = "1.0" to "50000.00"),
                 )
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe
                     ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -3274,7 +3672,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(tradeWithBlankIds)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = serviceNoIntent.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = serviceNoIntent.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
             }
@@ -3298,7 +3700,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     (now.epochSecond - 1).toString()
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(7200),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -3345,6 +3751,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val comparison = serviceWithFloor.getRebalancerComparison(
                     retentionFloor,
                     retentionFloor.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                 )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
@@ -3379,7 +3786,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     (now.epochSecond + 3600).toString()
 
-                val comparisonStable = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                val comparisonStable = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(7200),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 // Stable prefix reconciles cleanly without failing on live tail
                 comparisonStable.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -3392,7 +3803,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     (now.epochSecond + 7200).toString()
 
-                val comparisonCaughtUp = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                val comparisonCaughtUp = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(7200),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 // Now evaluated: because no trade was added for the BTC balance jump, it fails with UNEXPLAINED_BALANCE_CHANGE
                 comparisonCaughtUp.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparisonCaughtUp.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -3427,7 +3842,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     (now.epochSecond + 3600).toString()
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(7200),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
                 comparison.unavailableAt shouldBe snap2.timestamp
@@ -3450,7 +3869,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     null
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -3474,7 +3897,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     null
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -3498,7 +3925,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "not-a-number"
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -3522,7 +3953,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     "not-a-number"
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
@@ -3546,7 +3981,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                     null
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 // Uncertified evidence must not produce UNEXPLAINED_BALANCE_CHANGE or an AVAILABLE verdict
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
@@ -3587,7 +4026,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderTxids = setOf("BOT-ORDER-1"),
                 )
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+                val comparison = service.getRebalancerComparison(
+                    Instant.EPOCH,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
             }
@@ -3624,7 +4067,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe inceptionTime
@@ -3676,7 +4123,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe inceptionTime
@@ -3744,7 +4195,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 // $10k allocated by 50/50 inception weights at recorded 50k
                 // BTC: no artificial alpha at flat prices.
@@ -3814,7 +4269,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
             }
@@ -3890,7 +4349,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
@@ -3965,7 +4428,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = outageGateway,
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
@@ -4032,7 +4499,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
@@ -4067,7 +4538,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = outageGateway,
                 )
 
-                val outageComparison = outageService.getRebalancerComparison(now, now.plusSeconds(3600))
+                val outageComparison = outageService.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 outageComparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 outageComparison.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR
@@ -4161,7 +4636,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
@@ -4196,7 +4675,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED
@@ -4254,7 +4737,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -4338,7 +4825,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -4381,7 +4872,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(windowFrom, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    windowFrom,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe windowAnchorTime
@@ -4424,7 +4919,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(dustTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    dustTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4508,7 +5007,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     listOf(dryRunTrade, failedTrade, preWindowTrade, malformed, postWindowTrade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
@@ -4549,7 +5052,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4604,7 +5111,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4646,7 +5157,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4689,7 +5204,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4733,7 +5252,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4777,7 +5300,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4832,7 +5359,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4890,7 +5421,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4954,7 +5489,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -4996,7 +5535,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
-                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    materialTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe materialTime
@@ -5059,7 +5602,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5135,7 +5682,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5192,8 +5743,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val beforeRestart = newService().getRebalancerComparison(anchorTime, laterTime)
-                val afterRestart = newService().getRebalancerComparison(anchorTime, laterTime)
+                val beforeRestart = newService().getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+                val afterRestart = newService().getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 afterRestart shouldBe beforeRestart
                 afterRestart.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -5256,7 +5815,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
                     krakenService = FakeKrakenService(),
-                ).getRebalancerComparison(anchorTime, laterTime)
+                ).getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5327,7 +5890,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
                     krakenService = FakeKrakenService(),
-                ).getRebalancerComparison(anchorTime, laterTime)
+                ).getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5403,7 +5970,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
                     krakenService = FakeKrakenService(),
-                ).getRebalancerComparison(anchorTime, laterTime)
+                ).getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5538,7 +6109,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5619,7 +6194,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 variants.forEach { variant ->
                     metadata = variant
-                    val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                    val comparison = service.getRebalancerComparison(
+                        anchorTime,
+                        laterTime,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
                     comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                     comparison.baselineTimestamp shouldBe anchorTime
                 }
@@ -5670,7 +6249,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
                 )
-                val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED
@@ -5730,7 +6313,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     nowProvider = { now },
                     krakenService = FakeKrakenService(),
                 )
-                val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5790,7 +6377,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                     nowProvider = { now },
                 )
-                val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
@@ -5812,7 +6403,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 fixture.snapshotRows.add(1, unprovableRow)
 
-                val comparison = service.getRebalancerComparison(fixture.anchorTime, fixture.laterTime)
+                val comparison = service.getRebalancerComparison(
+                    fixture.anchorTime,
+                    fixture.laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             }
@@ -5877,7 +6472,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 shapes.forEach { shape ->
                     metadata = shape
-                    val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                    val comparison = service.getRebalancerComparison(
+                        anchorTime,
+                        laterTime,
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
                     comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                     comparison.baselineTimestamp shouldBe anchorTime
                 }
@@ -5930,7 +6529,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     nowProvider = { now },
                     krakenService = FakeKrakenService(),
                 )
-                val comparison = service.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = service.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -5997,7 +6600,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -6064,7 +6671,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe anchorTime
@@ -6108,7 +6719,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, later.timestamp)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    anchorTime,
+                    later.timestamp,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -6148,7 +6763,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(t0, t2)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    t0,
+                    t2,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
@@ -6200,7 +6819,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // proposal is still its timestamp: the scan reads the full
                 // retained snapshot range, not the displayed zoom range.
                 val comparison =
-                    serviceWithInception.getRebalancerComparison(t2.minusSeconds(60), t2.plusSeconds(3600))
+                    serviceWithInception.getRebalancerComparison(
+                        t2.minusSeconds(60),
+                        t2.plusSeconds(3600),
+                        BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                    )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.proposedBaselineTimestamp shouldBe t1
@@ -6235,7 +6858,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(t0, t1)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    t0,
+                    t1,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
@@ -6569,7 +7196,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     krakenService = FakeKrakenService(),
                 )
 
-                val comparison = serviceWithInception.getRebalancerComparison(t0, t1)
+                val comparison = serviceWithInception.getRebalancerComparison(
+                    t0,
+                    t1,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points.size shouldBe 2
@@ -7254,7 +7885,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val service = automaticBaselineService(fixture)
 
-                val comparison = service.getRebalancerComparison(fixture.anchorTime, fixture.laterTime)
+                val comparison = service.getRebalancerComparison(
+                    fixture.anchorTime,
+                    fixture.laterTime,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS].shouldBeNull()
@@ -7274,7 +7909,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = gapTime.minusMillis(600),
                 )
 
-                service.getRebalancerComparison(fixture.anchorTime, now)
+                service.getRebalancerComparison(
+                    fixture.anchorTime,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
                     gapTime.toEpochMilli().toString()
@@ -7328,7 +7967,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = liveTailTime.minusMillis(500),
                 )
 
-                val comparison = service.getRebalancerComparison(fixture.anchorTime, now)
+                val comparison = service.getRebalancerComparison(
+                    fixture.anchorTime,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -7361,7 +8004,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = gapTime.minusMillis(600),
                 )
 
-                service.getRebalancerComparison(fixture.anchorTime, now)
+                service.getRebalancerComparison(
+                    fixture.anchorTime,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] =
                     "not-a-number"
 
@@ -7397,7 +8044,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = gapTime.minusMillis(600),
                 )
 
-                service.getRebalancerComparison(fixture.anchorTime, now)
+                service.getRebalancerComparison(
+                    fixture.anchorTime,
+                    now,
+                    BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] =
                     fixture.anchorTime.minusMillis(1).toEpochMilli().toString()
 

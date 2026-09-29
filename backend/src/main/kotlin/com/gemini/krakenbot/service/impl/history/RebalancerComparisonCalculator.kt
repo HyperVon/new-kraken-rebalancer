@@ -112,7 +112,7 @@ object RebalancerComparisonCalculator {
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
         ledgerContext: List<LedgerEvent> = emptyList(),
         configuredAssetUniverse: Set<String>? = null,
-        benchmarkMethod: BenchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison = calculateWithOptionalForensicRegimes(
         snapshots = snapshots,
         trades = trades,
@@ -157,7 +157,7 @@ object RebalancerComparisonCalculator {
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
         ledgerContext: List<LedgerEvent> = emptyList(),
         configuredAssetUniverse: Set<String>? = null,
-        benchmarkMethod: BenchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+        benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison = calculateWithOptionalForensicRegimes(
         snapshots = snapshots,
         trades = trades,

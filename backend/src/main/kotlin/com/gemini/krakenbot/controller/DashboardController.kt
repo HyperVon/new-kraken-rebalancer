@@ -9,6 +9,7 @@ import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.QualityAllocation
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.OrderIntentState
@@ -25,6 +26,7 @@ import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.AllocationEditor
@@ -453,16 +455,13 @@ class DashboardController(
      * rejection is an [IllegalArgumentException] carrying a `ViewText` message the caller renders.
      */
     private fun computeAllocationPreview(params: Parameters): AllocationPreview {
-        val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
-        val targets = params.getAll(FormFields.TARGETS).orEmpty()
-        val colors = params.getAll(FormFields.COLORS).orEmpty()
-        val scores = params.getAll(FormFields.SCORES).orEmpty()
-        require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
-            ViewText.INVALID_ALLOCATION_FIELDS
-        }
-        require(symbols.map { it.uppercase() }.toSet().size == symbols.size) {
-            ViewText.INVALID_ALLOCATION_FIELDS
-        }
+        val rows = params.requiredAllocationRows()
+        val symbols = rows.symbols
+        val targets = rows.targets
+        val colors = rows.colors
+        val scores = rows.scores
+        val targetValues = targets.map(::requiredAllocationTarget)
+        colors.forEach { requiredAllocationColor(it) }
 
         // An absent emphasis means "not chosen" and falls back to the flattest weighting; a supplied
         // one is rejected unless it is an in-range integer, so a typo cannot be silently absorbed
@@ -475,35 +474,37 @@ class DashboardController(
                 ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_EMPHASIS)
         }
         require(emphasis in 1..QualityAllocation.MAX_EMPHASIS) { ViewText.INVALID_ALLOCATION_EMPHASIS }
-        val requestedSleeve = params[FormFields.SCORE_SLEEVE_PERCENT]?.toBigDecimalOrNull()
+        val requestedSleeve = params[FormFields.SCORE_SLEEVE_PERCENT]
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.let(::requiredAllocationTarget)
+            ?.also {
+                require(it.signum() > 0 && it <= BigDecimal.valueOf(PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE)) {
+                    ViewText.INVALID_ALLOCATION_TARGET
+                }
+            }
 
         val scored = mutableMapOf<String, BigDecimal>()
         for ((index, symbol) in symbols.withIndex()) {
-            val raw = scores.getOrNull(index)?.trim().orEmpty()
-            if (raw.isEmpty()) continue
-            val value = raw.toBigDecimalOrNull()
-                ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_SCORE)
-            require(value.signum() >= 0 && value <= BigDecimal.valueOf(Settings.MAX_QUALITY_SCORE)) {
-                ViewText.INVALID_ALLOCATION_SCORE
-            }
-            if (value.signum() == 0) continue
-            scored[symbol] = value
+            parseQualityScore(scores[index])?.let { scored[symbol] = it }
         }
         require(scored.isNotEmpty()) { ViewText.ALLOCATION_SCORE_REQUIRED }
 
-        val targetTotal = targets.fold(BigDecimal.ZERO) { acc, target ->
-            acc.add(target.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-        }
         val scoredTargetTotal = symbols.indices
             .filter { symbols[it] in scored }
-            .fold(BigDecimal.ZERO) { acc, i ->
-                acc.add(targets.getOrNull(i)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-            }
-        val usableSleeve = requestedSleeve?.takeIf { it.signum() > 0 }
-            ?: (if (scoredTargetTotal.signum() > 0) scoredTargetTotal else targetTotal)
-        require(usableSleeve.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
+            .fold(BigDecimal.ZERO) { acc, i -> acc.add(targetValues[i]) }
+        val usableSleeve = requestedSleeve ?: scoredTargetTotal.also {
+            require(it.signum() > 0) { ViewText.INVALID_ALLOCATION_TARGET }
+        }
 
         val computed = QualityAllocation.proportional(scored, usableSleeve, emphasis)
+        val previewTotal = symbols.indices.fold(BigDecimal.ZERO) { total, index ->
+            total.add(computed[symbols[index]] ?: targetValues[index])
+        }
+        val allowedDelta = BigDecimal.valueOf(PrecisionConstants.ALLOCATION_TOLERANCE_DELTA)
+        val totalDelta = previewTotal.subtract(BigDecimal.valueOf(PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE)).abs()
+        require(totalDelta <= allowedDelta) { ViewText.INVALID_ALLOCATION_TARGET }
+
         return AllocationPreview(
             symbols = symbols,
             targets = targets,
@@ -517,8 +518,8 @@ class DashboardController(
             // "largest position" when its actual share of the book was 81.96%.
             combined = buildMap {
                 symbols.forEachIndexed { index, symbol ->
-                    val weight = computed[symbol] ?: targets.getOrNull(index)?.toBigDecimalOrNull()
-                    if (weight != null && weight.signum() > 0) put(symbol, weight)
+                    val weight = computed[symbol] ?: targetValues[index]
+                    if (weight.signum() > 0) put(symbol, weight)
                 }
             },
         )
@@ -587,6 +588,57 @@ class DashboardController(
         val combined: Map<String, BigDecimal>,
     )
 
+    private data class AllocationRows(
+        val symbols: List<String>,
+        val targets: List<String>,
+        val colors: List<String>,
+        val scores: List<String>,
+    )
+
+    private fun Parameters.requiredAllocationRows(): AllocationRows {
+        val symbols = getAll(FormFields.SYMBOLS).orEmpty()
+        val targets = getAll(FormFields.TARGETS).orEmpty()
+        val colors = getAll(FormFields.COLORS).orEmpty()
+        val scores = getAll(FormFields.SCORES).orEmpty()
+        require(
+            symbols.isNotEmpty() && symbols.size == targets.size &&
+                symbols.size == colors.size && symbols.size == scores.size,
+        ) { ViewText.INVALID_ALLOCATION_FIELDS }
+        require(symbols.map { Asset.canonicalSymbol(it) }.toSet().size == symbols.size) {
+            ViewText.INVALID_ALLOCATION_FIELDS
+        }
+        require(symbols.all { Asset.isValidAllocationSymbol(it) }) { ViewText.INVALID_ALLOCATION_FIELDS }
+        return AllocationRows(symbols, targets, colors, scores)
+    }
+
+    private fun requiredAllocationTarget(raw: String): BigDecimal {
+        val value = raw.trim().toBigDecimalOrNull()
+        require(value != null && value.signum() >= 0 && value.toDouble().isFinite()) {
+            ViewText.INVALID_ALLOCATION_TARGET
+        }
+        return value
+    }
+
+    private fun requiredAllocationColor(raw: String): String? {
+        val color = AssetColorAssigner.normalizeHex(raw)
+        require(raw.isBlank() || color != null) { ViewText.INVALID_ALLOCATION_COLOR }
+        return color
+    }
+
+    /** Blank and zero clear a score; every other value must match the persisted score contract. */
+    private fun parseQualityScore(raw: String): BigDecimal? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+        val value = trimmed.toBigDecimalOrNull()
+            ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_SCORE)
+        require(value.signum() >= 0 && value <= BigDecimal.valueOf(Settings.MAX_QUALITY_SCORE)) {
+            ViewText.INVALID_ALLOCATION_SCORE
+        }
+        val persistedValue = value.toDouble()
+        require(persistedValue.isFinite()) { ViewText.INVALID_ALLOCATION_SCORE }
+        return value.takeIf { persistedValue > 0.0 }
+    }
+
     private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {
         val deviationTriggerPercent =
             params.requiredSingle(FormFields.DEVIATION_TRIGGER_PERCENT, ViewText.INVALID_DEVIATION_TRIGGER)
@@ -636,32 +688,18 @@ class DashboardController(
                 comparisonStartDate = comparisonStartDate,
             )
 
-        val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
-        val targets = params.getAll(FormFields.TARGETS).orEmpty()
-        val colors = params.getAll(FormFields.COLORS).orEmpty()
-        val scores = params.getAll(FormFields.SCORES).orEmpty()
-        require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
-            ViewText.INVALID_ALLOCATION_FIELDS
-        }
+        val rows = params.requiredAllocationRows()
 
         val allocations =
-            symbols.mapIndexed { index, symbol ->
-                val target = targets[index].requiredFiniteDouble(ViewText.INVALID_ALLOCATION_TARGET)
-                val rawColor = colors.getOrNull(index)
-                val color = AssetColorAssigner.normalizeHex(rawColor)
-                require(rawColor.isNullOrBlank() || color != null) {
-                    ViewText.INVALID_ALLOCATION_COLOR
-                }
+            rows.symbols.mapIndexed { index, symbol ->
+                val target = requiredAllocationTarget(rows.targets[index]).toDouble()
+                val color = requiredAllocationColor(rows.colors[index])
                 Allocation(symbol, target, color)
             }
 
         val qualityScores = mutableMapOf<String, Double>()
-        symbols.forEachIndexed { index, symbol ->
-            val raw = scores.getOrNull(index)?.trim().orEmpty()
-            if (raw.isEmpty()) return@forEachIndexed
-            val value = raw.requiredFiniteDouble(ViewText.INVALID_ALLOCATION_SCORE)
-            require(value in 0.0..Settings.MAX_QUALITY_SCORE) { ViewText.INVALID_ALLOCATION_SCORE }
-            if (value > 0.0) qualityScores[symbol] = value
+        rows.symbols.forEachIndexed { index, symbol ->
+            parseQualityScore(rows.scores[index])?.let { qualityScores[symbol] = it.toDouble() }
         }
 
         return AppConfig(
