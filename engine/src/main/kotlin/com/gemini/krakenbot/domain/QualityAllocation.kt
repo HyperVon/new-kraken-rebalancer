@@ -19,6 +19,18 @@ object QualityAllocation {
     /** Maximum supported steepness; beyond this the allocation collapses onto the top score. */
     const val MAX_EMPHASIS = 8
 
+    /**
+     * Emphasis the settings form pre-selects. Steep enough that a clearly better score wins
+     * clearly, which is the point of scoring assets at all, while leaving room to flatten it.
+     */
+    const val DEFAULT_EMPHASIS = 4
+
+    /**
+     * Emphasis applied when a request supplies none. Deliberately the flattest weighting rather
+     * than [DEFAULT_EMPHASIS]: an absent field is "not chosen", not "chosen as the default".
+     */
+    const val FALLBACK_EMPHASIS = 1
+
     /** Percent scale used for allocation targets. */
     private const val PERCENT_SCALE = 2
 

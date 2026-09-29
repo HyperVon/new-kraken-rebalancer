@@ -253,23 +253,57 @@ labelled so a score is never mistaken for a target.
 
 #### Calculating targets from quality scores
 
-The **Scored Sleeve** group turns scores into suggested targets:
+**What it is.** An optional helper that suggests target percentages from the
+quality scores you assign, so you are not hand-tuning numbers you would rather
+express as a preference. It only ever produces a *preview*: it rewrites the
+target fields in the form and nothing reaches your configuration until you press
+**Save Configuration**.
+
+**What it does not do.** It never changes what you hold on its own, and it never
+moves money. Until you save, the preview is a calculation you can discard by
+pressing **Calculate from scores** with different inputs, or by reloading the
+page.
+
+**How to use it.**
+
+1. Give one or more assets a **Quality score** between **0** and **10** in their
+   row. Leave a row blank to exclude it. At least one score is required — with
+   none, the form reports *"Enter a quality score for at least one asset before
+   calculating"*.
+2. Set **Emphasis** to control how hard a higher score wins. The form
+   pre-selects **4**.
+3. Optionally set **Scored sleeve**, the amount of the book to redistribute.
+   Leave it on **Auto** to use the combined current target of the scored assets.
+4. Press **Calculate from scores** and read the result.
 
 | Control | Purpose |
 | :--- | :--- |
-| **Emphasis** | How sharply a higher score wins. Range **1–8**; leave blank for the flattest weighting. |
-| **Scored sleeve** | The percent to redistribute. Defaults to the combined target of the scored assets; **Auto** when blank. |
-| **Calculate from scores** | Previews the split. Nothing is saved until you save the form. |
+| **Emphasis (1–8)** | Steepness of the split. Each asset's weight is its score raised to this power, so the ratio between two assets grows quickly with the setting. Leave blank for the flattest weighting (1). |
+| **Scored sleeve (%)** | How much of the book the scored assets share. **Auto** = the combined current target of the scored assets, which normally leaves unscored assets untouched. |
+| **Calculate from scores** | Runs the preview. Nothing is saved until you save the form. |
 
-Only assets with a score take part, and they are reweighted between themselves
-in proportion to `score^emphasis`; assets without a score keep the target you
-already set. The preview then reports three figures:
+**How the split works.** Scored assets are reweighted *between themselves*, in
+proportion to `score^emphasis`, and that share of the book is then divided among
+them. Assets without a score keep the target you already set, which is why the
+total still has to come to **100.00%**.
 
-| Figure | Scope |
-| :--- | :--- |
-| **Weighted quality score** | Score-weighted average across the **scored assets only** — an unscored asset has no score to contribute. |
-| **Largest single position** | Largest leg as a share of the **whole book**, including the preserved unscored targets. |
-| **Effective independent bets** | `1 / Σ(share²)` over the **whole book** — equals the leg count when evenly weighted and 1 when fully concentrated. |
+Worked example — the default targets BTC **50%**, ETH **45%**, USD **5%**, with
+BTC scored **9.5** and ETH scored **6.0**. The scored sleeve is 95%, and USD is
+untouched either way:
+
+| Emphasis | BTC | ETH | USD (untouched) |
+| ---: | ---: | ---: | ---: |
+| **1** (flattest) | 58.23% | 36.77% | 5% |
+| **4** (pre-selected) | 81.96% | 13.04% | 5% |
+
+**Reading the three figures.** They answer different questions, and each says
+which one:
+
+| Figure | What it answers | Scope |
+| :--- | :--- | :--- |
+| **Weighted quality score** | How strong the scored assets look overall. | **Scored assets only** — an unscored asset has no score to average in. |
+| **Largest single position** | Am I concentrated? | The **whole book**, including the targets preserved for unscored assets. |
+| **Effective independent bets** | How many genuinely separate positions do I hold? | The **whole book**. `1 / Σ(share²)`: equals the leg count when evenly weighted, and **1** when everything sits in one asset. Two assets at 86 / 14 behave like **1.3** bets, not 2. |
 
 Deeper behavior (drawdown deployment, sell-then-buy, dust) is documented in
 [ALGORITHM.md](ALGORITHM.md).

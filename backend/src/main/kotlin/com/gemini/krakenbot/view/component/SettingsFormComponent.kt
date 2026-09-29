@@ -575,25 +575,31 @@ class SettingsFormComponent {
 
             // The score controls and the add-asset control used to share one dashed box, which read
             // as a single form of related fields. They are separate jobs, so they are separate
-            // labelled groups, and the sleeve input no longer borrows the "Target Allocations"
-            // heading text as its placeholder.
+            // groups. This one carries no group title: "scored sleeve" is the name of the second
+            // field, and titling the whole box with it made the emphasis field look unexplained.
+            // The hint leads instead, and each field names itself the way the rows do.
             div(CssClass.Form.AllocationControlRow) {
                 div(CssClass.Form.AllocationControlGroup) {
-                    span(CssClass.Form.AllocationControlLabel) { +ViewText.ALLOCATION_SLEEVE_FIELD }
+                    span(CssClass.Form.AllocationControlHint) { +ViewText.ALLOCATION_SCORE_HINT }
                     div(CssClass.Form.AllocationControlInputs) {
-                        input(CssClass.Form.InputGlass, type = number) {
-                            id = HtmlIds.SCORE_EMPHASIS_INPUT
-                            name = FormFields.SCORE_EMPHASIS
-                            value = "4"
-                            min = "1"
-                            max = QualityAllocation.MAX_EMPHASIS.toString()
-                            placeholder = ViewText.ALLOCATION_SCORE_EMPHASIS
+                        div(CssClass.Form.AllocationControlField) {
+                            span(CssClass.Form.AllocationFieldLabel) { +ViewText.ALLOCATION_SCORE_EMPHASIS }
+                            input(CssClass.Form.InputGlass, type = number) {
+                                id = HtmlIds.SCORE_EMPHASIS_INPUT
+                                name = FormFields.SCORE_EMPHASIS
+                                value = QualityAllocation.DEFAULT_EMPHASIS.toString()
+                                min = "1"
+                                max = QualityAllocation.MAX_EMPHASIS.toString()
+                            }
                         }
-                        input(CssClass.Form.InputGlass, type = number) {
-                            id = HtmlIds.SCORE_SLEEVE_INPUT
-                            name = FormFields.SCORE_SLEEVE_PERCENT
-                            step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
-                            placeholder = ViewText.ALLOCATION_SLEEVE_PLACEHOLDER
+                        div(CssClass.Form.AllocationControlField) {
+                            span(CssClass.Form.AllocationFieldLabel) { +ViewText.ALLOCATION_SLEEVE_FIELD }
+                            input(CssClass.Form.InputGlass, type = number) {
+                                id = HtmlIds.SCORE_SLEEVE_INPUT
+                                name = FormFields.SCORE_SLEEVE_PERCENT
+                                step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
+                                placeholder = ViewText.ALLOCATION_SLEEVE_PLACEHOLDER
+                            }
                         }
                         button(
                             CssClass.Button.Secondary,
@@ -606,7 +612,6 @@ class SettingsFormComponent {
                             span { +ViewText.ALLOCATIONS_FROM_SCORES }
                         }
                     }
-                    span(CssClass.Form.AllocationControlHint) { +ViewText.ALLOCATION_SCORE_HINT }
                 }
             }
 

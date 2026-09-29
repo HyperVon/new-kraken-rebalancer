@@ -418,20 +418,23 @@ object FormStyles {
             padding = Padding(0.75.rem)
         }
 
-        ".${CssClass.Form.AllocationControlLabel}" {
-            display = Display.block
-            fontSize = 0.6875.rem
-            fontWeight = FontWeight.w600
-            letterSpacingRaw("0.04em")
-            textTransformRaw("uppercase")
-            color = CssTheme.colorTextMuted
-            marginBottom = 0.5.rem
-        }
-
         ".${CssClass.Form.AllocationControlInputs}" {
             display = Display.flex
-            alignItems = Align.center
+            alignItems = Align.end
             gap = 0.625.rem
+        }
+
+        // Each preview field labels itself the way the allocation rows do, so a prefilled emphasis
+        // is never just a bare number and "Scored sleeve" names its own field rather than the box.
+        ".${CssClass.Form.AllocationControlField}" {
+            display = Display.flex
+            flexDirection = FlexDirection.column
+            gap = 0.25.rem
+        }
+
+        ".${CssClass.Form.AllocationControlField} input" {
+            width = 7.5.rem
+            flexShrinkRaw("0")
         }
 
         // Inputs keep their own width instead of growing, so Add Asset is not the largest control

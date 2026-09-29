@@ -76,9 +76,6 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
-/** Score weighting used when the allocation preview request supplies no emphasis at all. */
-private const val DEFAULT_SCORE_EMPHASIS = 1
-
 class DashboardController(
     private val tradeHistoryService: TradeHistoryService,
     private val configService: ConfigService,
@@ -469,7 +466,7 @@ class DashboardController(
         // while an out-of-range value is refused.
         val emphasisField = params[FormFields.SCORE_EMPHASIS]?.trim().takeUnless { it.isNullOrEmpty() }
         val emphasis = if (emphasisField == null) {
-            DEFAULT_SCORE_EMPHASIS
+            QualityAllocation.FALLBACK_EMPHASIS
         } else {
             emphasisField.toIntOrNull()
                 ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_EMPHASIS)

@@ -112,13 +112,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The score preview controls were unexplained**: the emphasis field is pre-filled, so its
+  placeholder could never show and the operator saw a bare `4` with no label, range, or
+  indication that it is an optional preview rather than a saved setting. The group was also titled
+  `Scored sleeve`, which is the name of its *second* field. Both fields now carry their own visible
+  labels — `Emphasis (1–8)` and `Scored sleeve (%)` — the box is untitled, and a lead-in explains
+  what the group does. The pre-selected emphasis and the absent-field fallback are now named
+  constants in `QualityAllocation` rather than a hardcoded `4` in the markup and a private `1` in
+  the controller; they are deliberately different values, because an absent field means "not
+  chosen" rather than "chosen as the default".
 - **Docs**: refreshed `docs/images/*` from the current build so the gallery is no longer
   mixed-vintage, and added a `settings-allocations.png` target for the rebuilt target-allocation
   editor, which the existing top-anchored `settings.png` cropped out. The User Guide's *Target
-  allocations* section now documents the quality score, the Scored Sleeve controls, and the scope
-  of each preview figure, and its comparison section documents the two selectable benchmarks
-  instead of assuming one. Two capture targets pointed at text the app no longer renders
-  (`Rebalancer vs Buy & Hold`, `Staking Rewards`) and were repointed.
+  allocations* section now documents the quality score and the preview controls — what they are, what
+  they deliberately do not do, a four-step how-to, and a worked example at emphasis 1 and 4 — plus
+  what scope each preview figure is measured over, and its comparison section documents the two
+  selectable benchmarks instead of assuming one. Two capture targets pointed at text the app no
+  longer renders (`Rebalancer vs Buy & Hold`, `Staking Rewards`) and were repointed.
 - **Allocation preview figures are measured over the whole portfolio**: the three preview metrics were
   all computed over the scored sleeve, so `Largest single position` reported BTC as 86.27% when its
   actual share of the book was 81.96%, and `Effective independent bets` silently ignored the

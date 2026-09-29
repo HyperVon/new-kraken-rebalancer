@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
@@ -50,6 +51,38 @@ class SettingsFormComponentTest : StringSpec() {
     }
 
     init {
+        "the score preview fields each carry a visible label" {
+            val html = render(
+                config(),
+                InceptionDisplayInfo(status = InceptionDisplayStatus.UNAVAILABLE),
+            )
+
+            // Both preview inputs are pre-filled or empty, so a label is the only thing that
+            // explains them. A prefilled emphasis is the worst case: its placeholder can never
+            // show, so without a label the operator sees a bare "4" with nothing to say what it is
+            // or what it does.
+            html shouldContain "Emphasis (1–8)"
+            html shouldContain "Scored sleeve (%)"
+            html shouldContain "reweighted between themselves"
+            // The group itself is untitled: "scored sleeve" names the field, not the box.
+            html shouldNotContain "allocation-control-label"
+        }
+
+        "the emphasis input pre-selects the shared domain default" {
+            val html = render(
+                config(),
+                InceptionDisplayInfo(status = InceptionDisplayStatus.UNAVAILABLE),
+            )
+
+            html shouldContain "value=\"${QualityAllocation.DEFAULT_EMPHASIS}\""
+            // An out-of-range default would make every preview fail validation, so the form
+            // default has to sit inside the range the engine accepts.
+            (QualityAllocation.DEFAULT_EMPHASIS in 1..QualityAllocation.MAX_EMPHASIS) shouldBe true
+            // An absent field means "not chosen" and falls back to the flattest weighting, which
+            // is deliberately not the pre-selected default.
+            QualityAllocation.FALLBACK_EMPHASIS shouldBe 1
+        }
+
         "approved pending renders the recovery progress marker" {
             val html = render(
                 config(inceptionDate = "2026-01-01T00:00:00Z"),
