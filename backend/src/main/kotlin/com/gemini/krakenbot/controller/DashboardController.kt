@@ -460,6 +460,9 @@ class DashboardController(
         require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
             ViewText.INVALID_ALLOCATION_FIELDS
         }
+        require(symbols.map { it.uppercase() }.toSet().size == symbols.size) {
+            ViewText.INVALID_ALLOCATION_FIELDS
+        }
 
         // An absent emphasis means "not chosen" and falls back to the flattest weighting; a supplied
         // one is rejected unless it is an in-range integer, so a typo cannot be silently absorbed
@@ -478,8 +481,12 @@ class DashboardController(
         for ((index, symbol) in symbols.withIndex()) {
             val raw = scores.getOrNull(index)?.trim().orEmpty()
             if (raw.isEmpty()) continue
-            val value = raw.toBigDecimalOrNull() ?: continue
-            if (value.signum() <= 0) continue
+            val value = raw.toBigDecimalOrNull()
+                ?: throw IllegalArgumentException(ViewText.INVALID_ALLOCATION_SCORE)
+            require(value.signum() >= 0 && value <= BigDecimal.valueOf(Settings.MAX_QUALITY_SCORE)) {
+                ViewText.INVALID_ALLOCATION_SCORE
+            }
+            if (value.signum() == 0) continue
             scored[symbol] = value
         }
         require(scored.isNotEmpty()) { ViewText.ALLOCATION_SCORE_REQUIRED }
@@ -653,6 +660,7 @@ class DashboardController(
             val raw = scores.getOrNull(index)?.trim().orEmpty()
             if (raw.isEmpty()) return@forEachIndexed
             val value = raw.requiredFiniteDouble(ViewText.INVALID_ALLOCATION_SCORE)
+            require(value in 0.0..Settings.MAX_QUALITY_SCORE) { ViewText.INVALID_ALLOCATION_SCORE }
             if (value > 0.0) qualityScores[symbol] = value
         }
 

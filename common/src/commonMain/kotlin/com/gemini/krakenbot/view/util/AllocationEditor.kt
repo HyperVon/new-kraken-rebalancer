@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.util.PrecisionConstants
 
 /**
@@ -48,7 +49,7 @@ object AllocationEditor {
             <div class="${CssClass.Form.AllocationEditInputWrapper}">
                 <span class="${CssClass.Form.AllocationFieldLabel}">${ViewText.ALLOCATION_SCORE_FIELD}</span>
                 <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.SCORES}"
-                  step="0.5" min="0" max="10" value="${escapeHtml(score)}"
+                  step="0.5" min="0" max="${Settings.MAX_QUALITY_SCORE.toInt()}" value="${escapeHtml(score)}"
                   placeholder="${ViewText.ALLOCATION_SCORE_PLACEHOLDER}">
             </div>
             <div class="${CssClass.Form.AllocationEditInputWrapper}">

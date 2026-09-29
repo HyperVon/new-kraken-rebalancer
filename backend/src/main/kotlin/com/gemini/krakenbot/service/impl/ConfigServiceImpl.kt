@@ -345,6 +345,8 @@ class ConfigServiceImpl internal constructor(
             requireValidations(
                 score.isFinite() to "Quality score for $symbol must be finite.",
                 (score > 0.0) to "Quality score for $symbol must be positive.",
+                (score <= Settings.MAX_QUALITY_SCORE) to
+                    "Quality score for $symbol must not exceed ${Settings.MAX_QUALITY_SCORE}.",
             )
         }
     }

@@ -696,6 +696,7 @@ class ConfigServiceTest : StringSpec() {
                     Double.NEGATIVE_INFINITY,
                     0.0,
                     -1.0,
+                    Settings.MAX_QUALITY_SCORE + 0.5,
                 ).forEach { value ->
                     withClue("qualityScore=$value") {
                         shouldThrow<InvalidConfigurationException> {

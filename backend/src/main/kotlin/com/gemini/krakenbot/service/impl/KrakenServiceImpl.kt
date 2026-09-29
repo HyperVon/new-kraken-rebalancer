@@ -678,7 +678,10 @@ class KrakenServiceImpl(
                 page.records.forEach { names.putIfAbsent(it.methodId, it.methodName) }
                 val nextCursor = page.nextCursor?.trim()?.takeIf(String::isNotEmpty)
                     ?: return FundingMethodNames(names, complete)
-                if (!seenCursors.add(nextCursor)) return FundingMethodNames(names, complete)
+                if (!seenCursors.add(nextCursor)) {
+                    log.warn("Funding method list {} repeated a cursor; names may be incomplete.", path)
+                    return FundingMethodNames(names, complete = false)
+                }
                 cursor = nextCursor
                 pageIndex++
             }

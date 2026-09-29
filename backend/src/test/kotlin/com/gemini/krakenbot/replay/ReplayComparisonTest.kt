@@ -56,6 +56,19 @@ class ReplayComparisonTest : StringSpec() {
             outcome.buyAndHoldNav.shouldBeLessThan(BigDecimal("3200.00"))
         }
 
+        "a crypto-funded withdrawal removes the full requested amount across assets" {
+            val outcome = comparator.run(
+                closes = flat(10, "100"),
+                flows = listOf(ReplayComparator.Flow(5, BigDecimal("-3000"))),
+                openingCapital = BigDecimal("10000"),
+                lastDay = 5,
+            )
+
+            outcome.buyAndHoldNav.add(outcome.buyAndHoldFees)
+                .subtract(BigDecimal("7000.00")).abs()
+                .shouldBeLessThan(BigDecimal("0.01"))
+        }
+
         "both books conserve capital on a flat path" {
             val netCapital = BigDecimal("2500.00")
             val outcome = comparator.run(

@@ -1440,7 +1440,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                         {
                           "deposits": [{
                             "deposit_id": "DEP-CURSOR",
-                            "method_id": "method-1",
+                            "method_id": "method-unseen",
                             "status": "success",
                             "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
                             "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
@@ -1470,7 +1470,8 @@ class KrakenServiceTest : KrakenServiceTestBase() {
 
                 val deposits = service.getDepositStatus()
 
-                deposits.single().method shouldBe "Wire"
+                deposits.single().method shouldBe null
+                deposits.single().methodId shouldBe null
             }
         }
 

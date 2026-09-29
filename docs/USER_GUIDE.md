@@ -267,7 +267,8 @@ page.
 **How to use it.**
 
 1. Give one or more assets a **Quality score** between **0** and **10** in their
-   row. Leave a row blank to exclude it. At least one score is required — with
+   row. Leave a row blank or enter **0** to clear its score; assets without a
+   positive score are excluded from the scored sleeve. At least one score is required — with
    none, the form reports *"Enter a quality score for at least one asset before
    calculating"*.
 2. Set **Emphasis** to control how hard a higher score wins. The form

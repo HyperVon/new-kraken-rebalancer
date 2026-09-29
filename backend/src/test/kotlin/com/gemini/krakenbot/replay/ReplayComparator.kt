@@ -140,12 +140,15 @@ class ReplayComparator(
 
             val cryptoValue = closes.keys.fold(BigDecimal.ZERO) { acc, s -> acc.add(valueOf(day, s)) }
             if (cryptoValue.signum() <= 0) return
+            val requestedFromCrypto = need
 
             for (symbol in closes.keys) {
                 if (need.signum() <= 0) break
                 val price = closes.getValue(symbol)[day]
                 if (price.signum() <= 0) continue
-                val share = need.multiply(valueOf(day, symbol)).divide(cryptoValue, SCALE_WORK, RoundingMode.HALF_UP)
+                val share = requestedFromCrypto
+                    .multiply(valueOf(day, symbol))
+                    .divide(cryptoValue, SCALE_WORK, RoundingMode.HALF_UP)
                 val desired = share.divide(
                     price.multiply(BigDecimal.ONE.subtract(feeRate)),
                     SCALE_WORK,

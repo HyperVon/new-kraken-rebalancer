@@ -48,10 +48,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Unavailable comparisons could report the wrong benchmark provenance**: fixed-inception and
   inferred results now carry their selected method and its matching configuration evidence through
   fail-closed, cache-refresh, and API serialization paths.
+- **Incomplete funding-method pagination could vouch for an unchecked rail**: a repeated cursor now
+  marks the method registry incomplete and withholds raw method IDs, leaving unidentified funding
+  rows unresolved instead of counting them as external capital.
+- **The local replay oracle under-applied crypto-funded withdrawals**: each asset's withdrawal share
+  now uses the original shortfall, preserving same-capital comparisons across multiple assets.
 - **Recent-high suppression used incomplete daily candles and could block withdrawal correction**:
   only completed UTC-day closes in the full trailing window qualify, cache entries expire at the next
   UTC day boundary, and an explicit USD-withdrawal correction can sell an overweight asset at a recent
   high to restore the configured reserve.
+- **Allocation score inputs could exceed their displayed range and previews could merge duplicate
+  rows**: score values are now bounded by the displayed 0–10 range in preview, save, and configuration
+  checks; previews reject duplicate symbols case-insensitively, and the form explains that blank or
+  zero clears a score.
 - **Quality scores could persist a non-finite value and brick the dashboard**: the settings form
   gated a score on `toDoubleOrNull()` plus `> 0.0`, but Kotlin's `toDoubleOrNull` only screens the
   literal's syntax and delegates to `Double.parseDouble`, which returns `Infinity` on exponent
@@ -59,7 +68,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `BigDecimal.valueOf` then threw on every dashboard fragment render until the file was hand-edited.
   Scores now go through the same `requiredFiniteDouble` guard every other numeric setting uses, a
   malformed score is reported instead of silently dropped, and `validateSettings` rejects a
-  non-finite or non-positive score so a hand-edited config fails at load.
+  non-finite, non-positive, or over-10 score so a hand-edited config fails at load.
 - **Allocation preview errors were invisible**: the preview endpoint raised bare `require` failures
   that reached the client as a JSON error the HTMX trigger never swaps, so `Calculate from scores`
   silently did nothing on bad input. Validation now responds 422 with the settings form and the

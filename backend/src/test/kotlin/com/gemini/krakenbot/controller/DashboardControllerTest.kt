@@ -1438,8 +1438,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     )
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
-                response.bodyAsText() shouldContain
-                    "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries."
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
 
                 val invalidColorResponse =
                     client.post(Routes.SETTINGS) {
@@ -1558,8 +1557,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.bodyAsText() shouldContain
-                    "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries."
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -2085,7 +2083,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.SYMBOLS to listOf("BTC", "ETH"),
                             FormFields.TARGETS to listOf("50", "50"),
                             FormFields.COLORS to listOf("#ff0000", "#00ff00"),
-                            FormFields.SCORES to listOf("", "not-a-number"),
+                            FormFields.SCORES to listOf("", "0"),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -2125,6 +2123,62 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
                 response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
                 response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsDuplicateSymbolsCaseInsensitively" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf("BTC", "btc"),
+                            FormFields.TARGETS to listOf("50", "50"),
+                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                            FormFields.SCORES to listOf("9.5", "8.5"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "allocationsPreview_RejectsInvalidAndOutOfRangeScores" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                listOf("not-a-number", "10.5", "-0.5").forEach { score ->
+                    val response = client.post(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW) {
+                        setBody(
+                            parametersOf(
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
+                                FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                                FormFields.TARGETS to listOf("50", "50"),
+                                FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                                FormFields.SCORES to listOf(score, "8.5"),
+                            ).formUrlEncode(),
+                        )
+                        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        header(HttpHeaders.Cookie, csrf.cookie)
+                    }
+
+                    response.status shouldBe HttpStatusCode.UnprocessableEntity
+                    response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_SCORE
+                }
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
@@ -2271,7 +2325,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
-        "postSettings_RejectsOverflowingQualityScore" {
+        "postSettings_RejectsNonFiniteOrOverMaxQualityScore" {
             val serverConfig = dashboardConfig(
                 credentials = KrakenCredentials(
                     apiKey = TestFixtures.TEST_SERVER_API_KEY,
@@ -2283,32 +2337,31 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             testApplication {
                 application { configureTestEnv() }
                 val csrf = client.settingsCsrf()
-                val response = client.post(Routes.SETTINGS) {
-                    setBody(
-                        parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
-                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("20.0"),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf("20.0"),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
-                            FormFields.CSRF_TOKEN to listOf(csrf.value),
-                            FormFields.DRY_RUN to listOf("on"),
-                            FormFields.SYMBOLS to listOf("BTC", "TAO"),
-                            FormFields.TARGETS to listOf("50", "30"),
-                            FormFields.COLORS to listOf("#ff0000", "#00ff00"),
-                            // Kotlin's toDoubleOrNull screens the literal's syntax but delegates to
-                            // Double.parseDouble, which returns Infinity on exponent overflow
-                            // instead of throwing. Persisting that would make BigDecimal.valueOf
-                            // throw on every dashboard fragment render.
-                            FormFields.SCORES to listOf("1e400", "8.0"),
-                        ).formUrlEncode(),
-                    )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, csrf.cookie)
-                }
+                listOf("1e400", "10.5").forEach { score ->
+                    val response = client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("20.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("20.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
+                                FormFields.DRY_RUN to listOf("on"),
+                                FormFields.SYMBOLS to listOf("BTC", "TAO"),
+                                FormFields.TARGETS to listOf("50", "30"),
+                                FormFields.COLORS to listOf("#ff0000", "#00ff00"),
+                                // The client-side max is not an input validation boundary.
+                                FormFields.SCORES to listOf(score, "8.0"),
+                            ).formUrlEncode(),
+                        )
+                        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        header(HttpHeaders.Cookie, csrf.cookie)
+                    }
 
-                response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_SCORE
+                    response.status shouldBe HttpStatusCode.UnprocessableEntity
+                    response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_SCORE
+                }
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
