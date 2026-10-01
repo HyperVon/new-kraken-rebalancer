@@ -2,15 +2,19 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
+import com.gemini.krakenbot.service.impl.history.AuthoritativeLedgerBalanceValidator
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -63,6 +67,56 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.saveLedgers(listOf(event(t0, "ref-0"), event(t1, "ref-1"), event(t2, "ref-2")))
             val inRange = repository.getLedgersInRange(t0, t1)
             inRange.map { it.ledgerId } shouldBe listOf("ref-1", "ref-0")
+        }
+
+        "projects exact retained SOL and SOL03 mirror rows as one validated staking event" {
+            val sol = LedgerEvent(
+                ledgerId = "SOL-STAKING-MIRROR",
+                refid = "SOL-STAKING-REF",
+                time = t1,
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = "spottostaking",
+                aclass = "currency",
+                asset = "SOL",
+                amount = BigDecimal("10.40814809"),
+                balance = BigDecimal("10.40814809"),
+                hasAuthoritativeBalance = true,
+                hasAuthoritativeFee = true,
+            )
+            repository.saveLedgers(listOf(sol, sol.copy(asset = "SOL03")))
+
+            val inRange = repository.getLedgersInRange(t0, t2)
+            val byRefId = repository.getLedgersByRefIds(listOf("SOL-STAKING-REF"))
+
+            inRange.single().asset shouldBe "SOL"
+            byRefId.single().asset shouldBe "SOL"
+            val validation = AuthoritativeLedgerBalanceValidator.validate(inRange)
+            validation.isValid shouldBe true
+            validation.resolvedScopes[sol.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
+            LedgerFlowClassifier.classifyAll(inRange)[sol.ledgerId] shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "keeps conflicting SOL and SOL03 rows visible for duplicate identity rejection" {
+            val sol = LedgerEvent(
+                ledgerId = "SOL-CONFLICTING-MIRROR",
+                refid = "SOL-CONFLICTING-REF",
+                time = t1,
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = "spottostaking",
+                asset = "SOL",
+                amount = BigDecimal("1.0"),
+                balance = BigDecimal("1.0"),
+                hasAuthoritativeBalance = true,
+            )
+            repository.saveLedgers(listOf(sol, sol.copy(asset = "SOL03", amount = BigDecimal("2.0"))))
+
+            val retained = repository.getLedgersInRange(t0, t2)
+            val validation = AuthoritativeLedgerBalanceValidator.validate(retained)
+
+            retained.size shouldBe 2
+            validation.isValid shouldBe false
+            requireNotNull(validation.failure).diagnostic shouldContain "duplicate ledger identity"
         }
 
         "getLedgersByRefIds returns no rows for an empty collection" {

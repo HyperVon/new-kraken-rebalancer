@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.DocumentedTransferWalletScope
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
@@ -170,17 +171,23 @@ object AuthoritativeLedgerBalanceValidator {
             )
         }
 
-        val duplicateIds = events.groupingBy { it.ledgerId }.eachCount().any { (_, count) -> count > 1 }
-        if (duplicateIds) {
+        val duplicateLedgerId = events
+            .groupingBy(LedgerEvent::ledgerId)
+            .eachCount()
+            .entries
+            .firstOrNull { (_, count) -> count > 1 }
+            ?.key
+        if (duplicateLedgerId != null) {
+            val duplicateEvent = events.first { it.ledgerId == duplicateLedgerId }
             return invalid(
                 events = events,
                 failure = failure(
-                    asset = normalizeAsset(events.first().asset),
+                    asset = normalizeAsset(duplicateEvent.asset),
                     scope = null,
                     previous = null,
-                    current = events.first(),
+                    current = duplicateEvent,
                     expected = null,
-                    observed = events.first().balance.takeIf { events.first().hasAuthoritativeBalance },
+                    observed = duplicateEvent.balance.takeIf { duplicateEvent.hasAuthoritativeBalance },
                     detail = "duplicate ledger identity",
                 ),
             )
@@ -267,7 +274,10 @@ object AuthoritativeLedgerBalanceValidator {
         val incompleteInternalTransfer = events.firstOrNull { event ->
             if (!LedgerFlowClassifier.isDocumentedInternalTransfer(event)) return@firstOrNull false
             val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
-            refid == null || !LedgerFlowClassifier.isCompleteInternalTransferGroup(eventsByRefid[refid].orEmpty())
+            if (refid == null) return@firstOrNull true
+            val group = eventsByRefid[refid].orEmpty()
+            !LedgerFlowClassifier.isCompleteInternalTransferGroup(group) &&
+                !(group.size == 1 && LedgerFlowClassifier.isAuthoritativelyScopedNonSpotTransfer(event))
         }
         if (incompleteInternalTransfer != null) {
             return invalid(
@@ -1011,22 +1021,11 @@ object AuthoritativeLedgerBalanceValidator {
      */
     private fun fixedScope(event: LedgerEvent): String? {
         if (!LedgerFlowClassifier.isDocumentedInternalScopeMarker(event)) return SPOT_SCOPE
-        if (!LedgerFlowClassifier.isDocumentedInternalTransfer(event)) return null
-        val subtype = normalizeSubtype(event.subtype)
-        return when (subtype) {
-            "spottostaking", "stakingfromspot" ->
-                if (event.netBalanceDelta().signum() < 0) SPOT_SCOPE else STAKING_SCOPE
-
-            "stakingtospot", "spotfromstaking" ->
-                if (event.netBalanceDelta().signum() < 0) STAKING_SCOPE else SPOT_SCOPE
-
-            "spottofutures" -> if (event.netBalanceDelta().signum() < 0) SPOT_SCOPE else FUTURES_SCOPE
-
-            "spotfromfutures" -> if (event.netBalanceDelta().signum() < 0) FUTURES_SCOPE else SPOT_SCOPE
-
-            "spottospot", "spotfromspot" -> SPOT_SCOPE
-
-            else -> null
+        return when (LedgerFlowClassifier.documentedTransferWalletScope(event)) {
+            DocumentedTransferWalletScope.SPOT -> SPOT_SCOPE
+            DocumentedTransferWalletScope.STAKING -> STAKING_SCOPE
+            DocumentedTransferWalletScope.FUTURES -> FUTURES_SCOPE
+            null -> null
         }
     }
 

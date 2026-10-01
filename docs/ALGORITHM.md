@@ -614,17 +614,20 @@ before it exists. Documented Spot/staking,
 Spot/Futures, and Spot/Spot transfer markers use their mapped wallet scopes; staking rows that do
 not identify a scope are resolved against all compatible known scopes, or seed a new opaque scope
 only when their own balance matches their net delta within the applicable precision envelope.
-The observed Kraken `SOL03`/`SOL` staking-wallet pair is accepted as a same-asset compatibility
-alias; arbitrary cross-asset internal-transfer pairs remain invalid.
+Older retained databases can contain an exact same-ID `SOL`/`SOL03` mirror pair. Repository reads
+collapse only that pair when every field except the asset alias matches, returning one canonical
+`SOL` row; conflicting duplicates and arbitrary cross-asset transfer pairs remain invalid. A lone
+internal leg is accepted only when an authoritative balance and the documented subtype/sign map it
+to a non-Spot wallet; an unpaired Spot-side leg remains invalid.
 Existing four-decimal ledger fees are accepted
 only within the precision envelope implied by that stored fee, not by a global tolerance.
 Parser amount validity is persisted through schema migration `12`; existing rows retain their
 legacy interpretation because SQLite does not retain the original amount text, while newly parsed
 malformed amounts remain explicitly invalid. Obvious credit/debit direction violations also fail
 closed. Non-authoritative rows are never treated as balance checkpoints;
-an ambiguous dust-sweep scope that changes aggregate balances, incomplete internal-transfer group,
-duplicate identity, malformed fee, unknown internal-transfer scope, or unresolved authoritative
-mismatch fails closed with a
+an ambiguous dust-sweep scope that changes aggregate balances, incomplete or uncheckpointed
+Spot-facing internal-transfer group, conflicting duplicate identity, malformed fee, unknown
+internal-transfer scope, or unresolved authoritative mismatch fails closed with a
 sanitized log diagnostic and a compact metadata reason. The validator returns the resolved wallet
 scope disposition per ledger ID and baseline replay consumes that same evidence: every
 non-conversion row resolved to `SPOT` changes the reconstructed configured balance, and
@@ -639,8 +642,8 @@ once instead of being replayed as its rounded quote equivalent, and leg rounding
   closed, and an ambiguous identity or missing leg is never resolved with amount/time similarity;
   a missing leg is accepted only when its reported movement is provably zero. Complete
 conversions retain their explicit strategy-neutral two-leg replay for actual-history reconstruction;
-the pure Buy & Hold path consumes them as plumbing without synthetic scaling. Baseline replay version `14` and snapshot reconstruction
-version `17` invalidate only the derived baseline and snapshot results, so completed recovery
+the pure Buy & Hold path consumes them as plumbing without synthetic scaling. Baseline replay version `18` and snapshot reconstruction
+version `19` invalidate only the derived baseline and snapshot results, so completed recovery
 trade/ledger streams and their offsets remain reusable. The reconstruction
 universe is derived per run: configured allocations plus every replayable trade base and quote plus
 non-zero-delta Spot ledger assets. Historical-only balances are seeded from the latest authoritative

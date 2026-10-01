@@ -109,6 +109,10 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
   `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
   cannot inflate counts.
+- Reads project an older exact `SOL`/`SOL03` alias mirror pair sharing one ledger ID
+  to a single canonical `SOL` event only when every other evidence field matches.
+  Conflicting duplicates and distinct ledger IDs are never collapsed; validator and
+  classifier rules still require complete evidence for Spot-facing transfer legs.
 - `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking`, `dividend`,
   top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward`
   entries for tracked assets, accumulates amounts by asset at each portfolio
@@ -127,7 +131,7 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
   this validation boundary.
 - `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (current reconstruction
-  version `8`) query
+  version `19`) query
   `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
   from current balances.
 - Reconstruction writes the ledger-coverage version alongside its version marker only after

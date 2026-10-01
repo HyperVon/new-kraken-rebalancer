@@ -232,7 +232,7 @@ class SimpleFundingProvenanceResolver(
                 // to classify as owner capital on one source alone.
                 val competingEvidence = allRecords.asSequence()
                     .filterNot { it === directRecord }
-                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.DIRECT)?.evidence }
+                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.FUZZY)?.evidence }
                     .toSet()
                 if (competingEvidence.any { it != directCandidate.evidence }) {
                     return FundingEvidence.UNRESOLVED
@@ -262,7 +262,7 @@ class SimpleFundingProvenanceResolver(
                     ?: return "direct funding record does not match the ledger row"
                 val competing = allRecords.asSequence()
                     .filterNot { it === directRecord }
-                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.DIRECT)?.evidence }
+                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.FUZZY)?.evidence }
                     .toSet()
                 if (competing.any { it != directCandidate.evidence }) return "conflicting funding evidence"
                 return unresolvedDetail(directRecord, directCandidate.evidence)
@@ -342,7 +342,9 @@ class SimpleFundingProvenanceResolver(
             return false
         }
         val method = deposit.method?.lowercase() ?: return false
-        return CARD_METHOD_MARKERS.any(method::contains)
+        val methodTokens = method.split(Regex("[^a-z0-9]+"))
+        return methodTokens.any { it in CARD_METHOD_MARKERS } ||
+            methodTokens.windowed(2).any { it == listOf("apple", "pay") || it == listOf("google", "pay") }
     }
 
     /**
@@ -579,7 +581,7 @@ class SimpleFundingProvenanceResolver(
 
         @JvmField val INTERNAL_METHOD_MARKERS = setOf("futures", "internal", "wallet", "spot")
 
-        @JvmField val CARD_METHOD_MARKERS = setOf("visa", "mastercard", "card", "apple", "google", "pay")
+        @JvmField val CARD_METHOD_MARKERS = setOf("visa", "mastercard", "card")
 
         @JvmField val SUPPORTED_FUNDING_TYPES = setOf(
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,

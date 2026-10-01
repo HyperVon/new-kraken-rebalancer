@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.89] - 2026-10-01
+
+### Fixed
+
+- **Historical baselines can replay retained SOL staking aliases safely**: collapse only exact
+  `SOL`/`SOL03` mirror rows, and accept a singleton transfer leg only when authoritative evidence
+  places it in a non-Spot wallet. Conflicting duplicates and Spot-facing singletons still fail closed.
+- **Funding provenance sees delayed ledger bookings**: widen bounded API lookup padding to 24 hours
+  for direct-refid matching while keeping fuzzy matching at three minutes; recognize card methods by
+  whole tokens so `Cardano` is not mistaken for a card payment. Conflicting records with different
+  refids must still match the strict time window, so unrelated same-amount activity cannot block an
+  exact funding match.
+
 ## [6.17.88] - 2026-10-01
 
 ### Fixed

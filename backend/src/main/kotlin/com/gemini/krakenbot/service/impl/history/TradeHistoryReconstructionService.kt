@@ -39,7 +39,7 @@ class TradeHistoryReconstructionService(
     companion object {
         // v18: reverse replay carries each authoritative row's validator rounding allowance
         // instead of aborting on Kraken's rounded amount/fee representations.
-        const val CURRENT_RECONSTRUCTION_VERSION = "18"
+        const val CURRENT_RECONSTRUCTION_VERSION = "19"
 
         /**
          * Historical fail-closed anchor contract (v11).

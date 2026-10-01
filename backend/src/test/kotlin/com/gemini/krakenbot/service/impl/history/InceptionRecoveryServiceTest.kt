@@ -3079,7 +3079,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         }
 
         "baseline replay version reflects historical universe semantics" {
-            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "17"
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "18"
         }
 
         "recovery rejects unsupported trade economics" {

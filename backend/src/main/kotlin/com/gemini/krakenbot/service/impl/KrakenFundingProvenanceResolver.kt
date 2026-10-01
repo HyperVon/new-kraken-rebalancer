@@ -292,8 +292,11 @@ class KrakenFundingProvenanceResolver(
                 val earliest = events.minOf { it.time }
                 val latest = events.maxOf { it.time }
                 return FundingRange(
-                    startSec = earliest.minusSeconds(CORRELATION_WINDOW_SECONDS).epochSecond.coerceAtLeast(0L),
-                    endSec = inclusiveEpochSecondCeiling(latest.plusSeconds(CORRELATION_WINDOW_SECONDS)),
+                    // Kraken's funding create_time can predate the ledger booking time by several
+                    // minutes. Fetch a broader bounded range for exact-refid matching; fuzzy
+                    // correlation below still uses its strict three-minute window.
+                    startSec = earliest.minusSeconds(FUNDING_QUERY_PADDING_SECONDS).epochSecond.coerceAtLeast(0L),
+                    endSec = inclusiveEpochSecondCeiling(latest.plusSeconds(FUNDING_QUERY_PADDING_SECONDS)),
                 )
             }
 
@@ -304,6 +307,7 @@ class KrakenFundingProvenanceResolver(
 
     private companion object {
         const val CORRELATION_WINDOW_SECONDS = 180L
+        const val FUNDING_QUERY_PADDING_SECONDS = 86_400L
         const val CACHE_TTL_SECONDS = 60L
         const val UNPREPARED_EVIDENCE_FINGERPRINT = "kraken-funding-unprepared"
 

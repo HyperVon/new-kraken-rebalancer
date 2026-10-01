@@ -140,7 +140,7 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
             }
         }
 
-        "funding range coerces the lower bound and rounds the upper bound" {
+        "funding query range uses bounded padding and rounds the upper bound" {
             val krakenService = FakeKrakenService()
             var capturedStart: Long? = null
             var capturedEnd: Long? = null
@@ -162,7 +162,45 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
             resolver.prepare(listOf(event))
 
             capturedStart shouldBe 0L
-            capturedEnd shouldBe 191L
+            capturedEnd shouldBe 86_411L
+        }
+
+        "exact funding identity survives a ledger booking delay beyond the fuzzy window" {
+            runTest {
+                val ledgerTime = Instant.parse("2019-05-11T23:37:59.426Z")
+                val fundingTime = Instant.parse("2019-05-11T23:31:44Z")
+                val event = LedgerEvent(
+                    ledgerId = "L-ADA-CARDANO",
+                    refid = "ADA-CARDANO-REF",
+                    time = ledgerTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "ADA",
+                    amount = BigDecimal("2897.05615200"),
+                )
+                var requestedStart: Long? = null
+                val krakenService = FakeKrakenService().apply {
+                    depositStatusSupplier = { startSec, _ ->
+                        requestedStart = startSec
+                        listOf(
+                            DepositStatusRecord(
+                                refid = "ADA-CARDANO-REF",
+                                asset = "ADA",
+                                amount = BigDecimal("2897.05615200"),
+                                time = fundingTime,
+                                status = "Success",
+                                method = "ADA - Cardano",
+                            ),
+                        )
+                    }
+                }
+
+                val prepared = KrakenFundingProvenanceResolver(krakenService).prepare(listOf(event))
+
+                requestedStart shouldBe ledgerTime.minusSeconds(86_400).epochSecond
+                (requireNotNull(requestedStart) <= fundingTime.epochSecond) shouldBe true
+                prepared.resolve(event) shouldBe FundingEvidence.EXTERNAL
+                prepared.isCardFunding(event) shouldBe false
+            }
         }
 
         "preparation refetches when the funding families grow" {
@@ -504,7 +542,7 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
 
                 KrakenFundingProvenanceResolver(krakenService).prepare(listOf(event))
 
-                requestedEnd shouldBe event.time.plusSeconds(180).epochSecond + 1
+                requestedEnd shouldBe event.time.plusSeconds(86_400).epochSecond + 1
             }
         }
 
@@ -524,7 +562,7 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 KrakenFundingProvenanceResolver(krakenService).prepare(listOf(event))
 
                 requestedStart shouldBe 0L
-                requestedEnd shouldBe 191L
+                requestedEnd shouldBe 86_411L
             }
         }
 

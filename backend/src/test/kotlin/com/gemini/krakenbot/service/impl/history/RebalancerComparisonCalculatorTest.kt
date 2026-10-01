@@ -18313,16 +18313,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 asset = "USD",
                 amount = "500.00",
                 type = "transfer",
-                subtype = "spotfromfutures",
+                subtype = "spottospot",
                 refid = "internal-transfer",
+                ledgerId = "internal-transfer-credit",
             )
             val transferOut = ledgerEvent(
                 timestamp = tMid,
                 asset = "USD",
                 amount = "-500.00",
                 type = "transfer",
-                subtype = "spotfromfutures",
+                subtype = "spottospot",
                 refid = "internal-transfer",
+                ledgerId = "internal-transfer-debit",
             )
             val tradeRow = ledgerEvent(
                 timestamp = tMid.plusSeconds(60),
@@ -18340,6 +18342,95 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+        }
+
+        "calculate reconciles both Spot and Futures transfer directions without changing the benchmark" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val transferOutAt = Instant.parse("2026-06-05T12:00:00Z")
+            val transferBackAt = transferOutAt.plusSeconds(60)
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val t2 = Instant.parse("2026-06-10T13:00:00Z")
+
+            val inceptionSnap = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val spotToFutures = listOf(
+                ledgerEvent(
+                    timestamp = transferOutAt,
+                    asset = "USD",
+                    amount = "-500.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    subtype = "spottofutures",
+                    balance = "49500.00",
+                    refid = "spot-to-futures",
+                    ledgerId = "spot-to-futures-debit",
+                ),
+                ledgerEvent(
+                    timestamp = transferOutAt,
+                    asset = "USD",
+                    amount = "500.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    subtype = "spottofutures",
+                    balance = "500.00",
+                    refid = "spot-to-futures",
+                    ledgerId = "spot-to-futures-credit",
+                ),
+            )
+            val futuresToSpot = listOf(
+                ledgerEvent(
+                    timestamp = transferBackAt,
+                    asset = "USD",
+                    amount = "-500.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    subtype = "spotfromfutures",
+                    balance = "0.00",
+                    refid = "futures-to-spot",
+                    ledgerId = "futures-to-spot-debit",
+                ),
+                ledgerEvent(
+                    timestamp = transferBackAt,
+                    asset = "USD",
+                    amount = "500.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    subtype = "spotfromfutures",
+                    balance = "50000.00",
+                    refid = "futures-to-spot",
+                    ledgerId = "futures-to-spot-credit",
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = spotToFutures + futuresToSpot,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points[0].rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
             result.points[0].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
         }
 

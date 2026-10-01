@@ -574,6 +574,60 @@ class LedgerFlowClassifierTest : StringSpec() {
             )
         }
 
+        "only authoritative non-Spot transfer legs may stand alone" {
+            val stakingLeg = event(
+                "staking-credit",
+                KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                "10.40814809",
+                refid = "staking-credit-ref",
+                subtype = "spottostaking",
+                asset = Asset.SOL,
+                hasAuthoritativeBalance = true,
+            )
+            val spotLeg = stakingLeg.copy(
+                ledgerId = "spot-debit",
+                refid = "spot-debit-ref",
+                amount = BigDecimal("-10.40814809"),
+            )
+            val unobservedStakingLeg = stakingLeg.copy(
+                ledgerId = "unobserved-staking-credit",
+                refid = "unobserved-staking-credit-ref",
+                hasAuthoritativeBalance = false,
+            )
+            val malformedStakingLeg = stakingLeg.copy(
+                ledgerId = "malformed-staking-credit",
+                refid = "malformed-staking-credit-ref",
+                hasValidFee = false,
+            )
+            val negativeFeeStakingLeg = stakingLeg.copy(
+                ledgerId = "negative-fee-staking-credit",
+                refid = "negative-fee-staking-credit-ref",
+                fee = BigDecimal("-0.01"),
+                hasAuthoritativeFee = true,
+            )
+            val futuresCredit = event(
+                "futures-credit",
+                KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                "1.0",
+                refid = "futures-credit-ref",
+                subtype = "spottofutures",
+                hasAuthoritativeBalance = true,
+            )
+            val unscopedInternalLeg = stakingLeg.copy(
+                ledgerId = "unscoped-internal-leg",
+                refid = "unscoped-internal-leg-ref",
+                subtype = "allocation",
+            )
+
+            LedgerFlowClassifier.classify(stakingLeg) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(spotLeg) shouldBe FlowCategory.UNSUPPORTED
+            LedgerFlowClassifier.classify(unobservedStakingLeg) shouldBe FlowCategory.UNSUPPORTED
+            LedgerFlowClassifier.classify(malformedStakingLeg) shouldBe FlowCategory.UNSUPPORTED
+            LedgerFlowClassifier.classify(negativeFeeStakingLeg) shouldBe FlowCategory.UNSUPPORTED
+            LedgerFlowClassifier.classify(futuresCredit) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(unscopedInternalLeg) shouldBe FlowCategory.UNSUPPORTED
+        }
+
         "external USD funding linked to a malformed spend is ambiguous on both legs" {
             val resolver = SimpleFundingProvenanceResolver(
                 deposits = listOf(

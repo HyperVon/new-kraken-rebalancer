@@ -387,8 +387,9 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
         "rejects duplicate ledger identities" {
             val result = AuthoritativeLedgerBalanceValidator.validate(
                 listOf(
-                    event("same-id", 0, "receive", "1", "1"),
-                    event("same-id", 1, "receive", "1", "2"),
+                    event("unrelated", 0, "trade", "-1", "9", asset = "USD"),
+                    event("same-id", 1, "receive", "1", "1", asset = "SOL"),
+                    event("same-id", 2, "receive", "1", "2", asset = "SOL03"),
                 ),
             )
 
@@ -396,6 +397,8 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             val failure = requireNotNull(result.failure)
             failure.diagnostic shouldContain "duplicate ledger identity"
             failure.diagnostic shouldNotContain "same-id"
+            failure.asset shouldBe "SOL"
+            failure.currentType shouldBe "receive"
         }
 
         "keeps transfer airdrops in the ordinary Spot scope" {
@@ -410,15 +413,52 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             result.scopeCount shouldBe 1
         }
 
-        "rejects incomplete internal transfer groups" {
+        "accepts only authoritative singleton legs scoped to a non-Spot wallet" {
+            val stakingCredit = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event(
+                        "staking-credit",
+                        1,
+                        "transfer",
+                        "10.40814809",
+                        "10.40814809",
+                        asset = "SOL",
+                        subtype = "spottostaking",
+                        refid = "staking-credit-ref",
+                    ),
+                ),
+            )
+            val unobservedStakingCredit = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event(
+                        "unobserved-staking-credit",
+                        1,
+                        "transfer",
+                        "1",
+                        "1",
+                        subtype = "spottostaking",
+                        refid = "unobserved-staking-credit-ref",
+                        authoritativeBalance = false,
+                    ),
+                ),
+            )
+
+            stakingCredit.isValid shouldBe true
+            stakingCredit.resolvedScopes["staking-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
+            unobservedStakingCredit.isValid shouldBe false
+            requireNotNull(unobservedStakingCredit.failure).diagnostic shouldContain "complete linked group"
+        }
+
+        "rejects incomplete Spot-facing internal transfer groups" {
             val result = AuthoritativeLedgerBalanceValidator.validate(
                 listOf(
                     event(
                         "incomplete-transfer",
                         1,
                         "transfer",
-                        "1",
-                        "1",
+                        "-1",
+                        "0",
                         subtype = "spottostaking",
                         refid = "incomplete-transfer",
                     ),

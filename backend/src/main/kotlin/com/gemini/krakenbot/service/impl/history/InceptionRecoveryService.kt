@@ -2518,7 +2518,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "2"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "17"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "18"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L
