@@ -204,6 +204,28 @@ class SettingsFormComponentTest : StringSpec() {
             occurrences shouldBe 1
         }
 
+        "async comparison status renders progress and failure without claiming a baseline" {
+            val progressFragment = createHTML().div {
+                SettingsFormComponent().renderProposalSlotFragment(
+                    this,
+                    SettingsComparisonStatus(evaluationInProgress = true),
+                    null,
+                )
+            }
+            progressFragment shouldContain "Determining effective comparison baseline…"
+            progressFragment shouldNotContain "Effective comparison baseline:"
+
+            val failedFragment = createHTML().div {
+                SettingsFormComponent().renderProposalSlotFragment(
+                    this,
+                    SettingsComparisonStatus(evaluationFailed = true),
+                    null,
+                )
+            }
+            failedFragment shouldContain "Unable to load comparison baseline status."
+            failedFragment shouldNotContain "Effective comparison baseline:"
+        }
+
         "an unavailable comparison renders the exact reason and evidence timestamp" {
             val fragment = createHTML().div {
                 SettingsFormComponent().renderProposalSlotFragment(

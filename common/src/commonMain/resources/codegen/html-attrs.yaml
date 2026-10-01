@@ -55,6 +55,7 @@ HtmxValues:
   EXT_SSE: "sse"
   TRIGGER_LOAD_SSE_MESSAGE: "load, sse:message"
   TRIGGER_LOAD: "load"
+  TRIGGER_EVERY_5_SECONDS: "every 5s"
   SWAP_OUTER_HTML: "outerHTML"
 CdnUrls:
   HTMX: "https://unpkg.com/htmx.org@2.0.4"

@@ -63,9 +63,10 @@ class AccountHistoryScopeGuard(
     private val log = LoggerFactory.getLogger(AccountHistoryScopeGuard::class.java)
     private val validationMutex = Mutex()
 
-    suspend fun validateAccountScope(): AccountScopeValidationResult = historyEvidenceCoordinator.withLock {
-        validateAccountScopeUnderEvidenceLock()
-    }
+    suspend fun validateAccountScope(): AccountScopeValidationResult =
+        historyEvidenceCoordinator.withLock(operation = "account-scope-validation") {
+            validateAccountScopeUnderEvidenceLock()
+        }
 
     /** Called by writers that already hold [HistoryEvidenceCoordinator]. */
     internal suspend fun validateAccountScopeUnderEvidenceLock(): AccountScopeValidationResult =

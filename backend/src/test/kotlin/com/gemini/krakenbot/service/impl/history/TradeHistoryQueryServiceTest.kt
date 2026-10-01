@@ -79,6 +79,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.and
@@ -148,6 +149,19 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     )
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
+
+    private fun settingsRequestService(
+        applicationScope: CoroutineScope? = null,
+        monotonicTimeProvider: () -> Long = System::nanoTime,
+    ) = TradeHistoryQueryService(
+        repository = repository,
+        portfolioStatsRepository = statsRepository,
+        ledgerRepository = ledgerRepository,
+        orderIntentRepository = orderIntentRepository,
+        krakenService = FakeKrakenService(),
+        applicationScope = applicationScope,
+        monotonicTimeProvider = monotonicTimeProvider,
+    )
 
     init {
         coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
@@ -8137,6 +8151,73 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 restarted.comparisonAvailability.shouldBeNull()
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
                 coVerify(exactly = 1) { fixture.fundingProvenanceResolver.prepare(any()) }
+            }
+        }
+
+        "settings comparison request falls back synchronously without an application scope" {
+            runTest {
+                val status = settingsRequestService().requestSettingsComparisonStatus(now)
+
+                status shouldBe SettingsComparisonStatus()
+            }
+        }
+
+        "settings comparison request reports a cancelled application scope" {
+            runTest {
+                val inactiveScope = CoroutineScope(SupervisorJob().apply { cancel() })
+
+                val status = settingsRequestService(inactiveScope).requestSettingsComparisonStatus(now)
+
+                status shouldBe SettingsComparisonStatus(evaluationFailed = true)
+            }
+        }
+
+        "settings comparison request deduplicates work and returns its completed result to polls" {
+            runTest {
+                val requestService = settingsRequestService(applicationScope = this)
+
+                val first = requestService.requestSettingsComparisonStatus(now)
+                val duplicate = requestService.requestSettingsComparisonStatus(now)
+                first shouldBe SettingsComparisonStatus(evaluationInProgress = true)
+                duplicate shouldBe SettingsComparisonStatus(evaluationInProgress = true)
+
+                runCurrent()
+
+                requestService.requestSettingsComparisonStatus(now) shouldBe SettingsComparisonStatus()
+            }
+        }
+
+        "settings comparison request retries after its completed result expires" {
+            runTest {
+                var monotonicNanos = 0L
+                val requestService = settingsRequestService(applicationScope = this) { monotonicNanos }
+
+                requestService.requestSettingsComparisonStatus(now) shouldBe
+                    SettingsComparisonStatus(evaluationInProgress = true)
+                runCurrent()
+                requestService.requestSettingsComparisonStatus(now) shouldBe SettingsComparisonStatus()
+
+                monotonicNanos = 15_000_000_001L
+                requestService.requestSettingsComparisonStatus(now) shouldBe
+                    SettingsComparisonStatus(evaluationInProgress = true)
+                runCurrent()
+                requestService.requestSettingsComparisonStatus(now) shouldBe SettingsComparisonStatus()
+            }
+        }
+
+        "settings comparison request reports and caches background evaluation failures" {
+            runTest {
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } throws
+                    IllegalStateException("history read failed")
+                val requestService = settingsRequestService(applicationScope = this)
+
+                requestService.requestSettingsComparisonStatus(now) shouldBe
+                    SettingsComparisonStatus(evaluationInProgress = true)
+
+                runCurrent()
+
+                requestService.requestSettingsComparisonStatus(now) shouldBe
+                    SettingsComparisonStatus(evaluationFailed = true)
             }
         }
 

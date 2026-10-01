@@ -372,7 +372,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain """hx-target="body""""
                 body shouldContain "Determining effective comparison baseline"
                 coVerify(exactly = 0) { tradeHistoryService.getComparisonStartProposal(any()) }
-                coVerify(exactly = 0) { tradeHistoryService.getSettingsComparisonStatus(any()) }
+                coVerify(exactly = 0) { tradeHistoryService.requestSettingsComparisonStatus(any()) }
             }
         }
 
@@ -386,7 +386,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     message = "No trustworthy baseline could be established for the approved start: " +
                         "historical price unavailable",
                 )
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
                     comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -409,6 +409,31 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "getSettingsProposalFragment_keepsPollingWhileBackgroundEvaluationRuns" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start",
+                )
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } returns
+                SettingsComparisonStatus(evaluationInProgress = true)
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
+                body shouldContain "Determining effective comparison baseline"
+                body shouldContain "hx-get=\"/fragments/settings-proposal\""
+                body shouldContain "hx-trigger=\"every 5s\""
+                body shouldContain "hx-target=\"#comparison-proposal-slot\""
+                body shouldContain "hx-swap=\"outerHTML\""
+            }
+        }
+
         "getSettingsProposalFragment_rendersEffectiveBaselineWhenComparisonAvailable" {
             every { configService.getConfig() } returns dashboardConfig(
                 settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
@@ -418,7 +443,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
                     message = "No trustworthy baseline could be established for the approved start",
                 )
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
                     comparisonAvailability = ComparisonAvailability.AVAILABLE,
                     baselineTimestamp = "2026-06-08T03:09:55.608Z",
@@ -449,7 +474,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
                     message = "No trustworthy baseline could be established for the approved start",
                 )
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
                     comparisonAvailability = ComparisonAvailability.AVAILABLE,
                     baselineTimestamp = "2026-06-08T03:09:55.608Z",
@@ -477,7 +502,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
                     message = "No trustworthy baseline could be established for the approved start",
                 )
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
                     comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -505,7 +530,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
                     message = "No trustworthy baseline could be established for the approved start",
                 )
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
                     comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -533,7 +558,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
                     message = "No trustworthy baseline could be established for the approved start",
                 )
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } throws
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(any()) } throws
                 IllegalStateException("comparison source temporarily unavailable")
             testApplication {
                 application {
@@ -564,7 +589,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         "historical price unavailable",
                 )
             val anchorSlot = slot<Instant>()
-            coEvery { tradeHistoryService.getSettingsComparisonStatus(capture(anchorSlot)) } returns
+            coEvery { tradeHistoryService.requestSettingsComparisonStatus(capture(anchorSlot)) } returns
                 SettingsComparisonStatus(
                     comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,

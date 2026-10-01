@@ -100,9 +100,10 @@ class InceptionDiscoveryService(
         return ApprovedBaselineState(metadataId = metadataId, snapshot = snapshot)
     }
 
-    suspend fun resolveInception(): InceptionResolution = historyEvidenceCoordinator.withLock {
-        resolveInceptionLocked()
-    }
+    suspend fun resolveInception(): InceptionResolution =
+        historyEvidenceCoordinator.withLock(operation = "inception-discovery") {
+            resolveInceptionLocked()
+        }
 
     /** Called by an evidence consumer that already holds [HistoryEvidenceCoordinator]. */
     internal suspend fun resolveInceptionUnderEvidenceLock(): InceptionResolution = resolveInceptionLocked()

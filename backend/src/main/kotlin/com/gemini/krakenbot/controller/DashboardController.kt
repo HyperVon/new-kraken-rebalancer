@@ -35,6 +35,7 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
@@ -62,6 +63,7 @@ import io.ktor.server.sse.ServerSSESession
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.html.body
@@ -232,7 +234,7 @@ class DashboardController(
             respondSettingsCsrfFailure(params, QualityAllocation.DEFAULT_EMPHASIS)
             return
         }
-        val saved = historyEvidenceCoordinator.tryWithLock {
+        val saved = historyEvidenceCoordinator.tryWithLock(operation = "settings-save") {
             handlePostSettingsUnderEvidenceLock(params)
         }
         if (!saved) {
@@ -868,6 +870,12 @@ class DashboardController(
             val html =
                 createHTML(prettyPrint = false).div {
                     id = HtmlIds.COMPARISON_PROPOSAL_SLOT
+                    if (status?.evaluationInProgress == true) {
+                        attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_SETTINGS_PROPOSAL
+                        attributes[HtmxAttrs.HX_TRIGGER] = HtmxValues.TRIGGER_EVERY_5_SECONDS
+                        attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.COMPARISON_PROPOSAL_SLOT}"
+                        attributes[HtmxAttrs.HX_SWAP] = HtmxValues.SWAP_OUTER_HTML
+                    }
                     dashboardView.renderSettingsProposalFragment(
                         this,
                         status,
@@ -899,7 +907,7 @@ class DashboardController(
         val anchor = settings.comparisonStartDate?.takeIf(String::isNotBlank)
             ?.let { InceptionDiscoveryService.parseInceptionDate(it) }
             ?: InceptionDiscoveryService.parseInceptionDate(settings.inceptionDate)
-        return anchor?.let { tradeHistoryService.getSettingsComparisonStatus(it) }
+        return anchor?.let { tradeHistoryService.requestSettingsComparisonStatus(it) }
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {
@@ -954,7 +962,7 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.respondJson(data: Any, status: HttpStatusCode = HttpStatusCode.OK) {
-        val json = objectMapper.writeValueAsString(data)
+        val json = withContext(Dispatchers.Default) { objectMapper.writeValueAsString(data) }
         call.respondText(json, ContentType.Application.Json, status)
     }
 
@@ -1022,9 +1030,12 @@ class DashboardController(
                 BenchmarkMethod.entries.firstOrNull { it.name == requested }
             }
             ?: BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD
-        respondJson(
-            tradeHistoryService.getRebalancerComparison(from, to, method).toApiDto(),
-        )
+        val json = withContext(Dispatchers.Default) {
+            objectMapper.writeValueAsString(
+                tradeHistoryService.getRebalancerComparison(from, to, method).toApiDto(),
+            )
+        }
+        call.respondText(json, ContentType.Application.Json)
     }
 
     private suspend fun RoutingContext.handleGetHistoryRewards() {

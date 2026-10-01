@@ -67,7 +67,7 @@ class TradeHistorySyncService(
         }
     }
 
-    suspend fun syncTradesFromKraken() = historyEvidenceCoordinator.withLock {
+    suspend fun syncTradesFromKraken() = historyEvidenceCoordinator.withLock(operation = "trade-sync") {
         syncMutex.withLock {
             syncTradesFromKrakenLocked()
         }
@@ -79,7 +79,7 @@ class TradeHistorySyncService(
      * a retained local estimate/order-intent row instead of creating a second economic event.
      */
     internal suspend fun importRecoveredApiTrades(apiTrades: List<TradeRecord>): Pair<Int, Int> =
-        historyEvidenceCoordinator.withLock {
+        historyEvidenceCoordinator.withLock(operation = "trade-recovery-import") {
             importRecoveredApiTradesLocked(apiTrades)
         }
 
@@ -123,7 +123,7 @@ class TradeHistorySyncService(
      * cannot prove a common boundary and fails closed.
      */
     suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances? = null) =
-        historyEvidenceCoordinator.withLock {
+        historyEvidenceCoordinator.withLock(operation = "snapshot-reconstruction") {
             rebuildHistoricalSnapshotsIfNeededLocked(observedBalances)
         }
 
@@ -1236,13 +1236,15 @@ class TradeHistorySyncService(
         }
     }
 
-    suspend fun getSyncMetadata(key: String): String? = historyEvidenceCoordinator.withLock {
-        repository.getSyncMetadata(key)
-    }
+    suspend fun getSyncMetadata(key: String): String? =
+        historyEvidenceCoordinator.withLock(operation = "trade-sync-metadata-read") {
+            repository.getSyncMetadata(key)
+        }
 
-    suspend fun setSyncMetadata(key: String, value: String) = historyEvidenceCoordinator.withLock {
-        repository.setSyncMetadata(key, value)
-    }
+    suspend fun setSyncMetadata(key: String, value: String) =
+        historyEvidenceCoordinator.withLock(operation = "trade-sync-metadata-write") {
+            repository.setSyncMetadata(key, value)
+        }
 
     /** Called by a service operation that already owns [historyEvidenceCoordinator]. */
     internal suspend fun getSyncMetadataUnderEvidenceLock(key: String): String? = repository.getSyncMetadata(key)

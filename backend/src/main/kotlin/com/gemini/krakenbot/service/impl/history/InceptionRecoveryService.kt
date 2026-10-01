@@ -374,9 +374,10 @@ class InceptionRecoveryService(
     }
 
     /** Runs at most [MAX_PAGES_PER_RUN] private-history pages and returns durable state. */
-    suspend fun recoverOneBoundedRun(): InceptionRecoveryStatus = historyEvidenceCoordinator.withLock {
-        recoverOneBoundedRunUnderRecoveryLock()
-    }
+    suspend fun recoverOneBoundedRun(): InceptionRecoveryStatus =
+        historyEvidenceCoordinator.withLock(operation = "inception-recovery") {
+            recoverOneBoundedRunUnderRecoveryLock()
+        }
 
     private suspend fun recoverOneBoundedRunUnderRecoveryLock(): InceptionRecoveryStatus = recoveryMutex.withLock {
         try {
