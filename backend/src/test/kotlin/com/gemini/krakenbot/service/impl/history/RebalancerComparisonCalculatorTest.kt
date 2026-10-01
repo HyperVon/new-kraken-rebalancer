@@ -5046,6 +5046,946 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
+        "same-instant withdrawals follow decreasing authoritative balance checkpoints" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "80.00",
+                        mapOf("USD" to assetRow("80.00", "1", "80.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "80.00",
+                        ledgerId = "same-instant-withdrawal-second",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "same-instant-withdrawal-first",
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe null
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("80.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant mixed debit and credit transitions follow their unique balance chain" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "80.00",
+                        mapOf("USD" to assetRow("80.00", "1", "80.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-15.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "80.00",
+                        ledgerId = "mixed-chain-final-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "5.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "95.00",
+                        ledgerId = "mixed-chain-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "mixed-chain-first-debit",
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe null
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("80.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant mixed debit and credit cycle without an opening-balance anchor fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "200.00", mapOf("USD" to assetRow("200.00", "1", "200.00")), now),
+                    snapshot(
+                        current,
+                        "200.00",
+                        mapOf("USD" to assetRow("200.00", "1", "200.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "100.00",
+                        ledgerId = "cycle-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "cycle-debit",
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+        }
+
+        "same-instant closed debit and credit cycle is anchored by the opening balance" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "100.00",
+                        ledgerId = "anchored-cycle-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "anchored-cycle-debit",
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe null
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant anchored checkpoint cycle does not ignore a disconnected cycle" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "110.00",
+                        ledgerId = "anchored-component-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "100.00",
+                        ledgerId = "anchored-component-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "5.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "55.00",
+                        ledgerId = "disconnected-component-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-5.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "50.00",
+                        ledgerId = "disconnected-component-debit",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant zero-delta checkpoint is placed at its unique chain boundary" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "80.00",
+                        mapOf("USD" to assetRow("80.00", "1", "80.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "80.00",
+                        ledgerId = "zero-chain-second-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "90.00",
+                        ledgerId = "zero-chain-checkpoint-at-90",
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "zero-chain-first-debit",
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe null
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("80.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant zero checkpoints at one boundary do not invent an order between each other" {
+            val current = now.plusSeconds(3600)
+            val eventTime = now.plusSeconds(60)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "80.00",
+                        mapOf("USD" to assetRow("80.00", "1", "80.00")),
+                        balancesObservedAt = current,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "shared-boundary-first-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "90.00",
+                        ledgerId = "shared-boundary-zero-a",
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "80.00",
+                        ledgerId = "shared-boundary-second-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "90.00",
+                        ledgerId = "shared-boundary-zero-b",
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.unavailableReason shouldBe null
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("80.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant zero-only authoritative checkpoint without a material boundary fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "100.00",
+                        ledgerId = "zero-only-checkpoint",
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+        }
+
+        "same-instant zero-only checkpoints with conflicting balances fail closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "100.00",
+                        ledgerId = "zero-only-first-balance",
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "101.00",
+                        ledgerId = "zero-only-conflicting-balance",
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant authoritative material checkpoint fork fails closed" {
+            val current = now.plusSeconds(3600)
+            val eventTime = now.plusSeconds(60)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "110.00",
+                        mapOf("USD" to assetRow("110.00", "1", "110.00")),
+                        balancesObservedAt = current,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "110.00",
+                        ledgerId = "forking-checkpoint-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "100.00",
+                        ledgerId = "forking-checkpoint-debit-a",
+                    ),
+                    ledgerEvent(
+                        timestamp = eventTime,
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "110.00",
+                        ledgerId = "forking-checkpoint-credit-b",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant zero checkpoint before a single debit preserves its opening boundary" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "90.00",
+                        mapOf("USD" to assetRow("90.00", "1", "90.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "100.00",
+                        ledgerId = "zero-opening-boundary",
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "debit-after-zero-opening-boundary",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("90.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant zero checkpoint after a single debit is attached to its closing boundary" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "90.00",
+                        mapOf("USD" to assetRow("90.00", "1", "90.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "90.00",
+                        ledgerId = "zero-closing-boundary",
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "debit-before-zero-closing-boundary",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("90.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-instant closed cycle without a balance observation boundary fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), null),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "100.00",
+                        ledgerId = "unobserved-cycle-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "unobserved-cycle-debit",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant zero-delta checkpoint with a contradictory balance fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "80.00",
+                        mapOf("USD" to assetRow("80.00", "1", "80.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "80.00",
+                        ledgerId = "bad-zero-chain-second-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "91.00",
+                        ledgerId = "bad-zero-chain-checkpoint",
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "90.00",
+                        ledgerId = "bad-zero-chain-first-debit",
+                    ),
+                ),
+            )
+
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+        }
+
+        "same-instant fixed Spot chain with a non-authoritative fee fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        fee = "0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "89.90",
+                        ledgerId = "unverified-fee-chain-first",
+                        hasAuthoritativeFee = false,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "10.20",
+                        fee = "0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "100.00",
+                        ledgerId = "unverified-fee-chain-second",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant zero checkpoint matching repeated cycle boundaries fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(now, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00")), now),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "110.00",
+                        ledgerId = "repeated-boundary-cycle-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "-10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "100.00",
+                        ledgerId = "repeated-boundary-cycle-debit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "USD",
+                        amount = "0.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "100.00",
+                        ledgerId = "repeated-boundary-zero-checkpoint",
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant non-Spot closed cycle without a scoped opening balance fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00", "100.00", "100.00"),
+                        ),
+                        balancesObservedAt = now,
+                    ),
+                    snapshot(
+                        current,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00", "100.00", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "BTC",
+                        amount = "0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        balance = "0.10",
+                        ledgerId = "unanchored-staking-cycle-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "BTC",
+                        amount = "-0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        balance = "0.00",
+                        ledgerId = "unanchored-staking-cycle-debit",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "baseline-anchored Spot recovery also preserves opaque dust-sweep scope" {
+            val t0 = now
+            val baseline = snapshot(
+                t0,
+                "100.00",
+                mapOf(
+                    "BTC" to assetRow("1.000000004", "1.00", "1.000000004"),
+                    "USD" to assetRow("98.999999996", "1.00", "98.999999996"),
+                    "BABY" to assetRow("0", "0.18", "0.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val afterDepositAt = t0.plusSeconds(10)
+            val afterRewardAt = t0.plusSeconds(25)
+            val sweepAt = t0.plusSeconds(30)
+            val afterSweepAt = t0.plusSeconds(40)
+            val afterDeposit = snapshot(
+                afterDepositAt,
+                "100.18",
+                mapOf(
+                    "BTC" to assetRow("1.000000004", "1.00", "1.000000004"),
+                    "USD" to assetRow("98.999999996", "1.00", "98.999999996"),
+                    "BABY" to assetRow("1.00000000", "0.18", "0.18"),
+                ),
+            )
+            val afterReward = afterDeposit.copy(timestamp = afterRewardAt)
+            val afterSweep = snapshot(
+                afterSweepAt,
+                "100.192",
+                mapOf(
+                    "BTC" to assetRow("1.000000004", "1.00", "1.000000004"),
+                    "USD" to assetRow("99.011999996", "1.00", "99.011999996"),
+                    "BABY" to assetRow("1.00000000", "0.18", "0.18"),
+                ),
+            )
+
+            val cycleAt = t0.plusSeconds(1)
+            val spotAndOpaqueCheckpoints = listOf(
+                ledgerEvent(
+                    timestamp = cycleAt,
+                    asset = "BTC",
+                    amount = "1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    balance = "2.000000004",
+                    ledgerId = "anchored-cycle-credit",
+                    refid = "anchored-cycle-group",
+                ),
+                ledgerEvent(
+                    timestamp = cycleAt,
+                    asset = "BTC",
+                    amount = "-1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    balance = "1.000000004",
+                    ledgerId = "anchored-cycle-debit",
+                    refid = "anchored-cycle-group",
+                ),
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(2),
+                    asset = "BTC",
+                    amount = "1.000000000",
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    balance = "1.000000000",
+                    ledgerId = "opaque-staking-opening-checkpoint",
+                ),
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(3),
+                    asset = "BTC",
+                    amount = "0.100000000",
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    balance = "1.100000000",
+                    ledgerId = "rounded-cross-scope-staking-checkpoint",
+                ),
+            )
+            val babyDeposit = ledgerEvent(
+                timestamp = afterDepositAt,
+                asset = "BABY",
+                amount = "1.00000000",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "1.00000000",
+                ledgerId = "baby-sweep-spot-deposit",
+            )
+            val babyReward = ledgerEvent(
+                timestamp = t0.plusSeconds(20),
+                asset = "BABY",
+                amount = "1.08452",
+                fee = "0.3254",
+                balance = "0.75917",
+                ledgerId = "baby-sweep-opaque-reward",
+            )
+            val sweepRefid = "baby-dust-sweep"
+            val babySweep = ledgerEvent(
+                timestamp = sweepAt,
+                asset = "BABY",
+                amount = "-0.75917",
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                subtype = "dustsweeping",
+                ledgerId = "baby-dust-sweep-spend",
+                refid = sweepRefid,
+            )
+            val usdSweep = ledgerEvent(
+                timestamp = sweepAt,
+                asset = "USD",
+                amount = "0.012",
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                subtype = "dustsweeping",
+                balance = "99.012",
+                ledgerId = "baby-dust-sweep-receive",
+                refid = sweepRefid,
+            )
+            val dustSweepHistory = listOf(babyDeposit, babyReward, babySweep, usdSweep)
+            val authoritativeEvents = (spotAndOpaqueCheckpoints + dustSweepHistory)
+                .filter(LedgerEvent::hasAuthoritativeBalance)
+            val rawAuthoritativeValidation = AuthoritativeLedgerBalanceValidator.validate(authoritativeEvents)
+            requireNotNull(rawAuthoritativeValidation.failure).detail shouldBe
+                "ambiguous wallet scopes produce different aggregate balances"
+
+            val missingOpeningBalanceValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents,
+                baseline.copy(assets = emptyMap()),
+            )
+            missingOpeningBalanceValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val observationAfterCycleValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents,
+                baseline.copy(balancesObservedAt = cycleAt),
+            )
+            observationAfterCycleValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val nonFixedCheckpointAtCycle = ledgerEvent(
+                timestamp = cycleAt,
+                asset = "BTC",
+                amount = "0.01",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                ledgerId = "ineligible-same-time-staking-checkpoint",
+            )
+            val ineligibleGroupValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents + nonFixedCheckpointAtCycle,
+                baseline,
+            )
+            ineligibleGroupValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val contradictoryRemainder = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(50),
+                    asset = "ETH",
+                    amount = "1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    balance = "1.00",
+                    ledgerId = "contradictory-remainder-opening",
+                ),
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(51),
+                    asset = "ETH",
+                    amount = "1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    balance = "100.00",
+                    ledgerId = "contradictory-remainder-checkpoint",
+                ),
+            )
+            val contradictoryRemainderValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents + contradictoryRemainder,
+                baseline,
+            )
+            contradictoryRemainderValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val recoveredSpotValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents,
+                baseline,
+            )
+            recoveredSpotValidation.isValid shouldBe true
+            recoveredSpotValidation.resolvedScopes["anchored-cycle-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            recoveredSpotValidation.resolvedScopes["anchored-cycle-debit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            recoveredSpotValidation.resolvedScopes["rounded-cross-scope-staking-checkpoint"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING
+            recoveredSpotValidation.groupedEventCheckpointCount shouldBe 2
+
+            val combinedDustSweepValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents + babySweep,
+                baseline,
+            )
+            combinedDustSweepValidation.isValid shouldBe true
+            combinedDustSweepValidation.resolvedScopes[babySweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING
+            combinedDustSweepValidation.resolvedScopes[usdSweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            combinedDustSweepValidation.authoritativeCheckpointCount shouldBe authoritativeEvents.size
+            combinedDustSweepValidation.validatedCheckpointCount shouldBe authoritativeEvents.size
+            combinedDustSweepValidation.groupedEventCheckpointCount shouldBe 3
+            combinedDustSweepValidation.sameTimestampCheckpointCount shouldBe 2
+            combinedDustSweepValidation.nonAuthoritativeEventCount shouldBe 1
+
+            val dustSweepScopeValidation = AuthoritativeLedgerBalanceValidator.validate(dustSweepHistory)
+            dustSweepScopeValidation.isValid shouldBe true
+            dustSweepScopeValidation.resolvedScopes[babySweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING
+            dustSweepScopeValidation.resolvedScopes[usdSweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+
+            val result = calculate(
+                snapshots = listOf(baseline, afterDeposit, afterReward, afterSweep),
+                rewards = dustSweepHistory,
+                inceptionSnapshot = baseline,
+                ledgerContext = spotAndOpaqueCheckpoints,
+                configuredAssetUniverse = setOf("BTC", "USD", "BABY"),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal.ONE, "BABY" to BigDecimal("0.18"))),
+            )
+
+            check(result.availability == ComparisonAvailability.AVAILABLE) {
+                "${result.unavailableReason} at ${result.unavailableAt}"
+            }
+            result.unavailableReason shouldBe null
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 4
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.18")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.18")
+            result.points[2].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.32")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.32")
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.19")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.32")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-0.12")
+            afterSweep.assets.getValue("BABY").balance shouldBeEqualComparingTo BigDecimal("1.00000000")
+            afterSweep.totalValueUSD shouldBeEqualComparingTo BigDecimal("100.192")
+        }
+
         "ancient non-matching authority beside unobserved snapshots does not disturb reconciliation" {
             val current = now.plusSeconds(2)
             val result = calculate(
@@ -5085,6 +6025,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             // A day-old authority far outside every observation window cannot adjudicate
             // the null-observation interval, and nothing corroborates it: tolerated.
+            result.unavailableReason shouldBe null
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
@@ -9597,6 +10538,19 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("102.00")
             result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102.00")
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+
+            val forwardOrderResult = calculate(
+                snapshots = listOf(baseline, after),
+                rewards = listOf(earlierCheckpoint, laterCheckpoint),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("USD"),
+                priceProvider = mapPriceProvider(mapOf("XLM" to BigDecimal.ONE)),
+                provenanceResolver = provenance,
+            )
+
+            forwardOrderResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            forwardOrderResult.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102.00")
+            forwardOrderResult.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
         "off-series withdrawal without a known starting balance fails closed" {
@@ -11761,6 +12715,231 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             // BTC, $40 ETH, $30 MORPHO. At t1 total is $1100.00. At t2 BTC doubles to $200, total is $1430.00.
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
             result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1430.00")
+        }
+
+        "authoritative checkpoints order a same-timestamp owner contribution before an external debit" {
+            val t0 = now
+            val movementAt = t0.plusSeconds(1)
+            val afterAt = t0.plusSeconds(2)
+            val baseline = snapshot(
+                t0,
+                "100.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00")),
+            )
+            val after = snapshot(
+                afterAt,
+                "5.00",
+                mapOf("BTC" to assetRow("0.05", "100.00", "5.00")),
+            )
+            val externalDebit = ledgerEvent(
+                timestamp = movementAt,
+                asset = "BTC",
+                amount = "-1.05",
+                type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                balance = "0.05",
+                ledgerId = "same-time-btc-external-debit",
+                hasAuthoritativeFee = true,
+            )
+            val ownerDeposit = ledgerEvent(
+                timestamp = movementAt,
+                asset = "BTC",
+                amount = "0.10",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "1.10",
+                ledgerId = "same-time-btc-owner-deposit",
+                hasAuthoritativeFee = true,
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, after),
+                rewards = listOf(externalDebit, ownerDeposit),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.unavailableReason shouldBe null
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("5.00")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("5.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "authoritative checkpoints order a same-timestamp external debit before an owner contribution" {
+            val t0 = now
+            val movementAt = t0.plusSeconds(1)
+            val afterAt = t0.plusSeconds(2)
+            val baseline = snapshot(
+                t0,
+                "100.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00")),
+            )
+            val after = snapshot(
+                afterAt,
+                "90.00",
+                mapOf("BTC" to assetRow("0.90", "100.00", "90.00")),
+            )
+            val externalDebit = ledgerEvent(
+                timestamp = movementAt,
+                asset = "BTC",
+                amount = "-0.20",
+                type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                balance = "0.80",
+                ledgerId = "same-time-btc-debit-before-owner-flow",
+                hasAuthoritativeFee = true,
+            )
+            val ownerDeposit = ledgerEvent(
+                timestamp = movementAt,
+                asset = "BTC",
+                amount = "0.10",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "0.90",
+                ledgerId = "same-time-btc-owner-flow-after-debit",
+                hasAuthoritativeFee = true,
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, after),
+                rewards = listOf(ownerDeposit, externalDebit),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.unavailableReason shouldBe null
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("90.00")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("90.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-timestamp owner contribution and external balance movement fail closed in either ledger order" {
+            val t0 = now
+            val movementAt = t0.plusSeconds(20)
+            val afterAt = t0.plusSeconds(30)
+            val baseline = snapshot(
+                t0,
+                "350.00",
+                mapOf(
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    "USD" to assetRow("250.00", "1.00", "250.00"),
+                ),
+            )
+            val after = snapshot(
+                afterAt,
+                "500.00",
+                mapOf(
+                    "BTC" to assetRow("1.50", "100.00", "150.00"),
+                    "USD" to assetRow("350.00", "1.00", "350.00"),
+                ),
+            )
+            val ownerDeposit = ledgerEvent(
+                timestamp = movementAt,
+                asset = "USD",
+                amount = "300.00",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "350.00",
+                ledgerId = "same-time-btc-adjustment-owner-deposit",
+                hasAuthoritativeFee = true,
+            )
+            val btcAdjustment = ledgerEvent(
+                timestamp = movementAt,
+                asset = "BTC",
+                amount = "-1.50",
+                type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                balance = "1.50",
+                ledgerId = "same-time-owner-deposit-btc-adjustment",
+                hasAuthoritativeFee = true,
+            )
+            val earlierActualTrade = manualTrade(
+                timestamp = t0.plusSeconds(10),
+                side = "buy",
+                symbol = "BTC",
+                volume = "2.00",
+                usdAmount = "200.00",
+                tradeId = "same-time-adjustment-prior-actual-buy",
+            )
+
+            val inputOrders = listOf(
+                listOf(ownerDeposit, btcAdjustment),
+                listOf(btcAdjustment, ownerDeposit),
+            )
+            for ((index, rewards) in inputOrders.withIndex()) {
+                val result = calculate(
+                    snapshots = listOf(baseline, after),
+                    trades = listOf(earlierActualTrade),
+                    rewards = rewards,
+                    inceptionSnapshot = baseline,
+                    configuredAssetUniverse = setOf("BTC", "USD"),
+                    priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+                )
+
+                withClue("ledger input order $index") {
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                }
+            }
+        }
+
+        "nearby owner contribution and negative balance movement fail closed without shared timestamps" {
+            val t0 = now
+            val movementAt = t0.plusSeconds(20)
+            val contributionAt = movementAt.plusMillis(500)
+            val afterAt = t0.plusSeconds(30)
+            val baseline = snapshot(
+                t0,
+                "350.00",
+                mapOf(
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    "USD" to assetRow("250.00", "1.00", "250.00"),
+                ),
+            )
+            val after = snapshot(
+                afterAt,
+                "500.00",
+                mapOf(
+                    "BTC" to assetRow("1.50", "100.00", "150.00"),
+                    "USD" to assetRow("350.00", "1.00", "350.00"),
+                ),
+            )
+            val ownerDeposit = ledgerEvent(
+                timestamp = contributionAt,
+                asset = "USD",
+                amount = "300.00",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "350.00",
+                ledgerId = "nearby-owner-contribution",
+                hasAuthoritativeFee = true,
+            )
+            val btcAdjustment = ledgerEvent(
+                timestamp = movementAt,
+                asset = "BTC",
+                amount = "-1.50",
+                type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                balance = "1.50",
+                ledgerId = "nearby-btc-adjustment",
+                hasAuthoritativeFee = true,
+            )
+            val earlierActualTrade = manualTrade(
+                timestamp = t0.plusSeconds(10),
+                side = "buy",
+                symbol = "BTC",
+                volume = "2.00",
+                usdAmount = "200.00",
+                tradeId = "nearby-adjustment-prior-actual-buy",
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, after),
+                trades = listOf(earlierActualTrade),
+                rewards = listOf(btcAdjustment, ownerDeposit),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC", "USD"),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
         "same-timestamp owner contribution and target trade fail closed without sequence evidence" {
@@ -16360,6 +17539,142 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
+        "No anchor: initial checkpoint chain ending away from the snapshot fails closed" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100.00",
+                assets = mapOf("USD" to assetRow("100.00", "1.00", "100.00")),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "106.00",
+                assets = mapOf("USD" to assetRow("106.00", "1.00", "106.00")),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+
+            val result = calculate(
+                snapshots = listOf(s1, s2),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(200),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "110.00",
+                        ledgerId = "initial-chain-credit",
+                    ),
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(200),
+                        asset = "USD",
+                        amount = "-5.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        balance = "105.00",
+                        ledgerId = "initial-chain-debit",
+                    ),
+                ),
+                configuredAssetUniverse = setOf("USD"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "No anchor: initial closed Spot checkpoint cycle reconciles to its opening balance" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100.00",
+                assets = mapOf("USD" to assetRow("100.00", "1.00", "100.00")),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100.00",
+                assets = mapOf("USD" to assetRow("100.00", "1.00", "100.00")),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+
+            val result = calculate(
+                snapshots = listOf(s1, s2),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(500),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "110.00",
+                        ledgerId = "initial-cycle-deposit",
+                    ),
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(500),
+                        asset = "USD",
+                        amount = "-4.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "106.00",
+                        ledgerId = "initial-cycle-first-withdrawal",
+                    ),
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(500),
+                        asset = "USD",
+                        amount = "-6.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "100.00",
+                        ledgerId = "initial-cycle-closing-withdrawal",
+                    ),
+                ),
+                configuredAssetUniverse = setOf("USD"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: initial Spot candidates without every authoritative balance fail closed" {
+            val t0 = now
+            val current = t0.plusSeconds(3600)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1.00", "100.00")),
+                        balancesObservedAt = t0,
+                    ),
+                    snapshot(
+                        current,
+                        "110.00",
+                        mapOf("USD" to assetRow("110.00", "1.00", "110.00")),
+                        balancesObservedAt = current,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(500),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "110.00",
+                        ledgerId = "initial-authoritative-candidate",
+                    ),
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(500),
+                        asset = "USD",
+                        amount = "10.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "initial-candidate-without-checkpoint",
+                    ),
+                ),
+                configuredAssetUniverse = setOf("USD"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
         "No anchor: bot trade embedded in initial baseline creates no artificial divergence" {
             val t0 = now
             val s1 = snapshot(
@@ -17203,8 +18518,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 priceProvider = mapPriceProvider(mapOf("USDG" to BigDecimal.ONE)),
             )
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.unavailableReason shouldBe null
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
             // The deposit replays once as owner capital. The conversion stays benchmark-neutral
             // while the full-wallet actual replay retains its off-series USDG proceeds.
             result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1389.28")

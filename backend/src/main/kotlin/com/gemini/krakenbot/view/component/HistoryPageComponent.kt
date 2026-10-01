@@ -74,6 +74,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 renderHeader(settings, csrfToken, paused)
                 renderSyncProgressBanner()
                 renderToolbar()
+                renderCoreLoadError()
                 renderStatsGrid()
                 renderComparisonChartSection()
                 renderRewardsChartSection()
@@ -116,6 +117,13 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                     titleId = card.titleId,
                 )
             }
+        }
+    }
+
+    private fun DIV.renderCoreLoadError() {
+        p(CssClass.Utility.ErrorBanner + CssClass.Utility.Hidden) {
+            id = HtmlIds.HISTORY_CORE_LOAD_ERROR
+            +ViewText.HISTORY_CORE_LOAD_ERROR
         }
     }
 

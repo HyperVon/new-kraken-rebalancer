@@ -62,8 +62,12 @@ class OverviewGridComponent {
     }
 
     private fun DIV.renderDeltaRow(delta24h: BigDecimal?) {
-        val delta = delta24h ?: return
         div(CssClass.Hero.DeltaRow) {
+            val delta = delta24h
+            if (delta == null) {
+                span(CssClass.Hero.DeltaWindow) { +ViewText.DELTA_UNAVAILABLE_24H }
+                return@div
+            }
             val signum = delta.signum()
             val cls =
                 when {

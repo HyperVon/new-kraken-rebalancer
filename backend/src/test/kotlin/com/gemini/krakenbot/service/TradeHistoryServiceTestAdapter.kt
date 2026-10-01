@@ -24,6 +24,8 @@ class TradeHistoryServiceTestAdapter(private val repository: TradeRepository) : 
     override suspend fun init() = Unit
     override suspend fun addSnapshot(snapshot: PortfolioSnapshot) = Unit
     override suspend fun getHistory(): List<PortfolioSnapshot> = emptyList()
+    override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? =
+        repository.getSnapshotBefore(timestamp)
     override suspend fun getLatestSnapshot(): PortfolioSnapshot? = null
     override fun getHistoryFlow(): Flow<PortfolioSnapshot> = emptyFlow()
     override suspend fun saveTrade(trade: TradeRecord): Int = repository.saveTrade(trade)

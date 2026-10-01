@@ -11,9 +11,11 @@ import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
@@ -69,6 +71,12 @@ class ApprovedStartComparisonIntegrationTest :
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, "test-scope")
         }
         val krakenService = FakeKrakenService()
+        val exchangeTradeHistory = mutableListOf<TradeRecord>()
+        krakenService.tradeHistorySupplier = { _, offset ->
+            exchangeTradeHistory
+                .drop((offset ?: 0).coerceAtLeast(0))
+                .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
+        }
         val configService = mockk<ConfigService>(relaxed = true)
         val reconstructionService = mockk<TradeHistoryReconstructionService>(relaxed = true)
         val trustedScopeGuard = mockk<AccountHistoryScopeGuard>(relaxed = true)
@@ -157,6 +165,27 @@ class ApprovedStartComparisonIntegrationTest :
                     clientOrderId = if (owned) "client-$id" else null,
                 )
             repository.saveTrade(trade)
+            exchangeTradeHistory += trade
+        }
+
+        fun seedExchangeTradesUntil(totalCount: Int) {
+            while (exchangeTradeHistory.size < totalCount) {
+                val index = exchangeTradeHistory.size
+                exchangeTradeHistory +=
+                    TestFixtures.tradeRecord(
+                        timestamp = strategyStart.plusSeconds((index + 1L) * 60L),
+                        pair = Asset.tradingPair(Asset.BTC),
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("1.00"),
+                        price = BigDecimal("100.00"),
+                        fee = BigDecimal("0.01"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "recovery-order-$index",
+                        tradeId = "recovery-trade-$index",
+                    )
+            }
         }
 
         fun seedUnknownTrade(timestamp: Instant) = runTest {
@@ -227,7 +256,9 @@ class ApprovedStartComparisonIntegrationTest :
                 seedTrade("t1", strategyStart.plusSeconds(60), owned = true)
                 seedSnapshot(Instant.parse("2026-01-03T00:00:00Z"), "100.00", "0.03", "999.00")
                 seedSnapshot(Instant.parse("2026-01-04T00:00:00Z"), "200.00", "0.03", "999.00")
+                seedExchangeTradesUntil(2)
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 val status = recovery.recoverOneBoundedRun()
@@ -272,7 +303,9 @@ class ApprovedStartComparisonIntegrationTest :
                 seedTrade("t0", strategyStart.minusSeconds(60), owned = false)
                 seedTrade("t1", strategyStart.plusSeconds(60), owned = true)
                 seedSnapshot(Instant.parse("2026-01-03T00:00:00Z"), "100.00", "0.03", "999.00")
+                seedExchangeTradesUntil(2)
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -298,7 +331,9 @@ class ApprovedStartComparisonIntegrationTest :
                 seedSnapshot(verifiedStart, "100.00", "0.04", "998.00")
                 seedSnapshot(unknownTime.plusSeconds(180), "100.00", "0.04", "998.00")
                 seedSnapshot(Instant.parse("2026-01-03T00:00:00Z"), "100.00", "0.04", "998.00")
+                seedExchangeTradesUntil(2)
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -353,6 +388,7 @@ class ApprovedStartComparisonIntegrationTest :
                 seedSnapshot(laterStart, "100.00", "0.04", "998.00")
                 seedSnapshot(comparisonEnd, "100.00", "0.04", "998.00")
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -435,6 +471,7 @@ class ApprovedStartComparisonIntegrationTest :
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -469,6 +506,7 @@ class ApprovedStartComparisonIntegrationTest :
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -500,6 +538,7 @@ class ApprovedStartComparisonIntegrationTest :
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -526,7 +565,9 @@ class ApprovedStartComparisonIntegrationTest :
                 seedTrade("t1", strategyStart.plusSeconds(60), owned = true)
                 seedSnapshot(Instant.parse("2026-01-03T00:00:00Z"), "100.00", "0.03", "999.00")
                 seedSnapshot(Instant.parse("2026-01-04T00:00:00Z"), "200.00", "0.03", "999.00")
+                seedExchangeTradesUntil(251)
                 krakenService.tradeHistoryTotalCountOverride = 251
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val recovery = newRecoveryService()
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.IN_PROGRESS

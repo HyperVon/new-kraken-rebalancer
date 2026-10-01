@@ -3,36 +3,55 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlQueries
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
+import org.w3c.dom.HTMLInputElement
 
 /**
- * The one error status this app renders a swap for. Settings rejections answer with a complete
- * form fragment plus a `ViewText` message, so discarding the body would hide the only feedback
- * the operator gets. Every other error status keeps htmx's default handling.
+ * Only server-marked HTML error fragments are eligible for an error swap: settings-form 403/422
+ * responses replace a rejected or invalid form, and order-intent 4xx responses replace the
+ * dedicated feedback slot without discarding the operator's form or dashboard.
  */
 private const val HTTP_UNPROCESSABLE_ENTITY = 422
+private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
+private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
+private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
+private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
+private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
+private const val HTML_CONTENT_TYPE = "text/html"
+
+/** Whether a known, server-rendered operator error fragment should be swapped despite its status. */
+internal fun shouldSwapRenderedError(
+    status: Int?,
+    responseText: String?,
+    contentType: String?,
+    fragmentKind: String?,
+): Boolean {
+    if (status == null || responseText.isNullOrBlank()) return false
+    if (contentType?.substringBefore(';')?.trim()?.equals(HTML_CONTENT_TYPE, ignoreCase = true) != true) return false
+    return when (fragmentKind) {
+        SETTINGS_FORM_ERROR_FRAGMENT -> status == HTTP_UNPROCESSABLE_ENTITY || status == 403
+        ORDER_INTENT_ERROR_FRAGMENT -> status in 400..499
+        else -> false
+    }
+}
+
+internal fun shouldClearSettingsError(verb: String?, path: String?): Boolean {
+    if (!verb.equals("POST", ignoreCase = true)) return false
+    val requestPath = path?.substringBefore('?')?.substringBefore('#') ?: return false
+    return requestPath == Routes.SETTINGS || requestPath == Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW
+}
 
 /**
- * Whether an error response should be swapped in despite its status.
- *
- * Admitted: this app's own validation rejections ([HTTP_UNPROCESSABLE_ENTITY]) that actually carry
- * a body to render. Rejected: an empty body, and every other error status — a genuine 5xx is a
- * fault, not a message for the operator, and swapping it would put raw server output on the page.
- */
-internal fun shouldSwapRejection(status: Int?, responseText: String?): Boolean =
-    status == HTTP_UNPROCESSABLE_ENTITY && !responseText.isNullOrBlank()
-
-/**
- * Brings a freshly rendered form rejection into view.
- *
- * A rejection swaps the whole form, but its trigger can sit far down the page — the allocation
- * preview button is at the bottom — so a banner rendered at the top would land above the fold with
- * no indication anything happened. Scoping to a banner that is already rendered means ordinary
- * swaps never move the page.
+ * Brings a freshly rendered settings or intent error into view after its targeted swap.
  */
 private fun revealFormError() {
     document.querySelector(HtmlQueries.FORM_ERROR_BANNER)?.scrollIntoView()
+    document.getElementById(HtmlIds.ORDER_INTENT_FEEDBACK)
+        ?.takeIf { !it.textContent.isNullOrBlank() }
+        ?.scrollIntoView()
 }
 
 fun main() {
@@ -49,21 +68,43 @@ fun main() {
         revealFormError()
     })
 
-    // A rejection belongs to the attempt that produced it, so a new submission clears the previous
-    // message before the request goes out. Doing it here rather than on the response means a
-    // successful swap cannot leave a stale banner above freshly rendered content.
+    // A form error belongs to the operator's latest settings mutation. Background proposal-slot
+    // GETs must not clear it while they resolve in parallel with editing.
     document.addEventListener(HtmlEvents.HTMX_BEFORE_REQUEST, {
-        document.querySelector(HtmlQueries.FORM_ERROR_BANNER)?.remove()
+        val detail = it.asDynamic().detail
+        val requestConfig = detail?.requestConfig
+        if (requestConfig != null &&
+            shouldClearSettingsError(requestConfig.verb as? String, requestConfig.path as? String)
+        ) {
+            document.querySelector(HtmlQueries.FORM_ERROR_BANNER)?.remove()
+        }
     })
 
-    // htmx refuses to swap a non-2xx response, so a 422 that already carries a fully rendered
-    // settings form — the shape every settings rejection returns — would be dropped and the
-    // operator would see nothing at all after submitting invalid input. htmx always supplies
-    // detail.xhr on beforeSwap, so this reads it directly.
+    // htmx refuses non-2xx responses by default. The server marker and HTML content type keep
+    // rendered settings and order-intent messages visible without swapping JSON API errors.
     document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, { event ->
         val detail = event.asDynamic().detail
         val xhr = detail.xhr
-        if (shouldSwapRejection(xhr.status as? Int, xhr.responseText as? String)) {
+        val refreshedCsrfToken = xhr.getResponseHeader(CSRF_TOKEN_RESPONSE_HEADER) as? String
+        if (!refreshedCsrfToken.isNullOrBlank()) {
+            val csrfInputs = document.querySelectorAll(HtmlQueries.CSRF_TOKEN_FIELDS)
+            repeat(csrfInputs.length) { index ->
+                (csrfInputs.item(index) as? HTMLInputElement)?.value = refreshedCsrfToken
+            }
+        }
+        val csrfSessionExpired = xhr.getResponseHeader(CSRF_SESSION_EXPIRED_HEADER) == "true"
+        if (csrfSessionExpired) {
+            window.alert(ViewText.CSRF_SESSION_EXPIRED)
+            // Keep the open form's edited controls in place while the replacement token takes effect.
+            detail.shouldSwap = false
+        }
+        val shouldSwap = shouldSwapRenderedError(
+            status = xhr.status as? Int,
+            responseText = xhr.responseText as? String,
+            contentType = xhr.getResponseHeader("Content-Type") as? String,
+            fragmentKind = xhr.getResponseHeader(ERROR_FRAGMENT_HEADER) as? String,
+        )
+        if (shouldSwap) {
             detail.shouldSwap = true
             detail.isError = false
         }

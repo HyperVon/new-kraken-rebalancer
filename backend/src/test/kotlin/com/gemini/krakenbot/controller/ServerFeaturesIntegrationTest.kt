@@ -24,6 +24,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -46,8 +47,19 @@ import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 
-private const val TEST_CSRF_TOKEN = "test-token"
-private const val TEST_CSRF_COOKIE = "rebalancer-csrf=$TEST_CSRF_TOKEN"
+private data class DashboardCsrfToken(val value: String, val cookie: String)
+
+private suspend fun HttpClient.issueDashboardCsrf(): DashboardCsrfToken {
+    val response = get("/")
+    val token = Regex("""name="csrfToken" value="([^"]+)"""")
+        .find(response.bodyAsText())
+        ?.groupValues
+        ?.get(1)
+        ?: error("Dashboard did not render its CSRF token")
+    val cookie = response.headers[HttpHeaders.SetCookie]?.substringBefore(';')
+        ?: error("Dashboard did not issue its CSRF cookie")
+    return DashboardCsrfToken(token, cookie)
+}
 
 @Suppress("unused")
 class ServerFeaturesIntegrationTest : StringSpec() {
@@ -57,6 +69,8 @@ class ServerFeaturesIntegrationTest : StringSpec() {
         var isPaused = false
         val portfolioManager = mockk<PortfolioManager>(relaxed = true)
         val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+        val configService = mockk<ConfigService>(relaxed = true)
+        every { configService.getConfig() } returns TestFixtures.config()
         every { portfolioManager.isLoopPaused() } answers { isPaused }
         every { portfolioManager.pauseLoop() } answers { isPaused = true }
         every { portfolioManager.resumeLoop() } answers { isPaused = false }
@@ -64,7 +78,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
         val testModule =
             module {
                 single { mockk<TradeHistoryService>(relaxed = true) }
-                single { mockk<ConfigService>(relaxed = true) }
+                single { configService }
                 single { portfolioManager }
                 single { orderIntentService }
                 single { jacksonObjectMapper().registerModule(JavaTimeModule()) }
@@ -177,10 +191,11 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     install(SSE)
                     dashboardRouting()
                 }
+                val csrf = client.issueDashboardCsrf()
                 val pauseResponse = client.post("/api/pause") {
-                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    setBody(parametersOf("csrfToken", csrf.value).formUrlEncode())
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                    header(HttpHeaders.Cookie, csrf.cookie)
                 }
                 pauseResponse.status shouldBe HttpStatusCode.OK
                 pauseResponse.headers["HX-Refresh"] shouldBe "true"
@@ -197,15 +212,16 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     install(SSE)
                     dashboardRouting()
                 }
+                val csrf = client.issueDashboardCsrf()
                 client.post("/api/pause") {
-                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    setBody(parametersOf("csrfToken", csrf.value).formUrlEncode())
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                    header(HttpHeaders.Cookie, csrf.cookie)
                 }
                 val resumeResponse = client.post("/api/resume") {
-                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    setBody(parametersOf("csrfToken", csrf.value).formUrlEncode())
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                    header(HttpHeaders.Cookie, csrf.cookie)
                 }
                 resumeResponse.status shouldBe HttpStatusCode.OK
                 resumeResponse.headers["HX-Refresh"] shouldBe "true"
@@ -233,6 +249,76 @@ class ServerFeaturesIntegrationTest : StringSpec() {
 
                 pauseResponse.status shouldBe HttpStatusCode.Forbidden
                 resumeResponse.status shouldBe HttpStatusCode.Forbidden
+                verify(exactly = 0) { portfolioManager.pauseLoop() }
+                verify(exactly = 0) { portfolioManager.resumeLoop() }
+            }
+        }
+
+        "pause and resume reject a stale CSRF pair and return a replacement token" {
+            testApplication {
+                application {
+                    install(SSE)
+                    dashboardRouting()
+                }
+                val staleToken = "A".repeat(43) + "." + "A".repeat(43)
+
+                val pauseResponse = client.post("/api/pause") {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.Origin, "http://localhost")
+                    setBody(parametersOf("csrfToken", staleToken).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, "rebalancer-csrf=$staleToken")
+                }
+                val resumeResponse = client.post("/api/resume") {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.Origin, "http://localhost")
+                    setBody(parametersOf("csrfToken", staleToken).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, "rebalancer-csrf=$staleToken")
+                }
+
+                listOf(pauseResponse, resumeResponse).forEach { response ->
+                    response.status shouldBe HttpStatusCode.Forbidden
+                    response.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
+                    val replacementToken = response.headers["X-Rebalancer-CSRF-Token"]
+                        ?: error("Stale CSRF recovery did not return a replacement token")
+                    response.headers[HttpHeaders.SetCookie] shouldContain "rebalancer-csrf=$replacementToken"
+                }
+
+                val missingCookie = client.post("/api/pause") {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.Origin, "http://localhost")
+                    setBody(parametersOf("csrfToken", staleToken).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                missingCookie.status shouldBe HttpStatusCode.Forbidden
+                missingCookie.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
+                val replacementToken = missingCookie.headers["X-Rebalancer-CSRF-Token"]
+                    ?: error("Missing-cookie recovery did not return a replacement token")
+                missingCookie.headers[HttpHeaders.SetCookie] shouldContain "rebalancer-csrf=$replacementToken"
+
+                val currentCsrf = client.issueDashboardCsrf()
+                val mismatchedForm = client.post("/api/resume") {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.Origin, "http://localhost")
+                    header(HttpHeaders.Cookie, currentCsrf.cookie)
+                    setBody(parametersOf("csrfToken", staleToken).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                mismatchedForm.status shouldBe HttpStatusCode.Forbidden
+                mismatchedForm.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
+                mismatchedForm.headers["X-Rebalancer-CSRF-Token"] shouldBe currentCsrf.value
+                mismatchedForm.headers[HttpHeaders.SetCookie] shouldBe null
+
+                val noOrigin = client.post("/api/resume") {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.Cookie, currentCsrf.cookie)
+                    setBody(parametersOf("csrfToken", staleToken).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                noOrigin.status shouldBe HttpStatusCode.Forbidden
+                noOrigin.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe null
+                noOrigin.headers["X-Rebalancer-CSRF-Token"] shouldBe null
                 verify(exactly = 0) { portfolioManager.pauseLoop() }
                 verify(exactly = 0) { portfolioManager.resumeLoop() }
             }

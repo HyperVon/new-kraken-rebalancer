@@ -71,6 +71,8 @@ rootProject.plugins.withType<YarnPlugin> {
         // Bounded ranges keep Yarn 1 quiet while retaining the patched security floor;
         // kotlin-js-store/yarn.lock pins the resolved versions for reproducible builds.
         resolution("webpack-dev-server", ">=6.0.0 <7.0.0")
+        // Dependabot #140 / GHSA-g84c-rxfj-3j2c — path traversal in webpack-dev-middleware.
+        resolution("webpack-dev-middleware", ">=8.3.0 <9.0.0")
         resolution("serialize-javascript", ">=7.0.7 <8.0.0")
         resolution("uuid", ">=14.0.1 <15.0.0")
         resolution("webpack", ">=5.109.2 <6.0.0")

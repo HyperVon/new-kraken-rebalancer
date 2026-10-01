@@ -52,6 +52,30 @@ import kotlinx.html.unsafe
 import java.time.Instant
 import java.time.ZoneOffset
 
+/** Raw, display-only form values used when a rejected request needs to recover the open form. */
+data class SettingsFormValues(
+    val loopDelaySeconds: String,
+    val deviationTriggerPercent: String,
+    val minimumOrderSizeUsd: String,
+    val fiatMaxDrawdown: String,
+    val fiatDeploymentExponent: String,
+    val fiatDeploymentThresholdPercent: String,
+    val inceptionDate: String,
+    val comparisonStartDate: String,
+    val simulation: Boolean,
+    val dryRun: Boolean,
+    val allocations: List<SettingsAllocationFormValue>,
+    val scoreEmphasis: String,
+    val scoreSleevePercent: String,
+)
+
+data class SettingsAllocationFormValue(
+    val symbol: String,
+    val color: String,
+    val targetPercent: String,
+    val score: String,
+)
+
 class SettingsFormComponent {
     private data class NumericFieldSpec(
         val label: String,
@@ -62,31 +86,31 @@ class SettingsFormComponent {
         val max: String? = null,
     )
 
-    private fun numericFieldSpecs(config: AppConfig) = listOf(
+    private fun numericFieldSpecs(config: AppConfig, formValues: SettingsFormValues?) = listOf(
         NumericFieldSpec(
             ViewText.LOOP_INTERVAL,
             FormFields.LOOP_DELAY_SECONDS,
-            config.settings.loopDelaySeconds.toString(),
+            formValues?.loopDelaySeconds ?: config.settings.loopDelaySeconds.toString(),
             min = "1",
         ),
         NumericFieldSpec(
             ViewText.DEVIATION_TRIGGER,
             FormFields.DEVIATION_TRIGGER_PERCENT,
-            config.settings.deviationTriggerPercent.toString(),
+            formValues?.deviationTriggerPercent ?: config.settings.deviationTriggerPercent.toString(),
             step = "0.1",
             min = "0",
         ),
         NumericFieldSpec(
             ViewText.MINIMUM_ORDER_SIZE,
             FormFields.MINIMUM_ORDER_SIZE_USD,
-            config.settings.minimumOrderSizeUSD.toString(),
+            formValues?.minimumOrderSizeUsd ?: config.settings.minimumOrderSizeUSD.toString(),
             step = "0.5",
             min = "2",
         ),
         NumericFieldSpec(
             ViewText.FIAT_MAX_DRAWDOWN,
             FormFields.FIAT_MAX_DRAWDOWN,
-            config.settings.fiatMaxDrawdown.toString(),
+            formValues?.fiatMaxDrawdown ?: config.settings.fiatMaxDrawdown.toString(),
             step = "1.0",
             min = "0",
             max = "100",
@@ -94,14 +118,14 @@ class SettingsFormComponent {
         NumericFieldSpec(
             ViewText.FIAT_DEPLOYMENT_EXPONENT,
             FormFields.FIAT_DEPLOYMENT_EXPONENT,
-            config.settings.fiatDeploymentExponent.toString(),
+            formValues?.fiatDeploymentExponent ?: config.settings.fiatDeploymentExponent.toString(),
             step = "0.1",
             min = "0.1",
         ),
         NumericFieldSpec(
             ViewText.FIAT_DEPLOYMENT_THRESHOLD,
             FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT,
-            config.settings.fiatDeploymentThresholdPercent.toString(),
+            formValues?.fiatDeploymentThresholdPercent ?: config.settings.fiatDeploymentThresholdPercent.toString(),
             step = "0.5",
             min = "0",
             max = "100",
@@ -117,6 +141,7 @@ class SettingsFormComponent {
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
         laterStartProposalAsync: Boolean = false,
+        formValues: SettingsFormValues? = null,
     ) {
         renderForm(
             body,
@@ -127,6 +152,7 @@ class SettingsFormComponent {
             inceptionDisplay,
             laterStartProposal,
             laterStartProposalAsync,
+            formValues,
         )
         renderSettingsScript()
     }
@@ -140,6 +166,7 @@ class SettingsFormComponent {
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
         laterStartProposalAsync: Boolean = false,
+        formValues: SettingsFormValues? = null,
     ) {
         parent.div(CssClass.Layout.Container) {
             form {
@@ -175,9 +202,15 @@ class SettingsFormComponent {
                 }
 
                 div(CssClass.Layout.GlassPanel) {
-                    renderGlobalParametersSection(config, inceptionDisplay, laterStartProposal, laterStartProposalAsync)
-                    renderSafetyModesSection(config)
-                    renderTargetAllocationsSection(config)
+                    renderGlobalParametersSection(
+                        config,
+                        inceptionDisplay,
+                        laterStartProposal,
+                        laterStartProposalAsync,
+                        formValues,
+                    )
+                    renderSafetyModesSection(config, formValues)
+                    renderTargetAllocationsSection(config, formValues)
                 }
             }
         }
@@ -188,10 +221,11 @@ class SettingsFormComponent {
         inceptionDisplay: InceptionDisplayInfo,
         laterStartProposal: ComparisonStartProposal?,
         laterStartProposalAsync: Boolean,
+        formValues: SettingsFormValues?,
     ) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
-                numericFieldSpecs(config).forEach { field ->
+                numericFieldSpecs(config, formValues).forEach { field ->
                     formGroup(field.label, field.name) {
                         input(CssClass.Form.InputGlass, type = number, name = field.name) {
                             id = field.name
@@ -205,11 +239,11 @@ class SettingsFormComponent {
                 formGroup(ViewText.INCEPTION_DATE, HtmlIds.INCEPTION_DATE_PICKER) {
                     input(type = hidden, name = FormFields.INCEPTION_DATE) {
                         id = FormFields.INCEPTION_DATE
-                        value = config.settings.inceptionDate.orEmpty()
+                        value = formValues?.inceptionDate ?: config.settings.inceptionDate.orEmpty()
                     }
                     input(CssClass.Form.InputGlass, type = date) {
                         id = HtmlIds.INCEPTION_DATE_PICKER
-                        value = utcDate(config.settings.inceptionDate).orEmpty()
+                        value = utcDate(formValues?.inceptionDate ?: config.settings.inceptionDate).orEmpty()
                         attributes[HtmlAttrs.ONCHANGE] =
                             "document.getElementById('${FormFields.INCEPTION_DATE}').value=this.value"
                     }
@@ -219,11 +253,13 @@ class SettingsFormComponent {
                 formGroup(ViewText.INCEPTION_COMPARISON_START, HtmlIds.COMPARISON_START_DATE_PICKER) {
                     input(type = hidden, name = FormFields.COMPARISON_START_DATE) {
                         id = FormFields.COMPARISON_START_DATE
-                        value = config.settings.comparisonStartDate.orEmpty()
+                        value = formValues?.comparisonStartDate ?: config.settings.comparisonStartDate.orEmpty()
                     }
                     input(CssClass.Form.InputGlass, type = date) {
                         id = HtmlIds.COMPARISON_START_DATE_PICKER
-                        value = utcDate(config.settings.comparisonStartDate).orEmpty()
+                        value = utcDate(
+                            formValues?.comparisonStartDate ?: config.settings.comparisonStartDate,
+                        ).orEmpty()
                         attributes[HtmlAttrs.ONCHANGE] =
                             "document.getElementById('${FormFields.COMPARISON_START_DATE}').value=this.value"
                     }
@@ -500,7 +536,7 @@ class SettingsFormComponent {
         }
     }
 
-    private fun DIV.renderSafetyModesSection(config: AppConfig) {
+    private fun DIV.renderSafetyModesSection(config: AppConfig, formValues: SettingsFormValues?) {
         // SETT-1: promote the two highest-consequence controls to labelled toggle cards.
         formSection(ViewText.SAFETY_MODES, Icons.SHIELD_EXCLAMATION) {
             p(CssClass.Form.SectionSubtitle) { +ViewText.SAFETY_MODES_SUBTITLE }
@@ -508,13 +544,13 @@ class SettingsFormComponent {
                 div(CssClass.Form.SafetyToggles) {
                     renderSafetyCard(
                         name = FormFields.SIMULATION,
-                        checked = config.settings.simulation,
+                        checked = formValues?.simulation ?: config.settings.simulation,
                         title = ViewText.SIMULATION_MODE_TITLE,
                         desc = ViewText.SIMULATION_MODE_DESC,
                     )
                     renderSafetyCard(
                         name = FormFields.DRY_RUN,
-                        checked = config.settings.dryRun,
+                        checked = formValues?.dryRun ?: config.settings.dryRun,
                         title = ViewText.DRY_RUN_MODE_TITLE,
                         desc = ViewText.DRY_RUN_MODE_DESC,
                     )
@@ -544,7 +580,7 @@ class SettingsFormComponent {
         }
     }
 
-    private fun DIV.renderTargetAllocationsSection(config: AppConfig) {
+    private fun DIV.renderTargetAllocationsSection(config: AppConfig, formValues: SettingsFormValues?) {
         div(CssClass.Form.Section) {
             div(CssClass.Form.SectionHeader) {
                 h3 {
@@ -558,16 +594,21 @@ class SettingsFormComponent {
 
             div(CssClass.Form.AllocationListContainer) {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
-                val scores = config.settings.qualityScores
-                config.allocations.forEach { alloc ->
-                    val rowColor = alloc.color ?: ChartProps.SOLID_FALLBACK
-                    val score = scores[alloc.symbol.value]
+                val allocations = formValues?.allocations ?: config.allocations.map { alloc ->
+                    SettingsAllocationFormValue(
+                        symbol = alloc.symbol.value,
+                        color = alloc.color ?: ChartProps.SOLID_FALLBACK,
+                        targetPercent = alloc.targetPercent.toString(),
+                        score = config.settings.qualityScores[alloc.symbol.value]?.toString().orEmpty(),
+                    )
+                }
+                allocations.forEach { alloc ->
                     unsafe {
                         +AllocationEditor.editRow(
-                            symbol = alloc.symbol.value,
-                            color = rowColor,
-                            targetPercent = alloc.targetPercent.toString(),
-                            score = score?.toString().orEmpty(),
+                            symbol = alloc.symbol,
+                            color = alloc.color,
+                            targetPercent = alloc.targetPercent,
+                            score = alloc.score,
                         )
                     }
                 }
@@ -587,7 +628,7 @@ class SettingsFormComponent {
                             input(CssClass.Form.InputGlass, type = number) {
                                 id = HtmlIds.SCORE_EMPHASIS_INPUT
                                 name = FormFields.SCORE_EMPHASIS
-                                value = QualityAllocation.DEFAULT_EMPHASIS.toString()
+                                value = formValues?.scoreEmphasis ?: QualityAllocation.DEFAULT_EMPHASIS.toString()
                                 min = "1"
                                 max = QualityAllocation.MAX_EMPHASIS.toString()
                             }
@@ -599,6 +640,7 @@ class SettingsFormComponent {
                                 name = FormFields.SCORE_SLEEVE_PERCENT
                                 step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
                                 placeholder = ViewText.ALLOCATION_SLEEVE_PLACEHOLDER
+                                formValues?.scoreSleevePercent?.let { value = it }
                             }
                         }
                         button(

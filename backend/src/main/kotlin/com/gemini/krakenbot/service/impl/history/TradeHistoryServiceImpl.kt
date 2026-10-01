@@ -109,6 +109,9 @@ class TradeHistoryServiceImpl(
 
     override suspend fun getHistory(): List<PortfolioSnapshot> = queryService.getHistory()
 
+    override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? =
+        queryService.getSnapshotBefore(timestamp)
+
     override suspend fun getLatestSnapshot(): PortfolioSnapshot? = queryService.getLatestSnapshot()
 
     override fun getHistoryFlow(): Flow<PortfolioSnapshot> = snapshotStore.getHistoryFlow()

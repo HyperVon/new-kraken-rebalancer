@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
@@ -57,7 +58,11 @@ class InceptionRecoveryServiceTest : StringSpec() {
     private val database = DatabaseConfig.init(TestFixtures.MEMORY_)
     private val repository = SqliteTradeRepositoryImpl(database)
     private val ledgerRepository = SqliteLedgerRepositoryImpl(database)
-    private val krakenService = FakeKrakenService()
+    private val krakenService = FakeKrakenService().apply {
+        // Normal recovery fixtures model Kraken's authoritative `count` member. Individual
+        // count-less contract tests opt out explicitly below.
+        tradeHistoryTotalCountAvailable = true
+    }
     private val configService = mockk<ConfigService>(relaxed = true)
     private val reconstructionService = mockk<TradeHistoryReconstructionService>(relaxed = true)
     private val trustedScopeGuard = mockk<AccountHistoryScopeGuard>(relaxed = true)
@@ -112,6 +117,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = history.size
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset ->
                     history.drop(offset ?: 0).take(50)
                 }
@@ -133,6 +139,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 ) + history
                 krakenService.tradeHistoryTotalCountOverride = shiftedHistory.size
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset ->
                     shiftedHistory.drop(offset ?: 0).take(50)
                 }
@@ -177,6 +184,87 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "an empty page replaces a stale positive trade total with zero" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.tradeOffset shouldBe "completed"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
+            }
+        }
+
+        "a reduced authoritative total rewinds a stale offset and recovers from page zero" {
+            runTest {
+                val history = (0 until 50).map { index ->
+                    apiTrade(
+                        id = "shrunk-history-$index",
+                        timestamp = Instant.parse("2026-04-01T00:00:00Z").minusSeconds(index.toLong()),
+                    )
+                }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "100")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = history.size
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    if (offset == 0) history else emptyList()
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.tradeOffset shouldBe "completed"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "50"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)).size shouldBe 50
+                krakenService.getTradeHistoryCallCount shouldBe 2
+            }
+        }
+
+        "an offset without a persisted trade total rewinds on the authoritative count and recovers all rows" {
+            runTest {
+                val history = (0 until 51).map { index ->
+                    apiTrade(
+                        id = "missing-total-history-$index",
+                        timestamp = Instant.parse("2026-04-01T00:00:00Z").minusSeconds(index.toLong()),
+                    )
+                }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "100")
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe ""
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = history.size
+                krakenService.tradeHistoryTotalCountAvailable = true
+                val requestedOffsets = mutableListOf<Int?>()
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    requestedOffsets += offset
+                    history.drop(offset ?: 0).take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.tradeOffset shouldBe "completed"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "51"
+                requestedOffsets shouldBe listOf(50, 0, 50)
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)).size shouldBe 51
+                krakenService.getTradeHistoryCallCount shouldBe 3
+            }
+        }
+
         "bounded recovery rewinds ledger offsets when newest-first totals shift" {
             runTest {
                 val ledgerHistory = (0 until 250).map { index ->
@@ -189,6 +277,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.seedLedgerEntries(ledgerHistory)
                 newService().prepareForCurrentConfiguration(null) shouldBe true
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
@@ -228,8 +317,9 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery continues past an exact full page when Kraken omits the total" {
+        "a count-less full trade page fails without importing or advancing" {
             runTest {
+                krakenService.tradeHistoryTotalCountAvailable = false
                 val history = (0 until KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE).map { index ->
                     apiTrade(
                         id = "full-page-$index",
@@ -238,25 +328,22 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
                 krakenService.tradeHistorySupplier = { _, offset -> history.drop(offset ?: 0).take(50) }
-                val ledgerHistory = (0 until KrakenApiConstants.LEDGER_PAGE_SIZE).map { index ->
-                    LedgerEvent(
-                        ledgerId = "full-ledger-$index",
-                        time = Instant.parse("2026-04-01T00:00:00Z").minusSeconds(index.toLong()),
-                        type = "staking",
-                        asset = Asset.BTC,
-                        amount = BigDecimal.ZERO,
-                    )
-                }
-                krakenService.ledgerTotalCountOverride = 0
-                krakenService.ledgerSupplier = { _, offset, _, _ -> ledgerHistory.drop(offset ?: 0).take(50) }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.tradeOffset shouldBe "completed"
-                status.reason shouldBe "trade ownership is ambiguous"
-                krakenService.getTradeHistoryCallCount shouldBe 2
-                krakenService.getLedgersCallCount shouldBe 2
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "FAILED"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+                krakenService.getTradeHistoryCallCount shouldBe 1
+                krakenService.getLedgersCallCount shouldBe 0
             }
         }
 
@@ -271,7 +358,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "50")
                 var requestedOffset: Int? = null
                 var requestedLedgerOffset: Int? = null
-                krakenService.tradeHistoryTotalCountOverride = -1
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.ledgerTotalCountOverride = -1
                 krakenService.tradeHistorySupplier = { _, offset ->
                     requestedOffset = offset
@@ -292,8 +380,9 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "persisted trade total cannot complete a current unknown-total full page" {
+        "persisted trade total cannot certify a count-less recovery page" {
             runTest {
+                krakenService.tradeHistoryTotalCountAvailable = false
                 newService().prepareForCurrentConfiguration(null) shouldBe true
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "100")
@@ -309,8 +398,237 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.tradeOffset shouldBe "completed"
-                krakenService.getTradeHistoryCallCount shouldBe 3
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "100"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+                krakenService.getTradeHistoryCallCount shouldBe 1
+            }
+        }
+
+        "a positive count without the count-presence flag cannot certify an empty page" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 25
+                krakenService.tradeHistoryTotalCountAvailable = false
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "a negative authoritative count fails before importing or advancing" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = -1
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "zero total with nonzero raw occupancy fails before importing or advancing" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "zero authoritative trade count cannot accompany a recovered fill" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
+                val unexpectedTrade = apiTrade("zero-count-fill", now.minusSeconds(1))
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(unexpectedTrade) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "an exhausted trade offset cannot return another fill" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "100")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "50")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
+                val unexpectedTrade = apiTrade("past-total-fill", now.minusSeconds(1))
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(unexpectedTrade) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "100"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "50"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "an exhausted trade offset cannot hide raw rows behind an empty decoded page" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "100")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "50")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "100"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "50"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+                krakenService.getTradeHistoryCallCount shouldBe 1
+            }
+        }
+
+        "authoritative count and raw page occupancy must agree before import" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 25
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 0
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "a decoded trade page shorter than its raw count cannot complete recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 50
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 49).map { apiTrade("decoded-$it", now.minusSeconds(it.toLong() + 1)) }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "FAILED"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "a raw trade count shorter than the decoded page cannot complete recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 49
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map { apiTrade("raw-short-$it", now.minusSeconds(it.toLong() + 1)) }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "malformed trade page envelope fails before importing or advancing" {
+            runTest {
+                val trade = apiTrade("malformed-envelope", now.minusSeconds(1))
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryPageShapeValid = false
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(trade) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1))
+                    .none { it.tradeId == trade.tradeId } shouldBe true
             }
         }
 
@@ -674,26 +992,34 @@ class InceptionRecoveryServiceTest : StringSpec() {
         "a trade beyond the inclusive recovery horizon fails without importing or advancing" {
             runTest {
                 val outOfHorizonTrade = apiTrade("after-horizon", now.plusSeconds(1))
+                val overlapPage = (0 until KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE).map { index ->
+                    if (index == 0) {
+                        outOfHorizonTrade
+                    } else {
+                        apiTrade("in-horizon-overlap-$index", now.minusSeconds(index.toLong()))
+                    }
+                }
                 var requestedOffset: Int? = null
                 newService().prepareForCurrentConfiguration(null) shouldBe true
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
-                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "50")
-                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "51")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "100")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
-                krakenService.tradeHistoryTotalCountOverride = 51
+                krakenService.tradeHistoryTotalCountOverride = 100
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset ->
                     requestedOffset = offset
-                    if (offset == 50) listOf(outOfHorizonTrade) else emptyList()
+                    if (offset == 50) overlapPage else emptyList()
                 }
 
                 val status = newService().recoverOneBoundedRun()
 
                 requestedOffset shouldBe 50
                 status.status shouldBe InceptionRecoveryStatus.FAILED
-                status.tradeOffset shouldBe "50"
+                status.tradeOffset shouldBe "100"
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "FAILED"
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "50"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "100"
                 repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(2))
                     .none { it.tradeId == outOfHorizonTrade.tradeId } shouldBe true
             }
@@ -734,9 +1060,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "a count shift on page zero continues from the next page boundary" {
+        "a count shift on page zero validates and completes the reported page" {
             runTest {
                 val bot = apiTrade("page-zero-shift", Instant.parse("2026-04-01T00:00:00Z"))
+                val secondTrade = apiTrade("page-zero-shift-second", Instant.parse("2026-04-01T00:00:01Z"))
                 newService().prepareForCurrentConfiguration(null) shouldBe true
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
@@ -744,15 +1071,16 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset ->
-                    if ((offset ?: 0) == 0) listOf(bot) else emptyList()
+                    if ((offset ?: 0) == 0) listOf(bot, secondTrade) else emptyList()
                 }
 
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 status.tradeOffset shouldBe "completed"
-                krakenService.getTradeHistoryCallCount shouldBe 2
+                krakenService.getTradeHistoryCallCount shouldBe 1
             }
         }
 
@@ -782,6 +1110,66 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
                 status.ledgerOffset shouldBe "0"
                 krakenService.getLedgersCallCount shouldBe 4
+            }
+        }
+
+        "a raw ledger count shorter than the decoded page cannot complete recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "2")
+                krakenService.ledgerTotalCountOverride = 2
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerRawPageSizeOverride = 1
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until 2).map { index ->
+                        LedgerEvent(
+                            ledgerId = "raw-short-ledger-$index",
+                            time = now.minusSeconds(index.toLong() + 1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "0"
+            }
+        }
+
+        "a raw ledger count shorter than decoded entries cannot certify an unknown total" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountAvailable = false
+                krakenService.ledgerRawPageSizeOverride = 1
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until 2).map { index ->
+                        LedgerEvent(
+                            ledgerId = "unknown-total-raw-short-$index",
+                            time = now.minusSeconds(index.toLong() + 1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe ""
             }
         }
 
@@ -832,6 +1220,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 newService().prepareForCurrentConfiguration(null) shouldBe true
                 deleteMetadata(
@@ -869,6 +1258,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 config = appConfig(listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)))
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 val first = newService().recoverOneBoundedRun()
                 first.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
                 val calls = krakenService.getTradeHistoryCallCount
@@ -899,6 +1289,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             runTest {
                 config = config.copy(settings = config.settings.copy(inceptionDate = " "))
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -918,6 +1309,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 repository.saveTrade(localEstimate(bot.timestamp, bot))
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -940,6 +1332,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ).copy(balancesObservedAt = now.plusSeconds(60)),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -960,6 +1353,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -989,6 +1383,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 newService().prepareForCurrentConfiguration(null) shouldBe true
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID, "999")
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -1030,6 +1425,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -1057,6 +1453,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE, "")
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.ledgerTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.ohlcSupplier = { _, _, _ ->
@@ -1087,6 +1484,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.seedLedgerEntries(
                     listOf(
@@ -1130,6 +1528,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(botTime.minusSeconds(901).epochSecond to BigDecimal("100.00"))
@@ -1221,6 +1620,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(botTime.minusSeconds(901).epochSecond to BigDecimal("100.00"))
@@ -1329,6 +1729,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 // fillB is supplied (and saved) first so it takes the smaller id; legacy id-desc
                 // order then replays fillA first and fails, while the balance chain needs fillB.
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(fillB, fillA) }
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(fillTime.minusSeconds(901).epochSecond to BigDecimal("100.00"))
@@ -1409,6 +1810,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.seedLedgerEntries(
                     listOf(
@@ -1458,6 +1860,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.seedLedgerEntries(
                     listOf(
                         LedgerEvent(
@@ -1802,6 +2205,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.seedLedgerEntries(
                     listOf(
@@ -1843,6 +2247,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.seedLedgerEntries(
                     listOf(
@@ -1902,6 +2307,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.seedLedgerEntries(
                     listOf(
@@ -1947,6 +2353,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -1981,6 +2388,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2056,6 +2464,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2124,6 +2533,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.ohlcSupplier = { pair, _, _ ->
                     if (pair == "ATOMUSDT") {
@@ -2336,6 +2746,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2409,6 +2820,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2452,6 +2864,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2485,6 +2898,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -2499,6 +2913,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val bot = apiTrade("bot", botTime)
                 repository.saveTrade(localEstimate(botTime, bot))
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 ledgerRepository.saveLedgers(
                     listOf(
@@ -2537,6 +2952,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val bot = apiTrade("bot", botTime)
                 repository.saveTrade(localEstimate(botTime, bot))
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 // The recorded balances interleave the spot and staking-wallet chains for the
@@ -2689,6 +3105,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -2721,6 +3138,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -2742,6 +3160,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 val orderIntentRepository = mockk<OrderIntentRepository>()
                 coEvery {
                     orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any())
@@ -2778,6 +3197,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(negativeBot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2805,6 +3225,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2832,6 +3253,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2860,6 +3282,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2888,6 +3311,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2914,6 +3338,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.ledgerSupplier = { _, _, _, _ -> throw IllegalStateException("ledgers unavailable") }
                 status = newService().recoverOneBoundedRun()
 
@@ -2944,6 +3369,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     apiTrade("manual-eth", Instant.parse("2026-01-01T00:00:01Z"), symbol = Asset.ETH),
                 )
                 krakenService.tradeHistoryTotalCountOverride = burst.size
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset -> burst.drop(offset ?: 0).take(50) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2969,6 +3395,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -3030,6 +3457,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ).copy(dryRun = true),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -3063,6 +3491,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset -> listOf(manual, bot).drop(offset ?: 0).take(50) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -3108,6 +3537,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -3142,6 +3572,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 repository.saveTrade(localEstimate(botTime, bot))
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -3182,6 +3613,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -3245,6 +3677,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -3275,6 +3708,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -3406,6 +3840,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val externalResolver = FundingProvenanceResolver { FundingEvidence.EXTERNAL }
@@ -3484,6 +3919,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ).copy(balancesObservedAt = null),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val cardResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
@@ -3535,6 +3971,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val cardResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
@@ -3579,6 +4016,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ).copy(balancesObservedAt = null),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val cardResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
@@ -3630,6 +4068,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ).copy(balancesObservedAt = null),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val cardResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
@@ -3656,6 +4095,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val failingResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
@@ -3682,6 +4122,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val cancellingResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
@@ -3710,6 +4151,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val orderIntentRepository = mockk<OrderIntentRepository>()
                 coEvery {
@@ -3762,6 +4204,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -3809,6 +4252,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -3866,6 +4310,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     anchor,
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.ohlcSupplier = { pair, interval, _ ->
                     pair shouldBe Asset.ETH_USD_PAIR
@@ -3886,6 +4331,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val bot = apiTrade("bot", botTime)
                 repository.saveTrade(localEstimate(botTime, bot))
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.seedLedgerEntries(
                     listOf(
@@ -3957,6 +4403,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 var ohlcAvailable = false
                 krakenService.ohlcSupplier = { _, _, _ ->
@@ -4009,6 +4456,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(
@@ -4056,6 +4504,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val cardResolver = object : FundingProvenanceResolver {
                     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
@@ -4098,6 +4547,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -4134,6 +4584,39 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 fingerprint shouldNotBe "old"
                 newService()
                     .prepareForCurrentConfiguration(config.settings.copy(inceptionDate = "new")) shouldBe false
+            }
+        }
+
+        "recovery contract version invalidates previously completed stream receipts" {
+            runTest {
+                val service = newService()
+                val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
+                val fingerprint = service.configurationFingerprint(config, null, scopeDigest)
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT, fingerprint)
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION, "1")
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "250")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "150")
+
+                service.prepareForCurrentConfiguration(null) shouldBe true
+
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION) shouldBe
+                    InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe ""
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe ""
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe ""
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe ""
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe ""
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe ""
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
             }
         }
 
@@ -4311,6 +4794,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val blankConfig = config.copy(settings = config.settings.copy(inceptionDate = " "))
                 every { configService.getConfig() } returnsMany listOf(config, blankConfig)
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -4357,6 +4841,36 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "ledger cancellation preserves completed trade coverage for the next run" {
+            runTest {
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.ledgerTotalCountOverride = 0
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, _, _, _ -> throw CancellationException("cancelled") }
+
+                shouldThrow<CancellationException> { newService().recoverOneBoundedRun() }
+
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "completed"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe
+                    "IN_PROGRESS"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS) shouldBe
+                    InceptionRecoveryStatus.IN_PROGRESS
+
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                krakenService.ledgerSupplier = { _, _, _, _ -> emptyList() }
+                val resumed = newService().recoverOneBoundedRun()
+
+                resumed.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "COMPLETE"
+                krakenService.getTradeHistoryCallCount shouldBe 1
+                krakenService.getLedgersCallCount shouldBe 2
+            }
+        }
+
         "removed historical asset does not veto discovery before ownership validation" {
             runTest {
                 config = appConfig(
@@ -4393,6 +4907,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset -> listOf(solTrade, bot).drop(offset ?: 0).take(50) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -4435,6 +4950,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 repository.saveSnapshot(futureSnapshot)
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
 
                 val status = newService().recoverOneBoundedRun()
@@ -4478,6 +4994,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 val candleOpenSec = Instant.parse("2026-01-02T00:00:00Z").epochSecond
                 krakenService.ohlcSupplier = { pair, interval, _ ->
@@ -4508,6 +5025,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.ledgerTotalCountOverride = 0
                 krakenService.ledgerSupplier = { _, offset, _, _ -> ledgerHistory.drop(offset ?: 0).take(50) }
 
@@ -4573,6 +5091,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 60
+                krakenService.tradeHistoryTotalCountAvailable = true
                 var failOnCall = 2
                 var callCount = 0
                 krakenService.tradeHistorySupplier = { _, offset ->
@@ -4612,7 +5131,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     apiTrade("owned", batchStart.plusSeconds(600), symbol = "SOL"),
                 )
                 krakenService.tradeHistorySupplier = { _, _ -> batch + ownedTrade }
-                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountOverride = batch.size + 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 repository.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
                     AccountHistoryScopeGuard.digestAccountScope("fake-account"),
@@ -4661,7 +5181,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistorySupplier = { _, _ -> trades }
-                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountOverride = trades.size
+                krakenService.tradeHistoryTotalCountAvailable = true
                 repository.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
                     AccountHistoryScopeGuard.digestAccountScope("fake-account"),
@@ -4695,7 +5216,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     apiTrade("b-buy-4", batchStart.plusSeconds(3), symbol = "ASSET4"),
                 )
                 krakenService.tradeHistorySupplier = { _, _ -> batch }
-                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountOverride = batch.size
+                krakenService.tradeHistoryTotalCountAvailable = true
                 repository.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
                     AccountHistoryScopeGuard.digestAccountScope("fake-account"),
@@ -4730,7 +5252,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 } returns RebalancerOrderIdentities(orderTxids = setOf("order-known"))
                 krakenService.tradeHistorySupplier =
                     { _, _ -> unknownTrades + knownOrderTrade + clientOnlyTrade }
-                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountOverride = unknownTrades.size + 2
+                krakenService.tradeHistoryTotalCountAvailable = true
                 val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
 
@@ -4802,7 +5325,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
-                krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -4839,7 +5363,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistorySupplier = { _, offset -> botTrades.drop(offset ?: 0).take(50) }
-                krakenService.tradeHistoryTotalCountOverride = botTrades.size + 1
+                krakenService.tradeHistoryTotalCountOverride = botTrades.size
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val pending = newService().recoverOneBoundedRun()
                 pending.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
@@ -4912,6 +5437,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 repository.saveTrade(apiTrade("price", requestedStart))
 
                 val failed = newService().recoverOneBoundedRun()
@@ -4995,6 +5521,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
                 var fundingAvailable = false
                 val cardResolver = object : FundingProvenanceResolver {
@@ -5058,7 +5585,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
-                krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 val status = newService().recoverOneBoundedRun()
 
@@ -5090,7 +5618,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
-                krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
 
                 config = config.copy(
@@ -5295,6 +5824,93 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "confirmed automatic display rejects malformed and non-positive stored epochs" {
+            runTest {
+                val service = newService()
+                service.prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION,
+                    InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE, "auto")
+
+                listOf("not-an-epoch", "0", "-1").forEach { storedEpoch ->
+                    repository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS, storedEpoch)
+
+                    val display = service.getLocalInceptionDisplayInfo()
+
+                    display.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                    display.dateText.shouldBeNull()
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe storedEpoch
+                }
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+            }
+        }
+
+        "local display withholds malformed inference windows and timestamps" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = ""))
+                val service = newService()
+                service.prepareForCurrentConfiguration(null) shouldBe true
+                val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
+                val fingerprint = service.inferenceFingerprint(config, scopeDigest)
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_INFERENCE_VERSION,
+                    InceptionRecoveryService.CURRENT_INFERENCE_VERSION,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT, fingerprint)
+                val inferredStart = now.minusSeconds(600)
+                val otherEpisode = inferredStart.minusSeconds(60)
+                repository.saveInceptionInferenceEvidence(
+                    InceptionInferenceEvidence(
+                        fingerprint = fingerprint,
+                        evidenceDigest = "stored-evidence",
+                        modelVersion = InceptionRecoveryService.CURRENT_INFERENCE_VERSION,
+                        coverageStart = now.minusSeconds(120),
+                        coverageEnd = now.minusSeconds(300),
+                        horizon = now,
+                        firstPositive = Instant.EPOCH,
+                        inferredStart = inferredStart,
+                        inferredWindowStart = inferredStart.plusSeconds(60),
+                        inferredWindowEnd = inferredStart.plusSeconds(120),
+                        inferredStartStrength = "HIGH",
+                        inferredStartReasons = listOf("BOT_ORDER_BURST"),
+                        inferredStartContradictions = emptyList(),
+                        strongestObservedStart = otherEpisode,
+                        strongestEpisodeStrength = "HIGH",
+                        strongestEpisodeReasons = listOf("OWNED_ORDER"),
+                        strongestEpisodeContradictions = emptyList(),
+                        earliestAmbiguousStart = now.plusSeconds(1),
+                        earlierAmbiguousCandidateCount = 1,
+                        unsupportedMarketCount = 0,
+                        unsupportedMarketSamples = emptyList(),
+                        competingCandidateCount = 0,
+                    ),
+                )
+
+                val display = service.getLocalInceptionDisplayInfo()
+
+                display.inferredStartText.shouldBeNull()
+                display.inferredWindowStartText.shouldBeNull()
+                display.inferredWindowEndText.shouldBeNull()
+                display.inferredStartStrengthText.shouldBeNull()
+                display.inferredStartReasonsText.shouldBeNull()
+                display.firstPositiveText.shouldBeNull()
+                display.earliestAmbiguousText.shouldBeNull()
+                display.coverageText.shouldBeNull()
+                display.strongestEpisodeText shouldBe otherEpisode.toString()
+                display.strongestEpisodeStrengthText shouldBe "HIGH"
+                display.strongestEpisodeReasonsText shouldBe "owned order"
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+            }
+        }
+
         "display reports an in-progress automatic recovery" {
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, InceptionRecoveryStatus.IN_PROGRESS)
 
@@ -5376,7 +5992,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                 ),
             )
-            krakenService.tradeHistoryTotalCountOverride = 2
+            krakenService.tradeHistoryTotalCountOverride = 0
+            krakenService.tradeHistoryTotalCountAvailable = true
             newService().recoverOneBoundedRun()
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, "")
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "999")
@@ -5434,7 +6051,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                 )
             repository.saveSnapshot(anchor)
-            krakenService.tradeHistoryTotalCountOverride = 2
+            krakenService.tradeHistoryTotalCountOverride = 0
+            krakenService.tradeHistoryTotalCountAvailable = true
 
             val firstRun = newService().recoverOneBoundedRun()
             firstRun.status shouldBe InceptionRecoveryStatus.CONFIRMED
@@ -5463,7 +6081,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                 ),
             )
-            krakenService.tradeHistoryTotalCountOverride = 2
+            krakenService.tradeHistoryTotalCountOverride = 0
+            krakenService.tradeHistoryTotalCountAvailable = true
             val recoveredLedgerTime = requestedStart.minusSeconds(30)
             krakenService.seedLedgerEntries(
                 listOf(
@@ -5492,7 +6111,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL,
                 SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
             ).associateWith { key -> ledgerRepository.getSyncMetadata(key) }
-            completedTradeMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL] shouldBe "2"
+            completedTradeMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL] shouldBe "0"
             completedTradeMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS] shouldBe
                 requestedStart.minusSeconds(60).toEpochMilli().toString()
             completedLedgerMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL] shouldBe "1"
@@ -5537,6 +6156,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = history.size
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, offset ->
                     history.drop(offset ?: 0).take(50)
                 }
@@ -5584,6 +6204,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 // Make service healthy now
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
 
                 // At 31s (> short continuation interval 30s, but < failure retry 300s): must remain blocked!
                 now = now.plusSeconds(InceptionRecoveryService.SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS + 1)
@@ -5630,6 +6251,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 var requestedOffset: Int? = null
                 krakenService.tradeHistoryTotalCountOverride = 3455
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, ofs ->
                     if (requestedOffset == null) requestedOffset = ofs
                     (0 until 50).map { i ->
@@ -5905,7 +6527,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                         timestamp = requestedStart.plusSeconds(120),
                     ),
                 )
-                krakenService.tradeHistoryTotalCountOverride = 3
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistoryTotalCountAvailable = true
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
 
                 val status = newService().recoverOneBoundedRun()
@@ -5992,6 +6615,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         events.any(LedgerEvent::isRewardEvent) shouldBe false
 
         krakenService.tradeHistoryTotalCountOverride = 0
+        krakenService.tradeHistoryTotalCountAvailable = true
         krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
         krakenService.seedLedgerEntries(events)
         val status = newService().recoverOneBoundedRun()
@@ -6048,6 +6672,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         }
 
         krakenService.tradeHistoryTotalCountOverride = 0
+        krakenService.tradeHistoryTotalCountAvailable = true
         krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
         krakenService.seedLedgerEntries(events)
         val status = newService().recoverOneBoundedRun()
@@ -6111,7 +6736,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 timestamp = requestedStart.plusSeconds(120),
             ),
         )
-        krakenService.tradeHistoryTotalCountOverride = 3
+        krakenService.tradeHistoryTotalCountOverride = 0
+        krakenService.tradeHistoryTotalCountAvailable = true
         krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
         return requestedStart
     }

@@ -414,7 +414,7 @@ object RebalancerComparisonCalculator {
         // to the provenance/classification path below.
         val allLedgerEvents = (ledgerContext + rewards).distinctBy(LedgerEvent::ledgerId)
         val authoritativeLedgerEvents = allLedgerEvents.filter(LedgerEvent::hasAuthoritativeBalance)
-        val ledgerValidation = AuthoritativeLedgerBalanceValidator.validate(authoritativeLedgerEvents)
+        val ledgerValidation = validateLedgerWalletScopes(authoritativeLedgerEvents, baseline)
         ledgerValidation.failure?.let { failure ->
             return unavailable(
                 reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
@@ -443,7 +443,7 @@ object RebalancerComparisonCalculator {
             )
         }
         for (group in dustSweepGroups.values) {
-            val groupValidation = AuthoritativeLedgerBalanceValidator.validate(authoritativeLedgerEvents + group)
+            val groupValidation = validateLedgerWalletScopes(authoritativeLedgerEvents + group, baseline)
             val authoritativeScopesPreserved = groupValidation.isValid && authoritativeLedgerEvents.all { ledger ->
                 val authoritativeScope = ledgerValidation.resolvedScopes[ledger.ledgerId]
                 authoritativeScope != null && groupValidation.resolvedScopes[ledger.ledgerId] == authoritativeScope
@@ -772,21 +772,7 @@ object RebalancerComparisonCalculator {
         // timestamped before an anchor is invested by the epoch in force and is then carried into the
         // next reset, while a contribution after the anchor uses the new epoch directly. Sorting is
         // stable, so a reset sharing a timestamp with a flow is applied by that flow's source order.
-        val benchmarkEvents = (benchmarkBuilt.events + configurationResetEvents).sortedBy { it.timestamp }
-        val unorderedAt = findUnorderedBenchmarkEventTimestamp(
-            events = benchmarkEvents,
-            baselineAssetSymbols = baseline.assets.keys
-                .map { Asset.normalizeLedgerAsset(it).uppercase() }
-                .toSet(),
-        )
-        if (unorderedAt != null) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                unavailableAt = unorderedAt,
-                baselineTimestamp = baseline.timestamp,
-            )
-        }
-
+        val candidateBenchmarkEvents = (benchmarkBuilt.events + configurationResetEvents).sortedBy { it.timestamp }
         val fullWalletReplay = reconstructFullWalletBalances(
             plan = passedBalanceResult.replayPlan,
             benchmarkEvents = benchmarkBuilt.events,
@@ -800,6 +786,28 @@ object RebalancerComparisonCalculator {
                 baselineTimestamp = baseline.timestamp,
             )
         }
+        val unorderedAt = findUnorderedBenchmarkEventTimestamp(
+            events = candidateBenchmarkEvents,
+            baselineAssetSymbols = baseline.assets.keys
+                .map { Asset.normalizeLedgerAsset(it).uppercase() }
+                .toSet(),
+            provenLedgerOrderPairs = fullWalletReplay.provenLedgerOrderPairs,
+        )
+        if (unorderedAt != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = unorderedAt,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+        val benchmarkEvents = orderBenchmarkEventsByProvenLedgerOrder(
+            events = candidateBenchmarkEvents,
+            provenLedgerOrderPairs = fullWalletReplay.provenLedgerOrderPairs,
+        ) ?: return unavailable(
+            reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+            unavailableAt = candidateBenchmarkEvents.firstOrNull()?.timestamp,
+            baselineTimestamp = baseline.timestamp,
+        )
         val hasPositiveObservationInterval = effectiveSnapshots.zipWithNext().any { (previous, current) ->
             val previousObservedAt = previous.balancesObservedAt ?: previous.timestamp
             val currentObservedAt = current.balancesObservedAt ?: current.timestamp
@@ -1060,6 +1068,7 @@ object RebalancerComparisonCalculator {
         val nonSpotBalancesBySnapshot: Map<PortfolioSnapshot, Map<String, BigDecimal>> = emptyMap(),
         val unsupportedTradeAt: Instant? = null,
         val unavailableReason: ComparisonUnavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+        val provenLedgerOrderPairs: Set<Pair<String, String>> = emptySet(),
     )
 
     private data class ScopedWalletAsset(
@@ -2222,6 +2231,7 @@ object RebalancerComparisonCalculator {
             val ledgerDelta: BigDecimal? = null,
             val walletScope: AuthoritativeLedgerBalanceValidator.LedgerWalletScope? = null,
         )
+        data class OrderedLedgerEvents(val events: List<ReplayEvent>, val provenOrderPairs: Set<Pair<String, String>>)
 
         val baseline = plan.baseline
         val completeInternalTransferGroups = plan.rawLedgerEvents
@@ -2659,44 +2669,182 @@ object RebalancerComparisonCalculator {
             return ordered.takeIf { it.size == trades.size }
         }
 
-        fun sameInstantLedgerOrder(ledgers: List<ReplayEvent>): List<ReplayEvent>? {
+        fun sameInstantLedgerOrder(
+            ledgers: List<ReplayEvent>,
+            currentSpotBalances: Map<String, BigDecimal>,
+            currentNonSpotBalances: Map<ScopedWalletAsset, BigDecimal>,
+        ): OrderedLedgerEvents? {
             val ordered = ledgers.sortedWith(compareBy(ReplayEvent::order, ReplayEvent::index)).toMutableList()
+            val provenOrderPairs = mutableSetOf<Pair<String, String>>()
             val chains = ledgers.filter { it.ledger?.hasAuthoritativeBalance == true }
                 .groupBy { event ->
                     val ledger = event.ledger ?: error("Authoritative ledger replay event is missing its ledger")
                     Asset.normalizeLedgerAsset(ledger.asset).uppercase() to
                         plan.resolvedLedgerScopes[ledger.ledgerId]
                 }
-            for (chain in chains.values.filter { it.size > 1 }) {
-                val checkpointOrder = chain.sortedWith(
-                    compareBy<ReplayEvent> { event ->
-                        val ledger = event.ledger ?: error("Authoritative ledger replay event is missing its ledger")
-                        ledger.balance.subtract(ledger.netBalanceDelta())
-                    }.thenBy(ReplayEvent::index),
-                )
-                val continuous = checkpointOrder.zipWithNext().all { (previous, current) ->
-                    val previousLedger = previous.ledger ?: return@all false
-                    val currentLedger = current.ledger ?: return@all false
-                    val currentBalanceBefore = currentLedger.balance.subtract(currentLedger.netBalanceDelta())
-                    previousLedger.balance.compareTo(currentBalanceBefore) == 0
+            for ((walletKey, chain) in chains) {
+                val (symbol, scope) = walletKey
+                val materialChain = chain.filter { event ->
+                    val ledger = event.ledger ?: error("Authoritative ledger replay event is missing its ledger")
+                    ledger.netBalanceDelta().signum() != 0
                 }
-                if (!continuous) return null
+                val zeroDeltaEvents = chain - materialChain.toSet()
+                val checkpointOrder = if (materialChain.size < 2) {
+                    materialChain
+                } else {
+                    val successors = materialChain.associateWith { mutableSetOf<ReplayEvent>() }
+                    val predecessors = materialChain.associateWith { mutableSetOf<ReplayEvent>() }
+                    for (first in materialChain) {
+                        val firstLedger = first.ledger
+                            ?: error("Authoritative ledger replay event is missing its ledger")
+                        for (second in materialChain) {
+                            if (first == second) continue
+                            val secondLedger = second.ledger
+                                ?: error("Authoritative ledger replay event is missing its ledger")
+                            val secondBalanceBefore = secondLedger.balance.subtract(secondLedger.netBalanceDelta())
+                            if (firstLedger.balance.compareTo(secondBalanceBefore) == 0) {
+                                successors.getValue(first).add(second)
+                                predecessors.getValue(second).add(first)
+                            }
+                        }
+                    }
+
+                    if (materialChain.any { successors.getValue(it).size > 1 }) return null
+                    val starts = materialChain.filter { predecessors.getValue(it).isEmpty() }
+                    val chainOrder = mutableListOf<ReplayEvent>()
+                    if (starts.size == 1) {
+                        var current: ReplayEvent? = starts.single()
+                        while (current != null && current !in chainOrder) {
+                            chainOrder += current
+                            current = successors.getValue(current).singleOrNull()
+                        }
+                        if (chainOrder.size != materialChain.size || current != null) return null
+                    } else {
+                        // A closed checkpoint cycle has no graph start. Accept it only when the
+                        // replay state proves exactly one entry point and one full traversal back
+                        // to that same balance; otherwise its event order remains ambiguous.
+                        if (starts.isNotEmpty() || materialChain.any { predecessors.getValue(it).size != 1 }) {
+                            return null
+                        }
+                        val openingBalance = if (scope == null ||
+                            scope == AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+                        ) {
+                            currentSpotBalances[symbol] ?: BigDecimal.ZERO
+                        } else {
+                            currentNonSpotBalances[ScopedWalletAsset(symbol, scope)] ?: return null
+                        }
+                        val anchoredStarts = materialChain.filter { event ->
+                            val ledger = event.ledger
+                                ?: error("Authoritative ledger replay event is missing its ledger")
+                            ledger.balance.subtract(ledger.netBalanceDelta()).compareTo(openingBalance) == 0
+                        }
+                        if (anchoredStarts.size != 1) return null
+                        val start = anchoredStarts.single()
+                        var current: ReplayEvent? = start
+                        while (current != null && current !in chainOrder) {
+                            chainOrder += current
+                            current = successors.getValue(current).singleOrNull()
+                        }
+                        if (chainOrder.size != materialChain.size || current != start) return null
+                        val closingBalance = chainOrder.last().ledger?.balance
+                            ?: error("Authoritative ledger replay event is missing its ledger")
+                        if (closingBalance.compareTo(openingBalance) != 0) return null
+                    }
+                    chainOrder
+                }
+
+                if (checkpointOrder.isEmpty()) {
+                    val firstZeroBalance = zeroDeltaEvents.firstOrNull()?.ledger?.balance
+                    if (zeroDeltaEvents.any { event ->
+                            val ledger = event.ledger
+                                ?: error("Authoritative ledger replay event is missing its ledger")
+                            ledger.balance.compareTo(firstZeroBalance ?: ledger.balance) != 0
+                        }
+                    ) {
+                        return null
+                    }
+                    continue
+                }
+
+                val checkpointBalances = buildList {
+                    val firstLedger = checkpointOrder.first().ledger
+                        ?: error("Authoritative ledger replay event is missing its ledger")
+                    add(firstLedger.balance.subtract(firstLedger.netBalanceDelta()))
+                    checkpointOrder.forEach { event ->
+                        val ledger = event.ledger
+                            ?: error("Authoritative ledger replay event is missing its ledger")
+                        add(ledger.balance)
+                    }
+                }
+                val zeroEventsByBoundary = mutableMapOf<Int, MutableList<ReplayEvent>>()
+                for (event in zeroDeltaEvents) {
+                    val ledger = event.ledger ?: error("Authoritative ledger replay event is missing its ledger")
+                    val matchingBoundaries = checkpointBalances.indices.filter { boundary ->
+                        checkpointBalances[boundary].compareTo(ledger.balance) == 0
+                    }
+                    if (matchingBoundaries.size != 1) return null
+                    zeroEventsByBoundary.getOrPut(matchingBoundaries.single()) { mutableListOf() }.add(event)
+                }
+
+                val orderedChain = buildList {
+                    checkpointOrder.forEachIndexed { index, event ->
+                        addAll(zeroEventsByBoundary[index].orEmpty().sortedBy(ReplayEvent::index))
+                        add(event)
+                    }
+                    addAll(
+                        zeroEventsByBoundary[checkpointOrder.size].orEmpty().sortedBy(ReplayEvent::index),
+                    )
+                }
                 val positions = ordered.indices.filter { ordered[it] in chain }
-                positions.forEachIndexed { index, position -> ordered[position] = checkpointOrder[index] }
+                positions.forEachIndexed { index, position -> ordered[position] = orderedChain[index] }
+
+                if (materialChain.size >= 2) {
+                    val zeroBoundaryById = zeroEventsByBoundary.flatMap { (boundary, eventsAtBoundary) ->
+                        eventsAtBoundary.mapNotNull { event ->
+                            event.ledger?.ledgerId?.let { it to boundary }
+                        }
+                    }.toMap()
+                    for (firstIndex in orderedChain.indices) {
+                        val firstLedger = orderedChain[firstIndex].ledger ?: continue
+                        for (secondIndex in firstIndex + 1 until orderedChain.size) {
+                            val secondLedger = orderedChain[secondIndex].ledger ?: continue
+                            val firstId = firstLedger.ledgerId
+                            val secondId = secondLedger.ledgerId
+                            val firstTime = firstLedger.time
+                            val secondTime = secondLedger.time
+                            if (firstTime != secondTime) continue
+                            val bothZeroAtSameBoundary = firstId in zeroBoundaryById &&
+                                zeroBoundaryById[firstId] == zeroBoundaryById[secondId]
+                            if (!bothZeroAtSameBoundary) provenOrderPairs += firstId to secondId
+                        }
+                    }
+                } else if (materialChain.size == 1 && zeroDeltaEvents.isNotEmpty()) {
+                    val materialLedger = checkpointOrder.single().ledger ?: continue
+                    val materialId = materialLedger.ledgerId
+                    for ((boundary, eventsAtBoundary) in zeroEventsByBoundary) {
+                        for (event in eventsAtBoundary) {
+                            val zeroId = event.ledger?.ledgerId ?: continue
+                            val zeroTime = event.ledger.time
+                            val materialTime = materialLedger.time
+                            if (zeroTime != materialTime) continue
+                            if (boundary == 0) {
+                                provenOrderPairs += zeroId to materialId
+                            } else {
+                                provenOrderPairs += materialId to zeroId
+                            }
+                        }
+                    }
+                }
             }
-            return ordered
+            return OrderedLedgerEvents(ordered, provenOrderPairs)
         }
 
         val events = mutableListOf<ReplayEvent>()
         for ((timestamp, sameInstantEvents) in replayEvents.groupBy(ReplayEvent::timestamp).toSortedMap()) {
             val sameInstantLedgers = sameInstantEvents.filter { it.trade == null }
-            val orderedLedgers = sameInstantLedgerOrder(sameInstantLedgers)
-                ?: return FullWalletBalanceReplayResult(
-                    balancesBySnapshot = emptyMap(),
-                    unsupportedTradeAt = timestamp,
-                    unavailableReason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                )
-            events += orderedLedgers
+            // Ledger ordering is resolved during replay, where the actual opening wallet
+            // balances can anchor an otherwise closed same-instant checkpoint cycle.
+            events += sameInstantLedgers.sortedWith(compareBy(ReplayEvent::order, ReplayEvent::index))
             val sameInstantTrades = sameInstantEvents.filter { it.trade != null }
             val orderedTrades = sameInstantTradeOrder(sameInstantTrades)
                 ?: return FullWalletBalanceReplayResult(
@@ -2733,13 +2881,33 @@ object RebalancerComparisonCalculator {
         val nonSpotBalances = plan.nonSpotBaselineBalances.toMutableMap()
         val result = mutableMapOf<PortfolioSnapshot, Map<String, BigDecimal>>()
         val nonSpotResult = mutableMapOf<PortfolioSnapshot, Map<String, BigDecimal>>()
+        val provenLedgerOrderPairs = mutableSetOf<Pair<String, String>>()
         var eventIndex = 0
         for (snapshot in plan.snapshots) {
             if (snapshot.timestamp < baseline.timestamp) continue
             while (eventIndex < events.size && events[eventIndex].timestamp <= snapshot.timestamp) {
                 val eventTimestamp = events[eventIndex].timestamp
-                do {
-                    val event = events[eventIndex]
+                var groupEnd = eventIndex + 1
+                while (groupEnd < events.size && events[groupEnd].timestamp == eventTimestamp) {
+                    groupEnd++
+                }
+                val sameInstantEvents = events.subList(eventIndex, groupEnd)
+                val orderedLedgers = sameInstantLedgerOrder(
+                    sameInstantEvents.filter { it.trade == null },
+                    balances,
+                    nonSpotBalances,
+                ) ?: return FullWalletBalanceReplayResult(
+                    balancesBySnapshot = emptyMap(),
+                    unsupportedTradeAt = eventTimestamp,
+                    unavailableReason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                )
+                val orderedTrades = sameInstantTradeOrder(sameInstantEvents.filter { it.trade != null })
+                    ?: return FullWalletBalanceReplayResult(
+                        balancesBySnapshot = emptyMap(),
+                        unsupportedTradeAt = eventTimestamp,
+                    )
+                provenLedgerOrderPairs += orderedLedgers.provenOrderPairs
+                for (event in orderedLedgers.events + orderedTrades) {
                     when {
                         event.trade != null -> {
                             val tradeReplay = event.tradeReplay ?: return FullWalletBalanceReplayResult(
@@ -2871,12 +3039,8 @@ object RebalancerComparisonCalculator {
                             }
                         }
                     }
-                    eventIndex++
-                } while (
-                    eventIndex < events.size &&
-                    events[eventIndex].timestamp == eventTimestamp &&
-                    events[eventIndex].timestamp <= snapshot.timestamp
-                )
+                }
+                eventIndex = groupEnd
                 if (balances.values.any { it.signum() < 0 }) {
                     return FullWalletBalanceReplayResult(
                         balancesBySnapshot = emptyMap(),
@@ -2925,6 +3089,7 @@ object RebalancerComparisonCalculator {
         return FullWalletBalanceReplayResult(
             balancesBySnapshot = result,
             nonSpotBalancesBySnapshot = nonSpotResult,
+            provenLedgerOrderPairs = provenLedgerOrderPairs,
         )
     }
 
@@ -3242,6 +3407,198 @@ object RebalancerComparisonCalculator {
         val ledgerDeltas: Map<Int, BigDecimal>,
     )
 
+    internal data class AnchoredSpotLedgerOrder(
+        val orderedLedgerIds: List<String>,
+        val isClosedCycle: Boolean,
+        val closingBalance: BigDecimal,
+    )
+
+    internal fun validateLedgerWalletScopes(
+        events: List<LedgerEvent>,
+        baseline: PortfolioSnapshot,
+    ): AuthoritativeLedgerBalanceValidator.ValidationResult {
+        val validation = AuthoritativeLedgerBalanceValidator.validate(events)
+        val failure = validation.failure ?: return validation
+        if (failure.detail != "ambiguous wallet scopes produce different aggregate balances") return validation
+
+        val failedAsset = Asset.normalizeLedgerAsset(failure.asset).uppercase()
+        val failedGroup = events.filter { event ->
+            Asset.normalizeLedgerAsset(event.asset).uppercase() == failedAsset && event.time == failure.currentTime
+        }
+        val openingBalance = normalizedAssetBalances(baseline)[failedAsset] ?: return validation
+        val baselineObservation = baseline.balancesObservedAt ?: return validation
+        if (failedGroup.size < 2 || failedGroup.any { event ->
+                event.time <= baselineObservation || !isFixedSpotCheckpointLedger(event)
+            }
+        ) {
+            return validation
+        }
+
+        val anchoredCycle = anchoredSpotLedgerOrder(failedGroup, openingBalance) ?: return validation
+        if (!anchoredCycle.isClosedCycle || anchoredCycle.orderedLedgerIds.size != failedGroup.size ||
+            anchoredCycle.closingBalance.compareTo(openingBalance) != 0
+        ) {
+            return validation
+        }
+
+        val failedLedgerIds = failedGroup.mapTo(mutableSetOf(), LedgerEvent::ledgerId)
+        val remainingEvents = events.filterNot { it.ledgerId in failedLedgerIds }
+        val remainingValidation = AuthoritativeLedgerBalanceValidator.validate(remainingEvents)
+        if (!remainingValidation.isValid) return validation
+
+        val otherSpotScopeExists = remainingEvents.any { event ->
+            remainingValidation.resolvedScopes[event.ledgerId] ==
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT &&
+                Asset.normalizeLedgerAsset(event.asset).uppercase() == failedAsset
+        }
+        val linkedRefidCounts = events.mapNotNull { event ->
+            event.refid?.trim()?.takeIf(String::isNotEmpty)
+        }.groupingBy { it }.eachCount()
+        // A non-null anchored order has already proved every member is an authoritative fixed Spot row.
+        val recoveredCheckpointCount = failedGroup.size
+        val recoveredGroupedCheckpointCount = failedGroup.count { event ->
+            val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
+            refid?.let { linkedRefidCounts.getValue(it) > 1 } == true
+        }
+
+        // Recovered rows are fixed Spot checkpoints, so only authoritative, grouped, and
+        // same-timestamp counts need to be added; trade/flexible and non-authoritative counts
+        // remain those of the validated remainder.
+        return remainingValidation.copy(
+            authoritativeCheckpointCount = remainingValidation.authoritativeCheckpointCount +
+                recoveredCheckpointCount,
+            validatedCheckpointCount = remainingValidation.validatedCheckpointCount + recoveredCheckpointCount,
+            groupedEventCheckpointCount = remainingValidation.groupedEventCheckpointCount +
+                recoveredGroupedCheckpointCount,
+            sameTimestampCheckpointCount = remainingValidation.sameTimestampCheckpointCount +
+                recoveredCheckpointCount,
+            scopeCount = remainingValidation.scopeCount + if (otherSpotScopeExists) 0 else 1,
+            resolvedScopes = remainingValidation.resolvedScopes + failedLedgerIds.associateWith {
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            },
+        )
+    }
+
+    /**
+     * Resolve an ordinary Spot checkpoint chain only when its opening balance and every
+     * same-instant transition prove one order. Zero-delta checkpoints must identify one unique
+     * boundary in that chain; repeated balances remain ambiguous even when a material cycle is
+     * anchored.
+     */
+    internal fun anchoredSpotLedgerOrder(
+        events: List<LedgerEvent>,
+        openingBalance: BigDecimal,
+    ): AnchoredSpotLedgerOrder? {
+        if (events.size < 2 || events.map(LedgerEvent::ledgerId).distinct().size != events.size) return null
+        val first = events.first()
+        val normalizedAsset = Asset.normalizeLedgerAsset(first.asset).uppercase()
+        if (events.any { event ->
+                !event.hasAuthoritativeBalance ||
+                    Asset.normalizeLedgerAsset(event.asset).uppercase() != normalizedAsset ||
+                    event.time != first.time ||
+                    !isFixedSpotCheckpointLedger(event)
+            }
+        ) {
+            return null
+        }
+
+        val materialIndexes = events.indices.filter { events[it].netBalanceDelta().signum() != 0 }
+        if (materialIndexes.isEmpty()) return null
+        val successors = materialIndexes.associateWith { mutableSetOf<Int>() }
+        val predecessors = materialIndexes.associateWith { mutableSetOf<Int>() }
+        for (firstIndex in materialIndexes) {
+            val firstLedger = events[firstIndex]
+            for (secondIndex in materialIndexes) {
+                if (firstIndex == secondIndex) continue
+                val secondLedger = events[secondIndex]
+                val secondBalanceBefore = secondLedger.balance.subtract(secondLedger.netBalanceDelta())
+                if (firstLedger.balance.compareTo(secondBalanceBefore) == 0) {
+                    successors.getValue(firstIndex).add(secondIndex)
+                    predecessors.getValue(secondIndex).add(firstIndex)
+                }
+            }
+        }
+        if (materialIndexes.any { index ->
+                successors.getValue(index).size > 1 || predecessors.getValue(index).size > 1
+            }
+        ) {
+            return null
+        }
+
+        val starts = materialIndexes.filter { predecessors.getValue(it).isEmpty() }
+        val materialOrder = mutableListOf<Int>()
+        val closedCycle: Boolean
+        if (starts.size == 1) {
+            closedCycle = false
+            var current: Int? = starts.single()
+            while (current != null && current !in materialOrder) {
+                materialOrder += current
+                current = successors.getValue(current).singleOrNull()
+            }
+            if (materialOrder.size != materialIndexes.size || current != null) return null
+            val firstLedger = events[materialOrder.first()]
+            if (firstLedger.balance.subtract(firstLedger.netBalanceDelta()).compareTo(openingBalance) != 0) {
+                return null
+            }
+        } else {
+            if (starts.isNotEmpty() || materialIndexes.any { predecessors.getValue(it).size != 1 }) return null
+            val anchoredStarts = materialIndexes.filter { index ->
+                val ledger = events[index]
+                ledger.balance.subtract(ledger.netBalanceDelta()).compareTo(openingBalance) == 0
+            }
+            if (anchoredStarts.size != 1) return null
+            closedCycle = true
+            val start = anchoredStarts.single()
+            var current: Int? = start
+            while (current != null && current !in materialOrder) {
+                materialOrder += current
+                current = successors.getValue(current).singleOrNull()
+            }
+            if (materialOrder.size != materialIndexes.size || current != start) return null
+            if (events[materialOrder.last()].balance.compareTo(openingBalance) != 0) return null
+        }
+
+        val checkpointBalances = buildList {
+            val firstLedger = events[materialOrder.first()]
+            add(firstLedger.balance.subtract(firstLedger.netBalanceDelta()))
+            materialOrder.forEach { index -> add(events[index].balance) }
+        }
+        val zeroEventsByBoundary = mutableMapOf<Int, MutableList<Int>>()
+        for (index in events.indices.filter { events[it].netBalanceDelta().signum() == 0 }) {
+            val balance = events[index].balance
+            val matchingBoundaries = checkpointBalances.indices.filter { boundary ->
+                checkpointBalances[boundary].compareTo(balance) == 0
+            }
+            if (matchingBoundaries.size != 1) return null
+            zeroEventsByBoundary.getOrPut(matchingBoundaries.single()) { mutableListOf() }.add(index)
+        }
+
+        val orderedIndexes = buildList {
+            materialOrder.forEachIndexed { boundary, index ->
+                addAll(zeroEventsByBoundary[boundary].orEmpty().sorted())
+                add(index)
+            }
+            addAll(zeroEventsByBoundary[materialOrder.size].orEmpty().sorted())
+        }
+        return AnchoredSpotLedgerOrder(
+            orderedLedgerIds = orderedIndexes.map { events[it].ledgerId },
+            isClosedCycle = closedCycle,
+            closingBalance = events[materialOrder.last()].balance,
+        )
+    }
+
+    private fun isFixedSpotCheckpointLedger(event: LedgerEvent): Boolean {
+        val type = event.type.trim().lowercase()
+        return type in setOf(
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+        ) && !LedgerFlowClassifier.isDocumentedInternalScopeMarker(event) &&
+            event.hasValidAmount && LedgerFlowClassifier.hasValidAmountShape(event) &&
+            event.hasValidFee && event.fee.signum() >= 0 &&
+            (event.fee.signum() == 0 || event.hasAuthoritativeFee)
+    }
+
     private fun findInitialAssignment(
         initialCandidates: List<LateCandidate>,
         regularTrades: List<IndexedValue<TradeRecord>>,
@@ -3272,6 +3629,73 @@ object RebalancerComparisonCalculator {
         val embeddedLedgers = mutableListOf<Int>()
         val postTrades = mutableListOf<Int>()
         val postLedgers = mutableListOf<Int>()
+        val initialLedgerCandidateIndexes = initialCandidates
+            .filterIsInstance<LateCandidate.Ledger>()
+            .mapTo(mutableSetOf()) { it.index }
+        val forcedPostLedgerIndexes = mutableSetOf<Int>()
+        val provenInitialLedgerChains = mutableMapOf<Instant, MutableList<List<String>>>()
+        val candidateLedgerEvents = (
+            initialCandidates.filterIsInstance<LateCandidate.Ledger>()
+                .map { IndexedValue(it.index, it.ledger) } + regularLedgers
+            ).distinctBy { it.index }
+        val candidateTradesAtBoundary = initialCandidates.filterIsInstance<LateCandidate.Trade>()
+            .map { it.trade } + regularTrades.map { it.value }
+        val currentSnapshotBalances = normalizedAssetBalances(snapshot)
+        for (
+        group in candidateLedgerEvents.groupBy { event ->
+            event.value.time to Asset.normalizeLedgerAsset(event.value.asset).uppercase()
+        }.values
+        ) {
+            if (group.none { it.index in initialLedgerCandidateIndexes }) continue
+            val first = group.first().value
+            val symbol = Asset.normalizeLedgerAsset(first.asset).uppercase()
+            val openingBalance = startingBalances[symbol] ?: continue
+            val closingBalance = currentSnapshotBalances[symbol] ?: continue
+            val interactsWithTrade = candidateTradesAtBoundary.any { trade ->
+                trade.timestamp == first.time && tradeTouchesAssets(trade, setOf(symbol))
+            }
+            if (interactsWithTrade) continue
+            val chain = anchoredSpotLedgerOrder(group.map { it.value }, openingBalance)
+                ?: continue
+            if (chain.closingBalance.compareTo(closingBalance) != 0) continue
+            forcedPostLedgerIndexes += group
+                .filter { it.index in initialLedgerCandidateIndexes }
+                .map { it.index }
+            provenInitialLedgerChains.getOrPut(first.time) { mutableListOf() } += chain.orderedLedgerIds
+        }
+
+        fun orderPostLedgerEvents(events: List<IndexedValue<LedgerEvent>>): List<IndexedValue<LedgerEvent>> =
+            events.groupBy { it.value.time }.toSortedMap().values.flatMap { sameTimestampEvents ->
+                val positionsByLedgerId = sameTimestampEvents.mapIndexed { index, event ->
+                    event.value.ledgerId to index
+                }.toMap()
+                val predecessors = sameTimestampEvents.indices.associateWith { mutableSetOf<Int>() }
+                val successors = sameTimestampEvents.indices.associateWith { mutableSetOf<Int>() }
+                for (ledgerIds in provenInitialLedgerChains[sameTimestampEvents.first().value.time].orEmpty()) {
+                    val chainPositions = ledgerIds.mapNotNull(positionsByLedgerId::get)
+                    for ((previous, next) in chainPositions.zipWithNext()) {
+                        successors.getValue(previous).add(next)
+                        predecessors.getValue(next).add(previous)
+                    }
+                }
+                val ready = sameTimestampEvents.indices.filter {
+                    predecessors.getValue(it).isEmpty()
+                }.toMutableList()
+                val ordered = mutableListOf<IndexedValue<LedgerEvent>>()
+                while (ready.isNotEmpty()) {
+                    val next = ready.removeAt(0)
+                    ordered += sameTimestampEvents[next]
+                    for (successor in successors.getValue(next)) {
+                        val remaining = predecessors.getValue(successor)
+                        remaining -= next
+                        if (remaining.isEmpty()) {
+                            ready += successor
+                            ready.sort()
+                        }
+                    }
+                }
+                if (ordered.size == sameTimestampEvents.size) ordered else sameTimestampEvents
+            }
 
         fun search(position: Int) {
             if (multipleMatches) return
@@ -3285,13 +3709,14 @@ object RebalancerComparisonCalculator {
                         .map { IndexedValue((it as LateCandidate.Trade).index, it.trade) } +
                         regularTrades
                 val postLedgerEvents =
-                    initialCandidates
-                        .filter { it is LateCandidate.Ledger && it.index in postLedgers }
-                        .map {
-                            val candidate = it as LateCandidate.Ledger
-                            IndexedValue(candidate.index, candidate.ledger)
-                        } +
-                        regularLedgers
+                    orderPostLedgerEvents(
+                        initialCandidates
+                            .filter { it is LateCandidate.Ledger && it.index in postLedgers }
+                            .map {
+                                val candidate = it as LateCandidate.Ledger
+                                IndexedValue(candidate.index, candidate.ledger)
+                            } + regularLedgers,
+                    )
 
                 val ledgerDeltas = mutableMapOf<Int, BigDecimal>()
                 for (event in buildIntervalEvents(postTradeEvents, postLedgerEvents)) {
@@ -3368,6 +3793,12 @@ object RebalancerComparisonCalculator {
             }
 
             val candidate = initialCandidates[position]
+            if (candidate is LateCandidate.Ledger && candidate.index in forcedPostLedgerIndexes) {
+                postLedgers.add(candidate.index)
+                search(position + 1)
+                postLedgers.removeAt(postLedgers.lastIndex)
+                return
+            }
             when (candidate) {
                 is LateCandidate.Trade -> embeddedTrades.add(candidate.index)
                 is LateCandidate.Ledger -> embeddedLedgers.add(candidate.index)
@@ -4683,29 +5114,118 @@ object RebalancerComparisonCalculator {
      * Event timestamps alone do not establish whether a balance movement was
      * applied before or after an owner flow. Additive movements in established
      * baseline assets are safe, but owner withdrawals and same-instant owner
-     * contributions are not commutative with balance reductions.
+     * contributions are not commutative with balance reductions. A unique
+     * authoritative checkpoint chain proves order for rows at the same instant.
      */
+    private fun benchmarkEventSourceLedgerIds(event: BenchmarkEvent): Set<String> = when (event) {
+        is BenchmarkEvent.ExternalBalance -> event.sourceLedgerIds.toSet()
+        is BenchmarkEvent.OwnerContribution -> event.sourceLedgerIds.toSet()
+        is BenchmarkEvent.OwnerWithdrawal -> event.sourceLedgerIds.toSet()
+        is BenchmarkEvent.ConfigurationReset -> emptySet()
+    }
+
+    private fun hasProvenLedgerOrder(
+        firstTimestamp: Instant,
+        firstIds: Set<String>,
+        secondTimestamp: Instant,
+        secondIds: Set<String>,
+        provenLedgerOrderPairs: Set<Pair<String, String>>,
+    ): Boolean {
+        if (firstTimestamp != secondTimestamp || firstIds.isEmpty() || secondIds.isEmpty()) return false
+        return firstIds.all { firstId ->
+            secondIds.all { secondId -> firstId to secondId in provenLedgerOrderPairs }
+        }
+    }
+
+    private fun orderBenchmarkEventsByProvenLedgerOrder(
+        events: List<BenchmarkEvent>,
+        provenLedgerOrderPairs: Set<Pair<String, String>>,
+    ): List<BenchmarkEvent>? {
+        val ordered = mutableListOf<BenchmarkEvent>()
+        for ((_, sameInstantEvents) in events.groupBy(BenchmarkEvent::timestamp).toSortedMap()) {
+            val predecessors = sameInstantEvents.indices.associateWith { mutableSetOf<Int>() }
+            val successors = sameInstantEvents.indices.associateWith { mutableSetOf<Int>() }
+            for (firstIndex in sameInstantEvents.indices) {
+                val first = sameInstantEvents[firstIndex]
+                for (secondIndex in firstIndex + 1 until sameInstantEvents.size) {
+                    val second = sameInstantEvents[secondIndex]
+                    val firstBeforeSecond = hasProvenLedgerOrder(
+                        first.timestamp,
+                        benchmarkEventSourceLedgerIds(first),
+                        second.timestamp,
+                        benchmarkEventSourceLedgerIds(second),
+                        provenLedgerOrderPairs,
+                    )
+                    val secondBeforeFirst = hasProvenLedgerOrder(
+                        second.timestamp,
+                        benchmarkEventSourceLedgerIds(second),
+                        first.timestamp,
+                        benchmarkEventSourceLedgerIds(first),
+                        provenLedgerOrderPairs,
+                    )
+                    if (firstBeforeSecond && secondBeforeFirst) return null
+                    when {
+                        firstBeforeSecond -> {
+                            successors.getValue(firstIndex).add(secondIndex)
+                            predecessors.getValue(secondIndex).add(firstIndex)
+                        }
+
+                        secondBeforeFirst -> {
+                            successors.getValue(secondIndex).add(firstIndex)
+                            predecessors.getValue(firstIndex).add(secondIndex)
+                        }
+                    }
+                }
+            }
+
+            val ready = sameInstantEvents.indices.filter { predecessors.getValue(it).isEmpty() }
+                .toMutableList()
+            val groupOrder = mutableListOf<Int>()
+            while (ready.isNotEmpty()) {
+                val next = ready.removeAt(0)
+                groupOrder += next
+                for (successor in successors.getValue(next)) {
+                    val remainingPredecessors = predecessors.getValue(successor)
+                    remainingPredecessors -= next
+                    if (remainingPredecessors.isEmpty()) {
+                        ready += successor
+                        ready.sort()
+                    }
+                }
+            }
+            if (groupOrder.size != sameInstantEvents.size) return null
+            ordered += groupOrder.map(sameInstantEvents::get)
+        }
+        return ordered
+    }
+
     private fun findUnorderedBenchmarkEventTimestamp(
         events: List<BenchmarkEvent>,
         baselineAssetSymbols: Set<String>,
+        provenLedgerOrderPairs: Set<Pair<String, String>>,
     ): Instant? {
         val ownerContributions = events.filterIsInstance<BenchmarkEvent.OwnerContribution>()
         val ownerWithdrawals = events.filterIsInstance<BenchmarkEvent.OwnerWithdrawal>()
         val externalBalances = events.filterIsInstance<BenchmarkEvent.ExternalBalance>()
-        val balanceMovements: List<BenchmarkEvent> = externalBalances
-        val movementAssetsByEvent = buildMap<BenchmarkEvent, Set<String>> {
+        // A zero-value checkpoint still constrains actual ledger replay, but it has no synthetic
+        // balance effect and cannot make an owner flow's benchmark ordering ambiguous.
+        val balanceMovements: List<BenchmarkEvent.ExternalBalance> = externalBalances.filter {
+            it.netAmount.signum() != 0
+        }
+        val movementAssetsByEvent = buildMap<BenchmarkEvent.ExternalBalance, Set<String>> {
             externalBalances.forEach { event ->
                 put(event, setOf(Asset.normalizeLedgerAsset(event.asset).uppercase()))
             }
         }
 
-        fun eventDistanceMillis(first: BenchmarkEvent, second: BenchmarkEvent): Long =
-            kotlin.math.abs(first.timestamp.toEpochMilli() - second.timestamp.toEpochMilli())
+        fun eventDistanceMillis(first: Instant, second: Instant): Long =
+            kotlin.math.abs(first.toEpochMilli() - second.toEpochMilli())
 
         data class SourceInteraction(
             val timestamp: Instant,
             val sourceEventTimestamps: Set<Instant>,
             val assets: Set<String>,
+            val sourceLedgerIds: Set<String>,
         )
 
         val ownerContributionInteractions = ownerContributions.map { event ->
@@ -4713,6 +5233,7 @@ object RebalancerComparisonCalculator {
                 timestamp = event.timestamp,
                 sourceEventTimestamps = event.sourceEventTimestamps,
                 assets = event.allocations.keys,
+                sourceLedgerIds = event.sourceLedgerIds.toSet(),
             )
         }
         val ownerWithdrawalInteractions = ownerWithdrawals.map { event ->
@@ -4720,6 +5241,20 @@ object RebalancerComparisonCalculator {
                 timestamp = event.timestamp,
                 sourceEventTimestamps = event.sourceEventTimestamps,
                 assets = baselineAssetSymbols,
+                sourceLedgerIds = event.sourceLedgerIds.toSet(),
+            )
+        }
+        // Contributions are allocated by the fixed anchor weights, so they only add units to
+        // assets already held at inception. Positive credits in those established assets stay
+        // additive regardless of ledger ordering; a negative movement can instead be scaled
+        // against different synthetic holdings and makes the ordering material.
+        val contributionBalanceMovements = externalBalances.filter { it.netAmount.signum() < 0 }
+        val externalMovementInteractions = contributionBalanceMovements.map { event ->
+            SourceInteraction(
+                timestamp = event.timestamp,
+                sourceEventTimestamps = setOf(event.event.time),
+                assets = movementAssetsByEvent.getValue(event),
+                sourceLedgerIds = event.sourceLedgerIds.toSet(),
             )
         }
 
@@ -4729,13 +5264,57 @@ object RebalancerComparisonCalculator {
                     second.asSequence()
                         .filter { right ->
                             left !== right &&
-                                eventDistanceMillis(left, right) < MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS
+                                eventDistanceMillis(left.timestamp, right.timestamp) <
+                                MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS &&
+                                !hasProvenLedgerOrder(
+                                    left.timestamp,
+                                    benchmarkEventSourceLedgerIds(left),
+                                    right.timestamp,
+                                    benchmarkEventSourceLedgerIds(right),
+                                    provenLedgerOrderPairs,
+                                ) &&
+                                !hasProvenLedgerOrder(
+                                    right.timestamp,
+                                    benchmarkEventSourceLedgerIds(right),
+                                    left.timestamp,
+                                    benchmarkEventSourceLedgerIds(left),
+                                    provenLedgerOrderPairs,
+                                )
                         }
                         .map { right ->
                             minOf(left.timestamp, right.timestamp)
                         }
                 }
                 .minOrNull()
+
+        fun earliestNearAssetOverlapPairTimestamp(
+            first: List<SourceInteraction>,
+            second: List<SourceInteraction>,
+        ): Instant? = first.asSequence()
+            .flatMap { left ->
+                second.asSequence()
+                    .filter { right ->
+                        eventDistanceMillis(left.timestamp, right.timestamp) <
+                            MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS &&
+                            left.assets.any { it in right.assets } &&
+                            !hasProvenLedgerOrder(
+                                left.timestamp,
+                                left.sourceLedgerIds,
+                                right.timestamp,
+                                right.sourceLedgerIds,
+                                provenLedgerOrderPairs,
+                            ) &&
+                            !hasProvenLedgerOrder(
+                                right.timestamp,
+                                right.sourceLedgerIds,
+                                left.timestamp,
+                                left.sourceLedgerIds,
+                                provenLedgerOrderPairs,
+                            )
+                    }
+                    .map { right -> minOf(left.timestamp, right.timestamp) }
+            }
+            .minOrNull()
 
         fun earliestSourceOverlapPairTimestamp(
             first: List<SourceInteraction>,
@@ -4748,7 +5327,21 @@ object RebalancerComparisonCalculator {
                             left.sourceEventTimestamps.any { it in right.sourceEventTimestamps } &&
                             left.assets.any {
                                 it in right.assets
-                            }
+                            } &&
+                            !hasProvenLedgerOrder(
+                                left.timestamp,
+                                left.sourceLedgerIds,
+                                right.timestamp,
+                                right.sourceLedgerIds,
+                                provenLedgerOrderPairs,
+                            ) &&
+                            !hasProvenLedgerOrder(
+                                right.timestamp,
+                                right.sourceLedgerIds,
+                                left.timestamp,
+                                left.sourceLedgerIds,
+                                provenLedgerOrderPairs,
+                            )
                     }
                     .map { right -> minOf(left.timestamp, right.timestamp) }
             }
@@ -4763,6 +5356,10 @@ object RebalancerComparisonCalculator {
             withdrawalMovementCandidates,
         )?.let(unorderedTimes::add)
         earliestNearPairTimestamp(ownerContributions, ownerWithdrawals)?.let(unorderedTimes::add)
+        earliestNearAssetOverlapPairTimestamp(
+            ownerContributionInteractions,
+            externalMovementInteractions,
+        )?.let(unorderedTimes::add)
 
         earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, ownerContributionInteractions)
             ?.let(unorderedTimes::add)

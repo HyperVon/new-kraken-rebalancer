@@ -21,7 +21,7 @@ private var syncIntervalId: Int? = null
 internal fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
-            loadHistoryAfterSync()
+            consumeHistoryLoad(loadHistoryAfterSync())
         } else {
             syncIntervalId?.let { window.clearInterval(it) }
             syncIntervalId =
@@ -33,7 +33,7 @@ internal fun setupSyncProgressAndLoad() {
                     checkSyncProgress().then { done ->
                         if (done) {
                             syncIntervalId?.let { window.clearInterval(it) }
-                            loadHistoryAfterSync()
+                            consumeHistoryLoad(loadHistoryAfterSync())
                         }
                     }
                 }, PrecisionConstants.SYNC_POLL_INTERVAL_MS)
@@ -47,15 +47,16 @@ internal fun setupSyncProgressAndLoad() {
             val range = btn.getAttribute(HtmlAttrs.DATA_RANGE) ?: TimeRange.THIRTY_DAYS.key
             HistoryViewPrefs.markCurrentViewModified()
             syncTimeRangeButtons(range)
-            loadAll(range)
+            consumeHistoryLoad(loadAll(range))
         })
     }
 
     val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement
     checkbox?.addEventListener(HtmlEvents.CHANGE, {
         HistoryViewPrefs.markCurrentViewModified()
-        renderTradeTable(allTrades)
-        buildCumulativeNetCashFlowChart(allTrades, checkbox.checked)
+        if (historyTradesAvailable) {
+            rerenderHistoryTradesForDryRunFilter(checkbox.checked)
+        }
         try {
             HistorySessionState.save()
         } catch (_: Throwable) {
@@ -106,6 +107,13 @@ private fun fetchJSON(url: String): Promise<dynamic> = window
         res.json()
     }
 
+/** Attach a rejection handler to History loads started by UI callbacks that cannot return a Promise. */
+internal fun consumeHistoryLoad(promise: Promise<Unit>) {
+    promise.`catch` { error: dynamic ->
+        console.error("Error loading History data", error)
+    }
+}
+
 private fun loadGroup(
     requestGeneration: Long,
     url: String,
@@ -127,31 +135,64 @@ private fun loadGroup(
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
     val requestGeneration = ++historyLoadGeneration
+    clearHistoryCoreLoadError()
+    clearHistoryCoreData()
 
-    val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-
-    // Each dataset renders as soon as its own response resolves: one failing or
-    // slow endpoint must not blank the other charts. Only the comparison endpoint
-    // gets its own visible error state; a comparison failure stays isolated to the
-    // comparison chart and never rolls the range back — only a core dataset
-    // failure rolls the range controls back to the last successfully loaded range.
+    // Each dataset renders as soon as its own response resolves. If one core endpoint
+    // fails, clear only that group's previous-range data and leave other successful or
+    // still-pending groups alone. The selected range remains the range all groups target.
     val corePromises = arrayOf(
-        loadGroup(requestGeneration, Routes.API_HISTORY_SNAPSHOTS.withRange(range)) { raw ->
+        loadGroup(
+            requestGeneration,
+            Routes.API_HISTORY_SNAPSHOTS.withRange(range),
+            onError = {
+                clearSnapshotCharts()
+                showHistoryCoreLoadError()
+            },
+        ) { raw ->
             val snapshots = parsePortfolioSnapshots(raw)
             buildPortfolioValueChart(snapshots)
             buildAssetHoldingsChart(snapshots)
             buildAllocationDriftChart(snapshots)
         },
-        loadGroup(requestGeneration, Routes.API_HISTORY_TRADES.withRange(range)) { raw ->
+        loadGroup(
+            requestGeneration,
+            Routes.API_HISTORY_TRADES.withRange(range),
+            onError = {
+                historyTradesAvailable = false
+                allTrades = emptyList()
+                document.getElementById(HtmlIds.TRADE_TABLE_BODY)?.innerHTML = ""
+                clearChart(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART)
+                showHistoryCoreLoadError()
+            },
+        ) { raw ->
             val trades = parseTradeRecords(raw)
             allTrades = trades
+            historyTradesAvailable = true
             renderTradeTable(trades)
+            val showDryRun =
+                (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
             buildCumulativeNetCashFlowChart(trades, showDryRun)
         },
-        loadGroup(requestGeneration, Routes.API_HISTORY_STATS.withRange(range)) { raw ->
+        loadGroup(
+            requestGeneration,
+            Routes.API_HISTORY_STATS.withRange(range),
+            onError = {
+                clearHistoryStats()
+                showHistoryCoreLoadError()
+            },
+        ) { raw ->
             updateStats(parseHistoryStats(raw))
         },
-        loadGroup(requestGeneration, Routes.API_HISTORY_REWARDS.withRange(range)) { raw ->
+        loadGroup(
+            requestGeneration,
+            Routes.API_HISTORY_REWARDS.withRange(range),
+            onError = {
+                clearChart(HtmlIds.REWARDS_CHART)
+                document.getElementById(HtmlIds.REWARDS_TOTAL)?.textContent = ViewText.PLACEHOLDER_DASHES
+                showHistoryCoreLoadError()
+            },
+        ) { raw ->
             buildRewardsChart(parseRewardsOverTime(raw))
         },
     )
@@ -178,12 +219,61 @@ internal fun loadAll(range: String): Promise<Unit> {
         .`catch` { error: dynamic ->
             val throwable = error as? Throwable ?: Throwable(error?.toString())
             if (requestGeneration == historyLoadGeneration) {
-                currentRange = loadedRange
-                syncTimeRangeButtons(currentRange)
-                historyRollbackPresetVisibility()
                 throw throwable
             }
         }
+}
+
+private fun clearHistoryCoreData() {
+    clearSnapshotCharts()
+    historyTradesAvailable = false
+    allTrades = emptyList()
+    document.getElementById(HtmlIds.TRADE_TABLE_BODY)?.innerHTML = ""
+    clearChart(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART)
+    clearHistoryStats()
+    clearChart(HtmlIds.REWARDS_CHART)
+    document.getElementById(HtmlIds.REWARDS_TOTAL)?.textContent = ViewText.PLACEHOLDER_DASHES
+}
+
+private fun clearSnapshotCharts() {
+    clearChart(HtmlIds.PORTFOLIO_VALUE_CHART)
+    clearChart(HtmlIds.ASSET_HOLDINGS_CHART)
+    clearChart(HtmlIds.ALLOCATION_DRIFT_CHART)
+}
+
+private fun clearHistoryStats() {
+    document.getElementById(HtmlIds.STAT_ATH_TITLE)?.textContent =
+        if (currentRange == TimeRange.ALL.key) ViewText.HISTORY_ALL_TIME_HIGH else ViewText.PERIOD_HIGH
+    listOf(
+        HtmlIds.STAT_ATH,
+        HtmlIds.STAT_TOTAL_TRADES,
+        HtmlIds.STAT_TOTAL_VOLUME,
+        HtmlIds.STAT_TOTAL_FEES,
+        HtmlIds.STAT_AVG_FEE_RATE,
+        HtmlIds.STAT_AVG_SLIPPAGE,
+    ).forEach { id -> document.getElementById(id)?.textContent = ViewText.PLACEHOLDER_DASHES }
+}
+
+private fun clearHistoryCoreLoadError() {
+    document.getElementById(HtmlIds.HISTORY_CORE_LOAD_ERROR)?.let { error ->
+        error.textContent = ""
+        error.classList.remove(CssClass.Utility.Visible.value)
+        error.classList.add(CssClass.Utility.Hidden.value)
+    }
+}
+
+private fun showHistoryCoreLoadError() {
+    document.getElementById(HtmlIds.HISTORY_CORE_LOAD_ERROR)?.let { error ->
+        error.textContent = ViewText.HISTORY_CORE_LOAD_ERROR
+        error.classList.remove(CssClass.Utility.Hidden.value)
+        error.classList.add(CssClass.Utility.Visible.value)
+    }
+}
+
+internal fun rerenderHistoryTradesForDryRunFilter(includeDryRun: Boolean) {
+    if (!historyTradesAvailable) return
+    renderTradeTable(allTrades)
+    buildCumulativeNetCashFlowChart(allTrades, includeDryRun)
 }
 
 internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS)

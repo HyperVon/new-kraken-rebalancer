@@ -65,6 +65,8 @@ Precedence is simulation first (even if dry run is also on), then dry run, then
 live. The plate reflects your Settings, and hovering it reveals a tooltip
 explaining the consequence (e.g. "Live trading — real orders execute with real
 funds").
+Dashboard updates also refresh the plate, including after Settings are changed
+in another tab.
 
 The header also includes a loop control on every page. Its state pill shows
 **RUNNING** or **PAUSED**; choose the labeled **Pause** action to stop new rebalance
@@ -102,7 +104,7 @@ The top of the Dashboard is a hero card plus two tiles:
 
 | Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta when a true ≥24h baseline exists (green up / red down / muted flat), current **drawdown**, and an inline **sparkline** of recent retained snapshots. |
+| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta when a true ≥24h baseline exists (green up / red down / muted flat), or an explicit unavailable label when it does not; current **drawdown** and an inline **sparkline** of recent retained snapshots. |
 | **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, plus **effective** target % after drawdown-based fiat deployment (and the configured **Base** target when they differ) and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
@@ -233,11 +235,15 @@ active and the Settings form shows the validation error.
 ### Target allocations
 
 <p><a href="images/settings-allocations.png"><img src="images/settings-allocations.png" alt="Settings - safety modes and the target allocation editor with quality scores" width="720"></a></p>
+<p><a href="images/settings-allocations-phone.png"><img src="images/settings-allocations-phone.png" alt="Settings - target allocations on a phone" width="390"></a></p>
 
 Each allocation row carries a symbol, a color swatch, an optional **Quality
-score**, a **Target** percent, and **Remove**. Rows sit in auto-fitting columns
-that never narrow enough to crowd the fields, and the two numeric fields are
-labelled so a score is never mistaken for a target.
+score**, a **Target** percent, and **Remove**. On wider screens, rows sit in
+auto-fitting columns sized for all controls. On phone screens, the symbol and
+**Remove** action share the first row, with the swatch, score, and target below;
+the two numeric fields stay labelled so a score is never mistaken for a target.
+The score-preview and Add Asset controls wrap below their fields when space is
+limited.
 
 - Target percent is bounded to **0–100%** by the percent input itself.
 - **Quality score** is optional and runs **0–10**. It is a preference input, not
@@ -319,7 +325,10 @@ Deeper behavior (drawdown deployment, sell-then-buy, dust) is documented in
 
 The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
-all six summary cards and the charts update together.
+all six summary cards and the charts use that window. Datasets appear as their
+requests finish. If a request fails, its old data is cleared and a retry message
+appears; successful datasets remain visible for the selected window. Select the
+same range again to retry. A comparison failure has its own unavailable message.
 
 The selected window controls which reconciled points are displayed; it does not
 shorten the accounting evidence used to build the comparison. Buy & Hold and

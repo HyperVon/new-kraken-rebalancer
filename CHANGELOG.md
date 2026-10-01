@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.86] - 2026-09-30
+
+### Fixed
+
+- **History recovery receipts require complete page evidence**: reject malformed envelopes,
+  missing totals, empty pages, and raw or decoded page sizes that disagree with Kraken's advertised
+  count; invalidate older recovery receipts.
+- **ATH replay fails closed on malformed fills**: validate economics inside the replay window
+  before applying capital-flow scaling, and propagate cancellation during historical basis lookup.
+- **Same-timestamp ledger debits retain their proven order**: follow balance checkpoint links
+  rather than sorting balances, and reject ambiguous or disconnected chains.
+- **Operator mutations reject forged CSRF cookies and other ports**: authenticate tokens with
+  a process secret and require an exact request origin when browser origin evidence is present.
+- **Dashboard mode and intent resolution remain visible**: refresh the mode plate with live
+  fragments and return browser-appropriate resolution feedback without replacing the page with JSON.
+- **Dashboard 24H change survives dense recent history**: fetch the retained baseline outside the
+  latest 50 snapshots and label the delta explicitly when no valid baseline is available.
+- **Baseline-anchored wallet-scope recovery also applies to dust sweeps**: preserve opaque staking
+  assignments when a later same-instant Spot cycle is needed to resolve rounded checkpoint
+  ambiguity.
+- **Settings allocation controls fit phone screens**: reflow each row and wrap the score-preview
+  and Add Asset actions so the target and Remove controls remain within the viewport.
+- **History failures cannot relabel stale data**: retain the requested range, clear failed
+  datasets, show a retry message, ignore callbacks from superseded loads, and apply dry-run filter
+  changes made while data is loading.
+- **Settings validation feedback survives background requests**: clear it only when an operator
+  submits another settings or preview request.
+- **Pre-migration backups include committed WAL data**: create a consistent SQLite snapshot
+  instead of copying the database file after an unchecked checkpoint.
+- **Dependabot alerts #140 and #141**: pin `webpack-dev-middleware` to patched 8.3.0 or later
+  and override markdownlint-cli's vulnerable `js-yaml` range with patched 5.4.1.
+- **NPM audit transitive dependencies**: update `brace-expansion` to 5.0.12, `fast-uri` to 3.1.8,
+  and `markdown-it` to 14.3.2 within the existing compatible ranges.
+
 ## [6.17.85] - 2026-09-29
 
 ### Changed

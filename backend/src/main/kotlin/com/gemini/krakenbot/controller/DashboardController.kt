@@ -28,6 +28,8 @@ import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.component.SettingsAllocationFormValue
+import com.gemini.krakenbot.view.component.SettingsFormValues
 import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.CssClass
@@ -39,6 +41,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.modePlate
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.symbolColorMap
 import io.ktor.http.ContentType
@@ -77,6 +80,13 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+
+private const val HX_REQUEST_HEADER = "HX-Request"
+private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
+private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
+private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
+private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
+private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
 
 class DashboardController(
     private val tradeHistoryService: TradeHistoryService,
@@ -220,17 +230,7 @@ class DashboardController(
     private suspend fun RoutingContext.handlePostSettings() {
         val params = call.receiveParameters()
         if (!CsrfProtection.isValid(call, params)) {
-            val token = CsrfProtection.rotateToken(call)
-            call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
-            call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
-            call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
-            respondSettingsFormError(
-                config = configService.getConfig(),
-                message = ViewText.CSRF_SESSION_EXPIRED,
-                csrfToken = token,
-                paused = portfolioManager.isLoopPaused(),
-                status = HttpStatusCode.Forbidden,
-            )
+            respondSettingsCsrfFailure(params, QualityAllocation.DEFAULT_EMPHASIS)
             return
         }
         historyEvidenceCoordinator.withLock {
@@ -404,17 +404,7 @@ class DashboardController(
     private suspend fun RoutingContext.handlePostSettingsAllocationsPreview() {
         val params = call.receiveParameters()
         if (!CsrfProtection.isValid(call, params)) {
-            val token = CsrfProtection.rotateToken(call)
-            call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
-            call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
-            call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
-            respondSettingsFormError(
-                config = configService.getConfig(),
-                message = ViewText.CSRF_SESSION_EXPIRED,
-                csrfToken = token,
-                paused = portfolioManager.isLoopPaused(),
-                status = HttpStatusCode.Forbidden,
-            )
+            respondSettingsCsrfFailure(params, QualityAllocation.FALLBACK_EMPHASIS)
             return
         }
 
@@ -749,6 +739,71 @@ class DashboardController(
         return values.single()
     }
 
+    private suspend fun RoutingContext.respondSettingsCsrfFailure(params: Parameters, defaultScoreEmphasis: Int) {
+        if (!CsrfProtection.hasExplicitSameOrigin(call)) {
+            call.respond(HttpStatusCode.Forbidden)
+            return
+        }
+
+        val token = CsrfProtection.currentToken(call)
+        call.response.header(CSRF_TOKEN_RESPONSE_HEADER, token)
+        if (call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)) {
+            // A browser can retain all edited controls in place while refreshing their CSRF token.
+            call.response.header(CSRF_SESSION_EXPIRED_HEADER, "true")
+            call.respond(HttpStatusCode.Forbidden)
+            return
+        }
+
+        // Native form posts replace the document, so render the submitted values for recovery.
+        respondSettingsFormError(
+            config = configService.getConfig(),
+            message = ViewText.CSRF_SESSION_EXPIRED,
+            csrfToken = token,
+            paused = portfolioManager.isLoopPaused(),
+            status = HttpStatusCode.Forbidden,
+            formValues = params.toSettingsFormValues(defaultScoreEmphasis),
+        )
+    }
+
+    private fun Parameters.toSettingsFormValues(defaultScoreEmphasis: Int): SettingsFormValues {
+        fun singleValue(name: String): String = getAll(name)?.singleOrNull().orEmpty()
+
+        val symbols = getAll(FormFields.SYMBOLS).orEmpty()
+        val targets = getAll(FormFields.TARGETS).orEmpty()
+        val colors = getAll(FormFields.COLORS).orEmpty()
+        val scores = getAll(FormFields.SCORES).orEmpty()
+        val allocationRowCount = maxOf(symbols.size, targets.size, colors.size, scores.size)
+
+        return SettingsFormValues(
+            loopDelaySeconds = singleValue(FormFields.LOOP_DELAY_SECONDS),
+            deviationTriggerPercent = singleValue(FormFields.DEVIATION_TRIGGER_PERCENT),
+            minimumOrderSizeUsd = singleValue(FormFields.MINIMUM_ORDER_SIZE_USD),
+            fiatMaxDrawdown = singleValue(FormFields.FIAT_MAX_DRAWDOWN),
+            fiatDeploymentExponent = singleValue(FormFields.FIAT_DEPLOYMENT_EXPONENT),
+            // The settings parser treats an omitted or blank threshold as zero.
+            fiatDeploymentThresholdPercent = this[FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT]
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: "0.0",
+            inceptionDate = this[FormFields.INCEPTION_DATE].orEmpty(),
+            comparisonStartDate = this[FormFields.COMPARISON_START_DATE].orEmpty(),
+            simulation = this[FormFields.SIMULATION] != null,
+            dryRun = this[FormFields.DRY_RUN] != null,
+            allocations = (0 until allocationRowCount).map { index ->
+                SettingsAllocationFormValue(
+                    symbol = symbols.getOrNull(index).orEmpty(),
+                    targetPercent = targets.getOrNull(index).orEmpty(),
+                    color = colors.getOrNull(index).orEmpty(),
+                    score = scores.getOrNull(index).orEmpty(),
+                )
+            },
+            // A missing preview control follows computeAllocationPreview's fallback. On a save,
+            // the rendered settings page's documented default is retained instead.
+            scoreEmphasis = this[FormFields.SCORE_EMPHASIS] ?: defaultScoreEmphasis.toString(),
+            scoreSleevePercent = this[FormFields.SCORE_SLEEVE_PERCENT].orEmpty(),
+        )
+    }
+
     private fun String?.requiredLong(message: String): Long = requireNotNull(this?.toLongOrNull()) { message }
 
     private fun String?.requiredFiniteDouble(message: String): Double {
@@ -763,7 +818,9 @@ class DashboardController(
         csrfToken: String,
         paused: Boolean,
         status: HttpStatusCode,
+        formValues: SettingsFormValues? = null,
     ) {
+        call.response.header(ERROR_FRAGMENT_HEADER, SETTINGS_FORM_ERROR_FRAGMENT)
         val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
         val errHtml =
             createHTML(prettyPrint = false).div {
@@ -776,6 +833,7 @@ class DashboardController(
                     inceptionDisplay,
                     null,
                     laterStartProposalAsync = true,
+                    formValues = formValues,
                 )
             }
         call.respondText(errHtml, ContentType.Text.Html, status)
@@ -838,11 +896,13 @@ class DashboardController(
     private suspend fun RoutingContext.handleGetDashboardFragment() {
         val history = tradeHistoryService.getHistory()
         val latest = history.firstOrNull()
-        val allocations = configService.getConfig().allocations
+        val config = configService.getConfig()
+        val allocations = config.allocations
 
         if (latest == null) {
             val noSnapshotHtml =
                 createHTML(prettyPrint = false).div(CssClass.Loading.SpinnerContainer.value) {
+                    modePlate(config.settings, outOfBand = true)
                     h2(CssClass.Dashboard.WaitingTitle.value) {
                         +ViewText.WAITING_FIRST_CYCLE
                     }
@@ -854,7 +914,17 @@ class DashboardController(
             return
         }
 
-        val delta24h = PortfolioCalculations.compute24hDelta(latest, history)
+        val cutoff24h = latest.timestamp.minus(1, ChronoUnit.DAYS)
+        val historyForDelta =
+            if (history.any { it.timestamp <= cutoff24h }) {
+                history
+            } else {
+                // Persisted times have millisecond precision. Advance one millisecond so the strict-before lookup
+                // includes a snapshot exactly at the cutoff.
+                val baseline = tradeHistoryService.getSnapshotBefore(cutoff24h.plusMillis(1))
+                history + listOfNotNull(baseline)
+            }
+        val delta24h = PortfolioCalculations.compute24hDelta(latest, historyForDelta)
         val unresolvedIntents = orderIntentService.getUnresolvedIntents()
         val csrfToken = CsrfProtection.issueToken(call)
         val html =
@@ -862,11 +932,12 @@ class DashboardController(
                 dashboardView.renderDashboardFragment(
                     latest = latest,
                     history = history,
+                    settings = config.settings,
                     allocations = allocations,
                     delta24h = delta24h,
                     unresolvedIntents = unresolvedIntents,
                     csrfToken = csrfToken,
-                    qualityScores = configService.getConfig().settings.qualityScores
+                    qualityScores = config.settings.qualityScores
                         .mapValues { BigDecimal.valueOf(it.value) },
                 )
             }
@@ -979,6 +1050,18 @@ class DashboardController(
     private suspend fun RoutingContext.requireCsrf(): Boolean {
         val params = call.receiveParameters()
         if (CsrfProtection.isValid(call, params)) return true
+        if (
+            call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true) &&
+            CsrfProtection.hasExplicitSameOrigin(call)
+        ) {
+            val token = CsrfProtection.currentToken(call)
+            call.response.header(CSRF_TOKEN_RESPONSE_HEADER, token)
+            call.response.header(CSRF_SESSION_EXPIRED_HEADER, "true")
+            // The request is rejected. The browser updates its hidden token and explains that the
+            // operator must retry, including when an expired cookie and an old form token differ.
+            call.respond(HttpStatusCode.Forbidden)
+            return false
+        }
         call.respond(HttpStatusCode.Forbidden)
         return false
     }
@@ -1000,13 +1083,29 @@ class DashboardController(
     private suspend fun RoutingContext.handlePostOrderIntentResolution() {
         val params = call.receiveParameters()
         if (!CsrfProtection.isValid(call, params)) {
-            call.respond(HttpStatusCode.Forbidden)
+            val isHtmxRequest = call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)
+            if (isHtmxRequest && !CsrfProtection.hasExplicitSameOrigin(call)) {
+                call.respond(HttpStatusCode.Forbidden)
+                return
+            }
+            if (isHtmxRequest) {
+                val staleTokenPair = CsrfProtection.isRefreshableStaleTokenPair(call, params)
+                val token = CsrfProtection.currentToken(call)
+                call.response.header(CSRF_TOKEN_RESPONSE_HEADER, token)
+                if (staleTokenPair) {
+                    call.response.header(CSRF_SESSION_EXPIRED_HEADER, "true")
+                }
+            }
+            respondOrderIntentError(ViewText.CSRF_SESSION_EXPIRED, HttpStatusCode.Forbidden)
             return
         }
 
         val id = call.parameters["id"]?.toIntOrNull()
         if (id == null || id <= 0) {
-            respondJson(mapOf("error" to "Order intent id must be a positive integer."), HttpStatusCode.BadRequest)
+            respondOrderIntentError(
+                "Order intent id must be a positive integer.",
+                HttpStatusCode.BadRequest,
+            )
             return
         }
 
@@ -1016,8 +1115,8 @@ class DashboardController(
             null
         }
         if (state == null) {
-            respondJson(
-                mapOf("error" to "Resolution state must be CONFIRMED or REJECTED."),
+            respondOrderIntentError(
+                "Resolution state must be CONFIRMED or REJECTED.",
                 HttpStatusCode.UnprocessableEntity,
             )
             return
@@ -1036,15 +1135,39 @@ class DashboardController(
                     orderTxid = orderTxid,
                 )
             }
-            respondJson(mapOf("resolved" to true, "id" to id, "state" to state.name))
+            if (call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)) {
+                call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
+                call.respond(HttpStatusCode.OK)
+            } else {
+                respondJson(mapOf("resolved" to true, "id" to id, "state" to state.name))
+            }
         } catch (e: IllegalArgumentException) {
-            respondJson(
-                mapOf("error" to (e.message ?: "Invalid order intent resolution.")),
+            respondOrderIntentError(
+                e.message ?: "Invalid order intent resolution.",
                 HttpStatusCode.UnprocessableEntity,
             )
         } catch (e: IllegalStateException) {
-            respondJson(mapOf("error" to (e.message ?: "Order intent could not be resolved.")), HttpStatusCode.Conflict)
+            respondOrderIntentError(
+                e.message ?: "Order intent could not be resolved.",
+                HttpStatusCode.Conflict,
+            )
         }
+    }
+
+    private suspend fun RoutingContext.respondOrderIntentError(message: String, status: HttpStatusCode) {
+        if (!call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)) {
+            respondJson(mapOf("error" to message), status)
+            return
+        }
+
+        call.response.header(ERROR_FRAGMENT_HEADER, ORDER_INTENT_ERROR_FRAGMENT)
+        call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.SWAP_OUTER_HTML)
+        call.response.header(HtmxHeaders.HX_RETARGET, "#${HtmlIds.ORDER_INTENT_FEEDBACK}")
+        val html = createHTML(prettyPrint = false).div(CssClass.Utility.ErrorBanner.value) {
+            id = HtmlIds.ORDER_INTENT_FEEDBACK
+            +message
+        }
+        call.respondText(html, ContentType.Text.Html, status)
     }
 
     private suspend fun buildHealthResponse(): Pair<Map<String, Any?>, Boolean> {

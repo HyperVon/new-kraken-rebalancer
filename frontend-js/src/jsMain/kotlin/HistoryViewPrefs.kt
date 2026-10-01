@@ -314,7 +314,7 @@ object HistoryViewPrefs {
             val id = select.value
             if (id.isNotBlank()) {
                 userInteracted = true
-                applyView(id)
+                consumeHistoryLoad(applyView(id))
             }
         })
 
@@ -372,7 +372,7 @@ object HistoryViewPrefs {
                     if (current.defaultId == id) HistoryViewIds.OVERVIEW else current.defaultId
                 val updated = HistoryViewsStore(defaultId = newDefault, views = remaining)
                 saveStore(mergeBuiltIns(updated))
-                applyView(newDefault)
+                consumeHistoryLoad(applyView(newDefault))
             },
         )
     }

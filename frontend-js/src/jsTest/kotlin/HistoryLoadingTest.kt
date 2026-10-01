@@ -24,7 +24,93 @@ import kotlin.js.json
 class HistoryLoadingTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private fun historyDomWithCoreLoadError(): String = TestDomBuilders.historyDom() +
+        """
+            <div id="stat-ath-title"></div>
+            <div id="history-core-load-error" class="error-banner hidden"></div>
+        """.trimIndent()
+
     init {
+        "dry-run filter changes during loading persist and apply to the completed chart" {
+            resetHistoryUiState()
+            HistorySessionState.clear()
+            HistoryViewPrefs.resetInteractionState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyViewsDom()
+            document.body!!.appendChild(container)
+            val chartConfigs = mutableListOf<dynamic>()
+            window.asDynamic().Chart = mockChartConstructor { config -> chartConfigs.add(config) }
+            val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
+            window.asDynamic().fetch = { url: String ->
+                if (url == "/api/history/sync-progress") {
+                    Promise.resolve(okFetchResponse(json("seeded" to true, "offset" to "5", "total" to "10")))
+                } else {
+                    val response: dynamic = json()
+                    response.ok = true
+                    response.status = 200
+                    response.json = {
+                        Promise { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
+                            bodyResolvers[url] = resolve
+                        }
+                    }
+                    Promise.resolve<dynamic>(response)
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                setupSyncProgressAndLoad()
+                awaitPromiseQueue()
+                val range = currentRange
+                val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement
+                historyTradesAvailable shouldBe false
+                checkbox.checked = false
+                val changeEvent = document.createEvent("Event")
+                changeEvent.initEvent("change", bubbles = true, cancelable = true)
+                checkbox.dispatchEvent(changeEvent)
+
+                HistorySessionState.load()?.showDryRun shouldBe false
+                HistoryViewPrefs.hasUserInteracted() shouldBe true
+
+                bodyResolvers.getValue("/api/history/snapshots?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/trades?range=$range")(
+                    arrayOf(
+                        tradeRecordToDynamic(mockTradeRecord(symbol = Asset.ETH, dryRun = true)),
+                        tradeRecordToDynamic(mockTradeRecord(symbol = Asset.BTC, dryRun = false)),
+                    ),
+                )
+                bodyResolvers.getValue("/api/history/stats?range=$range")(
+                    historyStatsToDynamic(mockPortfolioStatsRecord()),
+                )
+                bodyResolvers.getValue("/api/history/rewards?range=$range")(
+                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
+                )
+                bodyResolvers.getValue("/api/history/comparison?range=$range")(
+                    rebalancerComparisonToDynamic(mockAvailableComparison()),
+                )
+                awaitPromiseQueue()
+
+                historyTradesAvailable shouldBe true
+                chartConfigs.any { config ->
+                    (config.data.datasets[0].label as String) == ViewText.NET_CASH_FLOW_REALIZED
+                }.shouldBeTrue()
+
+                checkbox.checked = true
+                val loadedChangeEvent = document.createEvent("Event")
+                loadedChangeEvent.initEvent("change", bubbles = true, cancelable = true)
+                checkbox.dispatchEvent(loadedChangeEvent)
+                HistorySessionState.load()?.showDryRun shouldBe true
+                chartConfigs.any { config ->
+                    (config.data.datasets[0].label as String) == ViewText.NET_CASH_FLOW_ALL
+                }.shouldBeTrue()
+            } finally {
+                document.body!!.removeChild(container)
+                HistorySessionState.clear()
+                HistoryViewPrefs.resetInteractionState()
+                resetHistoryUiState()
+            }
+        }
+
         "loadAll and checkSyncProgress update history content" {
             val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.historyDom()
@@ -163,8 +249,12 @@ class HistoryLoadingTest : StringSpec() {
             }
         }
 
-        "loadAll ignores an older range failure after the newest request completes" {
+        "a stale core failure cannot clear newer data or show the core error" {
             resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = historyDomWithCoreLoadError()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
             val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
             val bodyRejectors = mutableMapOf<String, (Throwable) -> Unit>()
             window.asDynamic().fetch = { url: String ->
@@ -182,9 +272,11 @@ class HistoryLoadingTest : StringSpec() {
 
             fun resolveRange(range: String) {
                 bodyResolvers.getValue("/api/history/snapshots?range=$range")(emptyArray<dynamic>())
-                bodyResolvers.getValue("/api/history/trades?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/trades?range=$range")(
+                    arrayOf(tradeRecordToDynamic(mockTradeRecord(symbol = Asset.ETH))),
+                )
                 bodyResolvers.getValue("/api/history/stats?range=$range")(
-                    historyStatsToDynamic(mockPortfolioStatsRecord()),
+                    historyStatsToDynamic(mockPortfolioStatsRecord(totalTradesExecuted = 2L)),
                 )
                 bodyResolvers.getValue("/api/history/rewards?range=$range")(
                     json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
@@ -192,10 +284,8 @@ class HistoryLoadingTest : StringSpec() {
             }
 
             try {
-                // The superseded load never rejects through the range controls: only the
-                // comparison endpoint fails, and its detached chain keeps the stale
-                // rejection from touching the current generation.
-                loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
+                registerHistoryGlobals()
+                val older = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
                 val newest = loadAll(TimeRange.ALL.key)
                 awaitPromiseQueue()
 
@@ -203,24 +293,19 @@ class HistoryLoadingTest : StringSpec() {
                 newest.await()
 
                 bodyRejectors.getValue(
-                    "/api/history/comparison?range=${TimeRange.TWENTY_FOUR_HOURS.key}",
-                )(RuntimeException("obsolete comparison failed"))
-                awaitPromiseQueue()
+                    "/api/history/snapshots?range=${TimeRange.TWENTY_FOUR_HOURS.key}",
+                )(RuntimeException("obsolete snapshots failed"))
+                older.await()
 
                 currentRange shouldBe TimeRange.ALL.key
                 loadedRange shouldBe TimeRange.ALL.key
-
-                // Core failures still reject the CURRENT range load and roll it back.
-                val current = loadAll(TimeRange.SEVEN_DAYS.key)
-                awaitPromiseQueue()
-                bodyRejectors.getValue(
-                    "/api/history/snapshots?range=${TimeRange.SEVEN_DAYS.key}",
-                )(RuntimeException("current request failed"))
-                try {
-                    current.await()
-                } catch (_: Throwable) {
-                }
+                document.getElementById("stat-total-trades")?.textContent shouldBe "2"
+                document.getElementById("trade-table-body")?.innerHTML.orEmpty() shouldContain
+                    "${Asset.ETH}/${Asset.USD}"
+                (document.getElementById("history-core-load-error") as HTMLElement)
+                    .classList.contains("visible") shouldBe false
             } finally {
+                document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
         }
@@ -228,7 +313,7 @@ class HistoryLoadingTest : StringSpec() {
         "loadAll rejects with the HTTP failure surfaced by the res.ok check" {
             resetHistoryUiState()
             val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom()
+            container.innerHTML = historyDomWithCoreLoadError()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
             window.asDynamic().fetch = { url: String ->
@@ -249,7 +334,10 @@ class HistoryLoadingTest : StringSpec() {
                 } catch (error: Throwable) {
                     (error.message ?: "").startsWith(ViewText.HTTP_FETCH_FAILED) shouldBe true
                 }
-                currentRange shouldBe loadedRange
+                currentRange shouldBe TimeRange.SEVEN_DAYS.key
+                loadedRange shouldBe TimeRange.THIRTY_DAYS.key
+                (document.getElementById("history-core-load-error") as HTMLElement)
+                    .classList.contains("visible") shouldBe true
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -379,11 +467,10 @@ class HistoryLoadingTest : StringSpec() {
             }
         }
 
-        "loadAll rolls back even when a failure value is not a Throwable" {
+        "loadAll keeps the requested range when a failure value is not a Throwable" {
             resetHistoryUiState()
             val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom() +
-                "<div id=\"stat-ath-title\"></div>"
+            container.innerHTML = historyDomWithCoreLoadError()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
             window.asDynamic().fetch = mockFetch { url ->
@@ -413,18 +500,20 @@ class HistoryLoadingTest : StringSpec() {
                     "$error".contains("raw-js-failure") shouldBe true
                 }
 
-                currentRange shouldBe TimeRange.ALL.key
+                currentRange shouldBe TimeRange.SEVEN_DAYS.key
+                loadedRange shouldBe TimeRange.ALL.key
+                (document.getElementById("history-core-load-error") as HTMLElement)
+                    .classList.contains("visible") shouldBe true
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
         }
 
-        "loadAll keeps the last successful range label when the selected range fails" {
+        "loadAll keeps the requested All range and ATH caption after another core group fails" {
             resetHistoryUiState()
             val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom() +
-                "<div id=\"stat-ath-title\"></div>"
+            container.innerHTML = historyDomWithCoreLoadError()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
             window.asDynamic().fetch = mockFetch { url ->
@@ -438,8 +527,8 @@ class HistoryLoadingTest : StringSpec() {
             registerHistoryGlobals()
 
             try {
-                loadAll(TimeRange.ALL.key).await()
-                document.getElementById("stat-ath-title")?.textContent shouldBe "All-Time High"
+                loadAll(TimeRange.SEVEN_DAYS.key).await()
+                document.getElementById("stat-ath-title")?.textContent shouldBe "Period High"
 
                 window.asDynamic().fetch = { url: String ->
                     if (url.contains("snapshots")) {
@@ -450,7 +539,7 @@ class HistoryLoadingTest : StringSpec() {
                         )
                     }
                 }
-                val failed = loadAll(TimeRange.SEVEN_DAYS.key)
+                val failed = loadAll(TimeRange.ALL.key)
                 try {
                     failed.await()
                 } catch (error: Throwable) {
@@ -458,20 +547,166 @@ class HistoryLoadingTest : StringSpec() {
                 }
 
                 currentRange shouldBe TimeRange.ALL.key
-                // Partial rendering: the failed range's successfully-loaded groups still
-                // rendered; only the range selection rolled back to the last success.
-                document.getElementById("stat-ath-title")?.textContent shouldBe "Period High"
+                loadedRange shouldBe TimeRange.SEVEN_DAYS.key
+                // The stats endpoint succeeded for All while snapshots failed; the ATH label
+                // stays consistent with the still-selected range and the failed charts clear.
+                document.getElementById("stat-ath-title")?.textContent shouldBe "All-Time High"
                 document.getElementById("stat-ath")?.textContent shouldBe "$9,000.00"
+                charts.containsKey(HtmlIds.PORTFOLIO_VALUE_CHART) shouldBe false
+                (document.getElementById("history-core-load-error") as HTMLElement)
+                    .textContent shouldBe "Some History data could not be loaded for this range. " +
+                    "Select the range again to retry."
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
         }
 
-        "failed view preset load rolls back to the previous visibility" {
+        "core endpoint failures clear only unavailable data and a retry restores it" {
             resetHistoryUiState()
             val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom()
+            container.innerHTML = historyDomWithCoreLoadError()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+
+            var failedEndpoint: String? = null
+            window.asDynamic().fetch = { url: String ->
+                val failedRangeUrl = failedEndpoint?.let { endpoint ->
+                    "/api/history/$endpoint?range=${TimeRange.SEVEN_DAYS.key}"
+                }
+                if (failedRangeUrl != null && url.contains(failedRangeUrl)) {
+                    Promise.reject(RuntimeException("$failedEndpoint failed"))
+                } else {
+                    val response: dynamic = when {
+                        url.contains("snapshots") ->
+                            arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord(totalValueUSD = "222")))
+
+                        url.contains("trades") ->
+                            arrayOf(
+                                tradeRecordToDynamic(
+                                    mockTradeRecord(symbol = Asset.ETH, usdAmount = "222", dryRun = true),
+                                ),
+                            )
+
+                        url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+
+                        url.contains("rewards") ->
+                            json(
+                                "totalRewardsUSD" to "12.34",
+                                "points" to
+                                    arrayOf(
+                                        json(
+                                            "timestamp" to "2026-07-01T12:00:00Z",
+                                            "cumulativeUSD" to "12.34",
+                                            "perAssetUSD" to json(Asset.ETH to "12.34"),
+                                        ),
+                                    ),
+                            )
+
+                        else ->
+                            historyStatsToDynamic(
+                                mockPortfolioStatsRecord(
+                                    allTimeHigh = "9000",
+                                    totalTradesExecuted = 77L,
+                                ),
+                            )
+                    }
+                    Promise.resolve(okFetchResponse(response))
+                }
+            }
+
+            try {
+                listOf("snapshots", "trades", "stats", "rewards").forEach { endpoint ->
+                    failedEndpoint = null
+                    loadAll(TimeRange.ALL.key).await()
+                    charts.containsKey(HtmlIds.PORTFOLIO_VALUE_CHART) shouldBe true
+                    charts.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe true
+                    charts.containsKey(HtmlIds.REWARDS_CHART) shouldBe true
+                    document.getElementById("trade-table-body")?.innerHTML.orEmpty() shouldContain
+                        "${Asset.ETH}/${Asset.USD}"
+                    document.getElementById("stat-total-trades")?.textContent shouldBe "77"
+                    document.getElementById("rewards-total")?.textContent shouldBe "$12.34"
+
+                    failedEndpoint = endpoint
+                    val failed = loadAll(TimeRange.SEVEN_DAYS.key)
+                    var failureMessage: String? = null
+                    try {
+                        failed.await()
+                    } catch (error: Throwable) {
+                        failureMessage = error.message
+                    }
+                    failureMessage shouldBe "$endpoint failed"
+                    awaitPromiseQueue()
+
+                    currentRange shouldBe TimeRange.SEVEN_DAYS.key
+                    loadedRange shouldBe TimeRange.ALL.key
+                    (document.getElementById("history-core-load-error") as HTMLElement)
+                        .classList.contains(CssClass.Utility.Visible.value) shouldBe true
+                    when (endpoint) {
+                        "snapshots" -> {
+                            charts.containsKey(HtmlIds.PORTFOLIO_VALUE_CHART) shouldBe false
+                            charts.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe true
+                        }
+
+                        "trades" -> {
+                            historyTradesAvailable shouldBe false
+                            allTrades shouldBe emptyList()
+                            document.getElementById("trade-table-body")?.innerHTML shouldBe ""
+                            charts.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe false
+                            rerenderHistoryTradesForDryRunFilter(includeDryRun = false)
+                            document.getElementById("trade-table-body")?.innerHTML shouldBe ""
+                            charts.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe false
+                        }
+
+                        "stats" -> {
+                            listOf(
+                                "stat-ath",
+                                "stat-total-trades",
+                                "stat-total-volume",
+                                "stat-total-fees",
+                                "stat-avg-fee-rate",
+                                "stat-avg-slippage",
+                            ).forEach { statId ->
+                                document.getElementById(statId)?.textContent shouldBe ViewText.PLACEHOLDER_DASHES
+                            }
+                            document.getElementById("stat-ath-title")?.textContent shouldBe "Period High"
+                        }
+
+                        "rewards" -> {
+                            charts.containsKey(HtmlIds.REWARDS_CHART) shouldBe false
+                            document.getElementById("rewards-total")?.textContent shouldBe ViewText.PLACEHOLDER_DASHES
+                        }
+                    }
+
+                    failedEndpoint = null
+                    val retry = loadAll(TimeRange.SEVEN_DAYS.key)
+                    val errorBanner = document.getElementById("history-core-load-error") as HTMLElement
+                    errorBanner.classList.contains(CssClass.Utility.Visible.value) shouldBe false
+                    errorBanner.classList.contains(CssClass.Utility.Hidden.value) shouldBe true
+                    retry.await()
+
+                    loadedRange shouldBe TimeRange.SEVEN_DAYS.key
+                    charts.containsKey(HtmlIds.PORTFOLIO_VALUE_CHART) shouldBe true
+                    charts.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe true
+                    charts.containsKey(HtmlIds.REWARDS_CHART) shouldBe true
+                    historyTradesAvailable shouldBe true
+                    document.getElementById("trade-table-body")?.innerHTML.orEmpty() shouldContain
+                        "${Asset.ETH}/${Asset.USD}"
+                    document.getElementById("stat-total-trades")?.textContent shouldBe "77"
+                    document.getElementById("rewards-total")?.textContent shouldBe "$12.34"
+                }
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "failed preset load keeps its requested range and visibility while rejecting to callers" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = historyDomWithCoreLoadError() +
+                "<select id=\"history-views-select\"></select>"
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
             registerHistoryGlobals()
@@ -483,7 +718,6 @@ class HistoryLoadingTest : StringSpec() {
                 )
 
                 val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == "day-total" }
-                historyApplyVisibility(dayTotal.visibility)
 
                 window.asDynamic().fetch = { url: String ->
                     if (url.contains("snapshots")) {
@@ -492,17 +726,18 @@ class HistoryLoadingTest : StringSpec() {
                         Promise.resolve(okFetchResponse(json()))
                     }
                 }
-                val failed = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
+                val failed = HistoryViewPrefs.applyView(dayTotal.id)
                 try {
                     failed.await()
                 } catch (error: Throwable) {
                     error.message shouldBe "preset load failed"
                 }
 
-                visibilityStates["portfolio-value-chart"] shouldBe mapOf(
-                    ChartProps.DATASET_VISIBILITY_DEFAULT to true,
-                    Asset.BTC to false,
-                )
+                currentRange shouldBe TimeRange.TWENTY_FOUR_HOURS.key
+                (document.getElementById("history-views-select") as HTMLSelectElement).value shouldBe dayTotal.id
+                visibilityStates shouldBe dayTotal.visibility
+                (document.getElementById("history-core-load-error") as HTMLElement)
+                    .classList.contains("visible") shouldBe true
 
                 window.asDynamic().fetch = mockFetch { url ->
                     when {
@@ -514,11 +749,8 @@ class HistoryLoadingTest : StringSpec() {
                 }
                 loadAll(TimeRange.SEVEN_DAYS.key).await()
 
-                // The failed preset's hidden flags (default=false, Day · Total only) were never applied.
-                visibilityStates["portfolio-value-chart"] shouldBe mapOf(
-                    ChartProps.DATASET_VISIBILITY_DEFAULT to true,
-                    Asset.BTC to false,
-                )
+                // The selected preset remains coherent when its delayed charts later load.
+                visibilityStates shouldBe dayTotal.visibility
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

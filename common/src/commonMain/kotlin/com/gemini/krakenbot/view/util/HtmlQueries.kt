@@ -3,6 +3,7 @@ package com.gemini.krakenbot.view.util
 /** DOM selectors shared by server-rendered HTML and the Kotlin/JS client. */
 object HtmlQueries {
     const val CSRF_TOKEN = "#${HtmlIds.CSRF_TOKEN}"
+    const val CSRF_TOKEN_FIELDS = "${HtmlTags.INPUT}[name=\"${FormFields.CSRF_TOKEN}\"]"
     val DATA_AGE_VALUE = CssClass.DataAge.Value.querySelector
     val DATA_AGE_TIME = CssClass.DataAge.Time.querySelector
     val STATUS_BADGE = CssClass.StatusCard.Badge.querySelector

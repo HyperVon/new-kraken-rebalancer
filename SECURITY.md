@@ -107,7 +107,7 @@ with live keys. CORS is not a substitute for network access control or user
 authentication.
 
 Settings, operator loop-control, and live-order-resolution mutations use a
-double-submit CSRF token. The
+signed double-submit CSRF token authenticated with a random process secret. The
 Settings page issues an `HttpOnly`, `SameSite=Strict` cookie and embeds the
 matching token in forms; POST requests without both values are rejected. This
 covers `/settings`, `/api/pause`, `/api/resume`, and
@@ -115,8 +115,20 @@ covers `/settings`, `/api/pause`, `/api/resume`, and
 plaintext HTTP requests because the intended private-network deployment
 supports HTTP LAN access (though `; Secure` is automatically appended when
 requests arrive over HTTPS). The cookie includes `Max-Age=86400`. This reduces
-cross-site form submission risk without requiring authentication or
-restricting trusted LAN clients from opening the Settings page.
+cross-site form submission risk without requiring authentication. Tokens copied
+from another server or forged by setting a cookie are rejected. Restarting the
+server invalidates existing tokens. A rejected same-origin browser request
+receives a replacement token and must be submitted again; reloading the page
+also obtains a fresh pair. When `Origin` or `Referer` is present, it must pass
+the local/private-origin policy and its scheme, host, and effective port must
+match the request origin exactly. This prevents a public DNS-rebound hostname
+from authorizing itself through a matching `Host` header. CORS allowances do
+not broaden this mutation check. Opening the UI directly at the server laptop's
+LAN address and port from another LAN computer uses the same origin and remains
+supported.
+Reverse proxies must preserve a verifiable request origin; arbitrary
+forwarded headers are not trusted. Clients without either browser header still
+need a valid issued token and matching cookie.
 
 For safe operation:
 

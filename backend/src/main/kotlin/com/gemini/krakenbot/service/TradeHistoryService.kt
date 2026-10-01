@@ -17,6 +17,9 @@ interface TradeHistoryService {
 
     suspend fun getHistory(): List<PortfolioSnapshot>
 
+    /** Loads the newest retained snapshot strictly before [timestamp]. */
+    suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot?
+
     suspend fun getLatestSnapshot(): PortfolioSnapshot?
 
     fun getHistoryFlow(): Flow<PortfolioSnapshot>

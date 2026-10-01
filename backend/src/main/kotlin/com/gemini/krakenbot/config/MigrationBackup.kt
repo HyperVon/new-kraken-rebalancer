@@ -2,9 +2,13 @@ package com.gemini.krakenbot.config
 
 import org.jetbrains.exposed.v1.core.Table
 import org.slf4j.LoggerFactory
+import org.sqlite.SQLiteConnection
+import org.sqlite.SQLiteErrorCode
 import java.io.File
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.nio.file.Path
+import java.nio.file.attribute.DosFileAttributeView
+import java.nio.file.attribute.PosixFileAttributeView
 import java.sql.DriverManager
 import java.time.Instant
 
@@ -50,20 +54,77 @@ internal fun backupBeforeMigrationIfNeeded(dbPath: String, tables: Array<Table>)
     val databaseFile = resolveFileBackedDatabase(dbPath) ?: return
     if (!databaseFile.isFile || databaseFile.length() == 0L || !requiresMigrationBackup(databaseFile, tables)) return
 
-    val source = databaseFile.toPath()
-    val backup = source.resolveSibling(
-        "${source.fileName}.pre-migration-${Instant.now().toEpochMilli()}.bak",
-    )
+    val source = databaseFile.toPath().toAbsolutePath()
+    val backup = source.resolveSibling("${source.fileName}.pre-migration-${Instant.now().toEpochMilli()}.bak")
+    var temporaryBackup: Path? = null
+    var publishedBackup = false
     try {
+        val tempBackup = Files.createTempFile(
+            source.parent,
+            "${source.fileName}.pre-migration-",
+            ".tmp",
+        )
+        temporaryBackup = tempBackup
         DriverManager.getConnection("jdbc:sqlite:${databaseFile.path}").use { connection ->
-            connection.createStatement().use { statement ->
-                statement.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            val resultCode = connection.unwrap(SQLiteConnection::class.java).getDatabase()
+                .backup("main", tempBackup.toAbsolutePath().toString(), null)
+            check(resultCode == SQLiteErrorCode.SQLITE_OK.code) {
+                "SQLite online backup failed with result code $resultCode"
             }
         }
-        Files.copy(source, backup, StandardCopyOption.COPY_ATTRIBUTES)
+        makeStandaloneSqliteFile(tempBackup)
+        copySupportedFilePermissions(source, tempBackup)
+        Files.move(tempBackup, backup)
+        publishedBackup = true
         log.warn("Created pre-migration database backup at {}", backup)
     } catch (e: Exception) {
+        temporaryBackup?.let { deleteSqliteFileAndSidecars(it, e) }
+        if (publishedBackup) deleteSqliteFileAndSidecars(backup, e)
         throw IllegalStateException("Cannot create pre-migration database backup for $dbPath", e)
+    }
+}
+
+/** Finish the destination in rollback-journal mode so the .bak is a single portable file. */
+private fun makeStandaloneSqliteFile(databasePath: Path) {
+    DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+        connection.createStatement().use { statement ->
+            statement.executeQuery("PRAGMA journal_mode=DELETE").use { resultSet ->
+                check(resultSet.next() && resultSet.getString(1).equals("delete", ignoreCase = true)) {
+                    "SQLite backup destination could not leave WAL mode"
+                }
+            }
+        }
+    }
+    check(!Files.exists(sqliteSidecar(databasePath, "-wal"))) {
+        "SQLite backup destination still has a WAL sidecar"
+    }
+    check(!Files.exists(sqliteSidecar(databasePath, "-shm"))) {
+        "SQLite backup destination still has a shared-memory sidecar"
+    }
+}
+
+/** Preserve restrictive source permissions where the filesystem exposes POSIX or DOS views. */
+private fun copySupportedFilePermissions(source: Path, backup: Path) {
+    Files.getFileAttributeView(source, PosixFileAttributeView::class.java)?.let { sourceView ->
+        Files.setPosixFilePermissions(backup, sourceView.readAttributes().permissions())
+    }
+    val sourceDosView = Files.getFileAttributeView(source, DosFileAttributeView::class.java)
+    val backupDosView = Files.getFileAttributeView(backup, DosFileAttributeView::class.java)
+    if (sourceDosView != null && backupDosView != null) {
+        backupDosView.setReadOnly(sourceDosView.readAttributes().isReadOnly)
+    }
+}
+
+private fun sqliteSidecar(databasePath: Path, suffix: String): Path =
+    databasePath.resolveSibling(databasePath.fileName.toString() + suffix)
+
+private fun deleteSqliteFileAndSidecars(path: Path, originalFailure: Exception) {
+    listOf(path, sqliteSidecar(path, "-wal"), sqliteSidecar(path, "-shm")).forEach { file ->
+        try {
+            Files.deleteIfExists(file)
+        } catch (cleanupFailure: Exception) {
+            originalFailure.addSuppressed(cleanupFailure)
+        }
     }
 }
 
