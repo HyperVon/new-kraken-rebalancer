@@ -18313,16 +18313,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 asset = "USD",
                 amount = "500.00",
                 type = "transfer",
-                subtype = "spotfromfutures",
+                subtype = "spottospot",
                 refid = "internal-transfer",
+                ledgerId = "internal-transfer-credit",
             )
             val transferOut = ledgerEvent(
                 timestamp = tMid,
                 asset = "USD",
                 amount = "-500.00",
                 type = "transfer",
-                subtype = "spotfromfutures",
+                subtype = "spottospot",
                 refid = "internal-transfer",
+                ledgerId = "internal-transfer-debit",
             )
             val tradeRow = ledgerEvent(
                 timestamp = tMid.plusSeconds(60),

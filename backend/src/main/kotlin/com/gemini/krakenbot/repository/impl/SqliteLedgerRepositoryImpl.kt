@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerEventAliasCanonicalizer
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
@@ -46,6 +47,7 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
                     (LedgerTable.timestamp lessEq to.toEpochMilli())
             }.orderBy(LedgerTable.timestamp, SortOrder.DESC)
             .map(LedgerTable::toModel)
+            .let(LedgerEventAliasCanonicalizer::collapseExactSolAliasMirrors)
     }
 
     override suspend fun getLedgersByRefIds(refIds: Collection<String>): List<LedgerEvent> {
@@ -56,6 +58,7 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
                 .where { LedgerTable.refid inList refIds }
                 .orderBy(LedgerTable.timestamp, SortOrder.DESC)
                 .map(LedgerTable::toModel)
+                .let(LedgerEventAliasCanonicalizer::collapseExactSolAliasMirrors)
         }
     }
 

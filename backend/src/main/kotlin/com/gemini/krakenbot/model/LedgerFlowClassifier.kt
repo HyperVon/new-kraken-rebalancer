@@ -33,8 +33,8 @@ import java.math.BigDecimal
  *   leaving the portfolio ([LedgerEvent.netBalanceDelta]), even if Kraken deducted a fee.
  * - Insufficient evidence: bare deposits or withdrawals without affirmative external
  *   or internal provenance fall back conservatively to [FlowCategory.AMBIGUOUS].
- * - Conservative transfer rule: only a complete, linked two-leg internal transfer is
- *   [FlowCategory.INTERNAL_MOVE], documented reward semantics are
+ * - Conservative transfer rule: a complete, linked internal pair or an authoritative,
+ *   documented non-Spot transfer leg is [FlowCategory.INTERNAL_MOVE]; documented reward semantics are
  *   [FlowCategory.EXTERNAL_BALANCE], observed/documented airdrop credits are
  *   external, and an unproven bare transfer (including prose-only descriptions
  *   like fork or distribution) is [FlowCategory.AMBIGUOUS].
@@ -64,6 +64,13 @@ enum class FlowCategory {
      * UNAVAILABLE rather than silently dropping a balance-affecting flow.
      */
     UNSUPPORTED,
+}
+
+/** Wallet whose balance is changed by one of Kraken's documented internal transfer legs. */
+internal enum class DocumentedTransferWalletScope {
+    SPOT,
+    STAKING,
+    FUTURES,
 }
 
 /** Pure, offline-safe ledger flow classifier. No network, no database. */
@@ -106,6 +113,48 @@ object LedgerFlowClassifier {
         event.type.equals(KrakenApiConstants.LEDGER_TYPE_TRANSFER, ignoreCase = true) &&
             isInternalSubtype(event.subtype)
 
+    /** Scope implied by a documented transfer subtype and the sign of its net balance delta. */
+    internal fun documentedTransferWalletScope(event: LedgerEvent): DocumentedTransferWalletScope? {
+        if (!isDocumentedInternalTransfer(event)) return null
+        val isDebit = event.netBalanceDelta().signum() < 0
+        return when (normalizeSubtype(event.subtype)) {
+            "spottostaking", "stakingfromspot" ->
+                if (isDebit) DocumentedTransferWalletScope.SPOT else DocumentedTransferWalletScope.STAKING
+
+            "stakingtospot", "spotfromstaking" ->
+                if (isDebit) DocumentedTransferWalletScope.STAKING else DocumentedTransferWalletScope.SPOT
+
+            "spottofutures" ->
+                if (isDebit) DocumentedTransferWalletScope.SPOT else DocumentedTransferWalletScope.FUTURES
+
+            "spotfromfutures" ->
+                if (isDebit) DocumentedTransferWalletScope.FUTURES else DocumentedTransferWalletScope.SPOT
+
+            "spottospot", "spotfromspot" -> DocumentedTransferWalletScope.SPOT
+
+            else -> null
+        }
+    }
+
+    /**
+     * A lone row can be safely ignored by Spot-history replay only when an authoritative balance
+     * and documented direction prove it belongs to a non-Spot wallet. A Spot-facing lone leg still
+     * needs its linked counterpart so the missing balance effect cannot be guessed.
+     */
+    internal fun isAuthoritativelyScopedNonSpotTransfer(event: LedgerEvent): Boolean = !event.refid.isNullOrBlank() &&
+        event.hasAuthoritativeBalance &&
+        event.hasValidFee &&
+        event.fee.signum() >= 0 &&
+        when (documentedTransferWalletScope(event)) {
+            DocumentedTransferWalletScope.STAKING,
+            DocumentedTransferWalletScope.FUTURES,
+            -> true
+
+            DocumentedTransferWalletScope.SPOT,
+            null,
+            -> false
+        }
+
     /** Returns true for transfer or Earn markers whose wallet scope is internal but opaque here. */
     fun isDocumentedInternalScopeMarker(event: LedgerEvent): Boolean = isDocumentedInternalTransfer(event) ||
         (
@@ -120,6 +169,7 @@ object LedgerFlowClassifier {
      */
     internal fun isCompleteInternalTransferGroup(legs: List<LedgerEvent>): Boolean {
         if (legs.size != 2 || legs.any { !isDocumentedInternalTransfer(it) }) return false
+        if (legs.map(LedgerEvent::ledgerId).toSet().size != legs.size) return false
         if (legs.any { !hasValidAmountShape(it) }) return false
         if (legs.any { !it.hasValidFee || it.fee.signum() < 0 }) return false
         if (legs.count { it.amount.signum() < 0 } != 1 || legs.count { it.amount.signum() > 0 } != 1) return false
@@ -258,6 +308,8 @@ object LedgerFlowClassifier {
 
             KrakenApiConstants.LEDGER_TYPE_TRANSFER -> when {
                 internalSubtype && evidence == FundingEvidence.EXTERNAL -> FlowCategory.AMBIGUOUS
+
+                internalSubtype && isAuthoritativelyScopedNonSpotTransfer(event) -> FlowCategory.INTERNAL_MOVE
 
                 // A documented internal transfer is meaningful only as a complete linked pair;
                 // classifyAll handles that group before reaching this single-row fallback.
