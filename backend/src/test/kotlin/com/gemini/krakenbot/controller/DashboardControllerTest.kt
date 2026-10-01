@@ -235,6 +235,29 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "dashboard fragment refreshes the mode plate from current settings and keeps stream status separate" {
+            val snapshot = TestFixtures.emptySnapshot(Instant.parse("2026-08-09T12:00:00Z"), BigDecimal("1000.00"))
+            coEvery { tradeHistoryService.getHistory() } returns listOf(snapshot)
+            every { configService.getConfig() } returnsMany listOf(
+                dashboardConfig(settings = TestFixtures.settings(dryRun = true, simulation = false)),
+                dashboardConfig(settings = TestFixtures.settings(dryRun = false, simulation = true)),
+            )
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val first = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
+                first shouldContain "class=\"mode-plate mode-dry-run\""
+                first shouldContain "id=\"mode-plate\" hx-swap-oob=\"true\""
+                first shouldContain "id=\"header-status\" hx-swap-oob=\"true\""
+
+                val next = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
+                next shouldContain "class=\"mode-plate mode-simulation\""
+                next shouldContain "SIMULATION"
+                next shouldContain "id=\"header-status\" hx-swap-oob=\"true\""
+            }
+        }
+
         "getSettingsPage_ReturnsSettingsForm" {
             val config = dashboardConfig(
                 credentials = KrakenCredentials("real-api-key", "real-private-key"),
@@ -553,17 +576,19 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val response = client.post(Routes.SETTINGS) {
                     setBody(parametersOf().formUrlEncode())
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Origin, "http://localhost")
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain "Settings session expired. Reload the page and try again."
+                response.bodyAsText() shouldContain
+                    "This page's security token is invalid or expired. Your action was not applied. Please try again."
                 response.bodyAsText() shouldContain "name=\"${FormFields.CSRF_TOKEN}\""
                 response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 
-        "postSettings_RejectsWrongCsrfTokenAndRotatesRecoveryToken" {
+        "postSettings_RejectsWrongCsrfTokenAndReturnsTheValidCookieToken" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
             coEvery { configService.updateConfig(any()) } returns Unit
@@ -579,24 +604,19 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                     header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
+                    header("HX-Request", "true")
                 }
 
-                val responseBody = response.bodyAsText()
-                val newToken =
-                    Regex("""name="${FormFields.CSRF_TOKEN}" value="([^"]+)"""")
-                        .find(responseBody)
-                        ?.groupValues
-                        ?.get(1)
-                        ?: error("CSRF recovery response did not contain a token")
                 response.status shouldBe HttpStatusCode.Forbidden
-                responseBody shouldContain "Settings session expired. Reload the page and try again."
-                response.headers[HtmxHeaders.HX_REFRESH] shouldBe HtmxValues.TRUE
-                response.headers[HtmxHeaders.HX_RESWAP] shouldBe HtmxValues.INNER_HTML
-                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
-                (newToken != csrf.value).shouldBeTrue()
-                val newCookie = response.headers[HttpHeaders.SetCookie]?.substringBefore(';')
-                    ?: error("CSRF recovery response did not set a cookie")
-                newCookie.contains(newToken).shouldBeTrue()
+                response.bodyAsText() shouldBe ""
+                val newToken = response.headers["X-Rebalancer-CSRF-Token"]
+                    ?: error("CSRF recovery response did not contain a token header")
+                response.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
+                response.headers[HtmxHeaders.HX_RESWAP] shouldBe null
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe null
+                newToken shouldBe csrf.value
+                response.headers[HttpHeaders.SetCookie] shouldBe null
 
                 val followUpResponse = client.post(Routes.SETTINGS) {
                     setBody(
@@ -614,7 +634,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, newCookie)
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
                 }
                 followUpResponse.status shouldBe HttpStatusCode.OK
                 followUpResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
@@ -636,10 +657,147 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     setBody(parametersOf().formUrlEncode())
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                     header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain "Settings session expired. Reload the page and try again."
+                response.bodyAsText() shouldContain
+                    "This page's security token is invalid or expired. Your action was not applied. Please try again."
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings preserves submitted values in native CSRF recovery" {
+            val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings(dryRun = true, simulation = false),
+            )
+            every { configService.getConfig() } returns serverConfig
+            every { portfolioManager.isLoopPaused() } returns true
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf("stale-form-token"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("75"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("6.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("12.5"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("17.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.7"),
+                            FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("4.5"),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("33.5", "66.5"),
+                            FormFields.COLORS to listOf("#112233", "#445566"),
+                            FormFields.SCORES to listOf("8.5", "6.5"),
+                            FormFields.SIMULATION to listOf("on"),
+                            FormFields.SCORE_EMPHASIS to listOf("7"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("40"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                val body = response.bodyAsText()
+                body shouldContain "This page's security token is invalid or expired."
+                body shouldContain "value=\"75\""
+                body shouldContain "value=\"6.5\""
+                body shouldContain "value=\"12.5\""
+                body shouldContain "value=\"17.0\""
+                body shouldContain "value=\"1.7\""
+                body shouldContain "value=\"4.5\""
+                body shouldContain "name=\"symbols\" value=\"BTC\""
+                body shouldContain "name=\"symbols\" value=\"ETH\""
+                body shouldContain "name=\"targets\""
+                body shouldContain "value=\"33.5\""
+                body shouldContain "value=\"66.5\""
+                body shouldContain "value=\"#112233\""
+                body shouldContain "value=\"#445566\""
+                body shouldContain "value=\"8.5\""
+                body shouldContain "value=\"6.5\""
+                body shouldContain "name=\"inceptionDate\" id=\"inceptionDate\" value=\"2026-06-06\""
+                body shouldContain "name=\"comparisonStartDate\" id=\"comparisonStartDate\" value=\"2026-06-07\""
+                body shouldContain "name=\"scoreEmphasis\" value=\"7\""
+                body shouldContain "name=\"scoreSleevePercent\""
+                body shouldContain "value=\"40\""
+                Regex("""<input[^>]*name=\"simulation\"[^>]*checked""").containsMatchIn(body).shouldBeTrue()
+                Regex("""<input[^>]*name=\"dryRun\"[^>]*checked""").containsMatchIn(body) shouldBe false
+                body shouldContain "PAUSED"
+                body shouldContain "hx-post=\"/api/resume\""
+                body shouldContain "name=\"${FormFields.CSRF_TOKEN}\" value=\"${csrf.value}\""
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings recovery clears ambiguous scalar values and preserves uneven allocation rows" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings(dryRun = true, simulation = true),
+            )
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf("stale-form-token"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("17", "18"),
+                            FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("  "),
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("35"),
+                            FormFields.SCORES to listOf("8", "6", "4"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                val body = response.bodyAsText()
+                fun inputHasValue(name: String, value: String) = Regex(
+                    "<input[^>]*name=\"${Regex.escape(name)}\"[^>]*value=\"${Regex.escape(value)}\"",
+                ).containsMatchIn(body)
+
+                inputHasValue("loopDelaySeconds", "") shouldBe true
+                inputHasValue("fiatDeploymentThresholdPercent", "0.0") shouldBe true
+                inputHasValue("symbols", "BTC") shouldBe true
+                inputHasValue("symbols", "ETH") shouldBe true
+                inputHasValue("symbols", "") shouldBe true
+                inputHasValue("targets", "35") shouldBe true
+                inputHasValue("targets", "") shouldBe true
+                inputHasValue("scores", "8") shouldBe true
+                inputHasValue("scores", "6") shouldBe true
+                inputHasValue("scores", "4") shouldBe true
+                inputHasValue("scoreEmphasis", "4") shouldBe true
+                Regex("""<input[^>]*name=\"simulation\"[^>]*checked""").containsMatchIn(body) shouldBe false
+                Regex("""<input[^>]*name=\"dryRun\"[^>]*checked""").containsMatchIn(body) shouldBe false
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings without an explicit request origin does not issue a CSRF recovery token" {
+            every { configService.getConfig() } returns dashboardConfig()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                response.bodyAsText() shouldBe ""
+                response.headers["X-Rebalancer-CSRF-Token"] shouldBe null
+                response.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe null
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
@@ -799,6 +957,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.headers["X-Rebalancer-Error-Fragment"] shouldBe "settings-form"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
                 response.bodyAsText() shouldContain "comparison start must be a valid ISO-8601"
             }
 
@@ -1927,11 +2087,13 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                     header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain "Settings session expired. Reload the page and try again."
-                response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
+                response.bodyAsText() shouldContain
+                    "This page's security token is invalid or expired. Your action was not applied. Please try again."
+                response.headers[HttpHeaders.SetCookie] shouldBe null
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }

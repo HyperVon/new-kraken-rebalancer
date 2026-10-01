@@ -41,7 +41,7 @@ fun FlowContent.brandMark() {
  * dryRun is also true). Distinct from the STREAM/STALE SSE chip — do not hide
  * or downgrade this plate.
  */
-fun FlowContent.modePlate(settings: Settings) {
+fun FlowContent.modePlate(settings: Settings, outOfBand: Boolean = false) {
     val cssClass: CssClass
     val label: String
     val plateTitle: String
@@ -66,6 +66,7 @@ fun FlowContent.modePlate(settings: Settings) {
     }
     span(cssClass) {
         id = HtmlIds.MODE_PLATE
+        if (outOfBand) attributes[HtmxAttrs.HX_SWAP_OOB] = HtmxValues.TRUE
         attributes[HtmlAttrs.TITLE] = plateTitle
         span(CssClass.Mode.Dot) {}
         span {

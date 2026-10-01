@@ -7,6 +7,8 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
+import kotlin.js.js
+
 class MainTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -102,24 +104,129 @@ class MainTest : StringSpec() {
             }
         }
 
-        "a settings rejection is swapped, but an empty body or a real server fault is not" {
-            // htmx drops every non-2xx body by default, so a rendered settings form returned with
-            // 422 would never reach the operator. This is the decision the beforeSwap listener
-            // applies to each settings response; the listener's wiring is verified in the browser.
-            shouldSwapRejection(422, "<div class=\"error-banner\">nope</div>") shouldBe true
-
-            // Nothing worth rendering, so htmx's default handling stands.
-            shouldSwapRejection(422, "") shouldBe false
-            shouldSwapRejection(422, null) shouldBe false
-
-            // A genuine server fault is not a form rejection; swapping it would surface raw
-            // server output on the page.
-            shouldSwapRejection(500, "<div>boom</div>") shouldBe false
-            shouldSwapRejection(404, "<div>missing</div>") shouldBe false
-            shouldSwapRejection(null, null) shouldBe false
+        "only marked HTML settings and order-intent errors are swapped" {
+            shouldSwapRenderedError(
+                422,
+                "<form hx-post=\"/settings\"><div class=\"error-banner\">nope</div></form>",
+                "text/html; charset=UTF-8",
+                "settings-form",
+            ) shouldBe true
+            shouldSwapRenderedError(
+                422,
+                "{\"error\":\"invalid\"}",
+                "application/json",
+                null,
+            ) shouldBe false
+            shouldSwapRenderedError(422, "<div>unmarked</div>", "text/html", null) shouldBe false
+            shouldSwapRenderedError(
+                422,
+                "<div class=\"error-banner\">operator message</div>",
+                "text/html",
+                "order-intent",
+            ) shouldBe true
+            shouldSwapRenderedError(
+                409,
+                "<div class=\"error-banner\">conflict</div>",
+                "text/html",
+                "order-intent",
+            ) shouldBe true
+            shouldSwapRenderedError(500, "<div>boom</div>", "text/html", "order-intent") shouldBe false
+            shouldSwapRenderedError(422, "", "text/html", "settings-form") shouldBe false
         }
 
-        "a new submission clears the previous rejection banner" {
+        "the htmx beforeSwap listener swaps marked errors but preserves the form on stale CSRF" {
+            val oldSetInterval = window.asDynamic().setInterval
+            val oldAlert = window.asDynamic().alert
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            var alertMessage: String? = null
+            window.asDynamic().alert = { message: String -> alertMessage = message }
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <input name="csrfToken" value="old-token">
+                <input name="csrfToken" value="old-token">
+                <input name="deviationTriggerPercent" value="9.5">
+            """.trimIndent()
+            document.body!!.appendChild(container)
+
+            try {
+                main()
+
+                fun dispatchBeforeSwap(
+                    status: Int,
+                    body: String,
+                    contentType: String,
+                    errorKind: String?,
+                    csrfToken: String? = null,
+                    sessionExpired: Boolean = false,
+                ): dynamic {
+                    val xhr = js("({})")
+                    xhr.status = status
+                    xhr.responseText = body
+                    xhr.getResponseHeader = { name: String ->
+                        when (name) {
+                            "Content-Type" -> contentType
+                            "X-Rebalancer-Error-Fragment" -> errorKind
+                            "X-Rebalancer-CSRF-Token" -> csrfToken
+                            "X-Rebalancer-CSRF-Session-Expired" -> if (sessionExpired) "true" else null
+                            else -> null
+                        }
+                    }
+                    val detail = js("({})")
+                    detail.xhr = xhr
+                    detail.shouldSwap = false
+                    detail.isError = true
+                    val event = document.createEvent("CustomEvent")
+                    event.asDynamic().initCustomEvent("htmx:beforeSwap", true, true, detail)
+                    document.dispatchEvent(event)
+                    return detail
+                }
+
+                val operatorError = dispatchBeforeSwap(
+                    409,
+                    "<div class=\"error-banner\">conflict</div>",
+                    "text/html; charset=UTF-8",
+                    "order-intent",
+                )
+                (operatorError.shouldSwap as Boolean) shouldBe true
+                (operatorError.isError as Boolean) shouldBe false
+
+                val apiError = dispatchBeforeSwap(
+                    422,
+                    "{\"error\":\"invalid\"}",
+                    "application/json",
+                    null,
+                )
+                (apiError.shouldSwap as Boolean) shouldBe false
+                (apiError.isError as Boolean) shouldBe true
+
+                val staleCsrf = dispatchBeforeSwap(
+                    403,
+                    "",
+                    "",
+                    null,
+                    csrfToken = "fresh-token",
+                    sessionExpired = true,
+                )
+                (staleCsrf.shouldSwap as Boolean) shouldBe false
+                (staleCsrf.isError as Boolean) shouldBe true
+                alertMessage shouldBe
+                    "This page's security token is invalid or expired. Your action was not applied. Please try again."
+                document.querySelectorAll("input[name=csrfToken]").let { inputs ->
+                    inputs.length shouldBe 2
+                    repeat(inputs.length) { index ->
+                        (inputs.item(index) as HTMLInputElement).value shouldBe "fresh-token"
+                    }
+                }
+                (document.querySelector("input[name=deviationTriggerPercent]") as HTMLInputElement)
+                    .value shouldBe "9.5"
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                window.asDynamic().alert = oldAlert
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "only a settings mutation clears its error while a background proposal GET preserves it" {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
             val container = document.createElement("div")
@@ -136,14 +243,35 @@ class MainTest : StringSpec() {
                 main()
                 document.querySelectorAll(".error-banner").length shouldBe 2
 
-                val event = document.createEvent("Event")
-                event.initEvent(type = "htmx:beforeRequest", bubbles = true, cancelable = true)
-                document.dispatchEvent(event)
+                fun dispatchBeforeRequest(verb: String, path: String) {
+                    val event = document.createEvent("CustomEvent")
+                    val requestConfig = js("({})")
+                    requestConfig.verb = verb
+                    requestConfig.path = path
+                    val detail = js("({})")
+                    detail.requestConfig = requestConfig
+                    event.asDynamic().initCustomEvent(
+                        "htmx:beforeRequest",
+                        true,
+                        true,
+                        detail,
+                    )
+                    document.dispatchEvent(event)
+                }
+
+                dispatchBeforeRequest("get", "/fragments/settings-proposal")
+                (document.querySelector("form .error-banner") != null) shouldBe true
+
+                dispatchBeforeRequest("post", "/settings")
 
                 // The stale attempt message goes, so a successful swap cannot leave it above
                 // freshly rendered content; the dashboard's own region is untouched.
                 (document.querySelector("form .error-banner") == null) shouldBe true
                 document.querySelectorAll(".error-banner").length shouldBe 1
+
+                shouldClearSettingsError("POST", "/fragments/settings-allocations-preview") shouldBe true
+                shouldClearSettingsError("GET", "/settings") shouldBe false
+                shouldClearSettingsError("POST", "/fragments/settings-proposal") shouldBe false
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)

@@ -40,6 +40,11 @@ class NetworkUtilsTest : StringSpec() {
             isLocalOrPrivateOrigin("http://169.254.255.255:8080") shouldBe true
         }
 
+        "should reject IPv6 addresses adjacent to loopback" {
+            isLocalOrPrivateOrigin("http://[::]") shouldBe false
+            isLocalOrPrivateOrigin("http://[::2]") shouldBe false
+        }
+
         "should identify 172.16.x.x to 172.31.x.x private IP range" {
             isLocalOrPrivateOrigin("http://172.16.0.1:8080") shouldBe true
             isLocalOrPrivateOrigin("http://172.31.255.255:8080") shouldBe true
@@ -116,6 +121,23 @@ class NetworkUtilsTest : StringSpec() {
                 true
             isLocalOrPrivateOrigin("https://kraken.com", emptySet(), allowAll = true) shouldBe true
             isLocalOrPrivateOrigin("https://kraken.com", emptySet(), allowAll = false) shouldBe false
+        }
+
+        "should keep explicit allowlist matches exact by host and port" {
+            isLocalOrPrivateOrigin("https://api.trusted.example.com", setOf("trusted.example.com")) shouldBe false
+            isLocalOrPrivateOrigin("https://trusted.example.com:8443", setOf("trusted.example.com")) shouldBe false
+            isLocalOrPrivateOrigin(
+                "https://trusted.example.com:8443",
+                setOf("https://trusted.example.com:8443"),
+            ) shouldBe true
+            isLocalOrPrivateOrigin(
+                "https://trusted.example.com:8444",
+                setOf("https://trusted.example.com:8443"),
+            ) shouldBe false
+            isLocalOrPrivateOrigin(
+                "https://evil.example.com",
+                setOf("https://trusted.example.com@evil.example.com"),
+            ) shouldBe false
         }
 
         "edge cases close the remaining origin-validation branches" {

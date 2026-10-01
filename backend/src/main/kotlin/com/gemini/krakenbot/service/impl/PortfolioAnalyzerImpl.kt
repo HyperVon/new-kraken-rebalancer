@@ -26,6 +26,8 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimedAssetDelta
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.UnusableDecidedFundingContext
+import com.gemini.krakenbot.model.hasValidEconomicFields
+import com.gemini.krakenbot.model.isHistoricallyReplayable
 import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -287,6 +289,8 @@ class PortfolioAnalyzerImpl(
                 // prefix is retried verbatim next cycle.
                 val basis = try {
                     flowCalc.groupBasisResolver.basisFor(groupIndex)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: AthTrustFailureException) {
                     log.warn(
                         "Deferring ATH update: reason={} detail={}",
@@ -1347,6 +1351,18 @@ class PortfolioAnalyzerImpl(
             throw AthTrustFailureException(
                 reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
                 message = "trade state falls inside the uncertain balance-observation interval before $eventTime",
+            )
+        }
+        val invalidReplayTrade = trades.firstOrNull { trade ->
+            trade.timestamp.isAfter(predecessor.timestamp) &&
+                !trade.timestamp.isAfter(eventTime) &&
+                trade.isHistoricallyReplayable() &&
+                !trade.hasValidEconomicFields()
+        }
+        if (invalidReplayTrade != null) {
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                message = "trade economics are invalid for replay before flow at $eventTime",
             )
         }
         for (trade in trades) {

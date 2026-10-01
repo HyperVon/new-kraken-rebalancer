@@ -12,6 +12,7 @@ import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
+import com.gemini.krakenbot.view.component.SettingsFormValues
 import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
@@ -84,6 +85,7 @@ class DashboardView(
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
         laterStartProposalAsync: Boolean = false,
+        formValues: SettingsFormValues? = null,
     ) {
         settingsFormComponent.renderForm(
             parent,
@@ -94,6 +96,7 @@ class DashboardView(
             inceptionDisplay,
             laterStartProposal,
             laterStartProposalAsync,
+            formValues,
         )
     }
 
@@ -109,6 +112,7 @@ class DashboardView(
 
     context(div: DIV)
     fun renderDashboardFragment(
+        settings: Settings,
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
@@ -118,6 +122,7 @@ class DashboardView(
         qualityScores: Map<String, BigDecimal> = emptyMap(),
     ) {
         fragmentComponent.render(
+            settings,
             latest,
             history,
             allocations,

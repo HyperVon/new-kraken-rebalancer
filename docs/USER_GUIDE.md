@@ -65,6 +65,8 @@ Precedence is simulation first (even if dry run is also on), then dry run, then
 live. The plate reflects your Settings, and hovering it reveals a tooltip
 explaining the consequence (e.g. "Live trading — real orders execute with real
 funds").
+Dashboard updates also refresh the plate, including after Settings are changed
+in another tab.
 
 The header also includes a loop control on every page. Its state pill shows
 **RUNNING** or **PAUSED**; choose the labeled **Pause** action to stop new rebalance
@@ -319,7 +321,10 @@ Deeper behavior (drawdown deployment, sell-then-buy, dust) is documented in
 
 The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
-all six summary cards and the charts update together.
+all six summary cards and the charts use that window. Datasets appear as their
+requests finish. If a request fails, its old data is cleared and a retry message
+appears; successful datasets remain visible for the selected window. Select the
+same range again to retry. A comparison failure has its own unavailable message.
 
 The selected window controls which reconciled points are displayed; it does not
 shorten the accounting evidence used to build the comparison. Buy & Hold and

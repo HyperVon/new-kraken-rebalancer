@@ -850,26 +850,47 @@ class InceptionRecoveryService(
             offset = offset,
             endSec = horizon.epochSecond,
         )
-        val upperBound = recoveryEventUpperBound(horizon)
-        if (page.any { it.timestamp.isAfter(upperBound) }) {
-            throw IllegalStateException("Kraken returned a trade beyond the recovery horizon")
+        if (!backend.hasLastTradeHistoryPageShape()) {
+            throw IllegalStateException("Kraken returned a malformed trade page envelope")
         }
-        val reportedTotal = backend.getLastTradeHistoryTotalCount().coerceAtLeast(0)
+        val rawPageSize = backend.getLastTradeHistoryRawPageSize().coerceAtLeast(page.size)
+        if (!backend.hasLastTradeHistoryTotalCount()) {
+            throw IllegalStateException(
+                "Cannot certify inception recovery from a trade page without an authoritative count",
+            )
+        }
+        val reportedTotalValue = backend.getLastTradeHistoryTotalCount()
+        if (reportedTotalValue < 0) {
+            throw IllegalStateException("Kraken returned a negative trade-history count")
+        }
+        val reportedTotal = reportedTotalValue
         val priorTotal = repository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL)
             .orEmpty()
             .toIntOrNull()
             ?.coerceAtLeast(0)
             ?: 0
-        val total = if (reportedTotal > 0) {
-            maxOf(priorTotal, reportedTotal)
-        } else {
-            priorTotal
+        val paginationShifted = offset > 0 &&
+            ((priorTotal > 0 && reportedTotal != priorTotal) || priorTotal == 0)
+        val expectedPageSize = (reportedTotal - offset)
+            .takeIf { it > 0 }
+            ?.coerceAtMost(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
+        val occupancyMatchesCount = when {
+            reportedTotal == 0 -> page.isEmpty() && rawPageSize == 0
+            offset >= reportedTotal -> page.isEmpty() && rawPageSize == 0
+            else -> expectedPageSize != null && rawPageSize == expectedPageSize
         }
-        if (total > 0) {
-            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, total.toString())
+        if (!occupancyMatchesCount) {
+            throw IllegalStateException(
+                "Kraken trade page occupancy disagreed with count " +
+                    "(offset=$offset, count=$reportedTotal, rawPageSize=$rawPageSize)",
+            )
         }
-        val paginationShifted = priorTotal > 0 && reportedTotal > 0 && reportedTotal != priorTotal
+        val upperBound = recoveryEventUpperBound(horizon)
+        if (page.any { it.timestamp.isAfter(upperBound) }) {
+            throw IllegalStateException("Kraken returned a trade beyond the recovery horizon")
+        }
+        repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, reportedTotal.toString())
 
         // The reconciler writes only API_FILL economics and never changes the ordinary cursor.
         tradeHistorySyncService.importRecoveredApiTradesUnderEvidenceLock(page, upperBound)
@@ -882,16 +903,9 @@ class InceptionRecoveryService(
         } else {
             offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
         }
-        val complete = !paginationShifted && if (reportedTotal > 0) {
-            nextOffset >= reportedTotal
-        } else {
-            page.size < KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-        }
+        val complete = !paginationShifted && nextOffset >= reportedTotal
         if (complete) {
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, COMPLETED)
-            if (total == 0 && page.isEmpty()) {
-                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "0")
-            }
             repository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
                 repository
@@ -2498,7 +2512,7 @@ class InceptionRecoveryService(
         Instant.ofEpochSecond(horizon.epochSecond, 999_999_999L)
 
     companion object {
-        const val CURRENT_RECOVERY_VERSION = "1"
+        const val CURRENT_RECOVERY_VERSION = "2"
         const val CURRENT_BASELINE_REPLAY_VERSION = "17"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4

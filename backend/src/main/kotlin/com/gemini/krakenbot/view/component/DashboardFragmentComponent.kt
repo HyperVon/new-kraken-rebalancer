@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -14,6 +15,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.modePlate
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
@@ -45,6 +47,7 @@ class DashboardFragmentComponent(
 
     context(div: DIV)
     fun render(
+        settings: Settings,
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
@@ -59,8 +62,12 @@ class DashboardFragmentComponent(
             )
         val isStale = StreamStatus.isStale(timeSinceUpdate)
 
-        // Mode plate stays in the shell; this OOB swap only refreshes STREAM/STALE
-        // (SSE freshness — StatusCard.Live here means healthy stream, not live trading).
+        // The shell provides the initial plate; every fragment refreshes it from the current
+        // settings so changes made in another tab replace stale mode chrome.
+        div.modePlate(settings, outOfBand = true)
+
+        // This OOB swap updates stream freshness only (StatusCard.Live means a healthy stream,
+        // not live trading); it remains separate from the trading-mode plate above.
         renderStreamStatus(latest, timeSinceUpdate, isStale)
 
         if (unresolvedIntents.isNotEmpty()) {
@@ -89,6 +96,9 @@ class DashboardFragmentComponent(
                 +ViewText.UNRESOLVED_INTENT_BANNER_BODY
             }
             div {
+                id = HtmlIds.ORDER_INTENT_FEEDBACK
+            }
+            div {
                 for (intent in intents) {
                     val intentId = intent.id ?: continue
                     div {
@@ -110,7 +120,7 @@ class DashboardFragmentComponent(
                         val resolveUrl = Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "$intentId")
                         form(action = resolveUrl, method = FormMethod.post) {
                             attributes[HtmxAttrs.HX_POST] = resolveUrl
-                            attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
+                            attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.ORDER_INTENT_FEEDBACK}"
                             if (csrfToken != null) {
                                 input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
                                     value = csrfToken

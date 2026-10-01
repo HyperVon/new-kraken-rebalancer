@@ -7,11 +7,15 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -339,6 +343,71 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "Other plausible activity: 405."
         }
 
+        "renderSettingsPage_sparseInceptionEvidence_hidesIncompleteWindowAndAbsentDetails" {
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig,
+                    null,
+                    testCsrfToken,
+                    inceptionDisplay = InceptionDisplayInfo(
+                        status = InceptionDisplayStatus.UNAVAILABLE,
+                        inferredStartText = "2025-12-22T02:08:00Z",
+                        inferredWindowStartText = "2025-12-22T02:08:00Z",
+                    ),
+                )
+            }
+
+            html shouldContain "Recommended strategy start"
+            html shouldContain "<details class=\"inception-evidence\">"
+            html shouldNotContain "Evidence window:"
+            html shouldNotContain "First positively owned fill:"
+            html shouldNotContain "Earliest ambiguous activity:"
+            html shouldNotContain "Earlier ambiguous activity:"
+            html shouldNotContain "Other plausible activity:"
+            html shouldNotContain "History coverage:"
+        }
+
+        "renderSettingsPage_coverageOnlyEvidence_rendersTheEvidenceDisclosure" {
+            val coverage = "2025-12-01T00:00:00Z to 2025-12-22T02:34:00Z"
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig,
+                    null,
+                    testCsrfToken,
+                    inceptionDisplay = InceptionDisplayInfo(
+                        status = InceptionDisplayStatus.UNAVAILABLE,
+                        coverageText = coverage,
+                    ),
+                )
+            }
+
+            html shouldContain "<details class=\"inception-evidence\">"
+            html shouldContain "History coverage: $coverage."
+            html shouldNotContain "Recommended strategy start"
+        }
+
+        "renderProposalSlotFragment_suppressesStaleProposalWhenComparisonIsAvailable" {
+            val proposedStart = Instant.parse("2026-06-07T00:00:00Z")
+            val fragment = createHTML().div {
+                SettingsFormComponent().renderProposalSlotFragment(
+                    this,
+                    SettingsComparisonStatus(
+                        comparisonAvailability = ComparisonAvailability.AVAILABLE,
+                        proposal = ComparisonStartProposal(
+                            status = ComparisonProposalStatus.VERIFIED,
+                            timestamp = proposedStart,
+                            snapshotId = 17,
+                        ),
+                    ),
+                    configuredComparisonStart = null,
+                )
+            }
+
+            fragment shouldContain "Automatic"
+            fragment shouldNotContain "Use verified start"
+            fragment shouldNotContain proposedStart.toString()
+        }
+
         "renderSettingsPage_inProgressInception_rendersProgressMessage" {
             val html = createHTML().html {
                 view.renderSettingsPage(
@@ -402,7 +471,7 @@ class DashboardViewTest : StringSpec() {
             val history = listOf(latest)
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, history)
+                view.renderDashboardFragment(baseConfig.settings, latest, history)
             }
 
             html shouldContain "STREAM"
@@ -448,7 +517,7 @@ class DashboardViewTest : StringSpec() {
             )
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, emptyList())
+                view.renderDashboardFragment(baseConfig.settings, latest, emptyList())
             }
 
             html shouldContain "STALE"
@@ -467,7 +536,7 @@ class DashboardViewTest : StringSpec() {
                 effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
             createHTML().div {
-                view.renderDashboardFragment(emptyAssetsLatest, emptyList())
+                view.renderDashboardFragment(baseConfig.settings, emptyAssetsLatest, emptyList())
             }
 
             val latest = PortfolioSnapshot(
@@ -500,6 +569,7 @@ class DashboardViewTest : StringSpec() {
 
             val html = createHTML().div {
                 view.renderDashboardFragment(
+                    baseConfig.settings,
                     latest,
                     listOf(latest, noActionsSnapshot),
                 )
@@ -532,7 +602,7 @@ class DashboardViewTest : StringSpec() {
             )
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, emptyList())
+                view.renderDashboardFragment(baseConfig.settings, latest, emptyList())
             }
 
             html shouldContain "Target: 10%"
@@ -580,6 +650,7 @@ class DashboardViewTest : StringSpec() {
                 )
             val htmlUp = createHTML().div {
                 view.renderDashboardFragment(
+                    baseConfig.settings,
                     latestUp,
                     historyUp,
                     delta24h = PortfolioCalculations.compute24hDelta(latestUp, historyUp),
@@ -594,6 +665,7 @@ class DashboardViewTest : StringSpec() {
             val historyDown = listOf(latestDown, snap(90_000, "10000"))
             val htmlDown = createHTML().div {
                 view.renderDashboardFragment(
+                    baseConfig.settings,
                     latestDown,
                     historyDown,
                     delta24h = PortfolioCalculations.compute24hDelta(latestDown, historyDown),
@@ -644,6 +716,7 @@ class DashboardViewTest : StringSpec() {
 
             val html = createHTML().div {
                 view.renderDashboardFragment(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
                     latest = latest,
                     history = listOf(latest),
                     unresolvedIntents = intents,
@@ -665,6 +738,10 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "Kraken Order TxID (optional)"
             html shouldContain "Resolution Evidence (e.g. Verified on Kraken Web UI)"
             html shouldContain testCsrfToken
+            html shouldContain "id=\"order-intent-feedback\""
+            html shouldContain "hx-target=\"#order-intent-feedback\""
+            html shouldContain "class=\"mode-plate mode-simulation\""
+            html shouldContain "id=\"mode-plate\" hx-swap-oob=\"true\""
         }
 
         "renderRecentActivity formats buy, sell, info, and relative time ranges" {
@@ -699,6 +776,7 @@ class DashboardViewTest : StringSpec() {
 
             val html = createHTML().div {
                 view.renderDashboardFragment(
+                    settings = baseConfig.settings,
                     latest = snapJustNow,
                     history = listOf(snapJustNow, snap5m, snap2h, snap3d),
                     unresolvedIntents = emptyList(),

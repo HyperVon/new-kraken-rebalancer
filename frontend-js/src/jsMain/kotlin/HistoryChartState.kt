@@ -15,6 +15,7 @@ internal var currentRange = TimeRange.THIRTY_DAYS.key
 internal var loadedRange = TimeRange.THIRTY_DAYS.key
 internal var historyLoadGeneration = 0L
 internal var allTrades: List<TradeRecord> = emptyList()
+internal var historyTradesAvailable = false
 internal val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
 private val pendingPresetVisibility = mutableSetOf<String>()
 private var visibilityBackupBeforePreset: Map<String, Map<String, Boolean>>? = null
@@ -104,6 +105,7 @@ internal fun resetHistoryUiState() {
     loadedRange = TimeRange.THIRTY_DAYS.key
     historyLoadGeneration = 0L
     allTrades = emptyList()
+    historyTradesAvailable = false
     HistoryViewPrefs.resetInteractionState()
     try {
         HistorySessionState.clear()

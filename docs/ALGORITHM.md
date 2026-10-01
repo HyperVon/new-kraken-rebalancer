@@ -226,6 +226,10 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
       basis window `(predecessor actual-state boundary, target flow time]`. Multi-leg card transactions replay their
       actual balance deltas exclusively via `TimedAssetDelta` entries; card representative deposits and plumbing rows
       are strictly excluded from ordinary owner-flow replay to ensure exact-once balance attribution.
+      Successful, non-dry-run fills inside the active basis window must retain valid volume, cost, price,
+      and fee evidence. Malformed fill economics defer the update before ATH or journal writes;
+      malformed fills outside that window do not block an unrelated basis. Cancellation during
+      historical basis lookup propagates to the caller.
       New durable semantic rows retain the original ledger event time as `event_time_millis`, so replay cannot move an
       already-decided owner flow across a predecessor snapshot, balance-observation, or ordering boundary through
       second-level timestamp truncation. A new semantic row must match the retained ledger timestamp exactly;
@@ -601,7 +605,9 @@ retained ledger sequence against Kraken's post-entry balances. It includes autho
 rows as continuity checkpoints for this validation, and replay matches each trade to those same
 rows by execution identity so the leg's recorded net wallet movement supplies the balance effect,
 while `TradesHistory` remains the source of trade economics. Rows for one normalized asset and timestamp are validated as a
-bounded unordered group rather than by lexically sorting ledger IDs. Snapshot reconstruction orders
+bounded unordered group rather than by lexically sorting ledger IDs. Comparison replay follows the
+unique chain of pre-entry and post-entry balances, including debit and mixed-direction chains;
+disconnected or ambiguous chains remain unavailable. Snapshot reconstruction orders
 same-instant events onto those recorded checkpoint links (newest first) and leaves events without
 checkpoint evidence in repository order, so a recorded balance effect is never emitted at an instant
 before it exists. Documented Spot/staking,
@@ -716,6 +722,10 @@ account-scope binding matches the scope validated for the current run. It then f
 unproven tail after the recovery horizon. Insufficient, later-starting, account-mismatched,
 failed, or partial evidence falls back to the required historical backfill; an old retained row
 alone never promotes coverage.
+Recovery validates the raw trade-page envelope, authoritative total count, and
+page occupancy before importing rows or advancing its durable offset. An empty
+page before the advertised total is reached defers recovery. Older recovery
+receipts are invalidated when this validation contract changes.
 
 Benchmark events are built from the original classified ledger rows before any
 passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`
