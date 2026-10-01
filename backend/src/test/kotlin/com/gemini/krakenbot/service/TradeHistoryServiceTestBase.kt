@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -118,6 +119,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
     protected fun createService(
         tradeHistoryFilePath: String = TestFixtures.hermeticTradeHistoryPath(),
         inceptionDate: String? = null,
+        historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
         syncNowProvider: () -> Instant = Instant::now,
     ): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
@@ -187,6 +189,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
             objectMapper,
             tradeHistoryFilePath,
             syncNowProvider,
+            historyEvidenceCoordinator = historyEvidenceCoordinator,
         )
     }
 

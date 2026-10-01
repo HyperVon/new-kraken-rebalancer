@@ -9,6 +9,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
@@ -51,6 +52,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
     }
 
     protected val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
+    protected val historyEvidenceCoordinator = HistoryEvidenceCoordinator()
     protected val configService = mockk<ConfigService>(relaxed = true)
     protected val portfolioManager = mockk<PortfolioManager>(relaxed = true)
     protected val orderIntentService = mockk<OrderIntentService>(relaxed = true)
@@ -93,6 +95,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
                 single { configService }
                 single { portfolioManager }
                 single { orderIntentService }
+                single { historyEvidenceCoordinator }
                 single { objectMapper }
                 single { DashboardShellComponent() }
                 single { SettingsFormComponent() }
@@ -117,7 +120,17 @@ abstract class DashboardControllerTestBase : StringSpec() {
                         historyPageComponent = get(),
                     )
                 }
-                single { DashboardController(get(), get(), get(), get(), get(), get()) }
+                single {
+                    DashboardController(
+                        get(),
+                        get(),
+                        get(),
+                        get(),
+                        get(),
+                        get(),
+                        historyEvidenceCoordinator = get(),
+                    )
+                }
             }
 
         beforeTest {

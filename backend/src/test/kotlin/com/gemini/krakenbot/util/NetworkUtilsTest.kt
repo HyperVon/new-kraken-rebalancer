@@ -45,6 +45,12 @@ class NetworkUtilsTest : StringSpec() {
             isLocalOrPrivateOrigin("http://[::2]") shouldBe false
         }
 
+        "should reject oversized local hostnames and numeric IPv4 octet overflow" {
+            val oversizedLocalHost = listOf("a", "b", "c", "d").joinToString(".") { it.repeat(63) } + ".local"
+            isLocalOrPrivateOrigin("http://$oversizedLocalHost") shouldBe false
+            isLocalOrPrivateOrigin("http://999999999999999999999999999999999999.0.0.1") shouldBe false
+        }
+
         "should identify 172.16.x.x to 172.31.x.x private IP range" {
             isLocalOrPrivateOrigin("http://172.16.0.1:8080") shouldBe true
             isLocalOrPrivateOrigin("http://172.31.255.255:8080") shouldBe true
