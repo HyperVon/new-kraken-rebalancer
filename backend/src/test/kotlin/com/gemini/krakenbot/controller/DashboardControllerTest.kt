@@ -235,6 +235,47 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "getDashboardFragment_uses24hBaselineOutsideRecentHistoryWindow" {
+            val now = Instant.now()
+            val latest = TestFixtures.emptySnapshot(now, BigDecimal("11000.00"))
+            val recentHistory =
+                listOf(latest) +
+                    (1L..49L).map { minutesAgo ->
+                        TestFixtures.emptySnapshot(now.minusSeconds(minutesAgo * 60), BigDecimal("10500.00"))
+                    }
+            val baseline = TestFixtures.emptySnapshot(now.minusSeconds(86_400), BigDecimal("10000.00"))
+            val baselineLookup = now.minusSeconds(86_400).plusMillis(1)
+            coEvery { tradeHistoryService.getHistory() } returns recentHistory
+            coEvery { tradeHistoryService.getSnapshotBefore(baselineLookup) } returns baseline
+            every { configService.getConfig() } returns dashboardConfig()
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val body = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
+                body shouldContain "class=\"hero-delta up\">+10%"
+                body shouldContain "24H"
+                coVerify(exactly = 1) { tradeHistoryService.getSnapshotBefore(baselineLookup) }
+            }
+        }
+
+        "getDashboardFragment_uses24hBaselineInRecentHistoryWithoutExtraLookup" {
+            val now = Instant.now()
+            val latest = TestFixtures.emptySnapshot(now, BigDecimal("11000.00"))
+            val baseline = TestFixtures.emptySnapshot(now.minusSeconds(86_400), BigDecimal("10000.00"))
+            coEvery { tradeHistoryService.getHistory() } returns listOf(latest, baseline)
+            every { configService.getConfig() } returns dashboardConfig()
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val body = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
+                body shouldContain "class=\"hero-delta up\">+10%"
+                body shouldContain "24H"
+                coVerify(exactly = 0) { tradeHistoryService.getSnapshotBefore(any()) }
+            }
+        }
+
         "dashboard fragment refreshes the mode plate from current settings and keeps stream status separate" {
             val snapshot = TestFixtures.emptySnapshot(Instant.parse("2026-08-09T12:00:00Z"), BigDecimal("1000.00"))
             coEvery { tradeHistoryService.getHistory() } returns listOf(snapshot)

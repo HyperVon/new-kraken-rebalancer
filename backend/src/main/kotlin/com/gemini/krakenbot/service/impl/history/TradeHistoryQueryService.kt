@@ -232,6 +232,8 @@ class TradeHistoryQueryService(
 
     suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
+    suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? = repository.getSnapshotBefore(timestamp)
+
     suspend fun getLatestSnapshot(): PortfolioSnapshot? = repository.getLatestSnapshot()
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =

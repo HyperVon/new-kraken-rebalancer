@@ -281,6 +281,43 @@ object MediaQueries {
         }
 
         "@media (max-width: 639px)" {
+            // SETT-MOBILE-1: the desktop allocation row needs a 30rem track; let the list fit the
+            // viewport and stack the controls into two rows so the target and Remove stay reachable.
+            ".${CssClass.Form.AllocationListContainer}" {
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
+            }
+            ".${CssClass.Form.AllocationEditRow}" {
+                gridTemplateColumns = GridTemplateColumns("2rem minmax(0, 1fr) minmax(0, 1fr)")
+                gap = 0.5.rem
+            }
+            ".${CssClass.Form.AllocationControlInputs}" {
+                flexWrapRaw("wrap")
+            }
+            ".${CssClass.Form.AllocationControlInputs} > button" {
+                put("flex", "1 1 100%")
+            }
+            ".${CssClass.Form.AllocationEditSymbol}" {
+                put("grid-column", "1 / span 2")
+                put("grid-row", "1")
+            }
+            "${CssClass.Form.AllocationEditRow.querySelector} > label" {
+                put("grid-column", "1")
+                put("grid-row", "2")
+            }
+            "${CssClass.Form.AllocationEditInputWrapper.querySelector}:has(input[name=\"scores\"])" {
+                put("grid-column", "2")
+                put("grid-row", "2")
+            }
+            "${CssClass.Form.AllocationEditInputWrapper.querySelector}:has(input[name=\"targets\"])" {
+                put("grid-column", "3")
+                put("grid-row", "2")
+            }
+            "${CssClass.Form.AllocationEditRow.querySelector} > ${CssClass.Button.DangerGhost.querySelector}" {
+                put("grid-column", "3")
+                put("grid-row", "1")
+                put("justify-self", "end")
+            }
+
             // DASH-MOBILE-1: keep the operator's most useful performance columns visible.
             listOf(2, 4, 5).forEach { column ->
                 ".${CssClass.Layout.DetailGrid} table th:nth-child($column)" {

@@ -674,6 +674,20 @@ class DashboardViewTest : StringSpec() {
             htmlDown shouldContain deltaDown
         }
 
+        "renderDashboardFragment_deltaUnavailable_isExplicit" {
+            val latest = snap(0, "11000")
+            val html = createHTML().div {
+                view.renderDashboardFragment(
+                    baseConfig.settings,
+                    latest,
+                    listOf(latest),
+                    delta24h = null,
+                )
+            }
+
+            html shouldContain "24H change unavailable"
+        }
+
         "DashboardView_renderHistoryPage" {
             val html = createHTML().html {
                 view.renderHistoryPage(baseConfig.settings)

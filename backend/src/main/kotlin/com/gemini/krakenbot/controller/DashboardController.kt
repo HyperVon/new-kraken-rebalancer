@@ -914,7 +914,17 @@ class DashboardController(
             return
         }
 
-        val delta24h = PortfolioCalculations.compute24hDelta(latest, history)
+        val cutoff24h = latest.timestamp.minus(1, ChronoUnit.DAYS)
+        val historyForDelta =
+            if (history.any { it.timestamp <= cutoff24h }) {
+                history
+            } else {
+                // Persisted times have millisecond precision. Advance one millisecond so the strict-before lookup
+                // includes a snapshot exactly at the cutoff.
+                val baseline = tradeHistoryService.getSnapshotBefore(cutoff24h.plusMillis(1))
+                history + listOfNotNull(baseline)
+            }
+        val delta24h = PortfolioCalculations.compute24hDelta(latest, historyForDelta)
         val unresolvedIntents = orderIntentService.getUnresolvedIntents()
         val csrfToken = CsrfProtection.issueToken(call)
         val html =

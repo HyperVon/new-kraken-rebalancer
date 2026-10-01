@@ -10,6 +10,7 @@ ViewText:
   CASH_USD: "Cash (USD)"
   CRYPTO_ASSETS: "Crypto Assets"
   DELTA_WINDOW_24H: "24H"
+  DELTA_UNAVAILABLE_24H: "24H change unavailable"
   DRAWDOWN_PREFIX: "Drawdown: "
   RECENT_ACTIVITY: "Recent Activity"
   NO_TRADING_HISTORY: "No trading history available."
