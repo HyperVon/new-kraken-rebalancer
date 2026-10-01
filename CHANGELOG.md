@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.87] - 2026-10-01
+
+### Fixed
+
+- **Settings and sync progress no longer wait silently through history scans**: read display-only
+  progress without the history evidence lock, return a busy-save message with submitted values
+  preserved, and keep only one Settings progress request outstanding.
+- **HTTP status warnings identify the request**: include the method and path without query parameters
+  so missing resources can be traced.
+
 ## [6.17.86] - 2026-09-30
 
 ### Fixed

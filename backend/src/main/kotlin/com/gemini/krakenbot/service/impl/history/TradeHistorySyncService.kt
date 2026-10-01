@@ -1089,6 +1089,13 @@ class TradeHistorySyncService(
         )
     }
 
+    /** Reads display-only progress without waiting on the coordinator held during paginated sync. */
+    internal suspend fun getLocalSyncProgress(): LocalTradeSyncProgress = LocalTradeSyncProgress(
+        seeded = repository.isHistorySeeded(),
+        offset = repository.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET),
+        total = repository.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL),
+    )
+
     private suspend fun readInitialPaginationOffset(): Int? = repository
         .getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
         ?.toIntOrNull()
@@ -1254,5 +1261,7 @@ private data class TradeSyncScanOutcome(
     val scanStartSec: Long?,
     val authoritativeCompletenessProven: Boolean,
 )
+
+internal data class LocalTradeSyncProgress(val seeded: Boolean, val offset: String?, val total: String?)
 
 private fun AppConfig.canPullTradeHistory(): Boolean = settings.simulation || kraken.hasValidCredentials()

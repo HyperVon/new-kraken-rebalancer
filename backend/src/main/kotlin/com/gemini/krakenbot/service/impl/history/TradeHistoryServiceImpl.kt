@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.api.SyncProgressResponse
+import com.gemini.krakenbot.api.buildSyncProgressResponse
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
@@ -143,6 +145,16 @@ class TradeHistoryServiceImpl(
     override suspend fun syncTradesFromKraken() = syncService.syncTradesFromKraken()
 
     override suspend fun syncLedgersFromKraken() = ledgersSyncService.syncLedgersFromKraken()
+
+    override suspend fun getSyncProgress(): SyncProgressResponse {
+        val progress = syncService.getLocalSyncProgress()
+        return buildSyncProgressResponse(
+            seeded = progress.seeded,
+            offset = progress.offset,
+            total = progress.total,
+            recovery = getInceptionRecoveryStatus(),
+        )
+    }
 
     override suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances?) =
         syncService.rebuildHistoricalSnapshotsIfNeeded(observedBalances)

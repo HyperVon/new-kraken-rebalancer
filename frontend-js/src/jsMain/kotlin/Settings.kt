@@ -30,10 +30,12 @@ fun initSettings() {
  * shows progress without a manual refresh.
  */
 private var inceptionBaselinePollingStarted = false
+private var inceptionBaselineRequestPending = false
 
 /** Test-only reset for the once-per-page poller guard. */
 internal fun resetInceptionBaselinePollingForTest() {
     inceptionBaselinePollingStarted = false
+    inceptionBaselineRequestPending = false
 }
 
 private fun startInceptionBaselinePolling() {
@@ -51,15 +53,31 @@ private fun startInceptionBaselinePolling() {
             window.clearInterval(handle)
             return@setInterval
         }
-        window.fetch(Routes.API_HISTORY_SYNC_PROGRESS)
+        // Slow recovery must not accumulate a new HTTP request on every timer tick.
+        if (inceptionBaselineRequestPending) return@setInterval
+        inceptionBaselineRequestPending = true
+        val abortController: dynamic = js("new AbortController()")
+        val requestOptions: dynamic = js("({})")
+        requestOptions.signal = abortController.signal
+        val timeout = window.setTimeout(
+            { abortController.abort() },
+            INCEPTION_BASELINE_REQUEST_TIMEOUT_MS,
+        )
+        window.fetch(Routes.API_HISTORY_SYNC_PROGRESS, requestOptions)
             .then { response: dynamic -> response.json() }
             .then { raw: dynamic ->
                 val status = parseSyncProgressResponse(raw)
-                if (status.recoveryStatus in INCEPTION_BASELINE_TERMINAL_STATUSES) {
+                if (document.getElementById(HtmlIds.INCEPTION_BASELINE_PENDING) != null &&
+                    status.recoveryStatus in INCEPTION_BASELINE_TERMINAL_STATUSES
+                ) {
                     window.location.reload()
                 }
             }
             .`catch` { /* transient fetch failure; next tick retries */ }
+            .then {
+                window.clearTimeout(timeout)
+                inceptionBaselineRequestPending = false
+            }
     }, INCEPTION_BASELINE_POLL_MS)
 }
 
@@ -73,6 +91,7 @@ private val INCEPTION_BASELINE_TERMINAL_STATUSES = setOf(
 )
 
 private const val INCEPTION_BASELINE_POLL_MS = 5000
+private const val INCEPTION_BASELINE_REQUEST_TIMEOUT_MS = 15000
 
 fun registerSettingsGlobals() {
     window.asDynamic().updateAllocationTotal = { updateAllocationTotal() }

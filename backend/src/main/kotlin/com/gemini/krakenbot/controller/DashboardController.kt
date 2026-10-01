@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.gemini.krakenbot.api.buildSyncProgressResponse
 import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
@@ -233,8 +232,18 @@ class DashboardController(
             respondSettingsCsrfFailure(params, QualityAllocation.DEFAULT_EMPHASIS)
             return
         }
-        historyEvidenceCoordinator.withLock {
+        val saved = historyEvidenceCoordinator.tryWithLock {
             handlePostSettingsUnderEvidenceLock(params)
+        }
+        if (!saved) {
+            respondSettingsFormError(
+                config = configService.getConfig(),
+                message = ViewText.SETTINGS_SAVE_HISTORY_BUSY,
+                csrfToken = CsrfProtection.currentToken(call),
+                paused = portfolioManager.isLoopPaused(),
+                status = HttpStatusCode.Conflict,
+                formValues = params.toSettingsFormValues(QualityAllocation.DEFAULT_EMPHASIS),
+            )
         }
     }
 
@@ -998,17 +1007,7 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.handleGetSyncProgress() {
-        val offset = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
-        val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
-        val seeded = tradeHistoryService.isHistorySeeded()
-        respondJson(
-            buildSyncProgressResponse(
-                seeded = seeded,
-                offset = offset,
-                total = total,
-                recovery = tradeHistoryService.getInceptionRecoveryStatus(),
-            ),
-        )
+        respondJson(tradeHistoryService.getSyncProgress())
     }
 
     private suspend fun RoutingContext.handleGetHistoryComparison() {

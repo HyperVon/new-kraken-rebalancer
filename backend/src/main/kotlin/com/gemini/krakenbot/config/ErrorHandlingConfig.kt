@@ -7,6 +7,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -49,9 +51,9 @@ object ErrorHandlingConfig {
             statusErrors.forEach { (httpStatus, errorName, errorMsg) ->
                 status(httpStatus) { call, status ->
                     if (httpStatus.value >= 500) {
-                        log.error(errorName)
+                        log.error("{}: {} {}", errorName, call.request.httpMethod.value, call.request.path())
                     } else {
-                        log.warn(errorName)
+                        log.warn("{}: {} {}", errorName, call.request.httpMethod.value, call.request.path())
                     }
                     call.respondText(
                         text =

@@ -120,6 +120,12 @@ flowchart TB
 
 **Path:** Settings UI → `ConfigService._configFlow` → `PortfolioManager`
 
+The Settings save first tries the shared history-evidence lock. If a history
+scan currently owns it, the form returns a conflict response with the submitted
+values preserved. `/api/history/sync-progress` reads its display-only local
+progress without waiting for that lock, so the Settings recovery poll can
+continue during a paginated sync.
+
 ```mermaid
 sequenceDiagram
     participant User as User (Browser)

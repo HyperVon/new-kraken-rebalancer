@@ -232,6 +232,7 @@ ViewText:
   INVALID_ALLOCATION_EMPHASIS: "Invalid allocation fields: score emphasis must be between 1 and 8."
   INVALID_CONFIGURATION_FALLBACK: "Invalid configuration"
   CSRF_SESSION_EXPIRED: "This page's security token is invalid or expired. Your action was not applied. Please try again."
+  SETTINGS_SAVE_HISTORY_BUSY: "History is syncing or verifying evidence. Your settings were not saved. Please retry after it finishes."
   ERROR_LIVE_ORDERS_BLOCKED: "ERROR: Live orders blocked pending manual Kraken verification"
   ORDER_SUBMISSION_PENDING: "Order submission pending"
   ORDER_SUBMISSION_FAILED: "Order submission failed"
