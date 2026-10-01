@@ -629,6 +629,35 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "postSettings_ReturnsConflictAndPreservesValuesWhileHistoryEvidenceIsBusy" {
+            every { configService.getConfig() } returns dashboardConfig()
+            every { portfolioManager.isLoopPaused() } returns false
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = historyEvidenceCoordinator.withLock {
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
+                                FormFields.LOOP_DELAY_SECONDS to listOf("75"),
+                            ).formUrlEncode(),
+                        )
+                        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        header(HttpHeaders.Cookie, csrf.cookie)
+                        header(HttpHeaders.Origin, "http://localhost")
+                    }
+                }
+
+                response.status shouldBe HttpStatusCode.Conflict
+                response.bodyAsText() shouldContain ViewText.SETTINGS_SAVE_HISTORY_BUSY
+                response.bodyAsText() shouldContain "value=\"75\""
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+                coVerify(exactly = 0) { tradeHistoryService.setSyncMetadataUnderEvidenceLock(any(), any()) }
+            }
+        }
+
         "postSettings_RejectsWrongCsrfTokenAndReturnsTheValidCookieToken" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
@@ -681,6 +710,43 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 followUpResponse.status shouldBe HttpStatusCode.OK
                 followUpResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
                 coVerify(exactly = 1) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings uses fallback message when comparison proposal throws without a message" {
+            val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } throws IllegalArgumentException()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.SCORES to listOf(""),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 
@@ -1191,6 +1257,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ),
             )
             every { configService.getConfig() } returns serverConfig
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            } returns null
             coEvery { configService.updateConfig(any()) } throws
                 InvalidConfigurationException("configuration write rejected")
 

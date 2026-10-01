@@ -45,6 +45,11 @@ class NetworkUtilsTest : StringSpec() {
             isLocalOrPrivateOrigin("http://[::2]") shouldBe false
         }
 
+        "should reject local hostnames exceeding the DNS hostname length limit" {
+            val oversizedLocalHost = listOf("a", "b", "c", "d").joinToString(".") { it.repeat(63) } + ".local"
+            isLocalOrPrivateOrigin("http://$oversizedLocalHost") shouldBe false
+        }
+
         "should identify 172.16.x.x to 172.31.x.x private IP range" {
             isLocalOrPrivateOrigin("http://172.16.0.1:8080") shouldBe true
             isLocalOrPrivateOrigin("http://172.31.255.255:8080") shouldBe true

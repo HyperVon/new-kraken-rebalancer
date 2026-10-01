@@ -7,11 +7,15 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
+import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -22,7 +26,9 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.math.BigDecimal
 import java.time.Instant
@@ -32,6 +38,75 @@ import java.time.temporal.ChronoUnit
 class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
 
     init {
+        "getSyncProgress_ReadsLocalStateWhileHistoryEvidenceIsLocked" {
+            runTest {
+                val coordinator = HistoryEvidenceCoordinator()
+                val recoveryService = InceptionRecoveryService(
+                    repository = repository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    tradeHistorySyncService = mockk<TradeHistorySyncService>(relaxed = true),
+                    historyEvidenceCoordinator = coordinator,
+                )
+                val tradeHistoryService = createService(
+                    historyEvidenceCoordinator = coordinator,
+                    inceptionRecoveryService = recoveryService,
+                )
+                coEvery { repository.isHistorySeeded() } returns false
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET) } coAnswers {
+                    delay(1)
+                    "5250"
+                }
+                repositorySyncMetadata[SyncMetadataKeys.SYNC_OFFSET] = "5250"
+                repositorySyncMetadata[SyncMetadataKeys.SYNC_TOTAL] = "8000"
+                repositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_STATUS] = InceptionRecoveryStatus.IN_PROGRESS
+                repositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET] = "100"
+                repositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL] = "200"
+                ledgerRepositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET] = "50"
+                ledgerRepositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL] = "75"
+
+                val progress = coordinator.withLock {
+                    withTimeout(1_000) { tradeHistoryService.getSyncProgress() }
+                }
+
+                progress.seeded shouldBe false
+                progress.offset shouldBe "5250"
+                progress.total shouldBe "8000"
+                progress.recoveryStatus shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                progress.recoveryTradeOffset shouldBe "100"
+                progress.recoveryTradeTotal shouldBe "200"
+                progress.recoveryLedgerOffset shouldBe "50"
+                progress.recoveryLedgerTotal shouldBe "75"
+            }
+        }
+
+        "getSyncProgress_DefaultInterfaceImplementationProvidesEmptyProgress" {
+            runTest {
+                val adapter = TradeHistoryServiceTestAdapter(repository)
+                val service = object : TradeHistoryService by adapter {
+                    override suspend fun getSyncProgress() = super<TradeHistoryService>.getSyncProgress()
+
+                    override suspend fun isHistorySeeded(): Boolean {
+                        delay(1)
+                        return false
+                    }
+
+                    override suspend fun getSyncMetadata(key: String): String? {
+                        delay(1)
+                        return null
+                    }
+                }
+
+                val progress = service.getSyncProgress()
+
+                progress.seeded shouldBe false
+                progress.offset shouldBe ""
+                progress.total shouldBe ""
+                progress.recoveryStatus shouldBe InceptionRecoveryStatus.NOT_STARTED
+            }
+        }
+
         "getHistoryStats_EpochRange_PrefersStoredAthWhenHigherThanPeriodHigh" {
             runTest {
                 val tradeHistoryService = createService()
