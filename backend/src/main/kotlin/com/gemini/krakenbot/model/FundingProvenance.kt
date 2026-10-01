@@ -232,7 +232,7 @@ class SimpleFundingProvenanceResolver(
                 // to classify as owner capital on one source alone.
                 val competingEvidence = allRecords.asSequence()
                     .filterNot { it === directRecord }
-                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.DIRECT)?.evidence }
+                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.FUZZY)?.evidence }
                     .toSet()
                 if (competingEvidence.any { it != directCandidate.evidence }) {
                     return FundingEvidence.UNRESOLVED
@@ -262,7 +262,7 @@ class SimpleFundingProvenanceResolver(
                     ?: return "direct funding record does not match the ledger row"
                 val competing = allRecords.asSequence()
                     .filterNot { it === directRecord }
-                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.DIRECT)?.evidence }
+                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.FUZZY)?.evidence }
                     .toSet()
                 if (competing.any { it != directCandidate.evidence }) return "conflicting funding evidence"
                 return unresolvedDetail(directRecord, directCandidate.evidence)

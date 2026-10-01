@@ -15,7 +15,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   places it in a non-Spot wallet. Conflicting duplicates and Spot-facing singletons still fail closed.
 - **Funding provenance sees delayed ledger bookings**: widen bounded API lookup padding to 24 hours
   for direct-refid matching while keeping fuzzy matching at three minutes; recognize card methods by
-  whole tokens so `Cardano` is not mistaken for a card payment.
+  whole tokens so `Cardano` is not mistaken for a card payment. Conflicting records with different
+  refids must still match the strict time window, so unrelated same-amount activity cannot block an
+  exact funding match.
 
 ## [6.17.88] - 2026-10-01
 

@@ -131,7 +131,7 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
   this validation boundary.
 - `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (current reconstruction
-  version `8`) query
+  version `19`) query
   `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
   from current balances.
 - Reconstruction writes the ledger-coverage version alongside its version marker only after

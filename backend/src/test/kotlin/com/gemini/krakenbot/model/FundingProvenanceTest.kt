@@ -1574,6 +1574,40 @@ class FundingProvenanceTest : StringSpec() {
             resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
         }
 
+        "exact external refid ignores unrelated internal candidates outside the correlation window" {
+            val event = LedgerEvent(
+                ledgerId = "direct-out-of-window-event",
+                refid = "DIRECT-EXT-OUT-OF-WINDOW",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "DIRECT-EXT-OUT-OF-WINDOW",
+                        txid = "0x890",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                        status = "Settled",
+                    ),
+                ),
+                internalTransfers = listOf(
+                    InternalTransferRecord(
+                        refid = "OTHER-INTERNAL-OUT-OF-WINDOW",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now.plusSeconds(6 * 60 * 60L),
+                    ),
+                ),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+            resolver.explain(event) shouldBe null
+        }
+
         "correlation rejects duplicate identities and invalid signed or fee fields" {
             val deposit = DepositStatusRecord(
                 refid = "DUPLICATE",
