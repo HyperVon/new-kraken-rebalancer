@@ -31,6 +31,86 @@ class HistoryLoadingTest : StringSpec() {
         """.trimIndent()
 
     init {
+        "dry-run filter changes during loading persist and apply to the completed chart" {
+            resetHistoryUiState()
+            HistorySessionState.clear()
+            HistoryViewPrefs.resetInteractionState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyViewsDom()
+            document.body!!.appendChild(container)
+            val chartConfigs = mutableListOf<dynamic>()
+            window.asDynamic().Chart = mockChartConstructor { config -> chartConfigs.add(config) }
+            val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
+            window.asDynamic().fetch = { url: String ->
+                if (url == "/api/history/sync-progress") {
+                    Promise.resolve(okFetchResponse(json("seeded" to true, "offset" to "5", "total" to "10")))
+                } else {
+                    val response: dynamic = json()
+                    response.ok = true
+                    response.status = 200
+                    response.json = {
+                        Promise { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
+                            bodyResolvers[url] = resolve
+                        }
+                    }
+                    Promise.resolve<dynamic>(response)
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                setupSyncProgressAndLoad()
+                awaitPromiseQueue()
+                val range = currentRange
+                val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement
+                historyTradesAvailable shouldBe false
+                checkbox.checked = false
+                val changeEvent = document.createEvent("Event")
+                changeEvent.initEvent("change", bubbles = true, cancelable = true)
+                checkbox.dispatchEvent(changeEvent)
+
+                HistorySessionState.load()?.showDryRun shouldBe false
+                HistoryViewPrefs.hasUserInteracted() shouldBe true
+
+                bodyResolvers.getValue("/api/history/snapshots?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/trades?range=$range")(
+                    arrayOf(
+                        tradeRecordToDynamic(mockTradeRecord(symbol = Asset.ETH, dryRun = true)),
+                        tradeRecordToDynamic(mockTradeRecord(symbol = Asset.BTC, dryRun = false)),
+                    ),
+                )
+                bodyResolvers.getValue("/api/history/stats?range=$range")(
+                    historyStatsToDynamic(mockPortfolioStatsRecord()),
+                )
+                bodyResolvers.getValue("/api/history/rewards?range=$range")(
+                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
+                )
+                bodyResolvers.getValue("/api/history/comparison?range=$range")(
+                    rebalancerComparisonToDynamic(mockAvailableComparison()),
+                )
+                awaitPromiseQueue()
+
+                historyTradesAvailable shouldBe true
+                chartConfigs.any { config ->
+                    (config.data.datasets[0].label as String) == ViewText.NET_CASH_FLOW_REALIZED
+                }.shouldBeTrue()
+
+                checkbox.checked = true
+                val loadedChangeEvent = document.createEvent("Event")
+                loadedChangeEvent.initEvent("change", bubbles = true, cancelable = true)
+                checkbox.dispatchEvent(loadedChangeEvent)
+                HistorySessionState.load()?.showDryRun shouldBe true
+                chartConfigs.any { config ->
+                    (config.data.datasets[0].label as String) == ViewText.NET_CASH_FLOW_ALL
+                }.shouldBeTrue()
+            } finally {
+                document.body!!.removeChild(container)
+                HistorySessionState.clear()
+                HistoryViewPrefs.resetInteractionState()
+                resetHistoryUiState()
+            }
+        }
+
         "loadAll and checkSyncProgress update history content" {
             val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.historyDom()

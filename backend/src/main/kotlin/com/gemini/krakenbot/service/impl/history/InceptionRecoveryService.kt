@@ -853,7 +853,7 @@ class InceptionRecoveryService(
         if (!backend.hasLastTradeHistoryPageShape()) {
             throw IllegalStateException("Kraken returned a malformed trade page envelope")
         }
-        val rawPageSize = backend.getLastTradeHistoryRawPageSize().coerceAtLeast(page.size)
+        val rawPageSize = backend.getLastTradeHistoryRawPageSize()
         if (!backend.hasLastTradeHistoryTotalCount()) {
             throw IllegalStateException(
                 "Cannot certify inception recovery from a trade page without an authoritative count",
@@ -877,8 +877,13 @@ class InceptionRecoveryService(
             ?.coerceAtMost(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
         val occupancyMatchesCount = when {
             reportedTotal == 0 -> page.isEmpty() && rawPageSize == 0
+
             offset >= reportedTotal -> page.isEmpty() && rawPageSize == 0
-            else -> expectedPageSize != null && rawPageSize == expectedPageSize
+
+            else ->
+                expectedPageSize != null &&
+                    rawPageSize == expectedPageSize &&
+                    page.size == expectedPageSize
         }
         if (!occupancyMatchesCount) {
             throw IllegalStateException(
@@ -936,7 +941,7 @@ class InceptionRecoveryService(
         if (page.any { it.time.isAfter(upperBound) }) {
             throw IllegalStateException("Kraken returned a ledger beyond the recovery horizon")
         }
-        val rawPageSize = backend.getLastLedgerRawPageSize().coerceAtLeast(page.size)
+        val rawPageSize = backend.getLastLedgerRawPageSize()
         if (!backend.hasLastLedgerPageShape()) {
             throw IllegalStateException("Kraken returned a malformed ledger page envelope")
         }
@@ -965,7 +970,7 @@ class InceptionRecoveryService(
             .takeIf { it > 0 }
             ?.coerceAtMost(KrakenApiConstants.LEDGER_PAGE_SIZE)
         val pageMatchesReportedTotal = when {
-            !hasAuthoritativeTotal -> true
+            !hasAuthoritativeTotal -> rawPageSize == page.size
 
             authoritativeTotal == 0 -> page.isEmpty() && rawPageSize == 0
 
@@ -985,7 +990,7 @@ class InceptionRecoveryService(
         val complete = !paginationShifted && if (hasAuthoritativeTotal) {
             reportedTotalReached
         } else {
-            rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE
+            pageMatchesReportedTotal && rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE
         }
         if (complete) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, COMPLETED)

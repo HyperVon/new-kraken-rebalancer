@@ -53,9 +53,10 @@ internal fun setupSyncProgressAndLoad() {
 
     val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement
     checkbox?.addEventListener(HtmlEvents.CHANGE, {
-        if (!historyTradesAvailable) return@addEventListener
         HistoryViewPrefs.markCurrentViewModified()
-        rerenderHistoryTradesForDryRunFilter(checkbox.checked)
+        if (historyTradesAvailable) {
+            rerenderHistoryTradesForDryRunFilter(checkbox.checked)
+        }
         try {
             HistorySessionState.save()
         } catch (_: Throwable) {
@@ -137,8 +138,6 @@ internal fun loadAll(range: String): Promise<Unit> {
     clearHistoryCoreLoadError()
     clearHistoryCoreData()
 
-    val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-
     // Each dataset renders as soon as its own response resolves. If one core endpoint
     // fails, clear only that group's previous-range data and leave other successful or
     // still-pending groups alone. The selected range remains the range all groups target.
@@ -171,6 +170,8 @@ internal fun loadAll(range: String): Promise<Unit> {
             allTrades = trades
             historyTradesAvailable = true
             renderTradeTable(trades)
+            val showDryRun =
+                (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
             buildCumulativeNetCashFlowChart(trades, showDryRun)
         },
         loadGroup(

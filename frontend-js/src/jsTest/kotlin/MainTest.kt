@@ -112,6 +112,12 @@ class MainTest : StringSpec() {
                 "settings-form",
             ) shouldBe true
             shouldSwapRenderedError(
+                403,
+                "<form hx-post=\"/settings\"><div class=\"error-banner\">forbidden</div></form>",
+                "text/html",
+                "settings-form",
+            ) shouldBe true
+            shouldSwapRenderedError(
                 422,
                 "{\"error\":\"invalid\"}",
                 "application/json",
@@ -132,6 +138,8 @@ class MainTest : StringSpec() {
             ) shouldBe true
             shouldSwapRenderedError(500, "<div>boom</div>", "text/html", "order-intent") shouldBe false
             shouldSwapRenderedError(422, "", "text/html", "settings-form") shouldBe false
+            shouldSwapRenderedError(422, "<div>message</div>", null, "settings-form") shouldBe false
+            shouldSwapRenderedError(399, "<div>message</div>", "text/html", "order-intent") shouldBe false
         }
 
         "the htmx beforeSwap listener swaps marked errors but preserves the form on stale CSRF" {
@@ -262,6 +270,17 @@ class MainTest : StringSpec() {
                 dispatchBeforeRequest("get", "/fragments/settings-proposal")
                 (document.querySelector("form .error-banner") != null) shouldBe true
 
+                val missingConfigEvent = document.createEvent("CustomEvent")
+                val missingConfigDetail = js("({})")
+                missingConfigEvent.asDynamic().initCustomEvent(
+                    "htmx:beforeRequest",
+                    true,
+                    true,
+                    missingConfigDetail,
+                )
+                document.dispatchEvent(missingConfigEvent)
+                (document.querySelector("form .error-banner") != null) shouldBe true
+
                 dispatchBeforeRequest("post", "/settings")
 
                 // The stale attempt message goes, so a successful swap cannot leave it above
@@ -270,8 +289,11 @@ class MainTest : StringSpec() {
                 document.querySelectorAll(".error-banner").length shouldBe 1
 
                 shouldClearSettingsError("POST", "/fragments/settings-allocations-preview") shouldBe true
+                shouldClearSettingsError("POST", "/settings?tab=allocations#targets") shouldBe true
+                shouldClearSettingsError("POST", "/settings#targets") shouldBe true
                 shouldClearSettingsError("GET", "/settings") shouldBe false
                 shouldClearSettingsError("POST", "/fragments/settings-proposal") shouldBe false
+                shouldClearSettingsError("POST", null) shouldBe false
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)

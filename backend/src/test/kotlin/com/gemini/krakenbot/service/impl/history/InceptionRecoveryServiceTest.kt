@@ -559,6 +559,55 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "a decoded trade page shorter than its raw count cannot complete recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 50
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 49).map { apiTrade("decoded-$it", now.minusSeconds(it.toLong() + 1)) }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "FAILED"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
+        "a raw trade count shorter than the decoded page cannot complete recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "0")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                krakenService.tradeHistoryTotalCountOverride = 50
+                krakenService.tradeHistoryTotalCountAvailable = true
+                krakenService.tradeHistoryRawPageSizeOverride = 49
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map { apiTrade("raw-short-$it", now.minusSeconds(it.toLong() + 1)) }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.tradeOffset shouldBe "0"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "100"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)) shouldBe emptyList()
+            }
+        }
+
         "malformed trade page envelope fails before importing or advancing" {
             runTest {
                 val trade = apiTrade("malformed-envelope", now.minusSeconds(1))
@@ -1061,6 +1110,66 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
                 status.ledgerOffset shouldBe "0"
                 krakenService.getLedgersCallCount shouldBe 4
+            }
+        }
+
+        "a raw ledger count shorter than the decoded page cannot complete recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "2")
+                krakenService.ledgerTotalCountOverride = 2
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerRawPageSizeOverride = 1
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until 2).map { index ->
+                        LedgerEvent(
+                            ledgerId = "raw-short-ledger-$index",
+                            time = now.minusSeconds(index.toLong() + 1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "0"
+            }
+        }
+
+        "a raw ledger count shorter than decoded entries cannot certify an unknown total" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountAvailable = false
+                krakenService.ledgerRawPageSizeOverride = 1
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until 2).map { index ->
+                        LedgerEvent(
+                            ledgerId = "unknown-total-raw-short-$index",
+                            time = now.minusSeconds(index.toLong() + 1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe ""
             }
         }
 

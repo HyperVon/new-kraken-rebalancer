@@ -11,7 +11,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **History recovery receipts require complete page evidence**: reject malformed envelopes,
-  missing totals, and empty pages before the advertised end; invalidate older recovery receipts.
+  missing totals, empty pages, and raw or decoded page sizes that disagree with Kraken's advertised
+  count; invalidate older recovery receipts.
 - **ATH replay fails closed on malformed fills**: validate economics inside the replay window
   before applying capital-flow scaling, and propagate cancellation during historical basis lookup.
 - **Same-timestamp ledger debits retain their proven order**: follow balance checkpoint links
@@ -21,7 +22,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Dashboard mode and intent resolution remain visible**: refresh the mode plate with live
   fragments and return browser-appropriate resolution feedback without replacing the page with JSON.
 - **History failures cannot relabel stale data**: retain the requested range, clear failed
-  datasets, show a retry message, and ignore callbacks from superseded loads.
+  datasets, show a retry message, ignore callbacks from superseded loads, and apply dry-run filter
+  changes made while data is loading.
 - **Settings validation feedback survives background requests**: clear it only when an operator
   submits another settings or preview request.
 - **Pre-migration backups include committed WAL data**: create a consistent SQLite snapshot
