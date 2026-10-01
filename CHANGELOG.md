@@ -15,6 +15,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   encoding run away from Ktor event loops, with evidence-lock waits and holds over five seconds
   logged by operation.
 
+### Security
+
+- **Dependabot alerts #143–#152**: update Jackson Core/Databind to 2.22.3, `engine.io` to 6.6.11,
+  `brace-expansion` to 5.0.12, and `fast-uri` to 4.2.1.
+
 ## [6.17.89] - 2026-10-01
 
 ### Fixed
