@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -16,6 +18,20 @@ class HistoryEvidenceCoordinator {
         mutex.lock()
         return try {
             block()
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    suspend fun tryWithLock(block: suspend () -> Unit): Boolean {
+        val coroutineContext = currentCoroutineContext()
+        coroutineContext.ensureActive()
+        if (!mutex.tryLock()) return false
+
+        return try {
+            coroutineContext.ensureActive()
+            block()
+            true
         } finally {
             mutex.unlock()
         }

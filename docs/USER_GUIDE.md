@@ -196,6 +196,10 @@ status remain readable.
 
 Open **Settings** from the shared top nav, or go to `/settings`.
 
+If history is syncing or verifying recovery evidence, saving settings returns a
+busy message and keeps the edited values in the form. Retry after the history
+work finishes.
+
 <p><a href="images/settings.png"><img src="images/settings.png" alt="Settings page" width="720"></a></p>
 
 ### Global parameters

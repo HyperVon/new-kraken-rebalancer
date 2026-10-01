@@ -3,6 +3,8 @@ package com.gemini.krakenbot.controller
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.api.buildSyncProgressResponse
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
@@ -63,6 +65,14 @@ abstract class DashboardControllerTestBase : StringSpec() {
     }
 
     init {
+        coEvery { tradeHistoryService.getSyncProgress() } coAnswers {
+            buildSyncProgressResponse(
+                seeded = tradeHistoryService.isHistorySeeded(),
+                offset = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET),
+                total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL),
+                recovery = tradeHistoryService.getInceptionRecoveryStatus(),
+            )
+        }
         // The production controller uses under-lock service entry points. Test doubles delegate
         // those calls to the public methods so existing route assertions still exercise their
         // configured answers and verifications.

@@ -10,11 +10,12 @@ import kotlinx.browser.window
 import org.w3c.dom.HTMLInputElement
 
 /**
- * Only server-marked HTML error fragments are eligible for an error swap: settings-form 403/422
- * responses replace a rejected or invalid form, and order-intent 4xx responses replace the
+ * Only server-marked HTML error fragments are eligible for an error swap: settings-form 403/409/422
+ * responses replace a rejected, busy, or invalid form, and order-intent 4xx responses replace the
  * dedicated feedback slot without discarding the operator's form or dashboard.
  */
 private const val HTTP_UNPROCESSABLE_ENTITY = 422
+private const val HTTP_CONFLICT = 409
 private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
 private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
 private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
@@ -32,8 +33,11 @@ internal fun shouldSwapRenderedError(
     if (status == null || responseText.isNullOrBlank()) return false
     if (contentType?.substringBefore(';')?.trim()?.equals(HTML_CONTENT_TYPE, ignoreCase = true) != true) return false
     return when (fragmentKind) {
-        SETTINGS_FORM_ERROR_FRAGMENT -> status == HTTP_UNPROCESSABLE_ENTITY || status == 403
+        SETTINGS_FORM_ERROR_FRAGMENT ->
+            status == HTTP_UNPROCESSABLE_ENTITY || status == HTTP_CONFLICT || status == 403
+
         ORDER_INTENT_ERROR_FRAGMENT -> status in 400..499
+
         else -> false
     }
 }

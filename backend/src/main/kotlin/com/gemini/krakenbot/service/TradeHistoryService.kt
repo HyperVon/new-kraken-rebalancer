@@ -1,11 +1,14 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.api.SyncProgressResponse
+import com.gemini.krakenbot.api.buildSyncProgressResponse
 import com.gemini.krakenbot.model.BenchmarkMethod
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RewardsOverTime
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -43,6 +46,17 @@ interface TradeHistoryService {
     suspend fun syncTradesFromKraken()
 
     suspend fun syncLedgersFromKraken()
+
+    /**
+     * Display-only sync progress. Implementations may override to read local progress without
+     * waiting for the history-evidence coordinator held across network synchronization.
+     */
+    suspend fun getSyncProgress(): SyncProgressResponse = buildSyncProgressResponse(
+        seeded = isHistorySeeded(),
+        offset = getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET),
+        total = getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL),
+        recovery = getInceptionRecoveryStatus(),
+    )
 
     /**
      * Rebuilds legacy snapshot history when its reconstruction version is stale. [observedBalances]
