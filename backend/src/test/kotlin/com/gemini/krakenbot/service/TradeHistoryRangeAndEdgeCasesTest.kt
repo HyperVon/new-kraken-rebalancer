@@ -13,7 +13,9 @@ import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
+import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -39,7 +41,18 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
         "getSyncProgress_ReadsLocalStateWhileHistoryEvidenceIsLocked" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val tradeHistoryService = createService(historyEvidenceCoordinator = coordinator)
+                val recoveryService = InceptionRecoveryService(
+                    repository = repository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    tradeHistorySyncService = mockk<TradeHistorySyncService>(relaxed = true),
+                    historyEvidenceCoordinator = coordinator,
+                )
+                val tradeHistoryService = createService(
+                    historyEvidenceCoordinator = coordinator,
+                    inceptionRecoveryService = recoveryService,
+                )
                 coEvery { repository.isHistorySeeded() } returns false
                 coEvery { repository.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET) } coAnswers {
                     delay(1)
@@ -47,6 +60,11 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 }
                 repositorySyncMetadata[SyncMetadataKeys.SYNC_OFFSET] = "5250"
                 repositorySyncMetadata[SyncMetadataKeys.SYNC_TOTAL] = "8000"
+                repositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_STATUS] = InceptionRecoveryStatus.IN_PROGRESS
+                repositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET] = "100"
+                repositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL] = "200"
+                ledgerRepositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET] = "50"
+                ledgerRepositorySyncMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL] = "75"
 
                 val progress = coordinator.withLock {
                     withTimeout(1_000) { tradeHistoryService.getSyncProgress() }
@@ -55,7 +73,11 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 progress.seeded shouldBe false
                 progress.offset shouldBe "5250"
                 progress.total shouldBe "8000"
-                progress.recoveryStatus shouldBe InceptionRecoveryStatus.NOT_STARTED
+                progress.recoveryStatus shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                progress.recoveryTradeOffset shouldBe "100"
+                progress.recoveryTradeTotal shouldBe "200"
+                progress.recoveryLedgerOffset shouldBe "50"
+                progress.recoveryLedgerTotal shouldBe "75"
             }
         }
 
