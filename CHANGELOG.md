@@ -23,6 +23,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fragments and return browser-appropriate resolution feedback without replacing the page with JSON.
 - **Dashboard 24H change survives dense recent history**: fetch the retained baseline outside the
   latest 50 snapshots and label the delta explicitly when no valid baseline is available.
+- **Baseline-anchored wallet-scope recovery also applies to dust sweeps**: preserve opaque staking
+  assignments when a later same-instant Spot cycle is needed to resolve rounded checkpoint
+  ambiguity.
 - **Settings allocation controls fit phone screens**: reflow each row and wrap the score-preview
   and Add Asset actions so the target and Remove controls remain within the viewport.
 - **History failures cannot relabel stale data**: retain the requested range, clear failed

@@ -1006,7 +1006,13 @@ external capital over time:
   that collapsing would destroy — and only down-samples the resulting comparison points
   for display. Ledger rows resolved to Kraken's
   staking or futures wallet scopes never move comparison balances, mirroring the recorded
-  series, while linked internal-transfer pairs are still classified over the full ledger set.
+  series, while linked internal-transfer pairs are still classified over the full ledger set. If
+  rounded checkpoints make wallet-scope assignments produce different aggregate balances, a
+  same-instant fixed Spot cycle can resolve the ambiguity only when it occurs after the exact
+  baseline observation, has a unique order anchored to the baseline opening balance, and returns
+  to that opening balance. The same recovery is applied while testing non-authoritative dust-sweep
+  scope, preserving authoritative assignments and keeping opaque staking sweeps out of Spot
+  reconciliation.
   A trade whose quote asset never enters the recorded universe settles only its tracked leg;
   a tracked quote without a recorded balance fails closed. A one-unit crypto quantity offset
   left by backward replay from live balances is tolerated, while quote cash stays cent-exact;

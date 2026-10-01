@@ -5760,29 +5760,44 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
-        "baseline-anchored Spot cycle resolves later rounded wallet-scope ambiguity" {
+        "baseline-anchored Spot recovery also preserves opaque dust-sweep scope" {
             val t0 = now
             val baseline = snapshot(
                 t0,
-                "100.000000400",
-                mapOf("BTC" to assetRow("1.000000004", "100.00", "100.000000400")),
+                "100.00",
+                mapOf(
+                    "BTC" to assetRow("1.000000004", "1.00", "1.000000004"),
+                    "USD" to assetRow("98.999999996", "1.00", "98.999999996"),
+                    "BABY" to assetRow("0", "0.18", "0.00"),
+                ),
                 balancesObservedAt = t0,
             )
-            val after = snapshot(
-                t0.plusSeconds(10),
-                "100.000000400",
-                mapOf("BTC" to assetRow("1.000000004", "100.00", "100.000000400")),
+            val afterDepositAt = t0.plusSeconds(10)
+            val afterRewardAt = t0.plusSeconds(25)
+            val sweepAt = t0.plusSeconds(30)
+            val afterSweepAt = t0.plusSeconds(40)
+            val afterDeposit = snapshot(
+                afterDepositAt,
+                "100.18",
+                mapOf(
+                    "BTC" to assetRow("1.000000004", "1.00", "1.000000004"),
+                    "USD" to assetRow("98.999999996", "1.00", "98.999999996"),
+                    "BABY" to assetRow("1.00000000", "0.18", "0.18"),
+                ),
             )
+            val afterReward = afterDeposit.copy(timestamp = afterRewardAt)
+            val afterSweep = snapshot(
+                afterSweepAt,
+                "100.192",
+                mapOf(
+                    "BTC" to assetRow("1.000000004", "1.00", "1.000000004"),
+                    "USD" to assetRow("99.011999996", "1.00", "99.011999996"),
+                    "BABY" to assetRow("1.00000000", "0.18", "0.18"),
+                ),
+            )
+
             val cycleAt = t0.plusSeconds(1)
-            val otherAssetCheckpoint = ledgerEvent(
-                timestamp = t0.plusSeconds(4),
-                asset = "ETH",
-                amount = "1.00",
-                type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
-                balance = "1.00",
-                ledgerId = "other-asset-spot-checkpoint",
-            )
-            val context = listOf(
+            val spotAndOpaqueCheckpoints = listOf(
                 ledgerEvent(
                     timestamp = cycleAt,
                     asset = "BTC",
@@ -5790,6 +5805,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     balance = "2.000000004",
                     ledgerId = "anchored-cycle-credit",
+                    refid = "anchored-cycle-group",
                 ),
                 ledgerEvent(
                     timestamp = cycleAt,
@@ -5798,6 +5814,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                     balance = "1.000000004",
                     ledgerId = "anchored-cycle-debit",
+                    refid = "anchored-cycle-group",
                 ),
                 ledgerEvent(
                     timestamp = t0.plusSeconds(2),
@@ -5815,20 +5832,158 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     balance = "1.100000000",
                     ledgerId = "rounded-cross-scope-staking-checkpoint",
                 ),
-                otherAssetCheckpoint,
             )
+            val babyDeposit = ledgerEvent(
+                timestamp = afterDepositAt,
+                asset = "BABY",
+                amount = "1.00000000",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "1.00000000",
+                ledgerId = "baby-sweep-spot-deposit",
+            )
+            val babyReward = ledgerEvent(
+                timestamp = t0.plusSeconds(20),
+                asset = "BABY",
+                amount = "1.08452",
+                fee = "0.3254",
+                balance = "0.75917",
+                ledgerId = "baby-sweep-opaque-reward",
+            )
+            val sweepRefid = "baby-dust-sweep"
+            val babySweep = ledgerEvent(
+                timestamp = sweepAt,
+                asset = "BABY",
+                amount = "-0.75917",
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                subtype = "dustsweeping",
+                ledgerId = "baby-dust-sweep-spend",
+                refid = sweepRefid,
+            )
+            val usdSweep = ledgerEvent(
+                timestamp = sweepAt,
+                asset = "USD",
+                amount = "0.012",
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                subtype = "dustsweeping",
+                balance = "99.012",
+                ledgerId = "baby-dust-sweep-receive",
+                refid = sweepRefid,
+            )
+            val dustSweepHistory = listOf(babyDeposit, babyReward, babySweep, usdSweep)
+            val authoritativeEvents = (spotAndOpaqueCheckpoints + dustSweepHistory)
+                .filter(LedgerEvent::hasAuthoritativeBalance)
+            val rawAuthoritativeValidation = AuthoritativeLedgerBalanceValidator.validate(authoritativeEvents)
+            requireNotNull(rawAuthoritativeValidation.failure).detail shouldBe
+                "ambiguous wallet scopes produce different aggregate balances"
+
+            val missingOpeningBalanceValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents,
+                baseline.copy(assets = emptyMap()),
+            )
+            missingOpeningBalanceValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val observationAfterCycleValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents,
+                baseline.copy(balancesObservedAt = cycleAt),
+            )
+            observationAfterCycleValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val nonFixedCheckpointAtCycle = ledgerEvent(
+                timestamp = cycleAt,
+                asset = "BTC",
+                amount = "0.01",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                ledgerId = "ineligible-same-time-staking-checkpoint",
+            )
+            val ineligibleGroupValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents + nonFixedCheckpointAtCycle,
+                baseline,
+            )
+            ineligibleGroupValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val contradictoryRemainder = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(50),
+                    asset = "ETH",
+                    amount = "1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    balance = "1.00",
+                    ledgerId = "contradictory-remainder-opening",
+                ),
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(51),
+                    asset = "ETH",
+                    amount = "1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    balance = "100.00",
+                    ledgerId = "contradictory-remainder-checkpoint",
+                ),
+            )
+            val contradictoryRemainderValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents + contradictoryRemainder,
+                baseline,
+            )
+            contradictoryRemainderValidation.failure shouldBe rawAuthoritativeValidation.failure
+
+            val recoveredSpotValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents,
+                baseline,
+            )
+            recoveredSpotValidation.isValid shouldBe true
+            recoveredSpotValidation.resolvedScopes["anchored-cycle-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            recoveredSpotValidation.resolvedScopes["anchored-cycle-debit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            recoveredSpotValidation.resolvedScopes["rounded-cross-scope-staking-checkpoint"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING
+            recoveredSpotValidation.groupedEventCheckpointCount shouldBe 2
+
+            val combinedDustSweepValidation = RebalancerComparisonCalculator.validateLedgerWalletScopes(
+                authoritativeEvents + babySweep,
+                baseline,
+            )
+            combinedDustSweepValidation.isValid shouldBe true
+            combinedDustSweepValidation.resolvedScopes[babySweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING
+            combinedDustSweepValidation.resolvedScopes[usdSweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            combinedDustSweepValidation.authoritativeCheckpointCount shouldBe authoritativeEvents.size
+            combinedDustSweepValidation.validatedCheckpointCount shouldBe authoritativeEvents.size
+            combinedDustSweepValidation.groupedEventCheckpointCount shouldBe 3
+            combinedDustSweepValidation.sameTimestampCheckpointCount shouldBe 2
+            combinedDustSweepValidation.nonAuthoritativeEventCount shouldBe 1
+
+            val dustSweepScopeValidation = AuthoritativeLedgerBalanceValidator.validate(dustSweepHistory)
+            dustSweepScopeValidation.isValid shouldBe true
+            dustSweepScopeValidation.resolvedScopes[babySweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING
+            dustSweepScopeValidation.resolvedScopes[usdSweep.ledgerId] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
 
             val result = calculate(
-                snapshots = listOf(baseline, after),
+                snapshots = listOf(baseline, afterDeposit, afterReward, afterSweep),
+                rewards = dustSweepHistory,
                 inceptionSnapshot = baseline,
-                ledgerContext = context,
-                configuredAssetUniverse = setOf("BTC"),
-                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+                ledgerContext = spotAndOpaqueCheckpoints,
+                configuredAssetUniverse = setOf("BTC", "USD", "BABY"),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal.ONE, "BABY" to BigDecimal("0.18"))),
             )
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            check(result.availability == ComparisonAvailability.AVAILABLE) {
+                "${result.unavailableReason} at ${result.unavailableAt}"
+            }
             result.unavailableReason shouldBe null
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 4
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.18")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.18")
+            result.points[2].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.32")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.32")
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.19")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.32")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-0.12")
+            afterSweep.assets.getValue("BABY").balance shouldBeEqualComparingTo BigDecimal("1.00000000")
+            afterSweep.totalValueUSD shouldBeEqualComparingTo BigDecimal("100.192")
         }
 
         "ancient non-matching authority beside unobserved snapshots does not disturb reconciliation" {

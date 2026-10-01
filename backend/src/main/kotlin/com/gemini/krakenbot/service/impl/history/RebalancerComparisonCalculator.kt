@@ -414,57 +414,7 @@ object RebalancerComparisonCalculator {
         // to the provenance/classification path below.
         val allLedgerEvents = (ledgerContext + rewards).distinctBy(LedgerEvent::ledgerId)
         val authoritativeLedgerEvents = allLedgerEvents.filter(LedgerEvent::hasAuthoritativeBalance)
-        var ledgerValidation = AuthoritativeLedgerBalanceValidator.validate(authoritativeLedgerEvents)
-        val initialLedgerFailure = ledgerValidation.failure
-        if (initialLedgerFailure != null &&
-            initialLedgerFailure.detail == "ambiguous wallet scopes produce different aggregate balances"
-        ) {
-            val failedAsset = Asset.normalizeLedgerAsset(initialLedgerFailure.asset).uppercase()
-            val failedGroup = authoritativeLedgerEvents.filter { event ->
-                Asset.normalizeLedgerAsset(event.asset).uppercase() == failedAsset &&
-                    event.time == initialLedgerFailure.currentTime
-            }
-            val openingBalance = normalizedAssetBalances(baseline)[failedAsset]
-            val baselineObservation = baseline.balancesObservedAt
-            val strictlyAfterBaselineObservation = baselineObservation?.let { observation ->
-                failedGroup.all { event -> event.time > observation }
-            } == true
-            val ordinarySpotCycle = strictlyAfterBaselineObservation && failedGroup.size > 1 &&
-                failedGroup.all(::isFixedSpotCheckpointLedger)
-            val anchoredCycle = if (ordinarySpotCycle && openingBalance != null) {
-                anchoredSpotLedgerOrder(failedGroup, openingBalance)
-            } else {
-                null
-            }
-            if (anchoredCycle != null && openingBalance != null && anchoredCycle.isClosedCycle &&
-                anchoredCycle.orderedLedgerIds.size == failedGroup.size &&
-                anchoredCycle.closingBalance.compareTo(openingBalance) == 0
-            ) {
-                val failedLedgerIds = failedGroup.mapTo(mutableSetOf(), LedgerEvent::ledgerId)
-                val remainingValidation = AuthoritativeLedgerBalanceValidator.validate(
-                    authoritativeLedgerEvents.filterNot { it.ledgerId in failedLedgerIds },
-                )
-                if (remainingValidation.isValid) {
-                    val otherSpotScopeExists = authoritativeLedgerEvents.any { event ->
-                        event.ledgerId !in failedLedgerIds &&
-                            remainingValidation.resolvedScopes[event.ledgerId] ==
-                            AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT &&
-                            Asset.normalizeLedgerAsset(event.asset).uppercase() == failedAsset
-                    }
-                    ledgerValidation = remainingValidation.copy(
-                        authoritativeCheckpointCount = remainingValidation.authoritativeCheckpointCount +
-                            failedGroup.size,
-                        validatedCheckpointCount = remainingValidation.validatedCheckpointCount + failedGroup.size,
-                        sameTimestampCheckpointCount = remainingValidation.sameTimestampCheckpointCount +
-                            failedGroup.size,
-                        scopeCount = remainingValidation.scopeCount + if (otherSpotScopeExists) 0 else 1,
-                        resolvedScopes = remainingValidation.resolvedScopes + failedLedgerIds.associateWith {
-                            AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
-                        },
-                    )
-                }
-            }
-        }
+        val ledgerValidation = validateLedgerWalletScopes(authoritativeLedgerEvents, baseline)
         ledgerValidation.failure?.let { failure ->
             return unavailable(
                 reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
@@ -493,7 +443,7 @@ object RebalancerComparisonCalculator {
             )
         }
         for (group in dustSweepGroups.values) {
-            val groupValidation = AuthoritativeLedgerBalanceValidator.validate(authoritativeLedgerEvents + group)
+            val groupValidation = validateLedgerWalletScopes(authoritativeLedgerEvents + group, baseline)
             val authoritativeScopesPreserved = groupValidation.isValid && authoritativeLedgerEvents.all { ledger ->
                 val authoritativeScope = ledgerValidation.resolvedScopes[ledger.ledgerId]
                 authoritativeScope != null && groupValidation.resolvedScopes[ledger.ledgerId] == authoritativeScope
@@ -3462,6 +3412,72 @@ object RebalancerComparisonCalculator {
         val isClosedCycle: Boolean,
         val closingBalance: BigDecimal,
     )
+
+    internal fun validateLedgerWalletScopes(
+        events: List<LedgerEvent>,
+        baseline: PortfolioSnapshot,
+    ): AuthoritativeLedgerBalanceValidator.ValidationResult {
+        val validation = AuthoritativeLedgerBalanceValidator.validate(events)
+        val failure = validation.failure ?: return validation
+        if (failure.detail != "ambiguous wallet scopes produce different aggregate balances") return validation
+
+        val failedAsset = Asset.normalizeLedgerAsset(failure.asset).uppercase()
+        val failedGroup = events.filter { event ->
+            Asset.normalizeLedgerAsset(event.asset).uppercase() == failedAsset && event.time == failure.currentTime
+        }
+        val openingBalance = normalizedAssetBalances(baseline)[failedAsset] ?: return validation
+        val baselineObservation = baseline.balancesObservedAt ?: return validation
+        if (failedGroup.size < 2 || failedGroup.any { event ->
+                event.time <= baselineObservation || !isFixedSpotCheckpointLedger(event)
+            }
+        ) {
+            return validation
+        }
+
+        val anchoredCycle = anchoredSpotLedgerOrder(failedGroup, openingBalance) ?: return validation
+        if (!anchoredCycle.isClosedCycle || anchoredCycle.orderedLedgerIds.size != failedGroup.size ||
+            anchoredCycle.closingBalance.compareTo(openingBalance) != 0
+        ) {
+            return validation
+        }
+
+        val failedLedgerIds = failedGroup.mapTo(mutableSetOf(), LedgerEvent::ledgerId)
+        val remainingEvents = events.filterNot { it.ledgerId in failedLedgerIds }
+        val remainingValidation = AuthoritativeLedgerBalanceValidator.validate(remainingEvents)
+        if (!remainingValidation.isValid) return validation
+
+        val otherSpotScopeExists = remainingEvents.any { event ->
+            remainingValidation.resolvedScopes[event.ledgerId] ==
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT &&
+                Asset.normalizeLedgerAsset(event.asset).uppercase() == failedAsset
+        }
+        val linkedRefidCounts = events.mapNotNull { event ->
+            event.refid?.trim()?.takeIf(String::isNotEmpty)
+        }.groupingBy { it }.eachCount()
+        // A non-null anchored order has already proved every member is an authoritative fixed Spot row.
+        val recoveredCheckpointCount = failedGroup.size
+        val recoveredGroupedCheckpointCount = failedGroup.count { event ->
+            val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
+            refid?.let { linkedRefidCounts.getValue(it) > 1 } == true
+        }
+
+        // Recovered rows are fixed Spot checkpoints, so only authoritative, grouped, and
+        // same-timestamp counts need to be added; trade/flexible and non-authoritative counts
+        // remain those of the validated remainder.
+        return remainingValidation.copy(
+            authoritativeCheckpointCount = remainingValidation.authoritativeCheckpointCount +
+                recoveredCheckpointCount,
+            validatedCheckpointCount = remainingValidation.validatedCheckpointCount + recoveredCheckpointCount,
+            groupedEventCheckpointCount = remainingValidation.groupedEventCheckpointCount +
+                recoveredGroupedCheckpointCount,
+            sameTimestampCheckpointCount = remainingValidation.sameTimestampCheckpointCount +
+                recoveredCheckpointCount,
+            scopeCount = remainingValidation.scopeCount + if (otherSpotScopeExists) 0 else 1,
+            resolvedScopes = remainingValidation.resolvedScopes + failedLedgerIds.associateWith {
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            },
+        )
+    }
 
     /**
      * Resolve an ordinary Spot checkpoint chain only when its opening balance and every
