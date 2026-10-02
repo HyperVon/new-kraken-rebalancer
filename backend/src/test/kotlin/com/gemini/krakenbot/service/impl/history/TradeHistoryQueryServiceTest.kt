@@ -68,6 +68,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -77,6 +78,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -98,6 +100,7 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.CoroutineContext
 
 // Map-stubbed tests answer every sync-metadata read from a local map; these keys fall back
 // to far-future certified coverage so evaluation tests exercise the stable-history path.
@@ -8174,16 +8177,32 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "settings comparison request deduplicates work and returns its completed result to polls" {
             runTest {
-                val requestService = settingsRequestService(applicationScope = this)
+                val dispatchedBackgroundJobs = AtomicInteger()
+                val evaluationDispatcher = StandardTestDispatcher(testScheduler)
+                val countingDispatcher =
+                    object : CoroutineDispatcher() {
+                        override fun dispatch(context: CoroutineContext, block: Runnable) {
+                            dispatchedBackgroundJobs.incrementAndGet()
+                            evaluationDispatcher.dispatch(context, block)
+                        }
+
+                        override fun isDispatchNeeded(context: CoroutineContext): Boolean =
+                            evaluationDispatcher.isDispatchNeeded(context)
+                    }
+                val requestService = settingsRequestService(
+                    applicationScope = CoroutineScope(coroutineContext + countingDispatcher),
+                )
 
                 val first = requestService.requestSettingsComparisonStatus(now)
                 val duplicate = requestService.requestSettingsComparisonStatus(now)
                 first shouldBe SettingsComparisonStatus(evaluationInProgress = true)
                 duplicate shouldBe SettingsComparisonStatus(evaluationInProgress = true)
+                dispatchedBackgroundJobs.get() shouldBe 1
 
                 runCurrent()
 
                 requestService.requestSettingsComparisonStatus(now) shouldBe SettingsComparisonStatus()
+                coVerify(exactly = 1) { repository.getAllSnapshotsInRange(any(), any()) }
             }
         }
 
