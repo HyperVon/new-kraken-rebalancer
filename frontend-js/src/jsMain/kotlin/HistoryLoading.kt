@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.api.SyncProgressResponse
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
@@ -200,17 +201,7 @@ internal fun loadAll(range: String): Promise<Unit> {
     // The comparison chart loads independently: it shows its own error state on
     // failure and resolves regardless, so it cannot reject the core range load.
     showComparisonLoading()
-    loadGroup(
-        requestGeneration,
-        Routes.API_HISTORY_COMPARISON.withRange(range),
-        onError = { showComparisonFetchError() },
-    ) { raw ->
-        buildRebalancerComparisonChart(parseRebalancerComparison(raw))
-    }.`catch` { _: dynamic ->
-        // loadGroup already logged the failure and showed the visible error state
-        // for the current generation; a stale-generation failure must NOT reject
-        // (this chain is detached), so swallow it here unconditionally.
-    }
+    loadComparisonWithPolling(requestGeneration, range)
 
     return Promise.all(corePromises)
         .then {
@@ -346,4 +337,35 @@ private fun recoveryProgress(status: SyncProgressResponse): Pair<String, Int> {
     val ledger = "${status.recoveryLedgerOffset.ifBlank { "0" }} / ${status.recoveryLedgerTotal.ifBlank { "?" }}"
     val reason = status.recoveryReason?.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
     return "${ViewText.INCEPTION_RECOVERY_PROGRESS_PREFIX}: trades $trade; ledgers $ledger$reason" to pct
+}
+
+private fun isHistoryComparisonMounted(): Boolean =
+    document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) != null
+
+private fun loadComparisonWithPolling(requestGeneration: Long, range: String, pollAttempt: Int = 0) {
+    loadGroup(
+        requestGeneration,
+        Routes.API_HISTORY_COMPARISON.withRange(range),
+        onError = { showComparisonFetchError() },
+    ) { raw ->
+        val comparison = parseRebalancerComparison(raw)
+        if (comparison.unavailableReason == ComparisonUnavailableReason.COMPARISON_EVALUATING.name) {
+            if (pollAttempt >= PrecisionConstants.MAX_COMPARISON_POLL_ATTEMPTS) {
+                showComparisonFetchError()
+                return@loadGroup
+            }
+            showComparisonLoading()
+            window.setTimeout({
+                if (requestGeneration == historyLoadGeneration && isHistoryComparisonMounted()) {
+                    loadComparisonWithPolling(requestGeneration, range, pollAttempt + 1)
+                }
+            }, PrecisionConstants.COMPARISON_POLL_INTERVAL_MS)
+        } else {
+            buildRebalancerComparisonChart(comparison)
+        }
+    }.`catch` { _: dynamic ->
+        // loadGroup already logged the failure and showed the visible error state
+        // for the current generation; a stale-generation failure must NOT reject
+        // (this chain is detached), so swallow it here unconditionally.
+    }
 }

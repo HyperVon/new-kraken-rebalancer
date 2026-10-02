@@ -52,6 +52,42 @@ object HistoricalPriceResolver {
         onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
         onOhlcSourceFailure: (() -> Unit)? = null,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
+    ): BigDecimal? = resolveHistoricalPrice(
+        asset = asset,
+        eventTime = eventTime,
+        priceEvidence = LiveTradeRepositoryPriceEvidenceReader(tradesRepo),
+        krakenService = krakenService,
+        candidatePriceException = candidatePriceException,
+        marketPairs = marketPairs,
+        tradeLookbackSeconds = tradeLookbackSeconds,
+        futureTradeSkewSeconds = futureTradeSkewSeconds,
+        marketPairsByBase = marketPairsByBase,
+        quoteConversionDepth = quoteConversionDepth,
+        ohlcCache = ohlcCache,
+        futureTradeUpperBound = futureTradeUpperBound,
+        onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+        onOhlcReachabilityResolved = onOhlcReachabilityResolved,
+        onOhlcSourceFailure = onOhlcSourceFailure,
+        ohlcCallOwner = ohlcCallOwner,
+    )
+
+    suspend fun resolveHistoricalPrice(
+        asset: String,
+        eventTime: Instant,
+        priceEvidence: HistoricalPriceEvidenceReader,
+        krakenService: KrakenService,
+        candidatePriceException: BigDecimal? = null,
+        marketPairs: List<String> = emptyList(),
+        tradeLookbackSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        futureTradeSkewSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        marketPairsByBase: Map<String, List<String>> = emptyMap(),
+        quoteConversionDepth: Int = 0,
+        ohlcCache: HistoricalOhlcCache? = null,
+        futureTradeUpperBound: Instant? = null,
+        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcReachabilityResolved: ((OhlcReachabilityDependency) -> Unit)? = null,
+        onOhlcSourceFailure: (() -> Unit)? = null,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -67,14 +103,12 @@ object HistoricalPriceResolver {
         // useful for retained contribution evidence, but it must never widen the future side of
         // the valuation window and introduce look-ahead.
         val tradeLookbackStart = eventTime.minusSeconds(tradeLookbackSeconds)
-        val requestedTradeFutureEnd = runCatching {
-            eventTime.plusSeconds(futureTradeSkewSeconds)
-        }.getOrDefault(Instant.MAX)
-        val tradeFutureEnd = minOf(requestedTradeFutureEnd, futureTradeUpperBound ?: Instant.MAX)
+        val requestedTradeFutureEnd = eventTime.plusSeconds(futureTradeSkewSeconds)
+        val tradeFutureEnd = minOf(requestedTradeFutureEnd, futureTradeUpperBound ?: requestedTradeFutureEnd)
         val candidateTrades = if (tradeFutureEnd.isBefore(tradeLookbackStart)) {
             emptyList()
         } else {
-            tradesRepo.getTradesInRange(tradeLookbackStart, tradeFutureEnd)
+            priceEvidence.getTradesInRange(tradeLookbackStart, tradeFutureEnd)
         }
             .filter {
                 it.success &&
@@ -117,7 +151,7 @@ object HistoricalPriceResolver {
 
         // 3. Strict recent snapshot at or before eventTime within 180 seconds
         val snapshotWindowStart = eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS)
-        val nearestSnap = tradesRepo.getSnapshotsInRange(snapshotWindowStart, eventTime)
+        val nearestSnap = priceEvidence.getSnapshotsInRange(snapshotWindowStart, eventTime)
             .filter {
                 val observation = it.balancesObservedAt ?: Instant.MIN
                 !it.timestamp.isBefore(snapshotWindowStart) &&
@@ -198,7 +232,7 @@ object HistoricalPriceResolver {
                             quote = quote,
                             quotePrice = matched.second,
                             eventTime = eventTime,
-                            tradesRepo = tradesRepo,
+                            priceEvidence = priceEvidence,
                             krakenService = krakenService,
                             tradeLookbackSeconds = tradeLookbackSeconds,
                             futureTradeSkewSeconds = futureTradeSkewSeconds,
@@ -242,7 +276,7 @@ object HistoricalPriceResolver {
         quote: String,
         quotePrice: BigDecimal,
         eventTime: Instant,
-        tradesRepo: TradeRepository,
+        priceEvidence: HistoricalPriceEvidenceReader,
         krakenService: KrakenService,
         tradeLookbackSeconds: Long,
         futureTradeSkewSeconds: Long,
@@ -259,7 +293,7 @@ object HistoricalPriceResolver {
         val quoteUsdPrice = resolveHistoricalPrice(
             asset = quote,
             eventTime = eventTime,
-            tradesRepo = tradesRepo,
+            priceEvidence = priceEvidence,
             krakenService = krakenService,
             tradeLookbackSeconds = tradeLookbackSeconds,
             futureTradeSkewSeconds = futureTradeSkewSeconds,

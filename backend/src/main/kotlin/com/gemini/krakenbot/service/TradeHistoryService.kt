@@ -124,4 +124,11 @@ interface TradeHistoryService {
         to: Instant,
         benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison
+
+    /** Returns promptly and evaluates expensive comparison in the application scope. */
+    suspend fun requestRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison = getRebalancerComparison(from, to, benchmarkMethod)
 }

@@ -89,6 +89,11 @@ abstract class DashboardControllerTestBase : StringSpec() {
         } coAnswers {
             tradeHistoryService.getComparisonStartProposal(firstArg())
         }
+        coEvery {
+            tradeHistoryService.requestRebalancerComparison(any(), any(), any())
+        } coAnswers {
+            tradeHistoryService.getRebalancerComparison(firstArg(), secondArg(), thirdArg())
+        }
         val testModule =
             module {
                 single { tradeHistoryService }
