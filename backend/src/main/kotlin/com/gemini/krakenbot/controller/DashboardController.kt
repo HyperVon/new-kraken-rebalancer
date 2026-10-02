@@ -1032,7 +1032,7 @@ class DashboardController(
             ?: BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD
         val json = withContext(Dispatchers.Default) {
             objectMapper.writeValueAsString(
-                tradeHistoryService.getRebalancerComparison(from, to, method).toApiDto(),
+                tradeHistoryService.requestRebalancerComparison(from, to, method).toApiDto(),
             )
         }
         call.respondText(json, ContentType.Application.Json)

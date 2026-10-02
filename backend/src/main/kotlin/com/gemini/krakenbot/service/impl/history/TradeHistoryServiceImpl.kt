@@ -197,4 +197,10 @@ class TradeHistoryServiceImpl(
         to: Instant,
         benchmarkMethod: BenchmarkMethod,
     ): RebalancerComparison = queryService.getRebalancerComparison(from, to, benchmarkMethod)
+
+    override suspend fun requestRebalancerComparison(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+    ): RebalancerComparison = queryService.requestRebalancerComparison(from, to, benchmarkMethod)
 }

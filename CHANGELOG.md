@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.91] - 2026-10-02
+
+### Fixed
+
+- **History comparison responsiveness and non-blocking pipeline**: History comparison now uses a 3-phase
+  capture-compute-publish architecture that eliminates prolonged locks on `HistoryEvidenceCoordinator`.
+  Phase A captures immutable historical evidence under short lock `history-comparison-capture`, Phase B computes
+  the rebalance comparison outside the shared lock on `computationDispatcher` using `FrozenHistoricalPriceEvidence`
+  with zero database round-trips during price resolution, and Phase C validates evidence consistency under short lock
+  `history-comparison-publish` before publishing, retrying cleanly if evidence drifted during computation.
+- **Responsive HTTP polling and in-flight request coalescing**: Cold comparison queries return a responsive
+  transient `COMPARISON_EVALUATING` state promptly (within 100ms) with HTMX polling so the frontend displays
+  an animated loading status without blocking HTTP worker threads, while concurrent identical requests
+  coalesce into single shared background flights.
+
 ## [6.17.90] - 2026-10-01
 
 ### Fixed

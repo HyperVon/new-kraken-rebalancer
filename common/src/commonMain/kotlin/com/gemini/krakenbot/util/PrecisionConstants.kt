@@ -32,6 +32,8 @@ object PrecisionConstants {
     const val ONE_HOUR_MS = 3600000.0
     const val ONE_DAY_MS = 86_400_000.0
     const val SYNC_POLL_INTERVAL_MS = 3000
+    const val COMPARISON_POLL_INTERVAL_MS = 5000
+    const val MAX_COMPARISON_POLL_ATTEMPTS = 60
     const val HOURS_PER_HALF_DAY = 12
 
     const val TRADE_TABLE_COLSPAN = 9
