@@ -80,7 +80,7 @@ class LedgersSyncService(
         )
     }
 
-    suspend fun syncLedgersFromKraken() = historyEvidenceCoordinator.withLock {
+    suspend fun syncLedgersFromKraken() = historyEvidenceCoordinator.withLock(operation = "ledger-sync") {
         syncMutex.withLock {
             syncLedgersFromKrakenLocked()
         }

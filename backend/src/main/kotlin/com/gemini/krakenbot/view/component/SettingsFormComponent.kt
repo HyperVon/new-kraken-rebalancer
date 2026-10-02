@@ -305,7 +305,8 @@ class SettingsFormComponent {
      * Renders the later-start proposal slot. When [async] the slot becomes an HTMX lazy-load
      * placeholder so Settings HTML never blocks on proposal discovery sync; the fragment
      * route resolves the comparison status out-of-band and swaps this element out. The explicit
-     * hx-target keeps any enclosing form's body swap from being inherited.
+     * hx-target keeps any enclosing form's body swap from being inherited. A pending fragment
+     * response keeps this slot polling until evaluation completes.
      */
     private fun FlowContent.renderProposalSlot(laterStartProposal: ComparisonStartProposal?, async: Boolean) {
         if (async) {
@@ -327,8 +328,8 @@ class SettingsFormComponent {
 
     /**
      * Fragment response body for the async slot: the effective baseline status plus any
-     * later-start proposal. Mirrors the synchronous slot's comparison states without an
-     * hx-trigger, so the swap can never re-trigger a load loop.
+     * later-start proposal. Pending responses keep polling; terminal responses omit the
+     * polling attributes so the completed swap stops the request loop.
      */
     fun renderProposalSlotFragment(
         parent: FlowContent,
@@ -342,6 +343,14 @@ class SettingsFormComponent {
         status: SettingsComparisonStatus?,
         configuredComparisonStart: String?,
     ) {
+        if (status?.evaluationInProgress == true) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_DETERMINING }
+            return
+        }
+        if (status?.evaluationFailed == true) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_ERROR }
+            return
+        }
         val overrideActive = !configuredComparisonStart.isNullOrBlank()
         if (overrideActive) {
             p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_OVERRIDE_ACTIVE }

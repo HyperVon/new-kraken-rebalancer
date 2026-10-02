@@ -64,7 +64,7 @@ class TradeHistorySnapshotStore(
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    suspend fun init() = historyEvidenceCoordinator.withLock {
+    suspend fun init() = historyEvidenceCoordinator.withLock(operation = "history-init") {
         initLocked()
     }
 
@@ -442,9 +442,10 @@ class TradeHistorySnapshotStore(
         return currentPrice.multiply(BigDecimal.valueOf(trend + broadWave + shortWave)).toCryptoScale()
     }
 
-    suspend fun addSnapshot(snapshot: PortfolioSnapshot) = historyEvidenceCoordinator.withLock {
-        addSnapshotLocked(snapshot)
-    }
+    suspend fun addSnapshot(snapshot: PortfolioSnapshot) =
+        historyEvidenceCoordinator.withLock(operation = "snapshot-write") {
+            addSnapshotLocked(snapshot)
+        }
 
     private suspend fun addSnapshotLocked(snapshot: PortfolioSnapshot) {
         val now = nowProvider()
@@ -533,13 +534,14 @@ class TradeHistorySnapshotStore(
         ),
     ).filterNotNull().minOrNull()
 
-    suspend fun saveTrade(trade: TradeRecord): Int = historyEvidenceCoordinator.withLock {
+    suspend fun saveTrade(trade: TradeRecord): Int = historyEvidenceCoordinator.withLock(operation = "trade-write") {
         repository.saveTrade(trade)
     }
 
-    suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) = historyEvidenceCoordinator.withLock {
-        repository.updateTrade(oldTrade, newTrade)
-    }
+    suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) =
+        historyEvidenceCoordinator.withLock(operation = "trade-update") {
+            repository.updateTrade(oldTrade, newTrade)
+        }
 
     suspend fun hasPendingSubmissions(): Boolean = repository.hasPendingSubmissions()
 

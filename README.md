@@ -100,7 +100,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | Layer           | Technology                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Language**    | Kotlin 2.4.20-RC (Kotlin Multiplatform: JVM + JS; temporary security patch)                                  |
-| **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.2                                                   |
+| **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.3                                                   |
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.5.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
@@ -230,7 +230,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 | **Concurrency**        | Kotlin Coroutines (current), Java `ScheduledExecutorService`, Go goroutines, Node.js event loop                                       |
 | **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
 | **Coverage**           | JaCoCo 95%+ (Kotlin JVM), Karma/Istanbul 90/80/90/75 (Kotlin/JS) (current); Vitest, Go per-package gates (historical)                 |
-| **Serialization**      | Jackson 2.22.2, Go `encoding/json`, Zod schema validation                                                                             |
+| **Serialization**      | Jackson 2.22.3, Go `encoding/json`, Zod schema validation                                                                             |
 | **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                         |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
 | **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                             |

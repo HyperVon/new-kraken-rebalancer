@@ -115,6 +115,10 @@ interface TradeHistoryService {
     suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
         SettingsComparisonStatus(proposal = getComparisonStartProposal(after))
 
+    /** Returns promptly and evaluates expensive Settings comparison status in the application scope. */
+    suspend fun requestSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
+        getSettingsComparisonStatus(after)
+
     suspend fun getRebalancerComparison(
         from: Instant,
         to: Instant,

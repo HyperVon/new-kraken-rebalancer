@@ -35,4 +35,8 @@ data class SettingsComparisonStatus(
     /** Evidence timestamp the passive comparison failed at, when the reason carries one. */
     val unavailableAt: String? = null,
     val proposal: ComparisonStartProposal? = null,
+    /** True only for the short-lived Settings fragment response while background evaluation runs. */
+    val evaluationInProgress: Boolean = false,
+    /** A background Settings fragment evaluation failed; the next page visit may retry it. */
+    val evaluationFailed: Boolean = false,
 )

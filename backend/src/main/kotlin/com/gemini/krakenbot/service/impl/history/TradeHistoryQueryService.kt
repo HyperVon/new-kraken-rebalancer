@@ -131,6 +131,7 @@ class TradeHistoryQueryService(
     /** Current allocation membership; historical wallet-only assets are not live targets. */
     private val configService: ConfigService? = null,
     private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
+    private val monotonicTimeProvider: () -> Long = System::nanoTime,
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -174,6 +175,12 @@ class TradeHistoryQueryService(
 
     private val settingsStatusInFlight =
         ConcurrentHashMap<String, CompletableDeferred<SettingsComparisonStatus>>()
+
+    private data class CompletedSettingsStatus(val expiresAtNanos: Long, val status: SettingsComparisonStatus)
+
+    /** Completed background Settings evaluations remain briefly available for the next HTMX poll. */
+    private val completedSettingsStatus = ConcurrentHashMap<String, CompletedSettingsStatus>()
+    private val settingsStatusBackgroundInFlight = ConcurrentHashMap.newKeySet<String>()
 
     private fun startOrJoinComparisonFlight(
         flightKey: String,
@@ -426,6 +433,10 @@ class TradeHistoryQueryService(
          * otherwise pay even on a full cache hit.
          */
         private const val ASSET_METADATA_TTL_MILLIS = 3_600_000L
+
+        /** Covers an HTMX poll interval while keeping completed Settings status short-lived. */
+        private const val SETTINGS_STATUS_RESULT_TTL_NANOS = 15_000_000_000L
+        private const val SETTINGS_STATUS_RESULT_TTL_MILLIS = 15_000L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
@@ -434,7 +445,7 @@ class TradeHistoryQueryService(
         from: Instant,
         to: Instant,
         benchmarkMethod: BenchmarkMethod,
-    ): RebalancerComparison = historyEvidenceCoordinator.withLock {
+    ): RebalancerComparison = historyEvidenceCoordinator.withLock(operation = "history-comparison") {
         val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
         getRebalancerComparisonLocked(benchmarkMethod, from, to, inceptionResolution, forensicRegimes = null)
     }
@@ -453,7 +464,7 @@ class TradeHistoryQueryService(
         from: Instant,
         to: Instant,
         forensicRegimes: List<InferredRegimeTransition>,
-    ): RebalancerComparison = historyEvidenceCoordinator.withLock {
+    ): RebalancerComparison = historyEvidenceCoordinator.withLock(operation = "forensic-comparison") {
         val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
         getRebalancerComparisonLocked(
             benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
@@ -1452,12 +1463,12 @@ class TradeHistoryQueryService(
         // whose initiator went away (client disconnect) takes over as a new initiator
         // instead of inheriting the cancellation: one closed tab must not kill its
         // healthy siblings. Genuine evaluation failures still fail every joiner fast.
-        val flightKey = "${after.toEpochMilli()}:$allowPersistedBaselineFastPath"
+        val flightKey = "${settingsStatusRequestKey(after)}:$allowPersistedBaselineFastPath"
         while (true) {
             val (flight, created) = startOrJoinSettingsStatusFlight(flightKey)
             if (created) {
                 try {
-                    val result = historyEvidenceCoordinator.withLock {
+                    val result = historyEvidenceCoordinator.withLock(operation = "settings-status") {
                         val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
                         getSettingsComparisonStatusLocked(after, allowPersistedBaselineFastPath, inceptionResolution)
                     }
@@ -1481,6 +1492,75 @@ class TradeHistoryQueryService(
                 log.debug("settings comparison status flight initiator went away; taking over; after={}", after)
             }
         }
+    }
+
+    /**
+     * Starts expensive Settings comparison work on the application scope and returns immediately.
+     * The fragment polls until the shared evidence-lock evaluation finishes; duplicate page loads
+     * join the same per-anchor/config task instead of queuing additional full-history scans.
+     */
+    suspend fun requestSettingsComparisonStatus(after: Instant): SettingsComparisonStatus {
+        val scope = applicationScope
+        if (scope == null) return getSettingsComparisonStatus(after)
+        if (!scope.isActive) return SettingsComparisonStatus(evaluationFailed = true)
+
+        val requestKey = settingsStatusRequestKey(after)
+        val nowNanos = monotonicTimeProvider()
+        completedSettingsStatus.entries.removeIf { nowNanos >= it.value.expiresAtNanos }
+        completedSettingsStatus[requestKey]?.let { completed ->
+            if (nowNanos < completed.expiresAtNanos) return completed.status
+            completedSettingsStatus.remove(requestKey, completed)
+        }
+        if (!settingsStatusBackgroundInFlight.add(requestKey)) {
+            return SettingsComparisonStatus(evaluationInProgress = true)
+        }
+
+        val job = scope.launch {
+            try {
+                val status = getSettingsComparisonStatus(after)
+                cacheSettingsComparisonStatus(requestKey, status)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.warn("Settings comparison background evaluation failed; after={}", after, error)
+                cacheSettingsComparisonStatus(requestKey, SettingsComparisonStatus(evaluationFailed = true))
+            } finally {
+                settingsStatusBackgroundInFlight.remove(requestKey)
+            }
+        }
+        // launch on an already-cancelled scope returns a completed job without running the body.
+        // Its completion hook prevents a permanently stuck in-progress response in that race.
+        job.invokeOnCompletion { settingsStatusBackgroundInFlight.remove(requestKey) }
+        return SettingsComparisonStatus(evaluationInProgress = true)
+    }
+
+    private fun cacheSettingsComparisonStatus(key: String, status: SettingsComparisonStatus) {
+        val completed = CompletedSettingsStatus(
+            expiresAtNanos = monotonicTimeProvider() + SETTINGS_STATUS_RESULT_TTL_NANOS,
+            status = status,
+        )
+        completedSettingsStatus[key] = completed
+        applicationScope?.launch {
+            delay(SETTINGS_STATUS_RESULT_TTL_MILLIS)
+            completedSettingsStatus.remove(key, completed)
+        }
+    }
+
+    /** Hash only comparison-relevant configuration; never retain credentials in task/cache keys. */
+    private fun settingsStatusRequestKey(after: Instant): String {
+        val config = configService?.getConfig()
+        val settings = config?.settings
+        val allocationUniverse = config?.allocations
+            ?.sortedBy { it.symbol.value.uppercase() }
+            ?.joinToString(separator = ",") { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
+            .orEmpty()
+        val material = listOf(
+            after.toEpochMilli().toString(),
+            settings?.inceptionDate.orEmpty(),
+            settings?.simulation?.toString().orEmpty(),
+            allocationUniverse,
+        ).joinToString(separator = "\u0000")
+        return sha256Hex(material)
     }
 
     private suspend fun getSettingsComparisonStatusLocked(
@@ -2625,7 +2705,7 @@ class TradeHistoryQueryService(
         /** Skip all candidates before an evidence event that provably fails inside every scan window. */
         skipCandidatesBefore: Instant? = null,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
-    ): ComparisonStartProposal = historyEvidenceCoordinator.withLock {
+    ): ComparisonStartProposal = historyEvidenceCoordinator.withLock(operation = "proposal-search") {
         val resolvedInception = inceptionResolution
             ?: inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
         findLaterComparisonStartProposalLocked(

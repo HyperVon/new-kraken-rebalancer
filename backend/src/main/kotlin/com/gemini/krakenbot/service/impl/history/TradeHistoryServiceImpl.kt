@@ -189,6 +189,9 @@ class TradeHistoryServiceImpl(
     override suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
         queryService.getSettingsComparisonStatus(after)
 
+    override suspend fun requestSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
+        queryService.requestSettingsComparisonStatus(after)
+
     override suspend fun getRebalancerComparison(
         from: Instant,
         to: Instant,
