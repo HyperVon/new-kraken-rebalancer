@@ -1201,5 +1201,251 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
                 writerJob.join()
             }
         }
+
+        "unavailable comparison proposal search does not hold coordinator lock and permits concurrent writers" {
+            runTest {
+                val coordinator = HistoryEvidenceCoordinator()
+                val repository = mockk<TradeRepository>(relaxed = true)
+                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+                val krakenService = mockk<KrakenService>(relaxed = true)
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
+                    repository.getSnapshotsInRange(firstArg(), secondArg())
+                }
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "test-scope"
+
+                val snap1 = snapshot(now)
+                val snap2 = snapshot(now.plusSeconds(3600))
+                val snap3 = snapshot(now.plusSeconds(7200))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1)
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2, snap3)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val proposalSearchPaused = CompletableDeferred<Unit>()
+                val pauseGate = CompletableDeferred<Unit>()
+
+                coEvery { krakenService.getAssetMetadata() } coAnswers {
+                    proposalSearchPaused.complete(Unit)
+                    pauseGate.await()
+                    testAssetMetadata
+                }
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    historyEvidenceCoordinator = coordinator,
+                    computationDispatcher =
+                    (coroutineContext[ContinuationInterceptor] as? CoroutineDispatcher) ?: Dispatchers.Default,
+                    nowProvider = { now.plusSeconds(10800) },
+                )
+
+                val comparisonJob = launch {
+                    service.getRebalancerComparison(now, now.plusSeconds(3600), BenchmarkMethod.FIXED_INCEPTION_HOLD)
+                }
+
+                proposalSearchPaused.await()
+
+                // Verification: coordinator lock is NOT held during proposal search!
+                coordinator.tryWithLock { } shouldBe true
+
+                val writerFinished = CompletableDeferred<Unit>()
+                val writerJob = launch {
+                    coordinator.withLock("account-scope-validation") {
+                        writerFinished.complete(Unit)
+                    }
+                }
+
+                runCurrent()
+                writerJob.isCompleted shouldBe true
+                writerFinished.isCompleted shouldBe true
+
+                pauseGate.complete(Unit)
+                comparisonJob.join()
+                writerJob.join()
+            }
+        }
+
+        "getSettingsComparisonStatus evaluates outside coordinator lock and permits concurrent writers" {
+            runTest {
+                val coordinator = HistoryEvidenceCoordinator()
+                val repository = mockk<TradeRepository>(relaxed = true)
+                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+                val krakenService = mockk<KrakenService>(relaxed = true)
+                val configService = mockk<ConfigService>(relaxed = true)
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
+                    repository.getSnapshotsInRange(firstArg(), secondArg())
+                }
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "test-scope"
+
+                val snap1 = snapshot(now)
+                val snap2 = snapshot(now.plusSeconds(3600))
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val evalPaused = CompletableDeferred<Unit>()
+                val pauseGate = CompletableDeferred<Unit>()
+
+                coEvery { krakenService.getAssetMetadata() } coAnswers {
+                    evalPaused.complete(Unit)
+                    pauseGate.await()
+                    testAssetMetadata
+                }
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    historyEvidenceCoordinator = coordinator,
+                    computationDispatcher =
+                    (coroutineContext[ContinuationInterceptor] as? CoroutineDispatcher) ?: Dispatchers.Default,
+                    nowProvider = { now.plusSeconds(7200) },
+                )
+
+                val statusJob = launch {
+                    service.getSettingsComparisonStatus(now, allowPersistedBaselineFastPath = false)
+                }
+
+                evalPaused.await()
+
+                // Verification: coordinator lock is NOT held during Settings comparison evaluation!
+                coordinator.tryWithLock { } shouldBe true
+
+                val writerFinished = CompletableDeferred<Unit>()
+                val writerJob = launch {
+                    coordinator.withLock("ledger-sync") {
+                        writerFinished.complete(Unit)
+                    }
+                }
+
+                runCurrent()
+                writerJob.isCompleted shouldBe true
+                writerFinished.isCompleted shouldBe true
+
+                pauseGate.complete(Unit)
+                statusJob.join()
+                writerJob.join()
+            }
+        }
+
+        "rapid calls to requestRebalancerComparison within bucket window join flight and hit cache" {
+            runTest {
+                val coordinator = HistoryEvidenceCoordinator()
+                val repository = mockk<TradeRepository>(relaxed = true)
+                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+                val krakenService = mockk<KrakenService>(relaxed = true)
+                val configService = mockk<ConfigService>(relaxed = true)
+
+                val snap1 = snapshot(now)
+                val snap2 = snapshot(now.plusSeconds(3600))
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "test-scope"
+
+                val testConfig = TestFixtures.config(
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns testConfig
+
+                val activeScope = CoroutineScope(Dispatchers.Unconfined)
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    historyEvidenceCoordinator = coordinator,
+                    applicationScope = activeScope,
+                    computationDispatcher = Dispatchers.Unconfined,
+                    nowProvider = { now.plusSeconds(7200) },
+                )
+
+                val to1 = now.plusSeconds(3600)
+                val result1 = service.requestRebalancerComparison(
+                    now,
+                    to1,
+                    BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                )
+                result1.availability shouldBe ComparisonAvailability.AVAILABLE
+
+                val to2 = to1.plusMillis(500)
+                val result2 = service.requestRebalancerComparison(
+                    now,
+                    to2,
+                    BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                )
+                result2.availability shouldBe ComparisonAvailability.AVAILABLE
+                result2.points shouldBe result1.points
+            }
+        }
     }
 }

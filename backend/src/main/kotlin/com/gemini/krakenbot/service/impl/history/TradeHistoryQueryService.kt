@@ -519,19 +519,33 @@ class TradeHistoryQueryService(
         return sha256Hex(material)
     }
 
-    private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String =
-        comparisonRequestKey(from, to, benchmarkMethod)
+    private fun bucketInstant(instant: Instant): Instant {
+        if (instant == Instant.EPOCH) return instant
+        val epochSec = instant.epochSecond
+        val bucketedSec = (epochSec / 15L) * 15L
+        return Instant.ofEpochSecond(bucketedSec)
+    }
 
-    private fun cacheCompletedComparison(scope: CoroutineScope, key: String, comparison: RebalancerComparison) {
+    private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String =
+        comparisonRequestKey(bucketInstant(from), bucketInstant(to), benchmarkMethod)
+
+    private fun cacheCompletedComparison(
+        scope: CoroutineScope,
+        requestKey: String,
+        flightKey: String,
+        comparison: RebalancerComparison,
+    ) {
         if (comparison.unavailableReason == ComparisonUnavailableReason.COMPARISON_EVALUATING) return
         val completed = CompletedComparison(
             expiresAtNanos = monotonicTimeProvider() + COMPARISON_RESULT_TTL_NANOS,
             comparison = comparison,
         )
-        completedComparisons[key] = completed
+        completedComparisons[requestKey] = completed
+        completedComparisons[flightKey] = completed
         scope.launch {
             delay(COMPARISON_RESULT_TTL_MILLIS)
-            completedComparisons.remove(key, completed)
+            completedComparisons.remove(requestKey, completed)
+            completedComparisons.remove(flightKey, completed)
         }
     }
 
@@ -595,20 +609,21 @@ class TradeHistoryQueryService(
         }
 
         val requestKey = comparisonRequestKey(from, to, benchmarkMethod)
+        val flightKey = comparisonFlightKey(from, to, benchmarkMethod)
         val nowNanos = monotonicTimeProvider()
-        completedComparisons.entries.removeIf { nowNanos >= it.value.expiresAtNanos }
-        completedComparisons[requestKey]?.let { completed ->
-            if (nowNanos < completed.expiresAtNanos) return completed.comparison
-            completedComparisons.remove(requestKey, completed)
+        val cached = completedComparisons[requestKey] ?: completedComparisons[flightKey]
+        if (cached != null) {
+            if (nowNanos < cached.expiresAtNanos) return cached.comparison
+            completedComparisons.remove(requestKey, cached)
+            completedComparisons.remove(flightKey, cached)
         }
 
-        val flightKey = comparisonFlightKey(from, to, benchmarkMethod)
         val (flight, created) = startOrJoinComparisonFlight(flightKey)
         if (created) {
             val job = scope.launch {
                 try {
                     val result = executeComparisonPipeline(from, to, benchmarkMethod)
-                    cacheCompletedComparison(scope, requestKey, result)
+                    cacheCompletedComparison(scope, requestKey, flightKey, result)
                     flight.complete(result)
                 } catch (e: CancellationException) {
                     flight.completeExceptionally(e)
@@ -1285,16 +1300,6 @@ class TradeHistoryQueryService(
                     proposedBaselineTimestamp = null,
                     proposalSearchStatus = null,
                 )
-            } else {
-                val proposal = findLaterComparisonStartProposalLocked(
-                    startAfter = captured.inceptionResolution?.inceptionTime ?: Instant.EPOCH,
-                    inceptionResolution = captured.inceptionResolution,
-                    ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
-                )
-                finalResult = presented.copy(
-                    proposedBaselineTimestamp = proposal.timestamp,
-                    proposalSearchStatus = proposal.status,
-                )
             }
         }
 
@@ -1396,7 +1401,24 @@ class TradeHistoryQueryService(
                 validateAndPublishComparison(captured, calculated, from, to)
             }
             when (publishResult) {
-                is PublishOutcome.Published -> return publishResult.comparison
+                is PublishOutcome.Published -> {
+                    val published = publishResult.comparison
+                    if (published.availability == ComparisonAvailability.UNAVAILABLE &&
+                        published.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
+                        captured.inceptionResolution?.isAutoDetected != true
+                    ) {
+                        val proposal = findLaterComparisonStartProposal(
+                            startAfter = captured.inceptionResolution?.inceptionTime ?: Instant.EPOCH,
+                            inceptionResolution = captured.inceptionResolution,
+                            ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
+                        )
+                        return published.copy(
+                            proposedBaselineTimestamp = proposal.timestamp,
+                            proposalSearchStatus = proposal.status,
+                        )
+                    }
+                    return published
+                }
 
                 is PublishOutcome.Invalidated -> {
                     log.info("Comparison evidence invalidated during calculation; attempt={} retrying", attempts)
@@ -2075,10 +2097,11 @@ class TradeHistoryQueryService(
             val (flight, created) = startOrJoinSettingsStatusFlight(flightKey)
             if (created) {
                 try {
-                    val result = historyEvidenceCoordinator.withLock(operation = "settings-status") {
+                    val captured = historyEvidenceCoordinator.withLock(operation = "settings-status-capture") {
                         val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
-                        getSettingsComparisonStatusLocked(after, allowPersistedBaselineFastPath, inceptionResolution)
+                        captureSettingsStatusEvidence(after, allowPersistedBaselineFastPath, inceptionResolution)
                     }
+                    val result = evaluateSettingsComparisonStatusWithCapturedEvidence(after, captured)
                     flight.complete(result)
                     return result
                 } catch (e: CancellationException) {
@@ -2170,22 +2193,70 @@ class TradeHistoryQueryService(
         return sha256Hex(material)
     }
 
+    private data class CapturedSettingsStatusEvidence(
+        val inceptionResolution: InceptionResolution?,
+        val earlyResult: SettingsComparisonStatus?,
+        val snapshots: List<PortfolioSnapshot>,
+        val stableSnapshots: List<PortfolioSnapshot>,
+        val stableThrough: Instant,
+    ) {
+        companion object {
+            fun early(inceptionResolution: InceptionResolution?, result: SettingsComparisonStatus) =
+                CapturedSettingsStatusEvidence(
+                    inceptionResolution = inceptionResolution,
+                    earlyResult = result,
+                    snapshots = emptyList(),
+                    stableSnapshots = emptyList(),
+                    stableThrough = Instant.EPOCH,
+                )
+        }
+    }
+
     private suspend fun getSettingsComparisonStatusLocked(
         after: Instant,
         allowPersistedBaselineFastPath: Boolean,
         inceptionResolution: InceptionResolution?,
     ): SettingsComparisonStatus {
+        val captured = captureSettingsStatusEvidence(after, allowPersistedBaselineFastPath, inceptionResolution)
+        return evaluateSettingsComparisonStatusWithCapturedEvidence(after, captured)
+    }
+
+    private suspend fun captureSettingsStatusEvidence(
+        after: Instant,
+        allowPersistedBaselineFastPath: Boolean,
+        inceptionResolution: InceptionResolution?,
+    ): CapturedSettingsStatusEvidence {
         // An auto-detected inception is display-only until the operator supplies an explicit
         // strategy start; Settings must not expose an approval action for it.
-        if (inceptionResolution?.isAutoDetected == true) return SettingsComparisonStatus()
+        if (inceptionResolution?.isAutoDetected == true) {
+            return CapturedSettingsStatusEvidence.early(
+                inceptionResolution = inceptionResolution,
+                result = SettingsComparisonStatus(),
+            )
+        }
         if (allowPersistedBaselineFastPath) {
-            readVerifiedAutomaticBaseline(inceptionResolution)?.let { return it }
+            readVerifiedAutomaticBaseline(inceptionResolution)?.let { verified ->
+                return CapturedSettingsStatusEvidence.early(
+                    inceptionResolution = inceptionResolution,
+                    result = verified,
+                )
+            }
         }
         val snapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: Instant.EPOCH)
-        if (snapshots.size < 2) return SettingsComparisonStatus()
+        if (snapshots.size < 2) {
+            return CapturedSettingsStatusEvidence.early(
+                inceptionResolution = inceptionResolution,
+                result = SettingsComparisonStatus(),
+            )
+        }
         // Invalidated reconstructed history must not yield a proposal: a candidate anchored on
         // stale reconstructed snapshots is not evidence-backed until the rebuild completes.
-        if (overlapsStaleReconstruction(snapshots)) return SettingsComparisonStatus()
+        if (overlapsStaleReconstruction(snapshots)) {
+            return CapturedSettingsStatusEvidence.early(
+                inceptionResolution = inceptionResolution,
+                result = SettingsComparisonStatus(),
+            )
+        }
         // Automatic-baseline verification operates only on stable historical evidence: a
         // snapshot whose balance observation lies beyond the certified ledger/trade coverage
         // horizon belongs to the live tail — e.g. balances already reflecting an executed
@@ -2205,7 +2276,10 @@ class TradeHistoryQueryService(
         )
         if (stableThrough == null) {
             log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
-            return SettingsComparisonStatus()
+            return CapturedSettingsStatusEvidence.early(
+                inceptionResolution = inceptionResolution,
+                result = SettingsComparisonStatus(),
+            )
         }
         val firstUncoveredIndex = snapshots.indexOfFirst { !isSnapshotCoveredByHistory(it, stableThrough) }
         if (firstUncoveredIndex >= 0) {
@@ -2222,22 +2296,42 @@ class TradeHistoryQueryService(
                     snapshots[firstUncoveredIndex].timestamp,
                     snapshots[firstUncoveredIndex + 1 + reentry].timestamp,
                 )
-                return SettingsComparisonStatus()
+                return CapturedSettingsStatusEvidence.early(
+                    inceptionResolution = inceptionResolution,
+                    result = SettingsComparisonStatus(),
+                )
             }
         }
         val stableSnapshots = if (firstUncoveredIndex < 0) snapshots else snapshots.take(firstUncoveredIndex)
         if (stableSnapshots.size < 2) {
             log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
-            return SettingsComparisonStatus()
+            return CapturedSettingsStatusEvidence.early(
+                inceptionResolution = inceptionResolution,
+                result = SettingsComparisonStatus(),
+            )
         }
-        if (stableSnapshots.size < snapshots.size) {
-            val newestSkipped = snapshots.last()
+        return CapturedSettingsStatusEvidence(
+            inceptionResolution = inceptionResolution,
+            earlyResult = null,
+            snapshots = snapshots,
+            stableSnapshots = stableSnapshots,
+            stableThrough = stableThrough,
+        )
+    }
+
+    private suspend fun evaluateSettingsComparisonStatusWithCapturedEvidence(
+        after: Instant,
+        captured: CapturedSettingsStatusEvidence,
+    ): SettingsComparisonStatus {
+        captured.earlyResult?.let { return it }
+        if (captured.stableSnapshots.size < captured.snapshots.size) {
+            val newestSkipped = captured.snapshots.last()
             log.info(
                 "Automatic B&H baseline verification using stable history horizon; " +
                     "stableThrough={} latestStableSnapshot={} skippedUnstableTailCount={}",
-                stableThrough,
-                stableSnapshots.last().timestamp,
-                snapshots.size - stableSnapshots.size,
+                captured.stableThrough,
+                captured.stableSnapshots.last().timestamp,
+                captured.snapshots.size - captured.stableSnapshots.size,
             )
             log.debug(
                 "newestSkippedSnapshot={} balancesObservedAt={} ledgerCoverage={} tradeCoverage={}",
@@ -2247,15 +2341,15 @@ class TradeHistoryQueryService(
                 repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
             )
         }
-        val settingsCacheFrom = stableSnapshots.first().timestamp
-        val settingsCacheTo = stableSnapshots.last().timestamp
+        val settingsCacheFrom = captured.stableSnapshots.first().timestamp
+        val settingsCacheTo = captured.stableSnapshots.last().timestamp
         val assetMetadata = loadComparisonAssetMetadata()
         val assetMetadataDigest = comparisonAssetMetadataDigest(assetMetadata)
         val settingsCacheFingerprint = comparisonCacheFingerprint(
             benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
-            stableThrough = stableThrough,
-            inceptionResolution = inceptionResolution,
-            snapshots = stableSnapshots,
+            stableThrough = captured.stableThrough,
+            inceptionResolution = captured.inceptionResolution,
+            snapshots = captured.stableSnapshots,
             assetMetadataDigest = assetMetadataDigest,
         )
         val cachedSettingsComparison = settingsCacheFingerprint?.let { fingerprint ->
@@ -2277,12 +2371,12 @@ class TradeHistoryQueryService(
                     val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                     val ohlcHadFailures = AtomicBoolean(false)
                     val calculated = calculateComparison(
-                        orderedSnapshots = stableSnapshots,
-                        inceptionResolution = inceptionResolution,
+                        orderedSnapshots = captured.stableSnapshots,
+                        inceptionResolution = captured.inceptionResolution,
                         assetMetadata = assetMetadata,
                         benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
-                        eventUpperBound = certifiedEventUpperBound(stableThrough),
-                        suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+                        eventUpperBound = certifiedEventUpperBound(captured.stableThrough),
+                        suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(captured.inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
                         onOhlcReachabilityResolved = reachabilityDependencies::add,
                         onOhlcSourceFailure = { ohlcHadFailures.set(true) },
@@ -2292,9 +2386,9 @@ class TradeHistoryQueryService(
                         persistCachedComparison(
                             from = settingsCacheFrom,
                             to = settingsCacheTo,
-                            stableThrough = stableThrough,
-                            inceptionResolution = inceptionResolution,
-                            snapshots = stableSnapshots,
+                            stableThrough = captured.stableThrough,
+                            inceptionResolution = captured.inceptionResolution,
+                            snapshots = captured.stableSnapshots,
                             assetMetadataDigest = assetMetadataDigest,
                             benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
                             comparison = calculated,
@@ -2324,7 +2418,7 @@ class TradeHistoryQueryService(
                     // Only the inception-anchored baseline certifies the automatic proof; a
                     // passive re-anchor is available but has no durable verification behind it.
                     baselineStatus = AutomaticBaselineStatus.VERIFIED
-                        .takeIf { current.baselineTimestamp == inceptionResolution?.inceptionTime },
+                        .takeIf { current.baselineTimestamp == captured.inceptionResolution?.inceptionTime },
                     baselineTimestamp = current.baselineTimestamp?.toString(),
                     comparisonAvailability = current.availability,
                 )
@@ -2352,24 +2446,29 @@ class TradeHistoryQueryService(
             // rows after the certified coverage horizon are append-only evidence the proof
             // did not consume, so they can neither invalidate it nor extend its horizon.
             if (cachedSettingsComparison == null) {
-                persistAutomaticBaselineVerification(current, inceptionResolution, stableSnapshots, stableThrough)
+                persistAutomaticBaselineVerification(
+                    current,
+                    captured.inceptionResolution,
+                    captured.stableSnapshots,
+                    captured.stableThrough,
+                )
             }
             return status
         }
         if (historicalCoverageGapExists(
-                snapshots = snapshots,
-                strategyStart = inceptionResolution?.inceptionTime ?: after,
-                inceptionResolution = inceptionResolution,
+                snapshots = captured.snapshots,
+                strategyStart = captured.inceptionResolution?.inceptionTime ?: after,
+                inceptionResolution = captured.inceptionResolution,
             )
         ) {
             return status
         }
         val skipCandidatesBefore = current.unavailableAt
             ?.takeIf { current.unavailableReason in INTRINSIC_EVENT_REASONS }
-        val proposal = findLaterComparisonStartProposalLocked(
-            after,
-            inceptionResolution,
-            skipCandidatesBefore,
+        val proposal = findLaterComparisonStartProposal(
+            startAfter = after,
+            inceptionResolution = captured.inceptionResolution,
+            skipCandidatesBefore = skipCandidatesBefore,
             ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
         )
         if (proposal.status == ComparisonProposalStatus.INCOMPLETE) {
@@ -3323,10 +3422,10 @@ class TradeHistoryQueryService(
         /** Skip all candidates before an evidence event that provably fails inside every scan window. */
         skipCandidatesBefore: Instant? = null,
         ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
-    ): ComparisonStartProposal = historyEvidenceCoordinator.withLock(operation = "proposal-search") {
+    ): ComparisonStartProposal {
         val resolvedInception = inceptionResolution
             ?: inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
-        findLaterComparisonStartProposalLocked(
+        return findLaterComparisonStartProposalLocked(
             startAfter,
             resolvedInception,
             skipCandidatesBefore,

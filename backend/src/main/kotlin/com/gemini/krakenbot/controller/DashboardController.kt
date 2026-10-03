@@ -966,6 +966,18 @@ class DashboardController(
         call.respondText(json, ContentType.Application.Json, status)
     }
 
+    private suspend fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
+        val latest = tradeHistoryService.getLatestSnapshot()
+        val anchor = if (latest != null) {
+            latest.timestamp
+        } else {
+            Instant.ofEpochMilli((System.currentTimeMillis() / BUCKET_INTERVAL_MILLIS) * BUCKET_INTERVAL_MILLIS)
+        }
+        val timeRange = TimeRange.fromQueryParam(call.parameters[QueryParamKeys.RANGE])
+        val from = timeRange.calculateFromInstant(anchor)
+        return Pair(from, anchor)
+    }
+
     private suspend fun RoutingContext.handleGetHistorySnapshots() {
         val (from, to) = parseTimeRange(call)
         val snapshots = tradeHistoryService.getSnapshotsInRange(from, to).map { it.toApiDto() }
@@ -1271,12 +1283,7 @@ class DashboardController(
     }
 }
 
+private const val BUCKET_INTERVAL_MILLIS = 15_000L
+
 fun TimeRange.calculateFromInstant(now: Instant): Instant =
     days?.let { now.minus(it, ChronoUnit.DAYS) } ?: Instant.EPOCH
-
-internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
-    val now = Instant.now()
-    val timeRange = TimeRange.fromQueryParam(call.parameters[QueryParamKeys.RANGE])
-    val from = timeRange.calculateFromInstant(now)
-    return Pair(from, now)
-}

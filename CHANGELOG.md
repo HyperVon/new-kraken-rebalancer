@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.93] - 2026-10-02
+
+### Fixed
+
+- **Decoupled proposal search and settings baseline evaluation from evidence lock**: `findLaterComparisonStartProposal`
+  and `getSettingsComparisonStatus` now execute public Kraken REST OHLC calls and candidate baseline scans outside
+  the `HistoryEvidenceCoordinator` lock under a dedicated `proposalSearchMutex`. Eliminates multi-minute lock holds
+  that previously blocked rebalance cycle account scope validation, ledger sync, and trade sync during navigation
+  between Dashboard, History, and Settings.
+- **Stable snapshot anchoring for history API polling**: Anchored history API time range queries in `DashboardController`
+  to the latest persisted snapshot timestamp (or 15-second epoch bucket fallback) rather than synthesizing `Instant.now()`
+  on every 5-second HTMX poll. Restores in-memory and in-flight request deduplication across concurrent history
+  fragments, eliminating background job runaway and resource contention.
+
 ## [6.17.92] - 2026-10-02
 
 ### Fixed

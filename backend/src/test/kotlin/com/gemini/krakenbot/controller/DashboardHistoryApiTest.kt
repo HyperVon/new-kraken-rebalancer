@@ -381,6 +381,42 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
             }
         }
 
+        "getApiHistoryComparison_SharesSnapshotAnchorAcrossRepeatedCalls" {
+            val snapshotTimestamp = Instant.parse("2026-07-01T12:00:00Z")
+            val snapshot = TestFixtures.emptySnapshot(snapshotTimestamp, BigDecimal("10000.0"))
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
+
+            val capturedFrom = mutableListOf<Instant>()
+            val capturedTo = mutableListOf<Instant>()
+            val comparison = DomainComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = null,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = snapshotTimestamp,
+                benchmarkMethod = BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            coEvery {
+                tradeHistoryService.getRebalancerComparison(capture(capturedFrom), capture(capturedTo), any())
+            } returns comparison
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                client.get("/api/history/comparison?range=${TimeRange.THIRTY_DAYS.key}")
+                client.get("/api/history/comparison?range=${TimeRange.THIRTY_DAYS.key}")
+            }
+
+            capturedTo.size shouldBe 2
+            capturedTo[0] shouldBe snapshotTimestamp
+            capturedTo[1] shouldBe snapshotTimestamp
+            capturedFrom[0] shouldBe capturedFrom[1]
+        }
+
         "getApiHistoryRewards_ReturnsJson" {
             val rewards = DomainRewardsOverTime(
                 totalRewardsUSD = BigDecimal("1234.56"),
