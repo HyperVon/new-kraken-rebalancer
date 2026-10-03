@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.94] - 2026-10-03
+
+### Fixed
+
+- **Settings-save comparison-start resolution no longer deadlocks the evidence lock**:
+  `getComparisonStartProposalUnderEvidenceLock` is called from `DashboardController.handlePostSettings` while that
+  handler already owns `HistoryEvidenceCoordinator`. The settings evaluation re-acquired the same non-reentrant mutex
+  via `withLock("history-baseline-persist")` and parked against itself, so the lock was never released — wedging the
+  rebalance worker, every history sync, and all navigation. The under-lock entry point now persists the baseline proof
+  inline instead of re-acquiring.
+- **Comparison pipeline bounded off the shared dispatcher**: The B&H reconciliation runs over the entire retained
+  series (4,455 snapshots, 7,393 trades, 7,634 ledgers in production) and was executing on unbounded
+  `Dispatchers.Default`, where concurrent evaluations could occupy every worker and starve the rebalance loop and
+  request JSON serialization. Compute is now capped at two concurrent evaluations on a named view.
+- **Comparison flight bucket aligned with result TTL**: History polls every five seconds with `to = Instant.now()`, so
+  each poll carries a wall-clock cache key that never matches. Polls fell back to the bucketed flight key, but that
+  bucket was 15 seconds against a 30-second result TTL: every bucket-boundary crossing missed a still-fresh entry
+  cached under the previous bucket key and re-ran the full reconciliation over the retained series. The bucket is now
+  30 seconds, matching `COMPARISON_RESULT_TTL_MILLIS`, so at most one bucket boundary can fall inside a result's TTL
+  window instead of two — boundary-crossing polls are halved, not eliminated.
+- **Ledger and trade coverage throttle reduced to 60 seconds**: The certified coverage horizon only advances on a
+  real sync, and snapshots observed while throttled are trimmed as unstable live tail — deferring ATH/drawdown updates
+  on every rebalance cycle and inflating every comparison evaluation. A five-minute throttle left up to ten cycles
+  permanently outside coverage.
+- **Comparison cache stores the unpresented series**: The completed-comparison cache held a
+  result already trimmed to the request's `from`/`to`, so a later poll in the same flight bucket
+  was served the earlier poll's chart window. The cache now holds the full reconciled series and
+  each request trims its own window, matching what the durable comparison cache already did.
+- **Settings proposal reconciliation bounded off the caller dispatcher**: The settings-side
+  comparison now runs under the same `comparison-compute` bound as the History pipeline. When it
+  runs from a caller already holding the evidence lock, it no longer executes on the caller's
+  dispatcher and stalls the request.
+- **Regression cover for the freeze**: `TradeHistoryQueryServiceFreezeRegressionTest` asserts the settings-save path
+  cannot re-enter the evidence lock and that polls within one flight bucket do not re-capture evidence.
+
 ## [6.17.93] - 2026-10-02
 
 ### Fixed

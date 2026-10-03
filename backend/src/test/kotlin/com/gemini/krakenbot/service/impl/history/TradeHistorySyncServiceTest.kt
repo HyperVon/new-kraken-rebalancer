@@ -147,7 +147,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
             repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 0
         }
 
-        "skips sync when run again within the 300s throttle window" {
+        "skips sync when run again within the history sync throttle window" {
             stubStableBackend()
             stubConfig()
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()

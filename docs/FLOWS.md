@@ -44,8 +44,8 @@ flowchart TB
         CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, no extraBufferCapacity, DROP_OLDEST"]
         THS["TradeHistoryServiceImpl\n(façade)"]
         Store["TradeHistorySnapshotStore\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
-        Sync["TradeHistorySyncService\n(300s throttle + pagination)"]
-        LedgerSync["LedgersSyncService\n(300s throttle + pagination)"]
+        Sync["TradeHistorySyncService\n(60s throttle + pagination)"]
+        LedgerSync["LedgersSyncService\n(60s throttle + pagination)"]
         Recovery["InceptionRecoveryService\n(4 pages/run + durable resume)"]
     end
 
@@ -81,14 +81,14 @@ flowchart TB
     Store -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
     DashCtrl -->|"send(ServerSentEvent)"| SSE
 
-    %% Paginated sync (façade → SyncService; 300s throttle inside Sync)
+    %% Paginated sync (façade → SyncService; 60s throttle inside Sync)
     PM -->|"syncTradesFromKraken()\neach cycle"| THS
     THS -->|"delegate"| Sync
     Sync -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
     Kraken -->|"pages of TradeRecord"| Sync
     Sync -->|"reconcile & save"| Repo
 
-    %% Paginated ledger sync (facade -> LedgerSyncService; 300s throttle inside LedgerSync)
+    %% Paginated ledger sync (facade -> LedgerSyncService; 60s throttle inside LedgerSync)
     PM -->|"syncLedgersFromKraken()\neach cycle"| THS
     THS -->|"delegate"| LedgerSync
     LedgerSync -->|"COLD getLedgersPaginated()\n.collect { page -> }"| Kraken
@@ -255,8 +255,8 @@ sequenceDiagram
 **Key design choices:**
 
 - `PortfolioManagerImpl` calls `syncTradesFromKraken()` **every** rebalance cycle,
-  but `TradeHistorySyncService` (via the façade) **no-ops** unless ≥ **300 seconds**
-  have elapsed since `lastSyncTime` (5-minute throttle).
+  but `TradeHistorySyncService` (via the façade) **no-ops** unless ≥ **60 seconds**
+  have elapsed since `lastSyncTime` (1-minute throttle).
 - Live sync is skipped when credentials are invalid and `simulation` is false;
   simulation mode never hits Kraken for history.
 - A non-no-op standalone sync opens a nested-safe `ConfigService` execution
@@ -278,7 +278,7 @@ sequenceDiagram
   when `local.dryRun`).
 - The throttle check and pagination run under one coroutine mutex; concurrent
   callers wait and then recheck. A backward wall-clock jump allows the next
-  sync to rebase the 300-second throttle instead of suppressing it indefinitely.
+  sync to rebase the 60-second throttle instead of suppressing it indefinitely.
 - Reconciliation first prefers an exact nonblank `orderTxid` match. The
   economics tolerance applies only to successful, non-dry-run
   `LOCAL_ESTIMATE` rows; `LEGACY_UNKNOWN` rows require an exact persisted
@@ -447,7 +447,7 @@ Ledger synchronization follows the same cold, page-by-page backpressure model as
 trade synchronization, but it has separate metadata and insert-only semantics:
 
 - `PortfolioManagerImpl` invokes it at startup and once per rebalance cycle;
-  `LedgersSyncService` skips calls made within **300 seconds** of the previous
+  `LedgersSyncService` skips calls made within **60 seconds** of the previous
   completed sync.
 - The startup call and a standalone top-level call establish their own
   execution session and stable backend pin. The normal-cycle call reuses the

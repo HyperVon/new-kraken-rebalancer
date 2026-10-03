@@ -48,6 +48,14 @@ class LedgersSyncService(
         const val CURRENT_LEDGER_COVERAGE_VERSION = "10"
 
         /**
+         * Minimum gap between Kraken history pulls, shared by [LedgersSyncService] and
+         * [TradeHistorySyncService]. Kept short because the certified coverage horizon only
+         * advances on a real sync: snapshots observed while throttled are excluded from
+         * ATH/drawdown and from comparison evaluation as unstable live tail.
+         */
+        const val HISTORY_SYNC_THROTTLE_SECONDS = 60L
+
+        /**
          * Coverage-certification vs incremental distinction (mirrors TradeHistorySyncService).
          * Certification promotes coverage version/start/horizon and requires authoritative
          * `count` proof on every page; a count-less or malformed page fails the migration.
@@ -89,8 +97,12 @@ class LedgersSyncService(
     private suspend fun syncLedgersFromKrakenLocked() {
         val now = nowProvider()
         val elapsedSeconds = Duration.between(lastSyncTime, now).seconds
-        // Throttle Kraken ledger pulls to at most once per 5 minutes.
-        if (elapsedSeconds in 0 until 300) {
+        // The certified coverage horizon only advances here, and snapshots observed after it
+        // are treated as unstable live tail (ATH/drawdown updates are deferred and comparison
+        // evaluations must trim them). A 5-minute throttle left up to ten 30s rebalance cycles
+        // permanently outside coverage; a 1-minute throttle keeps the tail to one or two rows
+        // while still bounding Kraken ledger pulls well below the per-cycle ticker calls.
+        if (elapsedSeconds in 0 until HISTORY_SYNC_THROTTLE_SECONDS) {
             log.info("Skipping ledger synchronization; last run was only {} seconds ago.", elapsedSeconds)
             return
         }
@@ -268,8 +280,8 @@ class LedgersSyncService(
             )
         } else {
             log.info("Simulation ledger sync produced no entries; leaving ledger store unseeded.")
-            // Keep the 5-minute throttle engaged even when a simulation sync finds nothing: only
-            // the seed/watermark state is deferred, never the next-sync timing.
+            // Keep the throttle engaged even when a simulation sync finds nothing: only the
+            // seed/watermark state is deferred, never the next-sync timing.
             lastSyncTime = nowProvider()
         }
         log.info("Ledger synchronization completed. Added: {} entries.", scanOutcome.totalAdded)

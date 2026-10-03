@@ -310,7 +310,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Synchronizes fifteen balance-affecting entry types (`staking`, `dividend`, `earn`, `reward`, `deposit`,
   `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
   `credit`, and observed top-level `conversion` rows) from Kraken's private
-  `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
+  `/0/private/Ledgers` endpoint, with a one-minute throttle and paginated cold Flow fetching.
   The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
   rows, and queries `all` for `earn`/top-level `reward`/`conversion` rows before filtering the
   returned rows by their response type.

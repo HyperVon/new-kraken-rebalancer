@@ -568,7 +568,7 @@ failure.
 ### Ledger history and external rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**. Coverage-grade synchronization (`CURRENT_LEDGER_COVERAGE_VERSION = "10"`) queries
+once every **60 seconds**. Coverage-grade synchronization (`CURRENT_LEDGER_COVERAGE_VERSION = "10"`) queries
 unprojected Kraken ledgers (`types = null`) so that all raw ledger records—including top-level `trade`
 checkpoint rows and unknown future ledger types—are captured and persisted. Ordinary non-coverage
 sync passes fall back to the fifteen retained balance-affecting response types

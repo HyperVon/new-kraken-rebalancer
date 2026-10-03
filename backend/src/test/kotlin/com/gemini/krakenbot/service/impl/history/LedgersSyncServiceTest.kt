@@ -171,7 +171,7 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "7"
         }
 
-        "skips sync when run again within the 300s throttle window" {
+        "skips sync when run again within the history sync throttle window" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             var now = fixedNow
