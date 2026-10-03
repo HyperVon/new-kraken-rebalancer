@@ -30,6 +30,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   real sync, and snapshots observed while throttled are trimmed as unstable live tail — deferring ATH/drawdown updates
   on every rebalance cycle and inflating every comparison evaluation. A five-minute throttle left up to ten cycles
   permanently outside coverage.
+- **Comparison cache stores the unpresented series**: The completed-comparison cache held a
+  result already trimmed to the request's `from`/`to`, so a later poll in the same flight bucket
+  was served the earlier poll's chart window. The cache now holds the full reconciled series and
+  each request trims its own window, matching what the durable comparison cache already did.
+- **Settings proposal reconciliation bounded off the caller dispatcher**: The settings-side
+  comparison now runs under the same `comparison-compute` bound as the History pipeline. When it
+  runs from a caller already holding the evidence lock, it no longer executes on the caller's
+  dispatcher and stalls the request.
 - **Regression cover for the freeze**: `TradeHistoryQueryServiceFreezeRegressionTest` asserts the settings-save path
   cannot re-enter the evidence lock and that polls within one flight bucket do not re-capture evidence.
 

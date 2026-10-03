@@ -584,7 +584,7 @@ class TradeHistoryQueryService(
                 try {
                     val result = executeComparisonPipeline(from, to, benchmarkMethod)
                     flight.complete(result)
-                    return result
+                    return presentedFor(result, from, to)
                 } catch (e: CancellationException) {
                     flight.completeExceptionally(e)
                     throw e
@@ -596,7 +596,7 @@ class TradeHistoryQueryService(
                 }
             }
             try {
-                return flight.await()
+                return presentedFor(flight.await(), from, to)
             } catch (e: CancellationException) {
                 if (!coroutineContext.isActive) throw e
                 comparisonInFlight.remove(flightKey, flight)
@@ -636,7 +636,9 @@ class TradeHistoryQueryService(
         val nowNanos = monotonicTimeProvider()
         val cached = completedComparisons[requestKey] ?: completedComparisons[flightKey]
         if (cached != null) {
-            if (nowNanos < cached.expiresAtNanos) return cached.comparison
+            // Stored unpresented so any request can trim its own window; presenting a value
+            // already cut to a previous poll's `from`/`to` would serve the wrong chart range.
+            if (nowNanos < cached.expiresAtNanos) return presentedFor(cached.comparison, from, to)
             completedComparisons.remove(requestKey, cached)
             completedComparisons.remove(flightKey, cached)
         }
@@ -674,7 +676,7 @@ class TradeHistoryQueryService(
             }
         }
         if (fastResult != null) {
-            return fastResult
+            return presentedFor(fastResult, from, to)
         }
 
         return RebalancerComparison(
@@ -1206,11 +1208,14 @@ class TradeHistoryQueryService(
         )
     }
 
+    /**
+     * Publishes the raw reconciled comparison. Presentation (point trimming and downsampling)
+     * is per-request and deliberately NOT applied here: the value cached for later polls must
+     * keep its full series so a request with a different `from`/`to` can trim its own window.
+     */
     private suspend fun validateAndPublishComparison(
         captured: CapturedComparisonEvidence,
         calculated: RebalancerComparison,
-        from: Instant,
-        to: Instant,
     ): PublishOutcome {
         if (captured.forensicRegimes == null) {
             val currentUniverse = configService?.getConfig()?.allocations
@@ -1295,18 +1300,12 @@ class TradeHistoryQueryService(
             )
         }
 
-        val presented = if (calculated.availability == ComparisonAvailability.AVAILABLE) {
-            presentComparison(calculated, from, to)
-        } else {
-            calculated
-        }
-
-        var finalResult = presented
-        if (presented.availability == ComparisonAvailability.UNAVAILABLE &&
-            presented.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
+        var finalResult = calculated
+        if (calculated.availability == ComparisonAvailability.UNAVAILABLE &&
+            calculated.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
             captured.inceptionResolution?.isAutoDetected != true
         ) {
-            val strategyStart = presented.baselineTimestamp ?: captured.inceptionResolution?.inceptionTime
+            val strategyStart = calculated.baselineTimestamp ?: captured.inceptionResolution?.inceptionTime
             val isVerifiedBaseline = strategyStart != null &&
                 strategyStart == captured.inceptionResolution?.inceptionTime &&
                 readVerifiedAutomaticBaseline(captured.inceptionResolution) != null
@@ -1315,10 +1314,10 @@ class TradeHistoryQueryService(
             ) {
                 log.info(
                     "comparison unavailable reason rewritten; from={} to={} because=HISTORICAL_COVERAGE_GAP",
-                    presented.unavailableReason,
+                    calculated.unavailableReason,
                     ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
                 )
-                finalResult = presented.copy(
+                finalResult = calculated.copy(
                     unavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
                     proposedBaselineTimestamp = null,
                     proposalSearchStatus = null,
@@ -1336,7 +1335,7 @@ class TradeHistoryQueryService(
             log.info(
                 "comparison unavailable; originalReason={} finalReason={} baseline={} unavailableAt={} " +
                     "stableThrough={} continuousHistoryStart={} automaticBaselineVerifiedThrough={}",
-                presented.unavailableReason,
+                calculated.unavailableReason,
                 finalResult.unavailableReason,
                 finalResult.baselineTimestamp ?: "unknown",
                 finalResult.unavailableAt ?: "unknown",
@@ -1387,7 +1386,7 @@ class TradeHistoryQueryService(
                             cacheIdentity.cacheTo,
                             cacheIdentity.cacheFingerprint,
                         )
-                        return presentComparison(outcome.comparison, from, to)
+                        return outcome.comparison
                     }
 
                     is CachedComparisonOutcome.Refreshing -> {
@@ -1421,7 +1420,7 @@ class TradeHistoryQueryService(
             }
 
             val publishResult = historyEvidenceCoordinator.withLock("history-comparison-publish") {
-                validateAndPublishComparison(captured, calculated, from, to)
+                validateAndPublishComparison(captured, calculated)
             }
             when (publishResult) {
                 is PublishOutcome.Published -> {
@@ -2045,6 +2044,19 @@ class TradeHistoryQueryService(
         }
     }
 
+    /**
+     * Presents an already-reconciled comparison for one request's display window. Only an
+     * AVAILABLE result is trimmed: an unavailable one keeps its reason, and passing it through
+     * [presentComparison] would rewrite it to INSUFFICIENT_SNAPSHOTS whenever the window holds
+     * fewer than two points.
+     */
+    private fun presentedFor(reconciled: RebalancerComparison, from: Instant, to: Instant): RebalancerComparison =
+        if (reconciled.availability == ComparisonAvailability.AVAILABLE) {
+            presentComparison(reconciled, from, to)
+        } else {
+            reconciled
+        }
+
     private fun presentComparison(reconciled: RebalancerComparison, from: Instant, to: Instant): RebalancerComparison {
         val displayPoints = reconciled.points.filter { point ->
             !point.timestamp.isBefore(from) && !point.timestamp.isAfter(to)
@@ -2405,18 +2417,24 @@ class TradeHistoryQueryService(
                     val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
                     val reachabilityDependencies = ConcurrentHashMap.newKeySet<OhlcReachabilityDependency>()
                     val ohlcHadFailures = AtomicBoolean(false)
-                    val calculated = calculateComparison(
-                        orderedSnapshots = captured.stableSnapshots,
-                        inceptionResolution = captured.inceptionResolution,
-                        assetMetadata = assetMetadata,
-                        benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
-                        eventUpperBound = certifiedEventUpperBound(captured.stableThrough),
-                        suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(captured.inceptionResolution),
-                        onOhlcDependencyConsumed = consumedDependencies::add,
-                        onOhlcReachabilityResolved = reachabilityDependencies::add,
-                        onOhlcSourceFailure = { ohlcHadFailures.set(true) },
-                        ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
-                    )
+                    // Same bound as the History pipeline: this reconciliation is long, and when
+                    // it runs from getComparisonStartProposalUnderEvidenceLock the caller is
+                    // holding the evidence lock, so leaving it on the caller dispatcher stalls
+                    // the request and starves the shared pool.
+                    val calculated = withContext(computationDispatcher) {
+                        calculateComparison(
+                            orderedSnapshots = captured.stableSnapshots,
+                            inceptionResolution = captured.inceptionResolution,
+                            assetMetadata = assetMetadata,
+                            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                            eventUpperBound = certifiedEventUpperBound(captured.stableThrough),
+                            suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(captured.inceptionResolution),
+                            onOhlcDependencyConsumed = consumedDependencies::add,
+                            onOhlcReachabilityResolved = reachabilityDependencies::add,
+                            onOhlcSourceFailure = { ohlcHadFailures.set(true) },
+                            ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
+                        )
+                    }
                     if (calculated.availability == ComparisonAvailability.AVAILABLE) {
                         persistCachedComparison(
                             from = settingsCacheFrom,

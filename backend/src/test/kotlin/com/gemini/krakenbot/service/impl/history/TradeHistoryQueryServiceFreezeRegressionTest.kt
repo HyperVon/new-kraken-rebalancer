@@ -6,6 +6,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.BenchmarkMethod
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -267,6 +268,70 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
             // so this assertion can actually fail when the transient is served.
             second.unavailableReason shouldNotBe ComparisonUnavailableReason.COMPARISON_EVALUATING
             captureRuns shouldBe 0
+        }
+
+        "a cached comparison is presented for the caller window, not the window it was cached under" {
+            val coordinator = HistoryEvidenceCoordinator()
+            val repository = mockk<TradeRepository>(relaxed = true)
+            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+            val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+            val krakenService = mockk<KrakenService>(relaxed = true)
+            val configService = mockk<ConfigService>(relaxed = true)
+            val comparisonCache = mockk<RebalancerComparisonCacheRepository>(relaxed = true)
+
+            // Two snapshots 10s apart, so a display window starting between them must drop the
+            // first point while a window starting at the first keeps both.
+            val snap1 = snapshot(now)
+            val snap2 = snapshot(now.plusSeconds(10), totalValueUSD = "110000.00")
+            coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { comparisonCache.load(any(), any()) } returns null
+            stubCoverage(repository, ledgerRepository)
+
+            every { configService.getConfig() } returns testConfig()
+            coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+
+            val service = TradeHistoryQueryService(
+                repository = repository,
+                portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
+                krakenService = krakenService,
+                configService = configService,
+                comparisonCacheRepository = comparisonCache,
+                historyEvidenceCoordinator = coordinator,
+                applicationScope = CoroutineScope(Dispatchers.Default),
+                computationDispatcher = Dispatchers.Default,
+                nowProvider = { now.plusSeconds(7200) },
+            )
+
+            val firstEvaluationDone = CompletableDeferred<Unit>()
+            coEvery { comparisonCache.save(any(), any(), any(), any(), any(), any()) } coAnswers {
+                firstEvaluationDone.complete(Unit)
+            }
+
+            // Window covers both snapshots. `from = now` and `from = now + 5` fall in the same
+            // 30s flight bucket, so the second request must be served from the cache.
+            val wide = service.requestRebalancerComparison(
+                now,
+                now.plusSeconds(600),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            withTimeoutOrNull(30.seconds) { firstEvaluationDone.await() } shouldNotBe null
+            wide.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            // Window starts after the first snapshot: only one point remains, which is not a
+            // valid comparison. The cached value must be trimmed to THIS window rather than
+            // served with the earlier window's points.
+            val narrow = service.requestRebalancerComparison(
+                now.plusSeconds(5),
+                now.plusSeconds(600),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+
+            narrow.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            narrow.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
         }
     }
 }
