@@ -176,7 +176,7 @@ class TradeHistorySyncService(
         val elapsedSeconds = Duration.between(lastSyncTime, now).seconds
         // Matches the ledger throttle: trade coverage must not lag the snapshot cadence, or
         // every cycle observed in between is trimmed as unstable live tail and defers ATH.
-        if (elapsedSeconds in 0 until LedgersSyncService.LEDGER_SYNC_THROTTLE_SECONDS) {
+        if (elapsedSeconds in 0 until LedgersSyncService.HISTORY_SYNC_THROTTLE_SECONDS) {
             log.info("Skipping trade history synchronization; last run was only {} seconds ago.", elapsedSeconds)
             return
         }

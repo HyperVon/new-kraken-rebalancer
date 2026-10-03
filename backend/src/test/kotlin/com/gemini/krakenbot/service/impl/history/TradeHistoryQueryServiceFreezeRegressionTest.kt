@@ -6,7 +6,6 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.BenchmarkMethod
-import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -22,12 +21,14 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.math.BigDecimal
@@ -167,6 +168,17 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
             }
 
             completed shouldNotBe null
+
+            // Prove the inline-persist branch actually ran. Without this the test could pass
+            // while the evaluation short-circuits before persistAutomaticBaselineVerification,
+            // leaving the deadlock path silently unexercised.
+            coVerify(atLeast = 1) {
+                repository.setSyncMetadataAtomically(
+                    match { metadata ->
+                        metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] == "VERIFIED"
+                    },
+                )
+            }
         }
 
         "comparison polls within one flight bucket are served without re-capturing evidence" {
@@ -183,15 +195,20 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
             coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
             coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
 
-            val captured = CompletableDeferred<Unit>()
+            // getTradesInRange runs more than once per evaluation, so it must only be counted,
+            // never used as the completion signal. persistCachedComparison runs last, once the
+            // evaluation is finished, and gives a deterministic point to sample the counter.
+            val firstEvaluationDone = CompletableDeferred<Unit>()
             var captureRuns = 0
             coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
                 captureRuns++
-                captured.complete(Unit)
                 emptyList()
             }
             coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { comparisonCache.load(any(), any()) } returns null
+            coEvery { comparisonCache.save(any(), any(), any(), any(), any(), any()) } coAnswers {
+                firstEvaluationDone.complete(Unit)
+            }
             stubCoverage(repository, ledgerRepository)
 
             every { configService.getConfig() } returns testConfig()
@@ -211,26 +228,45 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
             )
 
             // History polls with `to = Instant.now()`, so every poll carries a new wall clock.
-            // The first poll starts the evaluation; wait for it to capture evidence.
+            // The first poll starts the evaluation; wait for it to finish before sampling.
             service.requestRebalancerComparison(
                 now,
                 now.plusSeconds(3600),
                 BenchmarkMethod.FIXED_INCEPTION_HOLD,
             )
-            withTimeoutOrNull(30.seconds) { captured.await() } shouldNotBe null
-            val capturesAfterFirst = captureRuns
+            withTimeoutOrNull(30.seconds) { firstEvaluationDone.await() } shouldNotBe null
+            captureRuns = 0
 
             // A later poll inside the same flight bucket must be answered from the completed
             // cache. Before the fix the wall-clock key missed on every poll and each one
             // re-ran the full reconciliation over the retained series, which froze the UI.
-            val second = service.requestRebalancerComparison(
+            //
+            // The evaluation persists its cache row just before the flight is completed, so a
+            // poll landing in that tail joins the live flight and gets the transient until it
+            // resolves. Retry within a bound rather than racing that tail.
+            var second = service.requestRebalancerComparison(
                 now,
                 now.plusSeconds(3615),
                 BenchmarkMethod.FIXED_INCEPTION_HOLD,
             )
+            var attempts = 0
+            while (
+                second.unavailableReason == ComparisonUnavailableReason.COMPARISON_EVALUATING &&
+                attempts < 40
+            ) {
+                delay(50)
+                second = service.requestRebalancerComparison(
+                    now,
+                    now.plusSeconds(3615),
+                    BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                )
+                attempts++
+            }
 
-            second.unavailableReason shouldNotBe ComparisonUnavailableReason.COMPARISON_EVALUATING.name
-            captureRuns shouldBe capturesAfterFirst
+            // unavailableReason is the domain enum, not the wire string: compare like for like
+            // so this assertion can actually fail when the transient is served.
+            second.unavailableReason shouldNotBe ComparisonUnavailableReason.COMPARISON_EVALUATING
+            captureRuns shouldBe 0
         }
     }
 }

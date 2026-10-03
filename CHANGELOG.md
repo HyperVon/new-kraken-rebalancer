@@ -21,9 +21,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Dispatchers.Default`, where concurrent evaluations could occupy every worker and starve the rebalance loop and
   request JSON serialization. Compute is now capped at two concurrent evaluations on a named view.
 - **Comparison flight bucket aligned with result TTL**: History polls every five seconds with `to = Instant.now()`, so
-  each poll carried a brand-new cache key and re-ran the full reconciliation. The 15-second flight bucket expired its
-  own cache entry mid-window; it is now 30 seconds, matching `COMPARISON_RESULT_TTL_MILLIS`, so polls inside a window
-  share one evaluation.
+  each poll carries a wall-clock cache key that never matches. Polls fell back to the bucketed flight key, but that
+  bucket was 15 seconds against a 30-second result TTL: every bucket-boundary crossing missed a still-fresh entry
+  cached under the previous bucket key and re-ran the full reconciliation over the retained series. The bucket is now
+  30 seconds, matching `COMPARISON_RESULT_TTL_MILLIS`, so at most one bucket boundary can fall inside a result's TTL
+  window instead of two — boundary-crossing polls are halved, not eliminated.
 - **Ledger and trade coverage throttle reduced to 60 seconds**: The certified coverage horizon only advances on a
   real sync, and snapshots observed while throttled are trimmed as unstable live tail — deferring ATH/drawdown updates
   on every rebalance cycle and inflating every comparison evaluation. A five-minute throttle left up to ten cycles
