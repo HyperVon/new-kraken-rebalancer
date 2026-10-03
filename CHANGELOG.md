@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.94] - 2026-10-03
+
+### Fixed
+
+- **Settings-save comparison-start resolution no longer deadlocks the evidence lock**:
+  `getComparisonStartProposalUnderEvidenceLock` is called from `DashboardController.handlePostSettings` while that
+  handler already owns `HistoryEvidenceCoordinator`. The settings evaluation re-acquired the same non-reentrant mutex
+  via `withLock("history-baseline-persist")` and parked against itself, so the lock was never released — wedging the
+  rebalance worker, every history sync, and all navigation. The under-lock entry point now persists the baseline proof
+  inline instead of re-acquiring.
+- **Comparison pipeline bounded off the shared dispatcher**: The B&H reconciliation runs over the entire retained
+  series (4,455 snapshots, 7,393 trades, 7,634 ledgers in production) and was executing on unbounded
+  `Dispatchers.Default`, where concurrent evaluations could occupy every worker and starve the rebalance loop and
+  request JSON serialization. Compute is now capped at two concurrent evaluations on a named view.
+- **Comparison flight bucket aligned with result TTL**: History polls every five seconds with `to = Instant.now()`, so
+  each poll carried a brand-new cache key and re-ran the full reconciliation. The 15-second flight bucket expired its
+  own cache entry mid-window; it is now 30 seconds, matching `COMPARISON_RESULT_TTL_MILLIS`, so polls inside a window
+  share one evaluation.
+- **Ledger and trade coverage throttle reduced to 60 seconds**: The certified coverage horizon only advances on a
+  real sync, and snapshots observed while throttled are trimmed as unstable live tail — deferring ATH/drawdown updates
+  on every rebalance cycle and inflating every comparison evaluation. A five-minute throttle left up to ten cycles
+  permanently outside coverage.
+- **Regression cover for the freeze**: `TradeHistoryQueryServiceFreezeRegressionTest` asserts the settings-save path
+  cannot re-enter the evidence lock and that polls within one flight bucket do not re-capture evidence.
+
 ## [6.17.93] - 2026-10-02
 
 ### Fixed

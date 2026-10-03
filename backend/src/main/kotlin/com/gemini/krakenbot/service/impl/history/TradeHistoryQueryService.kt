@@ -136,7 +136,14 @@ class TradeHistoryQueryService(
     private val configService: ConfigService? = null,
     private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
     private val monotonicTimeProvider: () -> Long = System::nanoTime,
-    private val computationDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /**
+     * Dispatcher for the comparison/Settings evidence pipelines. Bounded on purpose: these
+     * are long CPU- and IO-heavy reconciliations over the whole retained series, and on an
+     * unbounded [Dispatchers.Default] they can occupy every worker and starve the rebalance
+     * loop and request JSON serialization, which is what froze the dashboard.
+     */
+    private val computationDispatcher: CoroutineDispatcher =
+        Dispatchers.Default.limitedParallelism(COMPARISON_COMPUTE_PARALLELISM, "comparison-compute"),
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -448,9 +455,18 @@ class TradeHistoryQueryService(
         private const val SETTINGS_STATUS_RESULT_TTL_NANOS = 15_000_000_000L
         private const val SETTINGS_STATUS_RESULT_TTL_MILLIS = 15_000L
 
+        /**
+         * Upper bound on concurrent comparison/Settings reconciliations. Keeps the shared
+         * [Dispatchers.Default] pool available to the rebalance loop and request handling.
+         */
+        private const val COMPARISON_COMPUTE_PARALLELISM = 2
+
         /** Covers frontend polling interval while keeping completed comparison results short-lived. */
         private const val COMPARISON_RESULT_TTL_NANOS = 30_000_000_000L
         private const val COMPARISON_RESULT_TTL_MILLIS = 30_000L
+
+        /** Must match [COMPARISON_RESULT_TTL_MILLIS]; see [bucketInstant]. */
+        private const val COMPARISON_FLIGHT_BUCKET_SECONDS = 30L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
@@ -519,10 +535,17 @@ class TradeHistoryQueryService(
         return sha256Hex(material)
     }
 
+    /**
+     * Buckets a request bound so polls within a window share one flight and one completed
+     * cache entry. Aligned with [COMPARISON_RESULT_TTL_MILLIS] on purpose: a bucket wider
+     * than the TTL would expire the entry mid-bucket and recompute anyway, and a narrower one
+     * splits polls that the TTL could otherwise have served. `to` is always "now" on History
+     * polls, so without this every poll would carry a brand-new cache key.
+     */
     private fun bucketInstant(instant: Instant): Instant {
         if (instant == Instant.EPOCH) return instant
         val epochSec = instant.epochSecond
-        val bucketedSec = (epochSec / 15L) * 15L
+        val bucketedSec = (epochSec / COMPARISON_FLIGHT_BUCKET_SECONDS) * COMPARISON_FLIGHT_BUCKET_SECONDS
         return Instant.ofEpochSecond(bucketedSec)
     }
 
@@ -2062,6 +2085,7 @@ class TradeHistoryQueryService(
             after = after,
             allowPersistedBaselineFastPath = false,
             inceptionResolution = inceptionResolution,
+            evidenceLockHeld = true,
         ).proposal
     }
 
@@ -2225,9 +2249,10 @@ class TradeHistoryQueryService(
         after: Instant,
         allowPersistedBaselineFastPath: Boolean,
         inceptionResolution: InceptionResolution?,
+        evidenceLockHeld: Boolean = false,
     ): SettingsComparisonStatus {
         val captured = captureSettingsStatusEvidence(after, allowPersistedBaselineFastPath, inceptionResolution)
-        return evaluateSettingsComparisonStatusWithCapturedEvidence(after, captured)
+        return evaluateSettingsComparisonStatusWithCapturedEvidence(after, captured, evidenceLockHeld)
     }
 
     private suspend fun captureSettingsStatusEvidence(
@@ -2331,6 +2356,7 @@ class TradeHistoryQueryService(
     private suspend fun evaluateSettingsComparisonStatusWithCapturedEvidence(
         after: Instant,
         captured: CapturedSettingsStatusEvidence,
+        evidenceLockHeld: Boolean = false,
     ): SettingsComparisonStatus {
         captured.earlyResult?.let { return it }
         if (captured.stableSnapshots.size < captured.snapshots.size) {
@@ -2455,13 +2481,26 @@ class TradeHistoryQueryService(
             // rows after the certified coverage horizon are append-only evidence the proof
             // did not consume, so they can neither invalidate it nor extend its horizon.
             if (cachedSettingsComparison == null) {
-                historyEvidenceCoordinator.withLock("history-baseline-persist") {
+                // HistoryEvidenceCoordinator's mutex is not reentrant: a caller that already
+                // owns it (settings-save resolving a comparison start) must persist inline
+                // instead of re-acquiring, or the coroutine deadlocks against itself and the
+                // lock is never released.
+                if (evidenceLockHeld) {
                     persistAutomaticBaselineVerification(
                         current,
                         captured.inceptionResolution,
                         captured.stableSnapshots,
                         captured.stableThrough,
                     )
+                } else {
+                    historyEvidenceCoordinator.withLock("history-baseline-persist") {
+                        persistAutomaticBaselineVerification(
+                            current,
+                            captured.inceptionResolution,
+                            captured.stableSnapshots,
+                            captured.stableThrough,
+                        )
+                    }
                 }
             }
             return status

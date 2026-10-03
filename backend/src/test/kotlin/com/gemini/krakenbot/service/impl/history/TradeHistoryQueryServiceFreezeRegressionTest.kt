@@ -1,0 +1,236 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
+package com.gemini.krakenbot.service.impl.history
+
+import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.BenchmarkMethod
+import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.KrakenAssetMetadata
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
+import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenService
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import java.math.BigDecimal
+import java.time.Instant
+import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Regression cover for the History / B&H navigation freeze reported against production:
+ *
+ *  1. Settings-save resolving an accepted comparison start runs inside
+ *     `HistoryEvidenceCoordinator.tryWithLock`. The evaluation must not re-acquire that same
+ *     non-reentrant mutex, or the coroutine deadlocks against itself and the lock is never
+ *     released — wedging the rebalance loop and every history consumer (the observed freeze).
+ *  2. History polls the comparison endpoint every few seconds with `to = Instant.now()`. Each
+ *     new `to` used to carry a brand-new cache key, so every poll re-ran the full
+ *     reconciliation over the retained series; polls within one flight bucket must share the
+ *     completed result instead.
+ */
+class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    private val now = Instant.parse("2026-07-01T12:00:00Z")
+
+    private val testAssetMetadata = listOf(
+        KrakenAssetMetadata(assetId = "BTC", assetClass = "currency"),
+        KrakenAssetMetadata(assetId = "USD", assetClass = "currency"),
+    )
+
+    private fun snapshot(
+        timestamp: Instant,
+        totalValueUSD: String = "100000.00",
+        btcBalance: String = "1.0",
+        btcPrice: String = "50000.00",
+        usdBalance: String = "50000.00",
+    ): PortfolioSnapshot {
+        val btcVal = BigDecimal(btcBalance).multiply(BigDecimal(btcPrice))
+        val usdVal = BigDecimal(usdBalance)
+        return PortfolioSnapshot(
+            timestamp = timestamp,
+            totalValueUSD = BigDecimal(totalValueUSD),
+            assets = mapOf(
+                Asset.BTC to TestFixtures.assetSnapshot(
+                    symbol = Asset.BTC,
+                    balance = BigDecimal(btcBalance),
+                    price = BigDecimal(btcPrice),
+                    valueUSD = btcVal,
+                    targetPercent = BigDecimal.ZERO,
+                ),
+                TestFixtures.USD to TestFixtures.assetSnapshot(
+                    symbol = TestFixtures.USD,
+                    balance = usdVal,
+                    price = BigDecimal.ONE,
+                    valueUSD = usdVal,
+                    targetPercent = BigDecimal.ZERO,
+                ),
+            ),
+            actions = emptyList(),
+            drawdownPercent = BigDecimal.ZERO,
+            fiatDeploymentPercent = BigDecimal.ZERO,
+            effectiveUsdTargetPercent = BigDecimal.ZERO,
+            balancesObservedAt = timestamp,
+        )
+    }
+
+    private fun stubCoverage(repository: TradeRepository, ledgerRepository: LedgerRepository) {
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+            TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "4102444800"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+            "test-scope"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns "test-scope"
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
+        coEvery {
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+        } returns "4102444800"
+        coEvery {
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+        } returns "test-scope"
+    }
+
+    private fun testConfig() = TestFixtures.config(
+        allocations = listOf(
+            Allocation(Asset.BTC, 50.0),
+            Allocation(TestFixtures.USD, 50.0),
+        ),
+    )
+
+    init {
+        "settings-save comparison-start resolution must not re-enter the evidence lock" {
+            val coordinator = HistoryEvidenceCoordinator()
+            val repository = mockk<TradeRepository>(relaxed = true)
+            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+            val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+            val krakenService = mockk<KrakenService>(relaxed = true)
+            val configService = mockk<ConfigService>(relaxed = true)
+            val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+
+            val snap1 = snapshot(now)
+            val snap2 = snapshot(now.plusSeconds(3600))
+            coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+            stubCoverage(repository, ledgerRepository)
+
+            every { configService.getConfig() } returns testConfig()
+            coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+            coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                inceptionTime = snap1.timestamp,
+                inceptionSnapshot = snap1,
+                isAutoDetected = false,
+                confidence = InceptionConfidence.CONFIDENT,
+            )
+
+            val service = TradeHistoryQueryService(
+                repository = repository,
+                portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
+                inceptionDiscoveryService = inceptionService,
+                krakenService = krakenService,
+                configService = configService,
+                historyEvidenceCoordinator = coordinator,
+                nowProvider = { now.plusSeconds(7200) },
+            )
+
+            // Mirrors DashboardController.handlePostSettings: the settings-save block owns the
+            // coordinator, then resolves an accepted comparison start through the same lock.
+            val completed = runBlocking {
+                withTimeoutOrNull(30.seconds) {
+                    coordinator.tryWithLock {
+                        service.getComparisonStartProposalUnderEvidenceLock(snap1.timestamp)
+                    }
+                }
+            }
+
+            completed shouldNotBe null
+        }
+
+        "comparison polls within one flight bucket are served without re-capturing evidence" {
+            val coordinator = HistoryEvidenceCoordinator()
+            val repository = mockk<TradeRepository>(relaxed = true)
+            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+            val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+            val krakenService = mockk<KrakenService>(relaxed = true)
+            val configService = mockk<ConfigService>(relaxed = true)
+            val comparisonCache = mockk<RebalancerComparisonCacheRepository>(relaxed = true)
+
+            val snap1 = snapshot(now)
+            val snap2 = snapshot(now.plusSeconds(3600))
+            coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+            val captured = CompletableDeferred<Unit>()
+            var captureRuns = 0
+            coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                captureRuns++
+                captured.complete(Unit)
+                emptyList()
+            }
+            coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { comparisonCache.load(any(), any()) } returns null
+            stubCoverage(repository, ledgerRepository)
+
+            every { configService.getConfig() } returns testConfig()
+            coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+
+            val service = TradeHistoryQueryService(
+                repository = repository,
+                portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
+                krakenService = krakenService,
+                configService = configService,
+                comparisonCacheRepository = comparisonCache,
+                historyEvidenceCoordinator = coordinator,
+                applicationScope = CoroutineScope(Dispatchers.Default),
+                computationDispatcher = Dispatchers.Default,
+                nowProvider = { now.plusSeconds(7200) },
+            )
+
+            // History polls with `to = Instant.now()`, so every poll carries a new wall clock.
+            // The first poll starts the evaluation; wait for it to capture evidence.
+            service.requestRebalancerComparison(
+                now,
+                now.plusSeconds(3600),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            withTimeoutOrNull(30.seconds) { captured.await() } shouldNotBe null
+            val capturesAfterFirst = captureRuns
+
+            // A later poll inside the same flight bucket must be answered from the completed
+            // cache. Before the fix the wall-clock key missed on every poll and each one
+            // re-ran the full reconciliation over the retained series, which froze the UI.
+            val second = service.requestRebalancerComparison(
+                now,
+                now.plusSeconds(3615),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+
+            second.unavailableReason shouldNotBe ComparisonUnavailableReason.COMPARISON_EVALUATING.name
+            captureRuns shouldBe capturesAfterFirst
+        }
+    }
+}

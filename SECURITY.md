@@ -280,3 +280,39 @@ non-readiness.
 - Simulation mode uses the offline exchange emulator and does not contact Kraken.
 - No software safeguard replaces careful credential management, network
   isolation, backups, and human review before live trading.
+
+## Known dependency advisories
+
+### GHSA-vfj7-8cjw-p6xm — `braces` stack-exhaustion DoS (npm, high)
+
+**Status: open, no patched release available upstream.** Tracked as
+[Dependabot alert #153](https://github.com/HyperVon/new-kraken-rebalancer/security/dependabot/153)
+against `kotlin-js-store/yarn.lock`.
+
+Evidence gathered when this was last reviewed:
+
+- The advisory range is `<= 3.0.3` with `first_patched_version: null`. The
+  latest published `braces` release **is** `3.0.3`, so every published version
+  is in range and no upgrade can clear the alert.
+- Upstream `micromatch/braces` has no tag after `3.0.3`. Commits since that tag
+  cover unpaired-quote handling, a Node.js engine floor, and CI — none address
+  the nested-pattern stack exhaustion.
+- `braces` is transitive through `micromatch@4.0.8` (which still requires
+  `braces@^3.0.3`), `chokidar@3.6.0`, and the Karma test runner. There is no
+  combination of current releases that removes it.
+
+**Exposure in this project.** `braces` is build- and test-time tooling resolved
+into `kotlin-js-store/yarn.lock` for the Kotlin/JS toolchain (webpack and Karma).
+It is not compiled into `/static/rebalancer.js`, which is built from Kotlin/JS
+output, and it is not served by the dashboard. The vulnerable code path is
+brace-pattern parsing, and the patterns it sees here come from build and test
+configuration (watch globs, Karma file lists), not from network or user input.
+
+**Why this is accepted rather than fixed.** Fixing requires an upstream release;
+until one exists the options are to pin an unpublished Git SHA that also does not
+contain a fix, or to accept the finding. This project accepts it and records the
+fact here rather than closing the alert silently.
+
+**Revisit when** `braces` publishes a release past `3.0.3`, or when `micromatch`
+drops the dependency. At that point bump the transitive version and dismiss the
+alert as resolved.
