@@ -464,6 +464,13 @@ class TradeHistoryQueryService(
         /** Covers frontend polling interval while keeping completed comparison results short-lived. */
         private const val COMPARISON_RESULT_TTL_NANOS = 30_000_000_000L
         private const val COMPARISON_RESULT_TTL_MILLIS = 30_000L
+
+        /**
+         * Granularity of the `from` half of [comparisonFlightKey]. One hour is coarse enough
+         * that consecutive polls of the same range share an evaluation, while `Instant.EPOCH`
+         * (`range=all`) stays distinct from any preset range.
+         */
+        private const val COMPARISON_FROM_BUCKET_SECONDS = 3600L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
@@ -532,8 +539,33 @@ class TradeHistoryQueryService(
         return sha256Hex(material)
     }
 
-    private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String =
-        comparisonIdentityKey(benchmarkMethod)
+    /**
+     * Identity of one *evaluation*: the benchmark identity plus a coarsely bucketed `from`.
+     *
+     * `from` is what decides the resolved accounting floor
+     * (`max(benchmarkHistoryFloor, min(from, inceptionTime))`), and that floor is
+     * piecewise-constant in `from`: it equals `from` only while `from` precedes inception, and
+     * the inception time otherwise. Bucketing `from` to an hour therefore keeps distinct
+     * ranges distinct (`range=all` sends `Instant.EPOCH`, a preset sends `now - N days`) while
+     * letting the seconds-apart `from` values of consecutive polls collapse onto one key.
+     *
+     * `to` is deliberately excluded. Every History poll sends `to = now`, and the request
+     * bounds only trim presentation (see [presentedFor]), so polls are interchangeable in `to`.
+     *
+     * This matters because a full evaluation walks every pair/interval through the public
+     * OHLC rate limiter and can outlast a short time bucket: a key that rotates faster than
+     * the evaluation spawns a new flight at each rotation while the previous one still runs,
+     * and the herd starves itself behind the limiter so no evaluation ever completes — the
+     * chart then stays on COMPARISON_EVALUATING indefinitely.
+     */
+    private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String {
+        val bucketedFrom = if (from == Instant.EPOCH) {
+            Instant.EPOCH
+        } else {
+            Instant.ofEpochSecond((from.epochSecond / COMPARISON_FROM_BUCKET_SECONDS) * COMPARISON_FROM_BUCKET_SECONDS)
+        }
+        return comparisonIdentityKey(benchmarkMethod) + '|' + bucketedFrom.toEpochMilli()
+    }
 
     private fun comparisonIdentityKey(benchmarkMethod: BenchmarkMethod): String {
         val config = configService?.getConfig()
@@ -542,10 +574,14 @@ class TradeHistoryQueryService(
             append(benchmarkMethod.name).append('|')
             append(settings?.inceptionDate.orEmpty()).append('|')
             append(settings?.simulation == true).append('|')
-            config?.allocations
-                ?.sortedBy { it.symbol.value.uppercase() }
-                ?.joinToString { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
-                ?.let { append(it) }
+            if (config == null) {
+                append("<no-config>")
+            } else {
+                config.allocations
+                    .sortedBy { it.symbol.value.uppercase() }
+                    .joinToString { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
+                    .let { append(it) }
+            }
         }
         return sha256Hex(material)
     }

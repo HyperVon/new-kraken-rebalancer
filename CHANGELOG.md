@@ -46,7 +46,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stayed on `COMPARISON_EVALUATING` indefinitely. The flight is now keyed by the benchmark
   identity alone: `accountingFrom` clamps to inception and every History poll sends
   `to = now`, so the reconciled series is identical across polls and only presentation
-  differs. One evaluation serves every poll and a poll arriving mid-flight joins it.
+  differs. The flight is keyed by the benchmark identity plus a coarsely bucketed `from`,
+  because `from` is what decides the resolved accounting floor and that floor is
+  piecewise-constant in `from` — `range=all` resolves to the history floor while a preset
+  range resolves to inception, so those must not share an evaluation. One evaluation serves
+  every poll of a given range and a poll arriving mid-flight joins it.
 - **Regression cover for the freeze**: `TradeHistoryQueryServiceFreezeRegressionTest` asserts the settings-save path
   cannot re-enter the evidence lock and that polls within one flight bucket do not re-capture evidence.
 
