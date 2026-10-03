@@ -465,8 +465,12 @@ class TradeHistoryQueryService(
         private const val COMPARISON_RESULT_TTL_NANOS = 30_000_000_000L
         private const val COMPARISON_RESULT_TTL_MILLIS = 30_000L
 
-        /** Must match [COMPARISON_RESULT_TTL_MILLIS]; see [bucketInstant]. */
-        private const val COMPARISON_FLIGHT_BUCKET_SECONDS = 30L
+        /**
+         * Granularity of the `from` half of [comparisonFlightKey]. One hour is coarse enough
+         * that consecutive polls of the same range share an evaluation, while `Instant.EPOCH`
+         * (`range=all`) stays distinct from any preset range.
+         */
+        private const val COMPARISON_FROM_BUCKET_SECONDS = 3600L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
@@ -536,21 +540,51 @@ class TradeHistoryQueryService(
     }
 
     /**
-     * Buckets a request bound so polls within a window share one flight and one completed
-     * cache entry. Aligned with [COMPARISON_RESULT_TTL_MILLIS] on purpose: a bucket wider
-     * than the TTL would expire the entry mid-bucket and recompute anyway, and a narrower one
-     * splits polls that the TTL could otherwise have served. `to` is always "now" on History
-     * polls, so without this every poll would carry a brand-new cache key.
+     * Identity of one *evaluation*: the benchmark identity plus a coarsely bucketed `from`.
+     *
+     * `from` is what decides the resolved accounting floor
+     * (`max(benchmarkHistoryFloor, min(from, inceptionTime))`), and that floor is
+     * piecewise-constant in `from`: it equals `from` only while `from` precedes inception, and
+     * the inception time otherwise. Bucketing `from` to an hour therefore keeps distinct
+     * ranges distinct (`range=all` sends `Instant.EPOCH`, a preset sends `now - N days`) while
+     * letting the seconds-apart `from` values of consecutive polls collapse onto one key.
+     *
+     * `to` is deliberately excluded. Every History poll sends `to = now`, and the request
+     * bounds only trim presentation (see [presentedFor]), so polls are interchangeable in `to`.
+     *
+     * This matters because a full evaluation walks every pair/interval through the public
+     * OHLC rate limiter and can outlast a short time bucket: a key that rotates faster than
+     * the evaluation spawns a new flight at each rotation while the previous one still runs,
+     * and the herd starves itself behind the limiter so no evaluation ever completes — the
+     * chart then stays on COMPARISON_EVALUATING indefinitely.
      */
-    private fun bucketInstant(instant: Instant): Instant {
-        if (instant == Instant.EPOCH) return instant
-        val epochSec = instant.epochSecond
-        val bucketedSec = (epochSec / COMPARISON_FLIGHT_BUCKET_SECONDS) * COMPARISON_FLIGHT_BUCKET_SECONDS
-        return Instant.ofEpochSecond(bucketedSec)
+    private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String {
+        val bucketedFrom = if (from == Instant.EPOCH) {
+            Instant.EPOCH
+        } else {
+            Instant.ofEpochSecond((from.epochSecond / COMPARISON_FROM_BUCKET_SECONDS) * COMPARISON_FROM_BUCKET_SECONDS)
+        }
+        return comparisonIdentityKey(benchmarkMethod) + '|' + bucketedFrom.toEpochMilli()
     }
 
-    private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String =
-        comparisonRequestKey(bucketInstant(from), bucketInstant(to), benchmarkMethod)
+    private fun comparisonIdentityKey(benchmarkMethod: BenchmarkMethod): String {
+        val config = configService?.getConfig()
+        val settings = config?.settings
+        val material = buildString {
+            append(benchmarkMethod.name).append('|')
+            append(settings?.inceptionDate.orEmpty()).append('|')
+            append(settings?.simulation == true).append('|')
+            if (config == null) {
+                append("<no-config>")
+            } else {
+                config.allocations
+                    .sortedBy { it.symbol.value.uppercase() }
+                    .joinToString { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
+                    .let { append(it) }
+            }
+        }
+        return sha256Hex(material)
+    }
 
     private fun cacheCompletedComparison(
         scope: CoroutineScope,

@@ -29,7 +29,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.math.BigDecimal
@@ -332,6 +334,80 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
 
             narrow.availability shouldBe ComparisonAvailability.UNAVAILABLE
             narrow.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+        }
+
+        "concurrent polls share one evaluation and the identity varies by accounting floor" {
+            val coordinator = HistoryEvidenceCoordinator()
+            val repository = mockk<TradeRepository>(relaxed = true)
+            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+            val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+            val krakenService = mockk<KrakenService>(relaxed = true)
+            val comparisonCache = mockk<RebalancerComparisonCacheRepository>(relaxed = true)
+            val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+
+            val snap1 = snapshot(now)
+            val snap2 = snapshot(now.plusSeconds(3600))
+            coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { comparisonCache.load(any(), any()) } returns null
+            stubCoverage(repository, ledgerRepository)
+            coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+            coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                inceptionTime = snap1.timestamp,
+                inceptionSnapshot = snap1,
+                isAutoDetected = false,
+                confidence = InceptionConfidence.CONFIDENT,
+            )
+
+            // One persist per completed evaluation: the assertion below counts evaluations,
+            // so concurrent polls must not multiply it.
+            val evaluations = CompletableDeferred<Unit>()
+            var persists = 0
+            coEvery { comparisonCache.save(any(), any(), any(), any(), any(), any()) } coAnswers {
+                persists++
+                evaluations.complete(Unit)
+            }
+
+            val service = TradeHistoryQueryService(
+                repository = repository,
+                portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
+                inceptionDiscoveryService = inceptionService,
+                krakenService = krakenService,
+                comparisonCacheRepository = comparisonCache,
+                historyEvidenceCoordinator = coordinator,
+                applicationScope = CoroutineScope(Dispatchers.Default),
+                computationDispatcher = Dispatchers.Default,
+                nowProvider = { now.plusSeconds(7200) },
+            )
+
+            // Concurrent polls with drifting `to` must collapse onto ONE evaluation. This is
+            // the herding defect: with a time-bucketed flight key each poll started its own
+            // reconciliation and none of them completed.
+            coroutineScope {
+                repeat(6) { i ->
+                    launch {
+                        service.requestRebalancerComparison(
+                            now,
+                            now.plusSeconds(3600L + i),
+                            BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                        )
+                    }
+                }
+            }
+            withTimeoutOrNull(30.seconds) { evaluations.await() } shouldNotBe null
+            persists shouldBe 1
+
+            // `range=all` resolves a different accounting floor (`Instant.EPOCH`) than a
+            // preset range (the inception time), so it must NOT share that evaluation.
+            val all = service.requestRebalancerComparison(
+                Instant.EPOCH,
+                now.plusSeconds(3600),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            all.availability shouldBe ComparisonAvailability.AVAILABLE
         }
     }
 }
