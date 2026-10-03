@@ -1407,15 +1407,24 @@ class TradeHistoryQueryService(
                         published.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
                         captured.inceptionResolution?.isAutoDetected != true
                     ) {
-                        val proposal = findLaterComparisonStartProposal(
-                            startAfter = captured.inceptionResolution?.inceptionTime ?: Instant.EPOCH,
-                            inceptionResolution = captured.inceptionResolution,
-                            ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
-                        )
-                        return published.copy(
-                            proposedBaselineTimestamp = proposal.timestamp,
-                            proposalSearchStatus = proposal.status,
-                        )
+                        val proposal = try {
+                            findLaterComparisonStartProposal(
+                                startAfter = captured.inceptionResolution?.inceptionTime ?: Instant.EPOCH,
+                                inceptionResolution = captured.inceptionResolution,
+                                ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.warn("Proposal search failed following comparison publication", e)
+                            null
+                        }
+                        if (proposal != null) {
+                            return published.copy(
+                                proposedBaselineTimestamp = proposal.timestamp,
+                                proposalSearchStatus = proposal.status,
+                            )
+                        }
                     }
                     return published
                 }
@@ -2446,12 +2455,14 @@ class TradeHistoryQueryService(
             // rows after the certified coverage horizon are append-only evidence the proof
             // did not consume, so they can neither invalidate it nor extend its horizon.
             if (cachedSettingsComparison == null) {
-                persistAutomaticBaselineVerification(
-                    current,
-                    captured.inceptionResolution,
-                    captured.stableSnapshots,
-                    captured.stableThrough,
-                )
+                historyEvidenceCoordinator.withLock("history-baseline-persist") {
+                    persistAutomaticBaselineVerification(
+                        current,
+                        captured.inceptionResolution,
+                        captured.stableSnapshots,
+                        captured.stableThrough,
+                    )
+                }
             }
             return status
         }

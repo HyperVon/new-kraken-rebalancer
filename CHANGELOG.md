@@ -15,10 +15,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the `HistoryEvidenceCoordinator` lock under a dedicated `proposalSearchMutex`. Eliminates multi-minute lock holds
   that previously blocked rebalance cycle account scope validation, ledger sync, and trade sync during navigation
   between Dashboard, History, and Settings.
-- **Stable snapshot anchoring for history API polling**: Anchored history API time range queries in `DashboardController`
-  to the latest persisted snapshot timestamp (or 15-second epoch bucket fallback) rather than synthesizing `Instant.now()`
-  on every 5-second HTMX poll. Restores in-memory and in-flight request deduplication across concurrent history
-  fragments, eliminating background job runaway and resource contention.
+- **In-flight comparison request coalescing and window-based deduplication**: Grouped comparison background evaluation
+  and cache lookup by 15-second time windows in `TradeHistoryQueryService`. Rapid 5-second HTMX polls join the existing
+  flight or hit the in-memory cache, eliminating background job runaway and resource contention without artificially
+  truncating live trade or reward queries.
+- **Atomic automatic baseline proof persistence and safe proposal handling**: Wrapped `persistAutomaticBaselineVerification`
+  in `historyEvidenceCoordinator.withLock` to ensure consistent digest calculations against concurrent syncs, and guarded
+  post-publish proposal searches to ensure external OHLC failures do not fail completed comparison flights.
 
 ## [6.17.92] - 2026-10-02
 
