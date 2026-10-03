@@ -38,6 +38,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comparison now runs under the same `comparison-compute` bound as the History pipeline. When it
   runs from a caller already holding the evidence lock, it no longer executes on the caller's
   dispatcher and stalls the request.
+- **Comparison evaluations no longer herd and starve themselves**: The in-flight
+  reconciliation was deduplicated by a short time bucket keyed on `from`/`to`, but a full
+  evaluation walks every pair and interval through the public OHLC rate limiter and can
+  outlast that bucket. Each boundary then started another evaluation while the previous one
+  still ran, and the herd queued behind the limiter so none completed — the History chart
+  stayed on `COMPARISON_EVALUATING` indefinitely. The flight is now keyed by the benchmark
+  identity alone: `accountingFrom` clamps to inception and every History poll sends
+  `to = now`, so the reconciled series is identical across polls and only presentation
+  differs. One evaluation serves every poll and a poll arriving mid-flight joins it.
 - **Regression cover for the freeze**: `TradeHistoryQueryServiceFreezeRegressionTest` asserts the settings-save path
   cannot re-enter the evidence lock and that polls within one flight bucket do not re-capture evidence.
 

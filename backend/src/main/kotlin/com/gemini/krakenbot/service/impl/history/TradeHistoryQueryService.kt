@@ -464,9 +464,6 @@ class TradeHistoryQueryService(
         /** Covers frontend polling interval while keeping completed comparison results short-lived. */
         private const val COMPARISON_RESULT_TTL_NANOS = 30_000_000_000L
         private const val COMPARISON_RESULT_TTL_MILLIS = 30_000L
-
-        /** Must match [COMPARISON_RESULT_TTL_MILLIS]; see [bucketInstant]. */
-        private const val COMPARISON_FLIGHT_BUCKET_SECONDS = 30L
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
@@ -535,22 +532,23 @@ class TradeHistoryQueryService(
         return sha256Hex(material)
     }
 
-    /**
-     * Buckets a request bound so polls within a window share one flight and one completed
-     * cache entry. Aligned with [COMPARISON_RESULT_TTL_MILLIS] on purpose: a bucket wider
-     * than the TTL would expire the entry mid-bucket and recompute anyway, and a narrower one
-     * splits polls that the TTL could otherwise have served. `to` is always "now" on History
-     * polls, so without this every poll would carry a brand-new cache key.
-     */
-    private fun bucketInstant(instant: Instant): Instant {
-        if (instant == Instant.EPOCH) return instant
-        val epochSec = instant.epochSecond
-        val bucketedSec = (epochSec / COMPARISON_FLIGHT_BUCKET_SECONDS) * COMPARISON_FLIGHT_BUCKET_SECONDS
-        return Instant.ofEpochSecond(bucketedSec)
-    }
-
     private fun comparisonFlightKey(from: Instant, to: Instant, benchmarkMethod: BenchmarkMethod): String =
-        comparisonRequestKey(bucketInstant(from), bucketInstant(to), benchmarkMethod)
+        comparisonIdentityKey(benchmarkMethod)
+
+    private fun comparisonIdentityKey(benchmarkMethod: BenchmarkMethod): String {
+        val config = configService?.getConfig()
+        val settings = config?.settings
+        val material = buildString {
+            append(benchmarkMethod.name).append('|')
+            append(settings?.inceptionDate.orEmpty()).append('|')
+            append(settings?.simulation == true).append('|')
+            config?.allocations
+                ?.sortedBy { it.symbol.value.uppercase() }
+                ?.joinToString { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
+                ?.let { append(it) }
+        }
+        return sha256Hex(material)
+    }
 
     private fun cacheCompletedComparison(
         scope: CoroutineScope,

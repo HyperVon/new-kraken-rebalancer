@@ -333,5 +333,81 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
             narrow.availability shouldBe ComparisonAvailability.UNAVAILABLE
             narrow.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
         }
+
+        "comparison evaluation is shared across polls and works without a config service" {
+            val coordinator = HistoryEvidenceCoordinator()
+            val repository = mockk<TradeRepository>(relaxed = true)
+            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+            val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+            val krakenService = mockk<KrakenService>(relaxed = true)
+            val comparisonCache = mockk<RebalancerComparisonCacheRepository>(relaxed = true)
+
+            val snap1 = snapshot(now)
+            val snap2 = snapshot(now.plusSeconds(3600))
+            coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+            coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { comparisonCache.load(any(), any()) } returns null
+            stubCoverage(repository, ledgerRepository)
+            coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+
+            // configService is an optional dependency; the flight identity must still resolve.
+            val service = TradeHistoryQueryService(
+                repository = repository,
+                portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
+                krakenService = krakenService,
+                comparisonCacheRepository = comparisonCache,
+                historyEvidenceCoordinator = coordinator,
+                applicationScope = CoroutineScope(Dispatchers.Default),
+                computationDispatcher = Dispatchers.Default,
+                nowProvider = { now.plusSeconds(7200) },
+            )
+
+            val first = service.getRebalancerComparison(
+                now,
+                now.plusSeconds(3600),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            first.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            // A poll with a drifting wall clock must share the same evaluation rather than
+            // starting another one: the flight identity excludes from/to by design.
+            val second = service.getRebalancerComparison(
+                now,
+                now.plusSeconds(3720),
+                BenchmarkMethod.FIXED_INCEPTION_HOLD,
+            )
+            second.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            // A configured inception date and an empty allocation set are distinct identity
+            // inputs: they must still evaluate rather than colliding with the unconfigured key.
+            val configured = TestFixtures.config(
+                allocations = emptyList(),
+                settings = TestFixtures.config(allocations = emptyList()).settings.copy(
+                    inceptionDate = "2025-12-05T17:00:56.973Z",
+                    simulation = true,
+                ),
+            )
+            val configService = mockk<ConfigService>(relaxed = true)
+            every { configService.getConfig() } returns configured
+            val configuredService = TradeHistoryQueryService(
+                repository = repository,
+                portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
+                krakenService = krakenService,
+                configService = configService,
+                comparisonCacheRepository = comparisonCache,
+                historyEvidenceCoordinator = coordinator,
+                computationDispatcher = Dispatchers.Default,
+                nowProvider = { now.plusSeconds(7200) },
+            )
+            configuredService.getRebalancerComparison(
+                now,
+                now.plusSeconds(3600),
+                BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            ).availability shouldNotBe ComparisonUnavailableReason.COMPARISON_EVALUATING
+        }
     }
 }
