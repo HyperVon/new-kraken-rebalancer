@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.92] - 2026-10-02
+
+### Fixed
+
+- **SQLite WAL mode and busy timeout protection**: Configured all SQLite database connections with
+  `PRAGMA busy_timeout = 10000` (10 seconds) and enabled persistent WAL journal mode (`PRAGMA journal_mode = WAL`)
+  and `PRAGMA synchronous = NORMAL` for file-backed databases. Prevents `[SQLITE_BUSY] The database file is locked`
+  errors when concurrent background ledger/trade syncing or snapshot writes execute alongside OHLC persistence
+  or history queries.
+- **Decoupled comparison cache and OHLC revalidation from coordinator locks**: Comparison cache evaluation and
+  expired OHLC dependency revalidation now execute completely outside the `HistoryEvidenceCoordinator` lock, and
+  heavy range trade and ledger queries are deferred until a cache miss occurs. Eliminates multi-second lock holds
+  on `history-comparison-capture` that previously blocked ledger synchronization, trade history synchronization,
+  and rebalance cycle snapshot phases.
+
 ## [6.17.91] - 2026-10-02
 
 ### Fixed

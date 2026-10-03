@@ -58,6 +58,34 @@ class DatabaseConfigTest : StringSpec() {
             }
         }
 
+        "forces busy_timeout ON on app-managed connections" {
+            val databaseUrl = "jdbc:sqlite:file:busy-timeout-${UUID.randomUUID()}?mode=memory&cache=shared"
+            val db = DatabaseConfig.init(databaseUrl)
+
+            transaction(db) {
+                val busyTimeout = exec("PRAGMA busy_timeout") { rs ->
+                    if (rs.next()) rs.getInt(1) else 0
+                }
+                busyTimeout shouldBe 10000
+            }
+        }
+
+        "enables WAL journal mode for persistent file-backed database" {
+            val tempDir = Files.createTempDirectory("wal-test")
+            val dbFile = tempDir.resolve("wal-test.db")
+            try {
+                val db = DatabaseConfig.init(dbFile.toString())
+                transaction(db) {
+                    val journalMode = exec("PRAGMA journal_mode") { rs ->
+                        if (rs.next()) rs.getString(1).lowercase() else ""
+                    }
+                    journalMode shouldBe "wal"
+                }
+            } finally {
+                Files.walk(tempDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            }
+        }
+
         "should initialize in-memory database" {
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             db shouldNotBe null

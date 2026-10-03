@@ -491,7 +491,6 @@ class TradeHistoryQueryService(
         val reachabilityDependencies: MutableSet<OhlcReachabilityDependency> = ConcurrentHashMap.newKeySet(),
         val ohlcHadFailures: AtomicBoolean = AtomicBoolean(false),
         val initialUnavailableResult: RebalancerComparison? = null,
-        val initialCachedResult: RebalancerComparison? = null,
     )
 
     private sealed interface PublishOutcome {
@@ -680,7 +679,6 @@ class TradeHistoryQueryService(
         benchmarkMethod: BenchmarkMethod,
         inceptionResolution: InceptionResolution?,
         initialUnavailableResult: RebalancerComparison? = null,
-        initialCachedResult: RebalancerComparison? = null,
     ): CapturedComparisonEvidence = CapturedComparisonEvidence(
         accountingFrom = accountingFrom,
         to = to,
@@ -710,17 +708,31 @@ class TradeHistoryQueryService(
         priceEvidenceSnapshots = emptyList(),
         configuredAssetUniverse = null,
         initialUnavailableResult = initialUnavailableResult,
-        initialCachedResult = initialCachedResult,
     )
 
-    private suspend fun captureComparisonEvidence(
+    private data class ComparisonCacheIdentity(
+        val accountingFrom: Instant,
+        val to: Instant,
+        val benchmarkMethod: BenchmarkMethod,
+        val inceptionResolution: InceptionResolution?,
+        val stableThrough: Instant,
+        val evaluationSnapshots: List<PortfolioSnapshot>,
+        val orderedSnapshots: List<PortfolioSnapshot>,
+        val cacheFrom: Instant,
+        val cacheTo: Instant,
+        val cacheFingerprint: String?,
+        val configuredUniverse: String,
+        val requiredCoverageStart: Instant,
+        val initialUnavailableResult: RebalancerComparison? = null,
+    )
+
+    private suspend fun resolveComparisonCacheIdentity(
         from: Instant,
         to: Instant,
         benchmarkMethod: BenchmarkMethod,
         forensicRegimes: List<InferredRegimeTransition>?,
-        assetMetadata: List<KrakenAssetMetadata>,
         assetMetadataDigest: String,
-    ): CapturedComparisonEvidence {
+    ): ComparisonCacheIdentity {
         val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
         val accountingFrom = maxOf(
             benchmarkHistoryFloor,
@@ -734,11 +746,19 @@ class TradeHistoryQueryService(
                 assetMetadata = emptyList(),
                 benchmarkMethod = benchmarkMethod,
             )
-            return emptyCapturedEvidence(
+            return ComparisonCacheIdentity(
                 accountingFrom = accountingFrom,
                 to = to,
                 benchmarkMethod = benchmarkMethod,
                 inceptionResolution = inceptionResolution,
+                stableThrough = Instant.EPOCH,
+                evaluationSnapshots = emptyList(),
+                orderedSnapshots = emptyList(),
+                cacheFrom = Instant.EPOCH,
+                cacheTo = Instant.EPOCH,
+                cacheFingerprint = null,
+                configuredUniverse = "",
+                requiredCoverageStart = Instant.EPOCH,
                 initialUnavailableResult = unavailable,
             )
         }
@@ -753,11 +773,19 @@ class TradeHistoryQueryService(
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
                 benchmarkMethod = benchmarkMethod,
             )
-            return emptyCapturedEvidence(
+            return ComparisonCacheIdentity(
                 accountingFrom = accountingFrom,
                 to = to,
                 benchmarkMethod = benchmarkMethod,
                 inceptionResolution = inceptionResolution,
+                stableThrough = Instant.EPOCH,
+                evaluationSnapshots = emptyList(),
+                orderedSnapshots = orderedSnapshots,
+                cacheFrom = Instant.EPOCH,
+                cacheTo = Instant.EPOCH,
+                cacheFingerprint = null,
+                configuredUniverse = "",
+                requiredCoverageStart = Instant.EPOCH,
                 initialUnavailableResult = unavailable,
             )
         }
@@ -795,11 +823,19 @@ class TradeHistoryQueryService(
                 unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
                 benchmarkMethod = benchmarkMethod,
             )
-            return emptyCapturedEvidence(
+            return ComparisonCacheIdentity(
                 accountingFrom = accountingFrom,
                 to = to,
                 benchmarkMethod = benchmarkMethod,
                 inceptionResolution = inceptionResolution,
+                stableThrough = Instant.EPOCH,
+                evaluationSnapshots = emptyList(),
+                orderedSnapshots = orderedSnapshots,
+                cacheFrom = Instant.EPOCH,
+                cacheTo = Instant.EPOCH,
+                cacheFingerprint = null,
+                configuredUniverse = "",
+                requiredCoverageStart = requiredCoverageStart,
                 initialUnavailableResult = unavailable,
             )
         }
@@ -827,11 +863,19 @@ class TradeHistoryQueryService(
                     unavailableAt = orderedSnapshots[firstUncoveredIndex].timestamp,
                     benchmarkMethod = benchmarkMethod,
                 )
-                return emptyCapturedEvidence(
+                return ComparisonCacheIdentity(
                     accountingFrom = accountingFrom,
                     to = to,
                     benchmarkMethod = benchmarkMethod,
                     inceptionResolution = inceptionResolution,
+                    stableThrough = stableThrough,
+                    evaluationSnapshots = emptyList(),
+                    orderedSnapshots = orderedSnapshots,
+                    cacheFrom = Instant.EPOCH,
+                    cacheTo = Instant.EPOCH,
+                    cacheFingerprint = null,
+                    configuredUniverse = "",
+                    requiredCoverageStart = requiredCoverageStart,
                     initialUnavailableResult = unavailable,
                 )
             }
@@ -857,11 +901,19 @@ class TradeHistoryQueryService(
                 unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
                 benchmarkMethod = benchmarkMethod,
             )
-            return emptyCapturedEvidence(
+            return ComparisonCacheIdentity(
                 accountingFrom = accountingFrom,
                 to = to,
                 benchmarkMethod = benchmarkMethod,
                 inceptionResolution = inceptionResolution,
+                stableThrough = stableThrough,
+                evaluationSnapshots = evaluationSnapshots,
+                orderedSnapshots = orderedSnapshots,
+                cacheFrom = Instant.EPOCH,
+                cacheTo = Instant.EPOCH,
+                cacheFingerprint = null,
+                configuredUniverse = "",
+                requiredCoverageStart = requiredCoverageStart,
                 initialUnavailableResult = unavailable,
             )
         }
@@ -898,42 +950,59 @@ class TradeHistoryQueryService(
             null
         }
 
-        if (cacheFingerprint != null) {
-            when (val outcome = loadCachedComparison(cacheFrom, cacheTo, cacheFingerprint)) {
-                is CachedComparisonOutcome.Hit -> {
-                    log.debug(
-                        "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
-                        cacheFrom,
-                        cacheTo,
-                        cacheFingerprint,
-                    )
-                    return emptyCapturedEvidence(
-                        accountingFrom = accountingFrom,
-                        to = to,
-                        benchmarkMethod = benchmarkMethod,
-                        inceptionResolution = inceptionResolution,
-                        initialCachedResult = outcome.comparison,
-                    )
-                }
+        return ComparisonCacheIdentity(
+            accountingFrom = accountingFrom,
+            to = to,
+            benchmarkMethod = benchmarkMethod,
+            inceptionResolution = inceptionResolution,
+            stableThrough = stableThrough,
+            evaluationSnapshots = evaluationSnapshots,
+            orderedSnapshots = orderedSnapshots,
+            cacheFrom = cacheFrom,
+            cacheTo = cacheTo,
+            cacheFingerprint = cacheFingerprint,
+            configuredUniverse = configuredUniverse,
+            requiredCoverageStart = requiredCoverageStart,
+            initialUnavailableResult = null,
+        )
+    }
 
-                is CachedComparisonOutcome.Refreshing -> {
-                    log.info(
-                        "Serving transient comparison refresh state; sourceFrom={} sourceTo={}",
-                        cacheFrom,
-                        cacheTo,
-                    )
-                    return emptyCapturedEvidence(
-                        accountingFrom = accountingFrom,
-                        to = to,
-                        benchmarkMethod = benchmarkMethod,
-                        inceptionResolution = inceptionResolution,
-                        initialUnavailableResult = outcome.transient,
-                    )
-                }
-
-                CachedComparisonOutcome.Miss -> Unit
-            }
+    private suspend fun captureComparisonEvidence(
+        from: Instant,
+        to: Instant,
+        benchmarkMethod: BenchmarkMethod,
+        forensicRegimes: List<InferredRegimeTransition>?,
+        assetMetadata: List<KrakenAssetMetadata>,
+        assetMetadataDigest: String,
+        identity: ComparisonCacheIdentity? = null,
+    ): CapturedComparisonEvidence {
+        val resolvedIdentity = identity ?: resolveComparisonCacheIdentity(
+            from = from,
+            to = to,
+            benchmarkMethod = benchmarkMethod,
+            forensicRegimes = forensicRegimes,
+            assetMetadataDigest = assetMetadataDigest,
+        )
+        if (resolvedIdentity.initialUnavailableResult != null) {
+            return emptyCapturedEvidence(
+                accountingFrom = resolvedIdentity.accountingFrom,
+                to = resolvedIdentity.to,
+                benchmarkMethod = resolvedIdentity.benchmarkMethod,
+                inceptionResolution = resolvedIdentity.inceptionResolution,
+                initialUnavailableResult = resolvedIdentity.initialUnavailableResult,
+            )
         }
+        val accountingFrom = resolvedIdentity.accountingFrom
+        val inceptionResolution = resolvedIdentity.inceptionResolution
+        val stableThrough = resolvedIdentity.stableThrough
+        val evaluationSnapshots = resolvedIdentity.evaluationSnapshots
+        val orderedSnapshots = resolvedIdentity.orderedSnapshots
+        val cacheFrom = resolvedIdentity.cacheFrom
+        val cacheTo = resolvedIdentity.cacheTo
+        val cacheFingerprint = resolvedIdentity.cacheFingerprint
+        val configuredUniverse = resolvedIdentity.configuredUniverse
+        val requiredCoverageStart = resolvedIdentity.requiredCoverageStart
+        val allocations = configService?.getConfig()?.allocations
 
         val capturedRevision = repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION).orEmpty()
         val eventUpperBound = certifiedEventUpperBound(stableThrough)
@@ -1264,6 +1333,48 @@ class TradeHistoryQueryService(
         var attempts = 0
         while (attempts < 3) {
             attempts++
+            val cacheIdentity = historyEvidenceCoordinator.withLock("history-comparison-capture") {
+                resolveComparisonCacheIdentity(
+                    from = from,
+                    to = to,
+                    benchmarkMethod = benchmarkMethod,
+                    forensicRegimes = forensicRegimes,
+                    assetMetadataDigest = assetMetadataDigest,
+                )
+            }
+            cacheIdentity.initialUnavailableResult?.let { return it }
+
+            if (cacheIdentity.cacheFingerprint != null) {
+                when (
+                    val outcome = loadCachedComparison(
+                        cacheIdentity.cacheFrom,
+                        cacheIdentity.cacheTo,
+                        cacheIdentity.cacheFingerprint,
+                    )
+                ) {
+                    is CachedComparisonOutcome.Hit -> {
+                        log.debug(
+                            "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
+                            cacheIdentity.cacheFrom,
+                            cacheIdentity.cacheTo,
+                            cacheIdentity.cacheFingerprint,
+                        )
+                        return presentComparison(outcome.comparison, from, to)
+                    }
+
+                    is CachedComparisonOutcome.Refreshing -> {
+                        log.info(
+                            "Serving transient comparison refresh state; sourceFrom={} sourceTo={}",
+                            cacheIdentity.cacheFrom,
+                            cacheIdentity.cacheTo,
+                        )
+                        return outcome.transient
+                    }
+
+                    CachedComparisonOutcome.Miss -> Unit
+                }
+            }
+
             val captured = historyEvidenceCoordinator.withLock("history-comparison-capture") {
                 captureComparisonEvidence(
                     from = from,
@@ -1272,9 +1383,9 @@ class TradeHistoryQueryService(
                     forensicRegimes = forensicRegimes,
                     assetMetadata = assetMetadata,
                     assetMetadataDigest = assetMetadataDigest,
+                    identity = cacheIdentity,
                 )
             }
-            captured.initialCachedResult?.let { return presentComparison(it, from, to) }
             captured.initialUnavailableResult?.let { return it }
 
             val calculated = withContext(computationDispatcher) {
@@ -1511,10 +1622,9 @@ class TradeHistoryQueryService(
      * rewrite its reason) and must treat it as unsatisfiable by replay: the cached entry is
      * unvalidated, not missing.
      *
-     * Every synchronous writer below runs under the history evidence lock (both query entry
-     * points hold it), so no concurrent replay can replace the entry mid-batch; only
-     * [runBackgroundOhlcRefresh] writes outside the lock, which is why only it rechecks
-     * entry identity before writing.
+     * Consults the durable comparison cache outside the history evidence coordinator lock.
+     * Synchronous OHLC revalidations make network calls without blocking background sync or
+     * snapshot writes. Dependencies sharing one (pair, interval, since) range share a single flight.
      */
     private suspend fun loadCachedComparison(
         from: Instant,
@@ -1560,7 +1670,7 @@ class TradeHistoryQueryService(
 
             val expiredKeys = expired.map { it.refreshKey() }.distinct()
             if (expiredKeys.size <= MAX_COMPARISON_OHLC_REVALIDATIONS_PER_REQUEST) {
-                revalidateExpiredDependencies(cache, from, to, entry.comparison, ohlc, fresh, expired)
+                revalidateExpiredDependencies(cache, from, to, entry, ohlc, fresh, expired)
             } else {
                 revalidateWithBoundedBatch(cache, from, to, fingerprint, entry, ohlc, fresh, expired, expiredKeys)
             }
@@ -1581,7 +1691,7 @@ class TradeHistoryQueryService(
         cache: RebalancerComparisonCacheRepository,
         from: Instant,
         to: Instant,
-        cached: RebalancerComparison,
+        entry: RebalancerComparisonCacheEntry,
         ohlc: HistoricalOhlcCache,
         fresh: List<ConsumedOhlcDependency>,
         expired: List<ConsumedOhlcDependency>,
@@ -1617,7 +1727,7 @@ class TradeHistoryQueryService(
                 ohlcDependencies = updatedDependencies,
             )
         }
-        return CachedComparisonOutcome.Hit(cached)
+        return CachedComparisonOutcome.Hit(entry.comparison)
     }
 
     /**
