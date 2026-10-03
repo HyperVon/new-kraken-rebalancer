@@ -19,6 +19,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not exist yet, so the row cannot fund it, and its effect is already measured into the baseline
   snapshot. They are journaled as decided-but-not-applied and never re-scanned. Ambiguous flows
   **inside** the strategy period still fail closed, since they can move ATH on unearned capital.
+  Baseline rows are retired before the straddling-group and ambiguous-normalization checks, so
+  they cannot trip a fatal path on a later cycle.
+- **Coverage horizon no longer under-records by up to a second**: the ledger watermark was
+  stored as `ledger_watermark_epoch_sec`, truncated down from the query instant. The ATH gate
+  then refused every balance observed inside the horizon's own second — the common case, since
+  the cycle observes balances moments before the confirming sync writes the horizon — so ATH was
+  deferred on almost every cycle even when coverage genuinely held. A millisecond-precision
+  `ledger_watermark_epoch_ms` is now written alongside the legacy key and preferred by the gate,
+  while stores without it keep the previous conservative semantics.
 
 ## [6.17.94] - 2026-10-03
 

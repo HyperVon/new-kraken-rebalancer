@@ -8,6 +8,7 @@ SyncMetadataKeys:
   OFFSET: "offset"
   TOTAL: "total"
   LEDGER_WATERMARK_EPOCH_SEC: "ledger_watermark_epoch_sec"
+  LEDGER_WATERMARK_EPOCH_MS: "ledger_watermark_epoch_ms"
   LEDGERS_SEEDED: "ledgers_seeded"
   LEDGER_OFFSET: "ledger_offset"
   LEDGER_TOTAL: "ledger_total"

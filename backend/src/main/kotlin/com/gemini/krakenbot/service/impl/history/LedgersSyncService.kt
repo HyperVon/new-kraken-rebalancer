@@ -551,6 +551,14 @@ class LedgersSyncService(
             SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
             instant.epochSecond.toString(),
         )
+        // The seconds key truncates down, so it under-records coverage by up to a second.
+        // ATH then refuses every balance observed inside that second — the common case,
+        // because the cycle observes balances moments before the confirming sync writes
+        // this value. Keep the legacy key for older readers and store the true bound here.
+        repository.setSyncMetadata(
+            SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_MS,
+            instant.toEpochMilli().toString(),
+        )
     }
 
     private suspend fun readInitialPaginationOffset(): Int? = repository

@@ -1844,6 +1844,36 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "millisecond watermark covers a subsecond observation the legacy seconds key would refuse" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("20.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                // The true query bound reached t60+800ms. The legacy seconds key truncates
+                // that to t60.000 and would refuse the t60+500ms observation below, which is
+                // the common production case (balances observed moments before the confirming
+                // sync writes the horizon). The precise key must win when present.
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_MS,
+                    t60.plusMillis(800).toEpochMilli().toString(),
+                )
+
+                val result = analyzer(t60.plusMillis(500)).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t60.plusMillis(500),
+                )
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("110000.00"))
+            }
+        }
+
         "same-second deposits apply once each and survive reprocessing" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
