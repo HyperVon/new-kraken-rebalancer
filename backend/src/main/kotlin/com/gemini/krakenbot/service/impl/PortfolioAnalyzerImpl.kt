@@ -423,12 +423,32 @@ class PortfolioAnalyzerImpl(
     )
 
     /**
+     * True when [event] predates the accepted strategy inception.
+     *
+     * A flow before the strategy existed cannot be owner capital entering it: its effect is
+     * already measured into the baseline snapshot's portfolio value. The classifier cannot
+     * prove whether such a row was an external transfer or an internal move, and it never
+     * will — the evidence is gone — so treating it as fatal leaves ATH permanently
+     * untrackable over one unresolvable row (observed in production on a 2022 dust transfer).
+     * Such rows are journaled as decided-but-not-applied, which is the correct treatment for
+     * baseline material, and are never re-scanned. Post-inception ambiguous flows still fail
+     * closed: they can move ATH on unearned capital.
+     */
+    private suspend fun predatesStrategyInception(event: LedgerEvent): Boolean {
+        val inceptionEpochMs = tradeRepository
+            ?.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+            ?.toLongOrNull() ?: return false
+        return !event.time.isAfter(Instant.ofEpochMilli(inceptionEpochMs))
+    }
+
+    /**
      * Identity-driven reconciliation: every retained ledger row up to
      * [horizon] minus the decision journal, classified with refid pairing.
      * The journal (not the watermark timestamp) records what has already been
      * decided, so sync backfill and window-straddling rows are reconciled
      * exactly once and crash replays stay idempotent.
      */
+
     private suspend fun scanUndecidedLedgerEvents(
         horizon: Instant,
         provenanceResolver: FundingProvenanceResolver,
@@ -584,6 +604,18 @@ class PortfolioAnalyzerImpl(
         for (event in unapplied) {
             val category = classifications.getValue(event.ledgerId)
             if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
+                if (predatesStrategyInception(event)) {
+                    log.info(
+                        "Ignoring pre-inception unclassifiable funding event {} ({}, {}) at {}: " +
+                            "predates the strategy, so it is baseline material and cannot fund it",
+                        event.ledgerId,
+                        event.type,
+                        event.asset,
+                        event.time,
+                    )
+                    absorbed.add(appliedFlowFor(event, FlowCategory.AMBIGUOUS))
+                    continue
+                }
                 log.warn(
                     "Cannot establish initial ATH baseline: ledger history contains unresolved " +
                         "ambiguous funding event {} ({}, {}) at {}",
@@ -898,6 +930,19 @@ class PortfolioAnalyzerImpl(
             }
             val category = classifications.getValue(event.ledgerId)
             if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
+                if (predatesStrategyInception(event)) {
+                    log.info(
+                        "Ignoring pre-inception unclassifiable funding event {} (type={}, asset={}, amount={}) " +
+                            "at {}: predates the strategy, so it is baseline material and cannot fund it",
+                        event.ledgerId,
+                        event.type,
+                        event.asset,
+                        event.amount,
+                        event.time,
+                    )
+                    skippedDecided.add(appliedFlowFor(event, FlowCategory.AMBIGUOUS))
+                    continue
+                }
                 log.warn(
                     "Deferring ATH update: unapplied ambiguous funding event {} (type={}, asset={}, amount={}) " +
                         "at {} cannot be classified as owner capital or internal move",

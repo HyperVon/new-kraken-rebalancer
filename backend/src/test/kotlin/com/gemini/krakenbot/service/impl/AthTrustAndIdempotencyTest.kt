@@ -2929,6 +2929,93 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "pre-inception unclassifiable flow is baseline material and does not block ATH" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                // The strategy starts at t80, so the t70 row predates it.
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    t80.toEpochMilli().toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "pre-inception-transfer",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            asset = "USD",
+                            amount = BigDecimal("10000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                // A row before the strategy existed cannot fund it: its effect is already in
+                // the measured baseline. It must not hold ATH hostage forever.
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("110000.00"))
+                // Journaled as decided-but-not-applied so it is never re-scanned.
+                statsRepository.getAppliedAthFlowIds(listOf("pre-inception-transfer")) shouldBe
+                    setOf("pre-inception-transfer")
+            }
+        }
+
+        "post-inception unclassifiable flow still defers fail-closed" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                // The strategy started at t60, so the t70 row is inside it and must still fail.
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    t60.toEpochMilli().toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "post-inception-transfer",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            asset = "USD",
+                            amount = BigDecimal("10000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("post-inception-transfer")) shouldBe emptySet()
+            }
+        }
+
         "funding provenance preparation failure defers ATH without journaling" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))

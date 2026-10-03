@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.95] - 2026-10-03
+
+### Fixed
+
+- **Unclassifiable pre-inception ledger rows no longer block ATH permanently**: a `transfer`
+  with no provable internal or external provenance is classified `AMBIGUOUS`, which failed the
+  ATH update closed. The scan re-reads every retained ledger row on each cycle and the decision
+  journal (not a watermark) is what retires a row, so a row that can never be classified was
+  re-thrown on every cycle forever — one 2022 dust transfer held ATH untrackable. Rows at or
+  before the accepted strategy inception are now treated as baseline material: the strategy did
+  not exist yet, so the row cannot fund it, and its effect is already measured into the baseline
+  snapshot. They are journaled as decided-but-not-applied and never re-scanned. Ambiguous flows
+  **inside** the strategy period still fail closed, since they can move ATH on unearned capital.
+
 ## [6.17.94] - 2026-10-03
 
 ### Fixed
