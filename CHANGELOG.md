@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.95] - 2026-10-03
+
+### Fixed
+
+- **Unclassifiable pre-inception ledger rows no longer block ATH permanently**: a `transfer`
+  with no provable internal or external provenance is classified `AMBIGUOUS`, which failed the
+  ATH update closed. The scan re-reads every retained ledger row on each cycle and the decision
+  journal (not a watermark) is what retires a row, so a row that can never be classified was
+  re-thrown on every cycle forever — one 2022 dust transfer held ATH untrackable. Rows at or
+  before the accepted strategy inception are now treated as baseline material: the strategy did
+  not exist yet, so the row cannot fund it, and its effect is already measured into the baseline
+  snapshot. They are journaled as decided-but-not-applied and never re-scanned. Ambiguous flows
+  **inside** the strategy period still fail closed, since they can move ATH on unearned capital.
+  Baseline rows are retired before the straddling-group and ambiguous-normalization checks, so
+  they cannot trip a fatal path on a later cycle.
+- **Coverage horizon no longer under-records by up to a second**: the ledger watermark was
+  stored as `ledger_watermark_epoch_sec`, truncated down from the query instant. The ATH gate
+  then refused every balance observed inside the horizon's own second — the common case, since
+  the cycle observes balances moments before the confirming sync writes the horizon — so ATH was
+  deferred on almost every cycle even when coverage genuinely held. A millisecond-precision
+  `ledger_watermark_epoch_ms` is now written alongside the legacy key and preferred by the gate,
+  while stores without it keep the previous conservative semantics.
+
 ## [6.17.94] - 2026-10-03
 
 ### Fixed

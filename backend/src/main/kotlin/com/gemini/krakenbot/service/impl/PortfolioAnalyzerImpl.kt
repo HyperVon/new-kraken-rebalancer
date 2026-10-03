@@ -423,12 +423,32 @@ class PortfolioAnalyzerImpl(
     )
 
     /**
+     * True when [event] predates the accepted strategy inception.
+     *
+     * A flow before the strategy existed cannot be owner capital entering it: its effect is
+     * already measured into the baseline snapshot's portfolio value. The classifier cannot
+     * prove whether such a row was an external transfer or an internal move, and it never
+     * will — the evidence is gone — so treating it as fatal leaves ATH permanently
+     * untrackable over one unresolvable row (observed in production on a 2022 dust transfer).
+     * Such rows are journaled as decided-but-not-applied, which is the correct treatment for
+     * baseline material, and are never re-scanned. Post-inception ambiguous flows still fail
+     * closed: they can move ATH on unearned capital.
+     */
+    private suspend fun predatesStrategyInception(event: LedgerEvent): Boolean {
+        val inceptionEpochMs = tradeRepository
+            ?.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+            ?.toLongOrNull() ?: return false
+        return !event.time.isAfter(Instant.ofEpochMilli(inceptionEpochMs))
+    }
+
+    /**
      * Identity-driven reconciliation: every retained ledger row up to
      * [horizon] minus the decision journal, classified with refid pairing.
      * The journal (not the watermark timestamp) records what has already been
      * decided, so sync backfill and window-straddling rows are reconciled
      * exactly once and crash replays stay idempotent.
      */
+
     private suspend fun scanUndecidedLedgerEvents(
         horizon: Instant,
         provenanceResolver: FundingProvenanceResolver,
@@ -518,9 +538,22 @@ class PortfolioAnalyzerImpl(
         balancesObservedAt: Instant?,
     ): List<AppliedAthFlow> {
         val scanned = scanUndecidedLedgerEvents(horizon, provenanceResolver)
-        val unapplied = scanned.unapplied
+        // Baseline material first: a row at or before the strategy inception can never be
+        // resolved, and the fatal check below would otherwise refuse to establish the
+        // initial ATH over one unresolvable row forever.
+        val baselineMaterial = scanned.unapplied.filter { predatesStrategyInception(it) }
+        val baselineIds = baselineMaterial.mapTo(mutableSetOf()) { it.ledgerId }
+        val unapplied = scanned.unapplied.filterNot { it.ledgerId in baselineIds }
         val classifications = scanned.classifications
-        if (unapplied.isEmpty()) return emptyList()
+        if (baselineMaterial.isNotEmpty()) {
+            log.info(
+                "Ignoring {} pre-inception unclassifiable funding event(s) when establishing the initial ATH " +
+                    "baseline: they predate the strategy and are already measured into it",
+                baselineMaterial.size,
+            )
+        }
+        val absorbedBaseline = baselineMaterial.map { appliedFlowFor(it, FlowCategory.AMBIGUOUS) }
+        if (unapplied.isEmpty()) return absorbedBaseline
 
         val unappliedIds = unapplied.mapTo(mutableSetOf()) { it.ledgerId }
         val decidedIds = scanned.decidedLedgerIds
@@ -614,10 +647,10 @@ class PortfolioAnalyzerImpl(
             log.info(
                 "Initial ATH established from the current total: journaling {} flow(s) as absorbed " +
                     "(their effect is already inside the baseline)",
-                absorbed.size,
+                absorbed.size + absorbedBaseline.size,
             )
         }
-        return absorbed
+        return absorbedBaseline + absorbed
     }
 
     private suspend fun calculateUnappliedExternalFlow(
@@ -627,7 +660,15 @@ class PortfolioAnalyzerImpl(
         val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(emptyList(), null)
         val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(emptyList(), null)
 
-        val ledgerCoverageSec = ledgersRepo.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)?.toLongOrNull()
+        // Prefer the millisecond watermark when present: the legacy seconds key truncates
+        // down and so under-records coverage by up to a second, which would refuse every
+        // balance observed inside the horizon's own second (the common case). The seconds
+        // key remains the fallback so older stores keep their conservative semantics.
+        val ledgerCoverageMillis = ledgersRepo
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_MS)
+            ?.toLongOrNull()
+        val ledgerCoverageSec = ledgerCoverageMillis?.div(1000)
+            ?: ledgersRepo.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)?.toLongOrNull()
         if (ledgerCoverageSec == null) {
             // No confirmed ledger coverage (sync never succeeded or metadata
             // corrupt). With a dated observation the total may contain unseen
@@ -647,7 +688,9 @@ class PortfolioAnalyzerImpl(
         // include capital the ledger window has not seen yet. The caller
         // treats a stale gate as an untrusted balance: no flow processing, no
         // ATH ratchet, no deployment-driving drawdown.
-        val ledgerCoverage = Instant.ofEpochSecond(ledgerCoverageSec)
+        val ledgerCoverage = ledgerCoverageMillis
+            ?.let { Instant.ofEpochMilli(it) }
+            ?: Instant.ofEpochSecond(ledgerCoverageSec)
         if (balancesObservedAt != null && balancesObservedAt.isAfter(ledgerCoverage)) {
             return ExternalFlowCalculation(
                 emptyList(),
@@ -733,7 +776,30 @@ class PortfolioAnalyzerImpl(
         // decided exactly once because the decision journal (not the
         // watermark timestamp) filters what has already been through
         // classification.
-        val unapplied = scanned.unapplied
+        // Retire baseline material before any fatal path can see it. A row at or before
+        // the strategy inception can never be resolved (the evidence predates the
+        // strategy), so leaving it in `unapplied` would let the straddling-group and
+        // ambiguous-normalization checks below fail the update closed on every cycle for
+        // an unresolvable row. Journal it decided-but-not-applied here, once.
+        val baselineMaterial = scanned.unapplied.filter { predatesStrategyInception(it) }
+        if (baselineMaterial.isNotEmpty()) {
+            baselineMaterial.forEach { event ->
+                log.info(
+                    "Ignoring pre-inception unclassifiable funding event {} (type={}, asset={}, amount={}) " +
+                        "at {}: predates the strategy, so it is baseline material and cannot fund it",
+                    event.ledgerId,
+                    event.type,
+                    event.asset,
+                    event.amount,
+                    event.time,
+                )
+            }
+            portfolioStatsRepository.journalPresumedDecidedFlows(
+                baselineMaterial.map { appliedFlowFor(it, FlowCategory.AMBIGUOUS) },
+            )
+        }
+        val baselineIds = baselineMaterial.mapTo(mutableSetOf()) { it.ledgerId }
+        val unapplied = scanned.unapplied.filterNot { it.ledgerId in baselineIds }
         val classifications = scanned.classifications
         val allRetained = scanned.allRetained
         if (unapplied.isEmpty()) return ExternalFlowCalculation(emptyList(), confirmedHorizon.epochSecond)
@@ -769,9 +835,14 @@ class PortfolioAnalyzerImpl(
         // (INTERNAL_MOVE, TRADE_IGNORED) and performance events (EXTERNAL_BALANCE)
         // are acknowledged in the journal so they are not re-processed.
         // Off-universe OWNER_CAPITAL is acknowledged as skipped.
-        // Crucially, AMBIGUOUS and UNSUPPORTED funding events MUST NOT be journaled
-        // as decided: they fail-closed by deferring the ATH update until affirmative
-        // evidence or resolution arrives, preserving exact-once replay later.
+        // Crucially, an *unresolved* AMBIGUOUS or UNSUPPORTED funding event MUST NOT be
+        // journaled as decided: it fails closed by deferring the ATH update until
+        // affirmative evidence or resolution arrives, preserving exact-once replay later.
+        // The one exception is baseline material — a row at or before the strategy
+        // inception, which can never be resolved because the evidence predates the
+        // strategy. Those are journaled decided-but-not-applied (see
+        // predatesStrategyInception) so a single unresolvable row cannot hold ATH
+        // hostage forever.
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
         val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
             resolvePriceForEvent(feeAsset, timestamp, balancesObservedAt, tradesRepo)
@@ -1061,6 +1132,10 @@ class PortfolioAnalyzerImpl(
                     FlowCategory.INTERNAL_MOVE.name,
                     FlowCategory.TRADE_IGNORED.name,
                     FlowCategory.UNSUPPORTED.name,
+                    // Decided-but-not-applied baseline material: a row at or before the
+                    // strategy inception that can never be classified is journaled as
+                    // AMBIGUOUS so it is retired exactly once instead of re-thrown forever.
+                    FlowCategory.AMBIGUOUS.name,
                 )
             ) {
                 unusableDecidedGroups.add(unusableDecidedFlow(event, "unknown durable category '$journalCategory'"))
