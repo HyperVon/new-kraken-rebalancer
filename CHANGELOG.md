@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.93] - 2026-10-02
+
+### Fixed
+
+- **Decoupled proposal search and settings baseline evaluation from evidence lock**: `findLaterComparisonStartProposal`
+  and `getSettingsComparisonStatus` now execute public Kraken REST OHLC calls and candidate baseline scans outside
+  the `HistoryEvidenceCoordinator` lock under a dedicated `proposalSearchMutex`. Eliminates multi-minute lock holds
+  that previously blocked rebalance cycle account scope validation, ledger sync, and trade sync during navigation
+  between Dashboard, History, and Settings.
+- **In-flight comparison request coalescing and window-based deduplication**: Grouped comparison background evaluation
+  and cache lookup by 15-second time windows in `TradeHistoryQueryService`. Rapid 5-second HTMX polls join the existing
+  flight or hit the in-memory cache, eliminating background job runaway and resource contention without artificially
+  truncating live trade or reward queries.
+- **Atomic automatic baseline proof persistence and safe proposal handling**: Wrapped `persistAutomaticBaselineVerification`
+  in `historyEvidenceCoordinator.withLock` to ensure consistent digest calculations against concurrent syncs, and guarded
+  post-publish proposal searches to ensure external OHLC failures do not fail completed comparison flights.
+
 ## [6.17.92] - 2026-10-02
 
 ### Fixed

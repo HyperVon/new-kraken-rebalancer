@@ -966,6 +966,13 @@ class DashboardController(
         call.respondText(json, ContentType.Application.Json, status)
     }
 
+    private fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
+        val now = Instant.now()
+        val timeRange = TimeRange.fromQueryParam(call.parameters[QueryParamKeys.RANGE])
+        val from = timeRange.calculateFromInstant(now)
+        return Pair(from, now)
+    }
+
     private suspend fun RoutingContext.handleGetHistorySnapshots() {
         val (from, to) = parseTimeRange(call)
         val snapshots = tradeHistoryService.getSnapshotsInRange(from, to).map { it.toApiDto() }
@@ -1273,10 +1280,3 @@ class DashboardController(
 
 fun TimeRange.calculateFromInstant(now: Instant): Instant =
     days?.let { now.minus(it, ChronoUnit.DAYS) } ?: Instant.EPOCH
-
-internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
-    val now = Instant.now()
-    val timeRange = TimeRange.fromQueryParam(call.parameters[QueryParamKeys.RANGE])
-    val from = timeRange.calculateFromInstant(now)
-    return Pair(from, now)
-}
