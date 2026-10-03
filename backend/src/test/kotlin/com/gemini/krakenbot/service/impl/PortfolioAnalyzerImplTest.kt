@@ -28,6 +28,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -853,6 +854,147 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit)
                 coEvery { mockTrades.getTradesInRange(any(), any()) } returns listOf(nearTrade)
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(athPredecessor(observation))
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN)
+                coVerify(exactly = 0) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
+                }
+            }
+        }
+
+        "updateAth orders near-instant rows when their authoritative balances chain in reverse" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.plusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                val decidedNear = LedgerEvent(
+                    ledgerId = "DECIDED-REVERSE-CHAIN",
+                    refid = "EXT-DECIDED-REVERSE-CHAIN",
+                    time = flowTime.minusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("30.00"),
+                    balance = BigDecimal("100.00"),
+                    hasAuthoritativeBalance = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "REVERSE-CHAIN-FLOW",
+                    refid = "EXT-REVERSE-CHAIN-FLOW",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    balance = BigDecimal("1100.00"),
+                    hasAuthoritativeBalance = true,
+                )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
+                    setOf(decidedNear.ledgerId)
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit, decidedNear)
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(athPredecessor(observation))
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime,
+                )
+
+                // The reverse balance chain settles the ordering; only later
+                // gates (flow pricing) may still hold this fixture back.
+                (result as? AthUpdateResult.Deferred)?.reason shouldNotBe
+                    AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN
+            }
+        }
+
+        "updateAth defers when near-instant rows cannot be chained and carry blank group identity" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.plusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                val orphanNear = LedgerEvent(
+                    ledgerId = "DECIDED-NULL-REFID",
+                    refid = null,
+                    time = flowTime.minusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("7.00"),
+                    balance = BigDecimal("42.00"),
+                    hasAuthoritativeBalance = true,
+                )
+                val blankRefNear = LedgerEvent(
+                    ledgerId = "DECIDED-BLANK-REFID",
+                    refid = "   ",
+                    time = flowTime.minusMillis(200),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("3.00"),
+                    balance = BigDecimal("9.00"),
+                    hasAuthoritativeBalance = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "UNCHAINED-FLOW",
+                    refid = "EXT-UNCHAINED-FLOW",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    balance = BigDecimal("101000.00"),
+                    hasAuthoritativeBalance = true,
+                )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
+                    setOf(orphanNear.ledgerId, blankRefNear.ledgerId)
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(deposit, orphanNear, blankRefNear)
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
                     listOf(athPredecessor(observation))
 
