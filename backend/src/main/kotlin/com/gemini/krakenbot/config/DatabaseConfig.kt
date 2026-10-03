@@ -81,7 +81,16 @@ object DatabaseConfig {
             try {
                 DriverManager.getConnection(url).use { connection ->
                     connection.createStatement().use { statement ->
-                        statement.execute("PRAGMA journal_mode = WAL")
+                        statement.executeQuery("PRAGMA journal_mode = WAL").use { rs ->
+                            val mode = if (rs.next()) rs.getString(1).lowercase() else ""
+                            if (mode != "wal") {
+                                log.warn(
+                                    "SQLite database at {} returned journal_mode='{}' instead of 'wal'",
+                                    dbPath,
+                                    mode,
+                                )
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) {

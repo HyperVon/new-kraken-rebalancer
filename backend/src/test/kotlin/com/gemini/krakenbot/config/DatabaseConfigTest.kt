@@ -80,6 +80,11 @@ class DatabaseConfigTest : StringSpec() {
                         if (rs.next()) rs.getString(1).lowercase() else ""
                     }
                     journalMode shouldBe "wal"
+
+                    val synchronous = exec("PRAGMA synchronous") { rs ->
+                        if (rs.next()) rs.getInt(1) else -1
+                    }
+                    synchronous shouldBe 1
                 }
             } finally {
                 Files.walk(tempDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
