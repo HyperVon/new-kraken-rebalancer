@@ -801,9 +801,14 @@ class PortfolioAnalyzerImpl(
         // (INTERNAL_MOVE, TRADE_IGNORED) and performance events (EXTERNAL_BALANCE)
         // are acknowledged in the journal so they are not re-processed.
         // Off-universe OWNER_CAPITAL is acknowledged as skipped.
-        // Crucially, AMBIGUOUS and UNSUPPORTED funding events MUST NOT be journaled
-        // as decided: they fail-closed by deferring the ATH update until affirmative
-        // evidence or resolution arrives, preserving exact-once replay later.
+        // Crucially, an *unresolved* AMBIGUOUS or UNSUPPORTED funding event MUST NOT be
+        // journaled as decided: it fails closed by deferring the ATH update until
+        // affirmative evidence or resolution arrives, preserving exact-once replay later.
+        // The one exception is baseline material — a row at or before the strategy
+        // inception, which can never be resolved because the evidence predates the
+        // strategy. Those are journaled decided-but-not-applied (see
+        // predatesStrategyInception) so a single unresolvable row cannot hold ATH
+        // hostage forever.
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
         val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
             resolvePriceForEvent(feeAsset, timestamp, balancesObservedAt, tradesRepo)
@@ -1106,6 +1111,10 @@ class PortfolioAnalyzerImpl(
                     FlowCategory.INTERNAL_MOVE.name,
                     FlowCategory.TRADE_IGNORED.name,
                     FlowCategory.UNSUPPORTED.name,
+                    // Decided-but-not-applied baseline material: a row at or before the
+                    // strategy inception that can never be classified is journaled as
+                    // AMBIGUOUS so it is retired exactly once instead of re-thrown forever.
+                    FlowCategory.AMBIGUOUS.name,
                 )
             ) {
                 unusableDecidedGroups.add(unusableDecidedFlow(event, "unknown durable category '$journalCategory'"))
