@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.96] - 2026-10-03
+
+### Fixed
+
+- **Simultaneous ledger rows no longer block ATH forever**: Kraken writes deposits and
+  stablecoin conversions at one identical millisecond, and the ordering gate treated any
+  event within a 1s clock-skew window as unorderable and failed closed. The gate expected a
+  later cycle to supply "a more precise source or balance boundary", but identical timestamps
+  never resolve — the same `EVENT_ORDERING_UNCERTAIN` row deferred every cycle indefinitely.
+  Rows already carry their resulting balance, and that balance chains with the recorded amount,
+  so same-asset rows are ordered even at one shared millisecond: a deposit of `+1000` landing at
+  balance `1389.2793` provably follows the conversion of `-1000` landing at `389.2793`. A
+  linked group (shared `refid`) moves as one unit, so a `USDG` leg is settled by its paired
+  `USD` leg even though it never shares an asset with the owner flow. Where both orderings
+  chain, the rows are exact reverses with a zero net effect and the order does not matter.
+  Trades and rows without authoritative balances still fail closed, since no boundary exists
+  there and inventing an order on money-moving events is unsafe.
+
 ## [6.17.95] - 2026-10-03
 
 ### Fixed
