@@ -12,8 +12,11 @@ import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -1074,6 +1077,128 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
                     BenchmarkMethod.FIXED_INCEPTION_HOLD,
                 )
                 resultAfterExpiry.availability shouldBe ComparisonAvailability.AVAILABLE
+            }
+        }
+
+        "cached comparison with expired OHLC dependencies revalidates outside coordinator lock" {
+            runTest {
+                val coordinator = HistoryEvidenceCoordinator()
+                val repository = mockk<TradeRepository>(relaxed = true)
+                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
+                val krakenService = mockk<KrakenService>(relaxed = true)
+                val comparisonCache = mockk<RebalancerComparisonCacheRepository>(relaxed = true)
+                val ohlcCache = mockk<HistoricalOhlcCache>(relaxed = true)
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
+                    repository.getSnapshotsInRange(firstArg(), secondArg())
+                }
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "test-scope"
+
+                val snap1 = snapshot(now)
+                val snap2 = snapshot(now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getAssetMetadata() } returns testAssetMetadata
+
+                var storedEntry: RebalancerComparisonCacheEntry? = null
+                coEvery { comparisonCache.load(any(), any()) } coAnswers { storedEntry }
+                coEvery {
+                    comparisonCache.save(any(), any(), any(), any(), any(), any())
+                } coAnswers {
+                    val fp = thirdArg<String>()
+                    val comp = arg<RebalancerComparison>(3)
+                    val deps = arg<List<ConsumedOhlcDependency>>(4)
+                    val reach = arg<List<OhlcReachabilityDependency>>(5)
+                    storedEntry = RebalancerComparisonCacheEntry(fp, comp, deps, reach)
+                }
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    comparisonCacheRepository = comparisonCache,
+                    historicalOhlcCache = ohlcCache,
+                    historyEvidenceCoordinator = coordinator,
+                    computationDispatcher = Dispatchers.Unconfined,
+                    nowProvider = { now.plusSeconds(7200) },
+                )
+
+                // First call: computes and caches entry
+                val firstResult = service.getRebalancerComparison(
+                    now,
+                    now.plusSeconds(3600),
+                    BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                )
+                firstResult.availability shouldBe ComparisonAvailability.AVAILABLE
+                storedEntry shouldNotBe null
+
+                // Expire the cached dependency so next query revalidates it
+                val expiredDep = ConsumedOhlcDependency(
+                    pair = "XXBTZUSD",
+                    intervalMinutes = 60,
+                    sinceEpochSecond = now.epochSecond - 3600,
+                    upToEpochSecond = now.epochSecond,
+                    fetchedAtEpochSecond = now.epochSecond - 7200,
+                    freshnessDeadlineEpochSecond = now.epochSecond - 3600,
+                    candleContentHash = "hash1",
+                )
+                storedEntry = storedEntry?.copy(ohlcDependencies = listOf(expiredDep))
+
+                val revalidationPaused = CompletableDeferred<Unit>()
+                val pauseGate = CompletableDeferred<Unit>()
+                coEvery { ohlcCache.revalidateDependency(any()) } coAnswers {
+                    revalidationPaused.complete(Unit)
+                    pauseGate.await()
+                    OhlcRevalidationResult.Unchanged(firstArg())
+                }
+
+                val secondCallJob = launch {
+                    service.getRebalancerComparison(
+                        now,
+                        now.plusSeconds(3600),
+                        BenchmarkMethod.FIXED_INCEPTION_HOLD,
+                    )
+                }
+
+                revalidationPaused.await()
+
+                // Verification: coordinator lock is NOT held during OHLC revalidation!
+                coordinator.tryWithLock { } shouldBe true
+
+                val writerFinished = CompletableDeferred<Unit>()
+                val writerJob = launch {
+                    coordinator.withLock("ledger-sync") {
+                        writerFinished.complete(Unit)
+                    }
+                }
+
+                runCurrent()
+                writerJob.isCompleted shouldBe true
+                writerFinished.isCompleted shouldBe true
+
+                pauseGate.complete(Unit)
+                secondCallJob.join()
+                writerJob.join()
             }
         }
     }

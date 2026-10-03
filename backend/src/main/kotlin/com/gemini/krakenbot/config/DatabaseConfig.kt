@@ -77,13 +77,40 @@ object DatabaseConfig {
         val url = buildSqliteUrl(dbPath)
         maintainMemoryDatabase(url)
 
+        if (!isMemoryDatabase(dbPath)) {
+            try {
+                DriverManager.getConnection(url).use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("PRAGMA journal_mode = WAL").use { rs ->
+                            val mode = if (rs.next()) rs.getString(1).lowercase() else ""
+                            if (mode != "wal") {
+                                log.warn(
+                                    "SQLite database at {} returned journal_mode='{}' instead of 'wal'",
+                                    dbPath,
+                                    mode,
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to set PRAGMA journal_mode = WAL for database at {}: {}", dbPath, e.message)
+            }
+        }
+
         return Database.connect(
             url,
             setupConnection = { connection ->
                 // `foreign_keys` is a per-connection SQLite pragma: the URL parameter alone does not
                 // apply it to connections opened by Exposed/connection pools. Force it on every new
                 // connection so FK/CASCADE enforcement is uniform across all init paths.
-                connection.createStatement().use { statement -> statement.execute("PRAGMA foreign_keys = ON") }
+                connection.createStatement().use { statement ->
+                    statement.execute("PRAGMA foreign_keys = ON")
+                    statement.execute("PRAGMA busy_timeout = 10000")
+                    if (!isMemoryDatabase(dbPath)) {
+                        statement.execute("PRAGMA synchronous = NORMAL")
+                    }
+                }
             },
         ).also { database ->
             // SchemaUtils.createMissingTablesAndColumns is deprecated; use the non-deprecated
@@ -164,15 +191,27 @@ object DatabaseConfig {
     private fun buildSqliteUrl(dbPath: String): String = when {
         dbPath == ":memory:" -> {
             val dbName = UUID.randomUUID().toString()
-            "jdbc:sqlite:file:$dbName?mode=memory&cache=shared&foreign_keys=true"
+            "jdbc:sqlite:file:$dbName?mode=memory&cache=shared&foreign_keys=true&busy_timeout=10000"
         }
 
-        dbPath.startsWith("jdbc:sqlite:") -> dbPath
+        dbPath.startsWith("jdbc:sqlite:") -> {
+            val hasBusy = dbPath.contains("busy_timeout")
+            val hasFk = dbPath.contains("foreign_keys")
+            val sep = if (dbPath.contains("?")) "&" else "?"
+            val params = buildList {
+                if (!hasFk) add("foreign_keys=true")
+                if (!hasBusy) add("busy_timeout=10000")
+            }.joinToString("&")
+            if (params.isEmpty()) dbPath else "$dbPath$sep$params"
+        }
 
-        dbPath.contains("?") -> "jdbc:sqlite:$dbPath&foreign_keys=true"
+        dbPath.contains("?") -> "jdbc:sqlite:$dbPath&foreign_keys=true&busy_timeout=10000"
 
-        else -> "jdbc:sqlite:$dbPath?foreign_keys=true"
+        else -> "jdbc:sqlite:$dbPath?foreign_keys=true&busy_timeout=10000"
     }
+
+    internal fun isMemoryDatabase(dbPath: String): Boolean =
+        dbPath == ":memory:" || dbPath.contains("mode=memory") || dbPath.contains(":memory:")
 
     private fun maintainMemoryDatabase(url: String) {
         if (url.isInMemoryShared) {
