@@ -64,7 +64,15 @@ private data class OhlcRefreshKey(val pair: String, val intervalMinutes: Int, va
 /** Outcome of consulting the durable comparison cache for one request window. */
 private sealed interface CachedComparisonOutcome {
     /** Fingerprint matched and every consumed OHLC dependency is fresh or revalidated unchanged. */
-    data class Hit(val comparison: RebalancerComparison) : CachedComparisonOutcome
+    data class Hit(
+        val comparison: RebalancerComparison,
+        /**
+         * The entry's own reachability dependencies. A Hit runs no calculation, so
+         * [CapturedComparisonEvidence.reachabilityDependencies] is still empty at that point and
+         * cannot stand in for these.
+         */
+        val reachabilityDependencies: List<OhlcReachabilityDependency>,
+    ) : CachedComparisonOutcome
 
     /** No entry, fingerprint mismatch, or a consumed dependency changed: the caller replays. */
     data object Miss : CachedComparisonOutcome
@@ -1228,7 +1236,10 @@ class TradeHistoryQueryService(
      * row or regress coverage while unlocked OHLC revalidation is suspended, so a matching
      * fingerprint alone does not prove the cached economics are still current.
      */
-    private suspend fun capturedEvidenceStillCurrent(captured: CapturedComparisonEvidence): Boolean {
+    private suspend fun capturedEvidenceStillCurrent(
+        captured: CapturedComparisonEvidence,
+        reachabilityDependencies: Collection<OhlcReachabilityDependency> = captured.reachabilityDependencies,
+    ): Boolean {
         val currentUniverse = configService?.getConfig()?.allocations
             ?.sortedBy { it.symbol.value.uppercase() }
             ?.joinToString(separator = ",") { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
@@ -1275,8 +1286,8 @@ class TradeHistoryQueryService(
         if (currentCoverage == null || currentCoverage < captured.stableThrough) return false
 
         val ohlc = historicalOhlcCache
-        if (ohlc != null && captured.reachabilityDependencies.isNotEmpty()) {
-            val selectionStillValid = captured.reachabilityDependencies.distinct().all {
+        if (ohlc != null && reachabilityDependencies.isNotEmpty()) {
+            val selectionStillValid = reachabilityDependencies.distinct().all {
                 ohlc.isReachabilityDependencyCurrent(it)
             }
             if (!selectionStillValid) return false
@@ -1414,12 +1425,27 @@ class TradeHistoryQueryService(
                 ) {
                     is CachedComparisonOutcome.Hit -> {
                         // The cache and OHLC work above ran unlocked, so a writer may have corrected a
-                        // consumed row or regressed coverage since capture. Revalidate before serving.
-                        val stillCurrent = captured.forensicRegimes != null ||
-                            historyEvidenceCoordinator.withLock("history-comparison-cache-hit") {
-                                capturedEvidenceStillCurrent(captured)
+                        // consumed row, regressed coverage, or advanced a reachability frontier since
+                        // capture. Revalidate before serving, using the entry's own reachability
+                        // dependencies: a Hit runs no calculation, so the captured set is still empty.
+                        // Never wait on the evidence lock here — sync writers hold it across Kraken REST
+                        // I/O. A contended lock falls through to the ordinary compute-and-publish path,
+                        // which is what a cache miss already does.
+                        var revalidated = false
+                        val validated = try {
+                            historyEvidenceCoordinator.tryWithLock("history-comparison-cache-hit") {
+                                revalidated = capturedEvidenceStillCurrent(
+                                    captured,
+                                    reachabilityDependencies = outcome.reachabilityDependencies,
+                                )
                             }
-                        if (stillCurrent) {
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.debug("Cached B&H comparison revalidation failed: {}", e.message)
+                            false
+                        }
+                        if (validated && revalidated) {
                             log.debug(
                                 "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
                                 captured.cacheFrom,
@@ -1713,7 +1739,9 @@ class TradeHistoryQueryService(
                 }
             }
 
-            if (ohlc == null) return CachedComparisonOutcome.Hit(entry.comparison)
+            if (ohlc == null) {
+                return CachedComparisonOutcome.Hit(entry.comparison, entry.ohlcReachabilityDependencies)
+            }
             val nowEpochSecond = nowProvider().epochSecond
             val fresh = entry.ohlcDependencies.filter { it.isFresh(nowEpochSecond) }.distinct()
             // Sorted (stably) so the synchronous batch is a deterministic prefix of the
@@ -1730,7 +1758,7 @@ class TradeHistoryQueryService(
                     ),
                 )
             if (expired.isEmpty()) {
-                return CachedComparisonOutcome.Hit(entry.comparison)
+                return CachedComparisonOutcome.Hit(entry.comparison, entry.ohlcReachabilityDependencies)
             }
 
             val expiredKeys = expired.map { it.refreshKey() }.distinct()
@@ -1792,7 +1820,7 @@ class TradeHistoryQueryService(
                 ohlcDependencies = updatedDependencies,
             )
         }
-        return CachedComparisonOutcome.Hit(entry.comparison)
+        return CachedComparisonOutcome.Hit(entry.comparison, entry.ohlcReachabilityDependencies)
     }
 
     /**

@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
@@ -63,7 +64,7 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
         )
     }
 
-    private inner class Fixture(withDurableCache: Boolean = false) {
+    private inner class Fixture(withDurableCache: Boolean = false, private val ohlc: HistoricalOhlcCache? = null) {
         val repository = mockk<TradeRepository>(relaxed = true)
         val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
         val cache = if (withDurableCache) mockk<RebalancerComparisonCacheRepository>(relaxed = true) else null
@@ -139,6 +140,7 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 krakenService = kraken,
                 comparisonCacheRepository = cache,
                 historyEvidenceCoordinator = HistoryEvidenceCoordinator(),
+                historicalOhlcCache = ohlc,
                 computationDispatcher = mutatingDispatcher,
                 nowProvider = { now.plusSeconds(10_800) },
             )
@@ -151,6 +153,11 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
             now.plusSeconds(3600),
             BenchmarkMethod.FIXED_INCEPTION_HOLD,
         )
+
+        /** Replaces the durable entry, as a real repository read of a previously saved row would. */
+        fun seedEntry(entry: RebalancerComparisonCacheEntry) {
+            cachedEntry = entry
+        }
     }
 
     init {
@@ -251,6 +258,45 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 result.availability shouldBe ComparisonAvailability.AVAILABLE
                 // Served from the durable entry: the second request must not recompute.
                 fixture.computations shouldBe 1
+            }
+        }
+
+        "a cache hit is rejected when a reachability frontier advances during the unlocked lookup" {
+            runTest {
+                val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+                val dependency = OhlcReachabilityDependency(
+                    pair = "BTCUSD",
+                    intervalMinutes = 60,
+                    earliestReachableEpochSecond = now.plusSeconds(3600).epochSecond,
+                )
+                val ohlc = mockk<HistoricalOhlcCache>(relaxed = true)
+                // The unlocked lookup check runs first and must still pass; the frontier only moves
+                // afterwards, so the rejection has to come from the locked revalidation.
+                var frontierChecks = 0
+                coEvery { ohlc.isReachabilityDependencyCurrent(any()) } answers { frontierChecks++ == 0 }
+                val fixture = Fixture(withDurableCache = true, ohlc = ohlc)
+                fixture.compare(dispatcher) {}
+                fixture.cachedEntry shouldNotBe null
+                val warmed = fixture.cachedEntry!!
+                // The stored economics are deliberately distinguishable from a fresh replay.
+                val staleComparison = warmed.comparison.copy(
+                    points = warmed.comparison.points.map {
+                        it.copy(rebalancerValueUSD = BigDecimal("99999.00"))
+                    },
+                )
+                fixture.seedEntry(
+                    warmed.copy(
+                        comparison = staleComparison,
+                        ohlcReachabilityDependencies = listOf(dependency),
+                    ),
+                )
+                val warmedComputations = fixture.computations
+
+                val result = fixture.request()
+
+                // The stale cached economics must not be served; a replay is required.
+                result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                fixture.computations shouldBe warmedComputations + 1
             }
         }
 
