@@ -1358,12 +1358,19 @@ class PortfolioAnalyzerImpl(
         // A linked group (shared refid) moves as one unit, so ordering one leg
         // orders every leg: a USDG conversion leg is settled by its paired USD
         // leg chaining against the owner flow, even though USDG never shares an
-        // asset with it.
-        val nearByGroup = nearLedgerEvents.groupBy { it.refid?.trim().orEmpty().ifEmpty { it.ledgerId } }
+        // asset with it. The derived order must agree with the order the pre-flow
+        // replay will actually apply below, which assigns a row before the flow
+        // when `!time.isAfter(eventTime)` — a row the chain places after the flow
+        // would otherwise be folded into the pre-flow basis and scale ATH on
+        // unearned capital.
+        val nearByGroup = nearLedgerEvents.groupBy { groupKey(it) }
         val unorderableLedgerEvent = nearLedgerEvents.firstOrNull { near ->
-            val group = nearByGroup.getValue(near.refid?.trim().orEmpty().ifEmpty { near.ledgerId })
+            val group = nearByGroup.getValue(groupKey(near))
+            val replaySaysNearBefore = !near.time.isAfter(eventTime)
             group.none { member ->
-                currentFlowEvents.any { current -> balanceOrderingIsEstablished(current, member) }
+                currentFlowEvents.any { current ->
+                    balanceOrdering(member, current) == replaySaysNearBefore
+                }
             }
         }
         val nearUnorderableTrade = trades.firstOrNull { isNearEventTime(it.timestamp, eventTime) }
@@ -1912,22 +1919,34 @@ class PortfolioAnalyzerImpl(
         private fun isNearEventTime(first: Instant, second: Instant): Boolean =
             kotlin.math.abs(first.toEpochMilli() - second.toEpochMilli()) < MAX_EVENT_ORDERING_SKEW_MILLIS
 
+        /** Linked conversion legs share a refid; unlinked rows stand alone under their ledger id. */
+        private fun groupKey(event: LedgerEvent): String = event.refid?.trim().orEmpty().ifEmpty { event.ledgerId }
+
         /**
-         * True when two same-asset rows can be ordered from their authoritative
-         * resulting balances, which chain with the amount they record. Two rows
-         * on one asset are therefore ordered even at an identical millisecond —
-         * exactly the "more precise balance boundary" the timestamp check
-         * otherwise waits for and never receives. When both chain, the rows are
-         * exact reverses: their net effect is zero under either order, so the
-         * ordering does not matter and is not worth failing closed over. False
-         * only when no boundary exists at all.
+         * Orders two same-asset rows from their authoritative resulting balances,
+         * which chain with the amount they record: if [before] precedes [after],
+         * then `before.balance + after.amount == after.balance`. Returns true when
+         * [before] precedes [after], false when [after] precedes [before], and null
+         * when no boundary exists to decide. Two rows on one asset are therefore
+         * ordered even at an identical millisecond — exactly the "more precise
+         * balance boundary" the timestamp check otherwise waits for and never
+         * receives.
+         *
+         * A pair that chains in both directions is an exact reverse: one row's
+         * resulting balance is the other's starting balance, so the flow being
+         * resolved has the same pre-flow basis either way. Those report true, the
+         * order the pre-flow replay already assumes.
          */
-        private fun balanceOrderingIsEstablished(first: LedgerEvent, second: LedgerEvent): Boolean {
-            if (!first.hasAuthoritativeBalance || !second.hasAuthoritativeBalance) return false
-            if (first.asset != second.asset) return false
-            val firstThenSecond = first.balance.add(second.amount).compareTo(second.balance) == 0
-            val secondThenFirst = second.balance.add(first.amount).compareTo(first.balance) == 0
-            return firstThenSecond || secondThenFirst
+        private fun balanceOrdering(before: LedgerEvent, after: LedgerEvent): Boolean? {
+            if (!before.hasAuthoritativeBalance || !after.hasAuthoritativeBalance) return null
+            if (before.asset != after.asset) return null
+            val beforeThenAfter = before.balance.add(after.amount).compareTo(after.balance) == 0
+            val afterThenBefore = after.balance.add(before.amount).compareTo(before.balance) == 0
+            return when {
+                beforeThenAfter -> true
+                afterThenBefore -> false
+                else -> null
+            }
         }
 
         /**

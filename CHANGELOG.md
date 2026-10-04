@@ -19,10 +19,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so same-asset rows are ordered even at one shared millisecond: a deposit of `+1000` landing at
   balance `1389.2793` provably follows the conversion of `-1000` landing at `389.2793`. A
   linked group (shared `refid`) moves as one unit, so a `USDG` leg is settled by its paired
-  `USD` leg even though it never shares an asset with the owner flow. Where both orderings
-  chain, the rows are exact reverses with a zero net effect and the order does not matter.
-  Trades and rows without authoritative balances still fail closed, since no boundary exists
-  there and inventing an order on money-moving events is unsafe.
+  `USD` leg even though it never shares an asset with the owner flow. The derived order must
+  agree with the order the pre-flow replay actually applies, which places a row before the flow
+  when its timestamp is not after it: a row the chain places *after* the flow still fails
+  closed, because folding post-flow value into the pre-flow basis would scale ATH on unearned
+  capital. Trades and rows without authoritative balances also still fail closed, since no
+  boundary exists there and inventing an order on money-moving events is unsafe.
 
 ## [6.17.95] - 2026-10-03
 
