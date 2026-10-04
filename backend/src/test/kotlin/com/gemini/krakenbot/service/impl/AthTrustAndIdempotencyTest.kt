@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
@@ -4062,41 +4063,44 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     t90.epochSecond.toString(),
                 )
                 tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t71, BigDecimal("100000.00")))
-                ledgerRepository.saveLedgers(
-                    listOf(
-                        LedgerEvent(
-                            ledgerId = "shared-ref-usd", refid = "SHARED-REFID", time = t80,
-                            type = KrakenApiConstants.LEDGER_TYPE_STAKING, asset = "USD",
-                            amount = BigDecimal("-1000.00"), balance = BigDecimal("99000.00"),
-                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
-                        ),
-                        LedgerEvent(
-                            ledgerId = "shared-ref-usdg", refid = "SHARED-REFID", time = t80,
-                            type = KrakenApiConstants.LEDGER_TYPE_STAKING, asset = "USDG",
-                            amount = BigDecimal("1000.00"), balance = BigDecimal("1000.00"),
-                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
-                        ),
-                        LedgerEvent(
-                            ledgerId = "shared-ref-deposit", refid = "FT-shared-ref-deposit", time = t80,
-                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT, asset = "USD",
-                            amount = BigDecimal("1000.00"), balance = BigDecimal("100000.00"),
-                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
-                        ),
+                val events = listOf(
+                    LedgerEvent(
+                        ledgerId = "shared-ref-usd", refid = "SHARED-REFID", time = t80,
+                        type = KrakenApiConstants.LEDGER_TYPE_SALE, asset = "USD",
+                        amount = BigDecimal("-1000.00"), balance = BigDecimal("99000.00"),
+                        hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                    ),
+                    LedgerEvent(
+                        ledgerId = "shared-ref-usdg", refid = "SHARED-REFID", time = t80,
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING, asset = "USDG",
+                        amount = BigDecimal("1000.00"), balance = BigDecimal("1000.00"),
+                        hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                    ),
+                    LedgerEvent(
+                        ledgerId = "shared-ref-deposit", refid = "FT-shared-ref-deposit", time = t80,
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT, asset = "USD",
+                        amount = BigDecimal("1000.00"), balance = BigDecimal("100000.00"),
+                        hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
                     ),
                 )
-                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
-                    t0.minusSeconds(1800).epochSecond to BigDecimal("50000.00"),
+                LedgerFlowClassifier.classifyAll(events, testProvenanceResolver) shouldBe mapOf(
+                    "shared-ref-usd" to FlowCategory.EXTERNAL_BALANCE,
+                    "shared-ref-usdg" to FlowCategory.EXTERNAL_BALANCE,
+                    "shared-ref-deposit" to FlowCategory.OWNER_CAPITAL,
                 )
+                ledgerRepository.saveLedgers(events)
                 val result = analyzer(t90).updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("100000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = t90,
                 )
-                // isCompleteConversionGroup rejects non-conversion rows, so the group cannot
-                // use the USDG leg's boundary; deleting that gate would let the pair through.
+                // Classification accepts both balance changes, but a shared refid is not
+                // conversion atomicity. Without the completeness gate the anchored USD basis
+                // is 99000, yielding a Trusted update with ATH 101010.10 instead of deferring.
                 result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
                     AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(events.map { it.ledgerId }) shouldBe emptySet()
             }
         }
 

@@ -65,6 +65,7 @@ class ReconcileThenSampleTest : StringSpec() {
     }
 
     init {
+        coEvery { repository.getSnapshotBefore(any()) } returns null
         coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
             repository.getSnapshotsInRange(firstArg(), secondArg())
         }

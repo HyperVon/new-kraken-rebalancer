@@ -25,6 +25,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   did not advance; changed consumed rows, regressed coverage, or reconstruction/configuration
   changes still invalidate. This removes a reproducible path to repeated `COMPARISON_EVALUATING`
   responses without treating missing OHLC data as reachability evidence.
+- **Fresh comparison evidence on every validation**: durable-cache lookup and publication now
+  hash the current consumed rows rather than trusting a revision-keyed digest memo. A correction
+  is detected even when coverage and revision metadata do not move. Comparison identity and
+  economics are captured under one evidence-lock scope, avoiding mixed old snapshots and new
+  digests. Explicit predecessor fixtures replace relaxed mock data that changed between reads;
+  regression tests verify corrected values, cache invalidation, and the ATH safety guards by
+  deliberate mutation checks.
+- **Durable-cache hits are revalidated before serving**: a matching durable entry was returned
+  straight from the unlocked cache/OHLC lookup, so a writer correcting a consumed row or
+  regressing coverage during that window could leave stale economics on screen. Hits now pass the
+  same captured-evidence validation as publication, under the evidence lock, while OHLC fetches
+  stay outside it. A rejected hit replays instead of serving the outdated value.
 - **Routine ATH logging**: off-universe performance-flow skips and balance-key dumps are now
   DEBUG diagnostics. Excluded owner capital remains a warning, and pre-inception retirement
   emits one INFO count with per-row detail at DEBUG.

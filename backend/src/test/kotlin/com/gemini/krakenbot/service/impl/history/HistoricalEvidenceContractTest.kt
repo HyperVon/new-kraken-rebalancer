@@ -222,6 +222,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
             )
             coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
             coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns null
             coEvery { mockTrades.getTradesInRange(any(), any()) } returns listOf(badTrade)
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null

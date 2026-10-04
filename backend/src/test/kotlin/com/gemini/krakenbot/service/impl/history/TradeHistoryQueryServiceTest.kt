@@ -167,6 +167,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     )
 
     init {
+        coEvery { repository.getSnapshotBefore(any()) } returns null
         coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
             repository.getSnapshotsInRange(firstArg(), secondArg())
         }
@@ -411,7 +412,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRebalancerComparison reuses durable result on revision churn and replays on consumed evidence change" {
+        "durable comparisons survive revision churn but reject unannounced consumed-row changes" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
@@ -432,13 +433,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery { repository.getSnapshotBefore(any()) } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
-                // Counted: one read per consumed-evidence digest pass plus two per
-                // authoritative calculation, so hits and misses are directly observable.
-                var ledgerRangeReads = 0
-                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } coAnswers {
-                    ledgerRangeReads++
-                    emptyList()
-                }
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 
                 cachedService.getRebalancerComparison(
                     Instant.EPOCH,
@@ -455,7 +450,6 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 cache.loadCount shouldBe 2
                 cache.saveCount shouldBe 1
-                ledgerRangeReads shouldBe 3
 
                 // A revision bump with no consumed-row change (live-tail write) rehashes the
                 // digest but must NOT invalidate the cached stable prefix.
@@ -470,11 +464,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 3
                 cache.saveCount shouldBe 1
-                ledgerRangeReads shouldBe 4
 
-                // A consumed evidence row changing (a trade appears at or before the horizon,
-                // committed with its revision bump like every real evidence write) replays the
-                // authoritative calculation exactly once. The bot-owned trade is not reflected
+                // Correcting consumed evidence must invalidate even if metadata was not updated.
+                // The bot-owned trade is not reflected
                 // in the unchanged balances, so the replay itself fails closed — and an
                 // unavailable outcome is never cached.
                 val trade = TradeRecord(
@@ -498,9 +490,6 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-1"))
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
-                } returns "4"
                 cachedService.getRebalancerComparison(
                     Instant.EPOCH,
                     snap2.timestamp,
@@ -509,14 +498,10 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ComparisonAvailability.UNAVAILABLE
                 cache.loadCount shouldBe 4
                 cache.saveCount shouldBe 1
-                ledgerRangeReads shouldBe 7
 
                 // Reverting the consumed evidence reproduces the original digest, so the
                 // original cached entry is authoritative again — no new save is needed.
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
-                } returns "5"
                 cachedService.getRebalancerComparison(
                     Instant.EPOCH,
                     snap2.timestamp,
@@ -525,7 +510,6 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 5
                 cache.saveCount shouldBe 1
-                ledgerRangeReads shouldBe 8
 
                 cachedService.getRebalancerComparison(
                     Instant.EPOCH,
@@ -535,7 +519,6 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 6
                 cache.saveCount shouldBe 1
-                ledgerRangeReads shouldBe 8
             }
         }
 

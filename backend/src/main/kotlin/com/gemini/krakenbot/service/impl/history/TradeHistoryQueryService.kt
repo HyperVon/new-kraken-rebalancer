@@ -163,22 +163,6 @@ class TradeHistoryQueryService(
      */
     private val ohlcRefreshInFlight = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
 
-    /**
-     * Memoized consumed-evidence digest keyed by inception, certified horizon, and the
-     * global evidence revision. The revision changes on every evidence write; the digest
-     * itself only changes when a row at or before the certified horizon changes, so a
-     * live-tail write (revision bump beyond the horizon) costs one rehash and no cache
-     * invalidation.
-     */
-    private val consumedEvidenceMemo = AtomicReference<ConsumedEvidenceMemo?>(null)
-
-    private data class ConsumedEvidenceMemo(
-        val inceptionMillis: Long?,
-        val horizonMillis: Long,
-        val revision: String,
-        val digest: String,
-    )
-
     /** Memoized Kraken asset-class snapshot; its content changes on Kraken's listing schedule. */
     private data class AssetMetadataSnapshot(val expiresAtEpochMillis: Long, val metadata: List<KrakenAssetMetadata>)
 
@@ -488,7 +472,6 @@ class TradeHistoryQueryService(
         val cacheFingerprint: String?,
         val assetMetadata: List<KrakenAssetMetadata>,
         val assetMetadataDigest: String,
-        val capturedRevision: String,
         val eventUpperBound: Instant,
         val suppressPassiveDiscovery: Boolean,
         val forensicRegimes: List<InferredRegimeTransition>?,
@@ -768,7 +751,6 @@ class TradeHistoryQueryService(
         cacheFingerprint = null,
         assetMetadata = emptyList(),
         assetMetadataDigest = "",
-        capturedRevision = "",
         eventUpperBound = Instant.EPOCH,
         suppressPassiveDiscovery = false,
         forensicRegimes = null,
@@ -1050,9 +1032,8 @@ class TradeHistoryQueryService(
         forensicRegimes: List<InferredRegimeTransition>?,
         assetMetadata: List<KrakenAssetMetadata>,
         assetMetadataDigest: String,
-        identity: ComparisonCacheIdentity? = null,
     ): CapturedComparisonEvidence {
-        val resolvedIdentity = identity ?: resolveComparisonCacheIdentity(
+        val resolvedIdentity = resolveComparisonCacheIdentity(
             from = from,
             to = to,
             benchmarkMethod = benchmarkMethod,
@@ -1080,7 +1061,6 @@ class TradeHistoryQueryService(
         val requiredCoverageStart = resolvedIdentity.requiredCoverageStart
         val allocations = configService?.getConfig()?.allocations
 
-        val capturedRevision = repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION).orEmpty()
         val eventUpperBound = certifiedEventUpperBound(stableThrough)
         val suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution)
 
@@ -1174,7 +1154,6 @@ class TradeHistoryQueryService(
         val capturedConsumedEvidenceDigest = consumedEvidenceDigest(
             inceptionResolution?.inceptionTime,
             eventUpperBound.toEpochMilli(),
-            capturedRevision,
         )
 
         return CapturedComparisonEvidence(
@@ -1190,7 +1169,6 @@ class TradeHistoryQueryService(
             cacheFingerprint = cacheFingerprint,
             assetMetadata = assetMetadata,
             assetMetadataDigest = assetMetadataDigest,
-            capturedRevision = capturedRevision,
             eventUpperBound = eventUpperBound,
             suppressPassiveDiscovery = suppressPassiveDiscovery,
             forensicRegimes = forensicRegimes,
@@ -1244,6 +1222,79 @@ class TradeHistoryQueryService(
         )
     }
 
+/**
+     * Reports whether every captured evidence precondition still holds under the coordinator
+     * lock. Publication and durable-cache hits share this check: a writer can correct a consumed
+     * row or regress coverage while unlocked OHLC revalidation is suspended, so a matching
+     * fingerprint alone does not prove the cached economics are still current.
+     */
+    private suspend fun capturedEvidenceStillCurrent(captured: CapturedComparisonEvidence): Boolean {
+        val currentUniverse = configService?.getConfig()?.allocations
+            ?.sortedBy { it.symbol.value.uppercase() }
+            ?.joinToString(separator = ",") { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
+            .orEmpty()
+        if (currentUniverse != captured.configuredUniverse) return false
+
+        val currentInception = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+        if (currentInception?.inceptionTime != captured.inceptionResolution?.inceptionTime ||
+            currentInception?.isAutoDetected != captured.inceptionResolution?.isAutoDetected ||
+            currentInception?.confidence != captured.inceptionResolution?.confidence
+        ) {
+            return false
+        }
+
+        val currentReconstructionRevision = listOf(
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
+        ).joinToString(separator = "\u0000")
+        if (currentReconstructionRevision != captured.reconstructionRevision) {
+            log.debug("Comparison publication invalidated; reason=RECONSTRUCTION_REVISION_CHANGED")
+            return false
+        }
+
+        val currentLedgerHorizon = ledgerRepository.getSyncMetadata(
+            SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+        )?.toLongOrNull() ?: return false
+        val currentTradeHorizon = repository.getSyncMetadata(
+            SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+        )?.toLongOrNull() ?: return false
+        val capturedLedgerHorizon = captured.ledgerCoverageHorizon ?: return false
+        val capturedTradeHorizon = captured.tradeCoverageHorizon ?: return false
+        if (currentLedgerHorizon < capturedLedgerHorizon || currentTradeHorizon < capturedTradeHorizon) {
+            log.debug("Comparison publication invalidated; reason=COVERAGE_HORIZON_REGRESSED")
+            return false
+        }
+
+        val currentCoverage = latestConfirmedEconomicCoverage(
+            requiredStart = captured.requiredCoverageStart,
+        )
+        if (currentCoverage == null || currentCoverage < captured.stableThrough) return false
+
+        val ohlc = historicalOhlcCache
+        if (ohlc != null && captured.reachabilityDependencies.isNotEmpty()) {
+            val selectionStillValid = captured.reachabilityDependencies.distinct().all {
+                ohlc.isReachabilityDependencyCurrent(it)
+            }
+            if (!selectionStillValid) return false
+        }
+
+        // Validate content, not merely metadata movement. A corrected row must not publish or
+        // serve stale economics even when the revision and coverage markers stayed put.
+        val currentDigest = consumedEvidenceDigest(
+            captured.inceptionResolution?.inceptionTime,
+            captured.eventUpperBound.toEpochMilli(),
+        )
+        if (currentDigest != captured.consumedEvidenceDigest) {
+            log.debug("Comparison publication invalidated; reason=CONSUMED_EVIDENCE_CHANGED")
+            return false
+        }
+        return true
+    }
+
     /**
      * Publishes the raw reconciled comparison. Presentation (point trimming and downsampling)
      * is per-request and deliberately NOT applied here: the value cached for later polls must
@@ -1253,84 +1304,8 @@ class TradeHistoryQueryService(
         captured: CapturedComparisonEvidence,
         calculated: RebalancerComparison,
     ): PublishOutcome {
-        if (captured.forensicRegimes == null) {
-            val currentUniverse = configService?.getConfig()?.allocations
-                ?.sortedBy { it.symbol.value.uppercase() }
-                ?.joinToString(separator = ",") { "${it.symbol.value.uppercase()}:${it.targetPercent}" }
-                .orEmpty()
-            if (currentUniverse != captured.configuredUniverse) {
-                return PublishOutcome.Invalidated
-            }
-
-            val currentInception = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
-            if (currentInception?.inceptionTime != captured.inceptionResolution?.inceptionTime ||
-                currentInception?.isAutoDetected != captured.inceptionResolution?.isAutoDetected ||
-                currentInception?.confidence != captured.inceptionResolution?.confidence
-            ) {
-                return PublishOutcome.Invalidated
-            }
-
-            val currentReconstructionRevision = listOf(
-                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
-                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
-                ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
-                repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
-            ).joinToString(separator = "\u0000")
-            if (currentReconstructionRevision != captured.reconstructionRevision) {
-                log.debug("Comparison publication invalidated; reason=RECONSTRUCTION_REVISION_CHANGED")
-                return PublishOutcome.Invalidated
-            }
-
-            val currentLedgerHorizon = ledgerRepository.getSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
-            )?.toLongOrNull() ?: return PublishOutcome.Invalidated
-            val currentTradeHorizon = repository.getSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
-            )?.toLongOrNull() ?: return PublishOutcome.Invalidated
-            val capturedLedgerHorizon = captured.ledgerCoverageHorizon ?: return PublishOutcome.Invalidated
-            val capturedTradeHorizon = captured.tradeCoverageHorizon ?: return PublishOutcome.Invalidated
-            if (currentLedgerHorizon < capturedLedgerHorizon || currentTradeHorizon < capturedTradeHorizon) {
-                log.debug("Comparison publication invalidated; reason=COVERAGE_HORIZON_REGRESSED")
-                return PublishOutcome.Invalidated
-            }
-
-            val currentCoverage = latestConfirmedEconomicCoverage(
-                requiredStart = captured.requiredCoverageStart,
-            )
-            if (currentCoverage == null || currentCoverage < captured.stableThrough) {
-                return PublishOutcome.Invalidated
-            }
-
-            val ohlc = historicalOhlcCache
-            if (ohlc != null && captured.reachabilityDependencies.isNotEmpty()) {
-                val selectionStillValid = captured.reachabilityDependencies.distinct().all {
-                    ohlc.isReachabilityDependencyCurrent(it)
-                }
-                if (!selectionStillValid) {
-                    return PublishOutcome.Invalidated
-                }
-            }
-
-            val currentRevision = repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION).orEmpty()
-            if (currentRevision != captured.capturedRevision || currentLedgerHorizon != capturedLedgerHorizon ||
-                currentTradeHorizon != capturedTradeHorizon
-            ) {
-                // Rehash the frozen window whenever anything observable moved, with a fresh
-                // digest so a stale memo cannot mask a changed consumed row. Never expand the
-                // captured event horizon.
-                val currentDigest = consumedEvidenceDigest(
-                    captured.inceptionResolution?.inceptionTime,
-                    captured.eventUpperBound.toEpochMilli(),
-                    currentRevision,
-                    forceRefresh = true,
-                )
-                if (currentDigest != captured.consumedEvidenceDigest) {
-                    log.debug("Comparison publication invalidated; reason=CONSUMED_EVIDENCE_CHANGED")
-                    return PublishOutcome.Invalidated
-                }
-            }
+        if (captured.forensicRegimes == null && !capturedEvidenceStillCurrent(captured)) {
+            return PublishOutcome.Invalidated
         }
 
         if (calculated.availability == ComparisonAvailability.AVAILABLE && captured.forensicRegimes == null) {
@@ -1415,48 +1390,8 @@ class TradeHistoryQueryService(
         var attempts = 0
         while (attempts < 3) {
             attempts++
-            val cacheIdentity = historyEvidenceCoordinator.withLock("history-comparison-capture") {
-                resolveComparisonCacheIdentity(
-                    from = from,
-                    to = to,
-                    benchmarkMethod = benchmarkMethod,
-                    forensicRegimes = forensicRegimes,
-                    assetMetadataDigest = assetMetadataDigest,
-                )
-            }
-            cacheIdentity.initialUnavailableResult?.let { return it }
-
-            if (cacheIdentity.cacheFingerprint != null) {
-                when (
-                    val outcome = loadCachedComparison(
-                        cacheIdentity.cacheFrom,
-                        cacheIdentity.cacheTo,
-                        cacheIdentity.cacheFingerprint,
-                    )
-                ) {
-                    is CachedComparisonOutcome.Hit -> {
-                        log.debug(
-                            "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
-                            cacheIdentity.cacheFrom,
-                            cacheIdentity.cacheTo,
-                            cacheIdentity.cacheFingerprint,
-                        )
-                        return outcome.comparison
-                    }
-
-                    is CachedComparisonOutcome.Refreshing -> {
-                        log.info(
-                            "Serving transient comparison refresh state; sourceFrom={} sourceTo={}",
-                            cacheIdentity.cacheFrom,
-                            cacheIdentity.cacheTo,
-                        )
-                        return outcome.transient
-                    }
-
-                    CachedComparisonOutcome.Miss -> Unit
-                }
-            }
-
+            // Capture the identity and economics in one locked view; reusing an identity
+            // from an earlier lock scope can pair old snapshots with a fresh content digest.
             val captured = historyEvidenceCoordinator.withLock("history-comparison-capture") {
                 captureComparisonEvidence(
                     from = from,
@@ -1465,10 +1400,49 @@ class TradeHistoryQueryService(
                     forensicRegimes = forensicRegimes,
                     assetMetadata = assetMetadata,
                     assetMetadataDigest = assetMetadataDigest,
-                    identity = cacheIdentity,
                 )
             }
             captured.initialUnavailableResult?.let { return it }
+
+            if (captured.cacheFingerprint != null) {
+                when (
+                    val outcome = loadCachedComparison(
+                        captured.cacheFrom,
+                        captured.cacheTo,
+                        captured.cacheFingerprint,
+                    )
+                ) {
+                    is CachedComparisonOutcome.Hit -> {
+                        // The cache and OHLC work above ran unlocked, so a writer may have corrected a
+                        // consumed row or regressed coverage since capture. Revalidate before serving.
+                        val stillCurrent = captured.forensicRegimes != null ||
+                            historyEvidenceCoordinator.withLock("history-comparison-cache-hit") {
+                                capturedEvidenceStillCurrent(captured)
+                            }
+                        if (stillCurrent) {
+                            log.debug(
+                                "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
+                                captured.cacheFrom,
+                                captured.cacheTo,
+                                captured.cacheFingerprint,
+                            )
+                            return outcome.comparison
+                        }
+                        log.debug("Cached B&H comparison rejected; reason=CAPTURED_EVIDENCE_CHANGED")
+                    }
+
+                    is CachedComparisonOutcome.Refreshing -> {
+                        log.info(
+                            "Serving transient comparison refresh state; sourceFrom={} sourceTo={}",
+                            captured.cacheFrom,
+                            captured.cacheTo,
+                        )
+                        return outcome.transient
+                    }
+
+                    CachedComparisonOutcome.Miss -> Unit
+                }
+            }
 
             val calculated = withContext(computationDispatcher) {
                 computeComparisonOutsideLock(captured)
@@ -1610,14 +1584,10 @@ class TradeHistoryQueryService(
             else -> fundingProvenanceResolver.evidenceFingerprint ?: return null
         }
         return try {
-            val sourceRevision = repository
-                .getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
-                ?: "0"
             val horizonEpochMillis = certifiedEventUpperBound(stableThrough).toEpochMilli()
             val consumedEvidenceDigest = consumedEvidenceDigest(
                 inceptionResolution?.inceptionTime,
                 horizonEpochMillis,
-                sourceRevision,
             )
             val effectiveConfiguredUniverse = configuredUniverse ?: configService?.getConfig()?.allocations
                 ?.sortedBy { it.symbol.value.uppercase() }
@@ -1676,21 +1646,7 @@ class TradeHistoryQueryService(
      * the stable prefix survives. A row at or before the horizon that is later edited,
      * backfilled, or deleted changes the digest and invalidates the cache.
      */
-    private suspend fun consumedEvidenceDigest(
-        inceptionTime: Instant?,
-        horizonEpochMillis: Long,
-        revision: String,
-        forceRefresh: Boolean = false,
-    ): String {
-        val inceptionMillis = inceptionTime?.toEpochMilli()
-        consumedEvidenceMemo.get()
-            ?.takeIf {
-                !forceRefresh && it.inceptionMillis == inceptionMillis &&
-                    it.horizonMillis == horizonEpochMillis &&
-                    it.revision == revision
-            }
-            ?.let { return it.digest }
-
+    private suspend fun consumedEvidenceDigest(inceptionTime: Instant?, horizonEpochMillis: Long): String {
         val effectiveInception = inceptionTime ?: Instant.EPOCH
         val snapshots = loadAllSnapshots(effectiveInception)
         val predecessorSnapshot = repository.getSnapshotBefore(effectiveInception)
@@ -1719,7 +1675,6 @@ class TradeHistoryQueryService(
             for (event in sortedLedgers) appendLedgerDigest(event)
         }
         val digest = sha256Hex(material)
-        consumedEvidenceMemo.set(ConsumedEvidenceMemo(inceptionMillis, horizonEpochMillis, revision, digest))
         return digest
     }
 

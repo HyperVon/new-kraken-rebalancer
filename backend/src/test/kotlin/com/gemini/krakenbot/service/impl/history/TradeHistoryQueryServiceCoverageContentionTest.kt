@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.KrakenService
@@ -17,6 +18,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -82,6 +84,8 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
             SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "test-scope",
         )
         var computations = 0
+        var service: TradeHistoryQueryService? = null
+        var cachedEntry: RebalancerComparisonCacheEntry? = null
 
         init {
             coEvery { repository.getSyncMetadata(any()) } answers { tradeMetadata[firstArg()] }
@@ -98,7 +102,15 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 emptyList()
             }
             coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
-            cache?.let { coEvery { it.load(any(), any()) } returns null }
+            cache?.let { coEvery { it.load(any(), any()) } answers { cachedEntry } }
+            cache?.let {
+                coEvery { it.save(any(), any(), any(), any(), any(), any()) } answers {
+                    cachedEntry = RebalancerComparisonCacheEntry(
+                        inputFingerprint = arg(2),
+                        comparison = arg(3),
+                    )
+                }
+            }
         }
 
         fun advanceCoverage() {
@@ -120,7 +132,7 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                     dispatcher.dispatch(context, block)
                 }
             }
-            val service = TradeHistoryQueryService(
+            service = TradeHistoryQueryService(
                 repository = repository,
                 portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                 ledgerRepository = ledgerRepository,
@@ -130,8 +142,15 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 computationDispatcher = mutatingDispatcher,
                 nowProvider = { now.plusSeconds(10_800) },
             )
-            return service.getRebalancerComparison(now, now.plusSeconds(3600), BenchmarkMethod.FIXED_INCEPTION_HOLD)
+            return request()
         }
+
+        /** Issues another request against the already-built service, as a follow-up poll would. */
+        suspend fun request(): RebalancerComparison = checkNotNull(service).getRebalancerComparison(
+            now,
+            now.plusSeconds(3600),
+            BenchmarkMethod.FIXED_INCEPTION_HOLD,
+        )
     }
 
     init {
@@ -152,6 +171,86 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                     fixture.digestQueryHorizons.last() shouldBe now.plusSeconds(5400).plusMillis(999)
                     fixture.cache?.let { coVerify(exactly = 1) { it.save(any(), any(), any(), any(), any(), any()) } }
                 }
+            }
+        }
+
+        "unchanged watermarks do not conceal a consumed-row correction without a revision bump" {
+            runTest {
+                for (withCache in listOf(false, true)) {
+                    val fixture = Fixture(withCache)
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
+                        if (it == 1) fixture.snapshots[1] = snapshot(now.plusSeconds(3600), btcPrice = "51000.00")
+                    }
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    fixture.computations shouldBe 2
+                    result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("101000.00"))
+                }
+            }
+        }
+
+        "cache lookup cannot combine an old snapshot identity with newly captured economics" {
+            runTest {
+                val fixture = Fixture(withDurableCache = true)
+                var corrected = false
+                coEvery { fixture.cache!!.load(any(), any()) } coAnswers {
+                    if (!corrected) {
+                        fixture.snapshots[1] = snapshot(now.plusSeconds(3600), btcPrice = "51000.00")
+                        corrected = true
+                    }
+                    null
+                }
+
+                val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {}
+
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                fixture.computations shouldBe 2
+                result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("101000.00"))
+                coVerify(exactly = 1) { fixture.cache!!.save(any(), any(), any(), any(), any(), any()) }
+            }
+        }
+
+        "a matching cache hit is rejected when evidence changes during the unlocked lookup" {
+            runTest {
+                val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+                val fixture = Fixture(withDurableCache = true)
+                // First request populates the durable entry, so the second request sees a Hit.
+                fixture.compare(dispatcher) {}
+                fixture.cachedEntry shouldNotBe null
+                val warmedComputations = fixture.computations
+                var mutated = false
+                coEvery { fixture.cache!!.load(any(), any()) } coAnswers {
+                    if (!mutated) {
+                        fixture.snapshots[1] = snapshot(now.plusSeconds(3600), btcPrice = "51000.00")
+                        mutated = true
+                    }
+                    fixture.cachedEntry
+                }
+
+                val result = fixture.request()
+
+                // The stale cached economics must never be served; the corrected row must be replayed.
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("101000.00"))
+                // One rejected-hit attempt plus one replay after recapture.
+                fixture.computations shouldBe warmedComputations + 2
+                fixture.cachedEntry!!.comparison.points.last().rebalancerValueUSD
+                    .shouldBeEqualComparingTo(BigDecimal("101000.00"))
+            }
+        }
+
+        "a matching cache hit is still served when evidence is unchanged through the lookup" {
+            runTest {
+                val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+                val fixture = Fixture(withDurableCache = true)
+                fixture.compare(dispatcher) {}
+                fixture.cachedEntry shouldNotBe null
+
+                val result = fixture.request()
+
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                // Served from the durable entry: the second request must not recompute.
+                fixture.computations shouldBe 1
             }
         }
 

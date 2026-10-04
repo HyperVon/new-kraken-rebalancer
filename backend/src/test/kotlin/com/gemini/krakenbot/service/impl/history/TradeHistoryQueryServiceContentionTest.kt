@@ -49,6 +49,12 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
 
+    private fun tradeRepository(): TradeRepository = mockk<TradeRepository>(relaxed = true).also { repository ->
+        // A relaxed mock invents a predecessor whose contents vary between digest reads.
+        // These fixtures have no predecessor unless the individual test supplies one.
+        coEvery { repository.getSnapshotBefore(any()) } returns null
+    }
+
     private val testAssetMetadata = listOf(
         KrakenAssetMetadata(assetId = "BTC", assetClass = "currency"),
         KrakenAssetMetadata(assetId = "USD", assetClass = "currency"),
@@ -94,7 +100,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "comparison calculation does not hold coordinator lock and allows concurrent writers" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -179,7 +185,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "simultaneous equivalent comparison requests coalesce into a single execution" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -246,7 +252,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "cancelling one caller leaves the shared flight active for other callers" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -325,7 +331,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "requestRebalancerComparison returns COMPARISON_EVALUATING when cold and completes via background flight" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -403,7 +409,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "requestRebalancerComparison caches completed comparisons and cleans up on expiry" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -501,7 +507,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "requestRebalancerComparison falls back when scope is null or inactive" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -609,7 +615,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "validateAndPublishComparison invalidates and retries when allocation universe changes during calculation" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -691,7 +697,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "validateAndPublishComparison invalidates and retries when inception changes during calculation" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -770,7 +776,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "validateAndPublishComparison invalidates and retries when coverage horizon regresses during calculation" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -843,7 +849,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "executeComparisonPipeline returns transient in-progress when invalidated repeatedly exceeding attempt limit" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -913,7 +919,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "validateAndPublishComparison invalidates and retries when comparison evidence revision changes" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -998,7 +1004,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "requestRebalancerComparison uses configService to incorporate configuration into request key" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -1083,7 +1089,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "cached comparison with expired OHLC dependencies revalidates outside coordinator lock" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -1205,7 +1211,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "unavailable comparison proposal search does not hold coordinator lock and permits concurrent writers" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -1290,7 +1296,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "getSettingsComparisonStatus evaluates outside coordinator lock and permits concurrent writers" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)
@@ -1375,7 +1381,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
         "rapid calls to requestRebalancerComparison within bucket window join flight and hit cache" {
             runTest {
                 val coordinator = HistoryEvidenceCoordinator()
-                val repository = mockk<TradeRepository>(relaxed = true)
+                val repository = tradeRepository()
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
                 val krakenService = mockk<KrakenService>(relaxed = true)

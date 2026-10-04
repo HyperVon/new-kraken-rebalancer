@@ -1123,7 +1123,10 @@ calculation actually consumed is unchanged.
   content; a separate resolver-selection frontier expires on its own bounded freshness deadline.
 - **Publication during sync.** A forward trade or ledger coverage watermark does not restart an
   in-flight calculation merely for advancing. Its captured event horizon stays pinned, and the
-  consumed-evidence digest is recomputed at that horizon even if the revision token is unchanged.
+  consumed-evidence digest is recomputed at every publication at that horizon, even if coverage
+  and revision metadata are unchanged. Durable-cache lookup also hashes current rows rather
+  than reusing a revision-keyed digest memo. Identity and economic inputs are captured in one
+  evidence-lock scope, so an old snapshot set cannot be paired with a newer digest.
   Changed rows inside the frozen window, individual coverage regressions, reconstruction changes,
   and configuration/inception changes still invalidate publication. A later request can evaluate
   a newly certified window; accepting forward progress never silently expands the in-flight one.

@@ -97,6 +97,7 @@ class TradeHistoryQueryServiceFreezeRegressionTest : StringSpec() {
     }
 
     private fun stubCoverage(repository: TradeRepository, ledgerRepository: LedgerRepository) {
+        coEvery { repository.getSnapshotBefore(any()) } returns null
         coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
             TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
         coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
