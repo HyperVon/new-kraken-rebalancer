@@ -22,13 +22,16 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.slf4j.LoggerFactory
@@ -697,35 +700,51 @@ class HistoricalOhlcCacheTest : StringSpec() {
         }
 
         "concurrent revalidation joiners serve stale data instead of throwing when the flight fails" {
-            val counter = AtomicInteger(0)
-            var clock = Instant.now()
-            val fixedUpTo = clock
-            val candleStart = clock.epochSecond - 2 * durationSeconds
-            var failAll = false
-            val cache = HistoricalOhlcCache(
-                FakeKrakenService().apply {
-                    ohlcSupplier = { _, _, _ ->
-                        counter.incrementAndGet()
-                        if (failAll) error("live source down")
-                        Thread.sleep(150)
-                        listOf(candleStart to BigDecimal("0.0175"))
-                    }
-                },
-                nowProvider = { clock },
-            )
-            val since = candleStart - durationSeconds
-            cache.getOHLC(pair, interval, since, fixedUpTo)
+            runTest {
+                val counter = AtomicInteger(0)
+                var clock = Instant.parse("2026-07-01T12:00:00Z")
+                val fixedUpTo = clock
+                val candleStart = clock.epochSecond - 2 * durationSeconds
+                var failAll = false
+                val failureStarted = CompletableDeferred<Unit>()
+                val releaseFailure = CompletableDeferred<Unit>()
+                val cache = HistoricalOhlcCache(
+                    object : KrakenService by FakeKrakenService() {
+                        override suspend fun getOHLC(
+                            pair: String,
+                            interval: Int,
+                            since: Long?,
+                        ): List<Pair<Long, BigDecimal>> {
+                            counter.incrementAndGet()
+                            if (failAll) {
+                                failureStarted.complete(Unit)
+                                releaseFailure.await()
+                                error("live source down")
+                            }
+                            return listOf(candleStart to BigDecimal("0.0175"))
+                        }
+                    },
+                    nowProvider = { clock },
+                )
+                val since = candleStart - durationSeconds
+                cache.getOHLC(pair, interval, since, fixedUpTo)
 
-            clock = clock.plusSeconds(3_601)
-            failAll = true
-            val results = withContext(Dispatchers.IO) {
-                (1..4).map { async { runCatching { cache.getOHLC(pair, interval, since, fixedUpTo) } } }.awaitAll()
-            }
+                clock = clock.plusSeconds(3_601)
+                failAll = true
+                val requests = (1..4).map {
+                    async { runCatching { cache.getOHLC(pair, interval, since, fixedUpTo) } }
+                }
+                failureStarted.await()
+                yield()
+                counter.get() shouldBe 2
+                releaseFailure.complete(Unit)
+                val results = requests.awaitAll()
 
-            counter.get() shouldBe 2
-            results.forEach { result ->
-                result.isSuccess shouldBe true
-                result.getOrNull()?.single()?.second?.compareTo(BigDecimal("0.0175")) shouldBe 0
+                counter.get() shouldBe 2
+                results.forEach { result ->
+                    result.isSuccess shouldBe true
+                    result.getOrNull()?.single()?.second?.compareTo(BigDecimal("0.0175")) shouldBe 0
+                }
             }
         }
 

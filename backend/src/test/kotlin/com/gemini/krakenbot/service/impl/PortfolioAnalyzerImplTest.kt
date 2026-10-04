@@ -869,6 +869,240 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "updateAth orders near-instant rows when their authoritative balances chain in reverse" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.plusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("100.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                val decidedNear = LedgerEvent(
+                    ledgerId = "DECIDED-REVERSE-CHAIN",
+                    refid = "EXT-DECIDED-REVERSE-CHAIN",
+                    time = flowTime.minusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("30.00"),
+                    balance = BigDecimal("100.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "REVERSE-CHAIN-FLOW",
+                    refid = "EXT-REVERSE-CHAIN-FLOW",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    balance = BigDecimal("1100.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
+                    setOf(decidedNear.ledgerId)
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit, decidedNear)
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(TestFixtures.emptySnapshot(observation, BigDecimal("70.00")))
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("1100.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime,
+                )
+
+                (result as AthUpdateResult.Trusted).drawdownPct
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("1100.00")) == 0 },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth defers when a chain places a near row after the flow the replay would place before it" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.plusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                // The chain proves this reward lands AFTER the deposit (101000 + 30 = 101030),
+                // but its timestamp has it at or before the flow, which is the order the
+                // pre-flow replay would apply. Accepting it would fold post-flow value into
+                // the pre-flow basis and scale ATH on unearned capital.
+                val laterReward = LedgerEvent(
+                    ledgerId = "DECIDED-AFTER-FLOW",
+                    refid = "EXT-DECIDED-AFTER-FLOW",
+                    time = flowTime.minusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("30.00"),
+                    balance = BigDecimal("101030.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "DEPOSIT-FIRST-FLOW",
+                    refid = "EXT-DEPOSIT-FIRST-FLOW",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    balance = BigDecimal("101000.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
+                    setOf(laterReward.ledgerId)
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(deposit, laterReward)
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(athPredecessor(observation))
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN)
+                coVerify(exactly = 0) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
+                }
+            }
+        }
+
+        "updateAth keeps null and blank refid rewards in separate near-flow groups" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.plusSeconds(600)
+                val coverage = flowTime.plusSeconds(1)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { coverage },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("20000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns coverage.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                val beforeReward = LedgerEvent(
+                    ledgerId = "REWARD-NULL-REFID",
+                    refid = null,
+                    time = flowTime.minusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    balance = BigDecimal("10000.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                val afterReward = LedgerEvent(
+                    ledgerId = "REWARD-BLANK-REFID",
+                    refid = "   ",
+                    time = flowTime.plusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "USD",
+                    amount = BigDecimal("600.00"),
+                    balance = BigDecimal("11600.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "SEPARATE-GROUPS-FLOW",
+                    refid = "EXT-SEPARATE-GROUPS-FLOW",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    balance = BigDecimal("11000.00"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { portfolioStatsRepository.getAppliedAthFlows(any()) } returns emptyList()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(beforeReward, deposit, afterReward)
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(TestFixtures.emptySnapshot(observation, BigDecimal("9000.00")))
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11600.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = coverage,
+                )
+
+                // Both groups anchor to 10000 before the deposit. Only the earlier reward
+                // enters that basis: 20000 * (10000 + 1000) / 10000 = 22000.
+                // Without ledger-id fallback, the empty refids merge and incorrectly defer.
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal("47.2727"))
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("22000.00")) == 0 },
+                        match {
+                            it.map { flow -> flow.ledgerId }.toSet() ==
+                                setOf(beforeReward.ledgerId, deposit.ledgerId, afterReward.ledgerId)
+                        },
+                        coverage.epochSecond,
+                    )
+                }
+            }
+        }
+
         "updateAth uses a legacy snapshot save time as its observation boundary" {
             runTest {
                 val mockLedgers = mockk<LedgerRepository>(relaxed = true)

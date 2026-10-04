@@ -100,6 +100,7 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             ).copy(hasValidVolume = false)
             coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
             coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns null
             coEvery { mockTrades.getTradesInRange(any(), any()) } returns listOf(bad)
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
@@ -382,6 +383,7 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
         }
         "comparison fails closed when the inception snapshot lies inside stale reconstruction" {
             val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns null
             val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
             val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
             val reconStart = fixedNow.minusSeconds(86400)

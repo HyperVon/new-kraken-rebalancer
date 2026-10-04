@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.96] - 2026-10-04
+
+### Fixed
+
+- **Evidence-backed near-instant ATH replay**: an ordinary owner flow near a ledger event can
+  now proceed when authoritative net-of-fee balances agree with the timestamp replay and the
+  predecessor-anchored reconstructed pre-flow holdings. A reversible debit/credit pair alone
+  does not prove ordering; an inconsistent predecessor still defers without changing ATH or
+  journaling the flow. Only a validated complete same-instant conversion can use one leg's
+  balance boundary for its paired leg, not arbitrary rows sharing a reference. Missing or
+  malformed balance/fee evidence, split-time groups, synthetic card flows, and near-instant
+  trades remain fail-closed. Regression tests assert exact ATH adjustments, fee treatment,
+  unchanged state on deferral, and exactly-once application.
+- **Comparison publication no longer restarts for coverage-only progress**: forward trade or
+  ledger sync watermarks no longer invalidate a calculation whose captured historical window
+  is unchanged. Publication rehashes that frozen window even when the content revision token
+  did not advance; changed consumed rows, regressed coverage, or reconstruction/configuration
+  changes still invalidate. This removes a reproducible path to repeated `COMPARISON_EVALUATING`
+  responses without treating missing OHLC data as reachability evidence.
+- **Fresh comparison evidence on every validation**: durable-cache lookup and publication now
+  hash the current consumed rows rather than trusting a revision-keyed digest memo. A correction
+  is detected even when coverage and revision metadata do not move. Comparison identity and
+  economics are captured under one evidence-lock scope, avoiding mixed old snapshots and new
+  digests. Explicit predecessor fixtures replace relaxed mock data that changed between reads;
+  regression tests verify corrected values, cache invalidation, and the ATH safety guards by
+  deliberate mutation checks.
+- **Durable-cache hits are revalidated before serving**: a matching durable entry was returned
+  straight from the unlocked cache/OHLC lookup, so a writer correcting a consumed row or
+  regressing coverage during that window could leave stale economics on screen. Hits now pass the
+  same `capturedEvidenceStillCurrent` check as publication, under the evidence lock, while OHLC
+  fetches stay outside it. A rejected hit replays instead of serving the outdated value. The hit
+  revalidates the cached entry's own reachability dependencies, since a hit runs no calculation
+  and therefore has no freshly captured ones.
+- **Routine ATH logging**: off-universe performance-flow skips and balance-key dumps are now
+  DEBUG diagnostics. Excluded owner capital remains a warning, and pre-inception retirement
+  emits one INFO count with per-row detail at DEBUG.
+
 ## [6.17.95] - 2026-10-03
 
 ### Fixed
