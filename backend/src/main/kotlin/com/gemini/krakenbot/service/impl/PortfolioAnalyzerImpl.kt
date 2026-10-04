@@ -1202,7 +1202,14 @@ class PortfolioAnalyzerImpl(
             skippedDecided = skippedDecided,
             appliedFlowSemantics = appliedFlowSemantics,
             groupBasisResolver = GroupBasisResolver(
-                resolve = { eventTime, priorFlows, snapHistory, snapTrades, currentFlowRepresentativeIds ->
+                resolve = {
+                        eventTime,
+                        priorFlows,
+                        snapHistory,
+                        snapTrades,
+                        currentFlowEvents,
+                        currentFlowRepresentativeIds,
+                    ->
                     resolveEventTimeBasis(
                         eventTime = eventTime,
                         priorFlows = priorFlows,
@@ -1214,6 +1221,7 @@ class PortfolioAnalyzerImpl(
                         externalBalances = externalBalanceEvents,
                         cardActualFlows = cardActualFlows,
                         cardObservationEvents = cardObservationEvents,
+                        currentFlowEvents = currentFlowEvents,
                         currentFlowRepresentativeIds = currentFlowRepresentativeIds,
                         balancesObservedAt = balancesObservedAt,
                         tradesRepo = tradesRepo,
@@ -1238,6 +1246,7 @@ class PortfolioAnalyzerImpl(
             priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
             history: List<PortfolioSnapshot>,
             trades: List<TradeRecord>,
+            currentFlowEvents: List<LedgerEvent>,
             currentFlowRepresentativeIds: Set<String>,
         ) -> BigDecimal?,
         private val pricedFlows: List<Pair<LedgerEvent, BigDecimal>>,
@@ -1248,12 +1257,14 @@ class PortfolioAnalyzerImpl(
         suspend fun basisFor(groupIndex: Int): BigDecimal? {
             val start = groupStarts[groupIndex]
             val end = if (groupIndex + 1 < groupStarts.size) groupStarts[groupIndex + 1] else pricedFlows.size
+            val currentEvents = pricedFlows.subList(start, end).map { it.first }
             return resolve(
                 pricedFlows[start].first.time,
                 pricedFlows.subList(0, start),
                 history,
                 trades,
-                pricedFlows.subList(start, end).mapTo(mutableSetOf()) { it.first.ledgerId },
+                currentEvents,
+                currentEvents.mapTo(mutableSetOf()) { it.ledgerId },
             )
         }
     }
@@ -1280,6 +1291,7 @@ class PortfolioAnalyzerImpl(
         externalBalances: List<LedgerEvent>,
         cardActualFlows: List<CardActualFlow>,
         cardObservationEvents: List<LedgerEvent>,
+        currentFlowEvents: List<LedgerEvent>,
         currentFlowRepresentativeIds: Set<String>,
         balancesObservedAt: Instant?,
         tradesRepo: TradeRepository,
@@ -1334,21 +1346,40 @@ class PortfolioAnalyzerImpl(
         // A persisted timestamp does not establish whether a trade or a
         // performance ledger row happened before or after the owner flow
         // when the records are simultaneous or within exchange-clock skew.
-        // Do not impose an arbitrary lexical order on money-moving events;
-        // the next cycle can retry once a more precise source or balance
-        // boundary is available.
-        if (externalBalances.any { isNearEventTime(it.time, eventTime) } ||
-            trades.any { isNearEventTime(it.timestamp, eventTime) } ||
-            eligibleCardFlows.any { flow ->
-                val times = flow.actualPortfolioDeltas.map { it.timestamp }
-                    .ifEmpty { flow.sourceTimes.ifEmpty { listOf(flow.eventTime) } }
-                times.any { isNearEventTime(it, eventTime) }
-            } ||
-            decidedOwnerFlows.any { isNearEventTime(it.timestamp, eventTime) }
-        ) {
+        // Authoritative balances do: the rows chain through their reported
+        // resulting balances, so same-asset rows are ordered even at one
+        // identical millisecond. Use that evidence instead of waiting for a
+        // "more precise boundary" that identical timestamps can never supply,
+        // and fail closed only where no boundary exists at all — imposing an
+        // arbitrary lexical order on money-moving events is unsafe.
+        val nearLedgerEvents = (
+            externalBalances + decidedOwnerLedgerEvents + eligibleCardObservationEvents
+            ).filter { isNearEventTime(it.time, eventTime) && it.ledgerId !in currentFlowRepresentativeIds }
+        // A linked group (shared refid) moves as one unit, so ordering one leg
+        // orders every leg: a USDG conversion leg is settled by its paired USD
+        // leg chaining against the owner flow, even though USDG never shares an
+        // asset with it. The derived order must agree with the order the pre-flow
+        // replay will actually apply below, which assigns a row before the flow
+        // when `!time.isAfter(eventTime)` — a row the chain places after the flow
+        // would otherwise be folded into the pre-flow basis and scale ATH on
+        // unearned capital.
+        val nearByGroup = nearLedgerEvents.groupBy { groupKey(it) }
+        val unorderableLedgerEvent = nearLedgerEvents.firstOrNull { near ->
+            val group = nearByGroup.getValue(groupKey(near))
+            val replaySaysNearBefore = !near.time.isAfter(eventTime)
+            group.none { member ->
+                currentFlowEvents.any { current ->
+                    balanceOrdering(member, current) == replaySaysNearBefore
+                }
+            }
+        }
+        val nearUnorderableTrade = trades.firstOrNull { isNearEventTime(it.timestamp, eventTime) }
+        val unorderableReference = unorderableLedgerEvent?.ledgerId
+            ?: nearUnorderableTrade?.let { "trade at ${it.timestamp}" }
+        if (unorderableReference != null) {
             throw AthTrustFailureException(
                 reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
-                message = "cannot establish ordering of a near-instant performance event or decided flow and " +
+                message = "cannot establish ordering of near-instant event $unorderableReference and " +
                     "owner flow at $eventTime",
             )
         }
@@ -1888,12 +1919,42 @@ class PortfolioAnalyzerImpl(
         private fun isNearEventTime(first: Instant, second: Instant): Boolean =
             kotlin.math.abs(first.toEpochMilli() - second.toEpochMilli()) < MAX_EVENT_ORDERING_SKEW_MILLIS
 
+        /** Linked conversion legs share a refid; unlinked rows stand alone under their ledger id. */
+        private fun groupKey(event: LedgerEvent): String = event.refid?.trim().orEmpty().ifEmpty { event.ledgerId }
+
+        /**
+         * Orders two same-asset rows from their authoritative resulting balances,
+         * which chain with the amount they record: if [before] precedes [after],
+         * then `before.balance + after.amount == after.balance`. Returns true when
+         * [before] precedes [after], false when [after] precedes [before], and null
+         * when no boundary exists to decide. Two rows on one asset are therefore
+         * ordered even at an identical millisecond — exactly the "more precise
+         * balance boundary" the timestamp check otherwise waits for and never
+         * receives.
+         *
+         * A pair that chains in both directions is an exact reverse: one row's
+         * resulting balance is the other's starting balance, so the flow being
+         * resolved has the same pre-flow basis either way. Those report true, the
+         * order the pre-flow replay already assumes.
+         */
+        private fun balanceOrdering(before: LedgerEvent, after: LedgerEvent): Boolean? {
+            if (!before.hasAuthoritativeBalance || !after.hasAuthoritativeBalance) return null
+            if (before.asset != after.asset) return null
+            val beforeThenAfter = before.balance.add(after.amount).compareTo(after.balance) == 0
+            val afterThenBefore = after.balance.add(before.amount).compareTo(before.balance) == 0
+            return when {
+                beforeThenAfter -> true
+                afterThenBefore -> false
+                else -> null
+            }
+        }
+
         /**
          * Placeholder resolver: flow-less calculations never resolve a basis,
          * so this instance is never invoked.
          */
         private fun noFlowsResolver(): GroupBasisResolver = GroupBasisResolver(
-            resolve = { _, _, _, _, _ -> error("Basis resolution without flows") },
+            resolve = { _, _, _, _, _, _ -> error("Basis resolution without flows") },
             pricedFlows = emptyList(),
             groupStarts = emptyList(),
             history = emptyList(),

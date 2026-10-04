@@ -3814,6 +3814,85 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "same-instant rows that chain through authoritative balances are ordered instead of deferred" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = t71,
+                        totalValueUSD = BigDecimal("100000.00"),
+                        assets = mapOf(
+                            Asset.USD to TestFixtures.assetSnapshot(
+                                symbol = Asset.USD,
+                                balance = BigDecimal("100000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("100000.00"),
+                                targetPercent = BigDecimal("100.0"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal("100.0"),
+                        balancesObservedAt = t71,
+                    ),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "same-ms-conversion-usd",
+                            refid = "CONV-SAME-MS",
+                            time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = "USD",
+                            amount = BigDecimal("-1000.00"),
+                            balance = BigDecimal("99000.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "same-ms-conversion-usdg",
+                            refid = "CONV-SAME-MS",
+                            time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = "USDG",
+                            amount = BigDecimal("1000.00"),
+                            balance = BigDecimal("1000.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "same-ms-deposit",
+                            refid = "FT-same-ms-deposit",
+                            time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            balance = BigDecimal("100000.00"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t90).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.getAppliedAthFlowIds(listOf("same-ms-deposit")) shouldBe setOf("same-ms-deposit")
+            }
+        }
+
         "pre-flow replay uses the observation boundary and replays later rows" {
             runTest {
                 val boundaryReward = LedgerEvent(
