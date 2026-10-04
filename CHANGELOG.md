@@ -11,11 +11,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Normal-path log noise no longer buries real warnings**: the per-cycle "Skipping ATH scaling
-  for off-universe or terminal flow" line was logged at `WARN` for every off-universe flow on
-  every cycle — about 1,344 warnings in five minutes of normal operation, roughly 80% of all log
-  output, which pushed the handful of genuine warnings out of sight. That line and the raw
-  `Available Balance Keys` dump are now `DEBUG`. The first full scan of pre-inception baseline
-  rows still reports its outcome at `INFO`, but as one summary line instead of one line per row
+  for off-universe or terminal flow" line was logged at `WARN` for every such flow on every
+  cycle — about 1,344 warnings in five minutes of normal operation, roughly 80% of all log
+  output, which pushed the handful of genuine warnings out of sight. Those lines were
+  overwhelmingly off-universe performance flows (`EXTERNAL_BALANCE`), which never scale ATH by
+  design. That noise and the raw `Available Balance Keys` dump are now `DEBUG`, while a skipped
+  `OWNER_CAPITAL` flow stays at `WARN`: owner capital excluded by the universe filter is
+  money-relevant, and if the mapping ever drifted the warning would be the only sign that real
+  capital had silently stopped scaling ATH. The first full scan of pre-inception baseline rows
+  still reports its outcome at `INFO`, but as one summary line instead of one line per row
   (144 at once), with the per-row detail at `DEBUG`.
 
 ## [6.17.95] - 2026-10-03

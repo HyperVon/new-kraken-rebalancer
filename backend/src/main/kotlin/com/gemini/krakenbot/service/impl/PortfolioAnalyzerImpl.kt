@@ -786,8 +786,8 @@ class PortfolioAnalyzerImpl(
             // A first full scan can journal a large vintage of pre-inception rows at once;
             // one summary keeps the decision visible without flooding the log.
             log.info(
-                "Ignoring {} pre-inception unclassifiable funding event(s): predating the strategy, " +
-                    "so they are baseline material and cannot fund it",
+                "Ignoring {} pre-inception unclassifiable funding event(s); they predate the " +
+                    "strategy, so they are baseline material and cannot fund it",
                 baselineMaterial.size,
             )
             baselineMaterial.forEach { event ->
@@ -1000,16 +1000,27 @@ class PortfolioAnalyzerImpl(
             ) {
                 events.add(event)
             } else if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
-                // Expected for every off-universe or terminal flow on every cycle; the
-                // meaningful signal is the ATH adjustment itself. Keep this at debug so
-                // the few real warnings stay visible.
-                log.debug(
-                    "Skipping ATH scaling for off-universe or terminal {} flow {} at {} (category {})",
-                    event.type,
-                    event.ledgerId,
-                    event.time,
-                    category,
-                )
+                // Owner capital excluded by the universe filter is money-relevant: if the
+                // mapping ever drifts, real capital silently stops scaling ATH and drawdown
+                // is overstated. Keep that visible as a warning. Off-universe performance
+                // flows are expected on every cycle and would drown it, so they stay debug.
+                if (category == FlowCategory.OWNER_CAPITAL) {
+                    log.warn(
+                        "Skipping ATH scaling for off-universe or terminal {} flow {} at {} (category {})",
+                        event.type,
+                        event.ledgerId,
+                        event.time,
+                        category,
+                    )
+                } else {
+                    log.debug(
+                        "Skipping ATH scaling for off-universe or terminal {} flow {} at {} (category {})",
+                        event.type,
+                        event.ledgerId,
+                        event.time,
+                        category,
+                    )
+                }
                 skippedDecided.add(appliedFlowFor(event, category))
             }
         }
