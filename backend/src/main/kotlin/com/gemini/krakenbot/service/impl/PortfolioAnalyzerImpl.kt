@@ -71,7 +71,7 @@ class PortfolioAnalyzerImpl(
     override suspend fun fetchObservedBalances(): ObservedBalances {
         val observedAt = nowProvider()
         val balances = krakenService.getBalances()
-        log.info("Available Balance Keys: {}", balances.keys)
+        log.debug("Available Balance Keys: {}", balances.keys)
         return ObservedBalances(balances = balances, observedAt = observedAt)
     }
 
@@ -783,8 +783,12 @@ class PortfolioAnalyzerImpl(
         // an unresolvable row. Journal it decided-but-not-applied here, once.
         val baselineMaterial = scanned.unapplied.filter { predatesStrategyInception(it) }
         if (baselineMaterial.isNotEmpty()) {
+            log.info(
+                "Ignoring {} pre-inception funding events already represented by the baseline",
+                baselineMaterial.size,
+            )
             baselineMaterial.forEach { event ->
-                log.info(
+                log.debug(
                     "Ignoring pre-inception unclassifiable funding event {} (type={}, asset={}, amount={}) " +
                         "at {}: predates the strategy, so it is baseline material and cannot fund it",
                     event.ledgerId,
@@ -993,7 +997,9 @@ class PortfolioAnalyzerImpl(
             ) {
                 events.add(event)
             } else if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
-                log.warn(
+                // Preserve the warning for excluded owner capital; performance-flow skips are routine.
+                val logEvent = if (category == FlowCategory.OWNER_CAPITAL) log.atWarn() else log.atDebug()
+                logEvent.log(
                     "Skipping ATH scaling for off-universe or terminal {} flow {} at {} (category {})",
                     event.type,
                     event.ledgerId,
@@ -1343,46 +1349,25 @@ class PortfolioAnalyzerImpl(
             it.ledgerId !in currentFlowCardSourceIds
         }
 
-        // A persisted timestamp does not establish whether a trade or a
-        // performance ledger row happened before or after the owner flow
-        // when the records are simultaneous or within exchange-clock skew.
-        // Authoritative balances do: the rows chain through their reported
-        // resulting balances, so same-asset rows are ordered even at one
-        // identical millisecond. Use that evidence instead of waiting for a
-        // "more precise boundary" that identical timestamps can never supply,
-        // and fail closed only where no boundary exists at all — imposing an
-        // arbitrary lexical order on money-moving events is unsafe.
         val nearLedgerEvents = (
             externalBalances + decidedOwnerLedgerEvents + eligibleCardObservationEvents
             ).filter { isNearEventTime(it.time, eventTime) && it.ledgerId !in currentFlowRepresentativeIds }
-        // A linked group (shared refid) moves as one unit, so ordering one leg
-        // orders every leg: a USDG conversion leg is settled by its paired USD
-        // leg chaining against the owner flow, even though USDG never shares an
-        // asset with it. The derived order must agree with the order the pre-flow
-        // replay will actually apply below, which assigns a row before the flow
-        // when `!time.isAfter(eventTime)` — a row the chain places after the flow
-        // would otherwise be folded into the pre-flow basis and scale ATH on
-        // unearned capital.
-        val nearByGroup = nearLedgerEvents.groupBy { groupKey(it) }
-        val unorderableLedgerEvent = nearLedgerEvents.firstOrNull { near ->
-            val group = nearByGroup.getValue(groupKey(near))
-            val replaySaysNearBefore = !near.time.isAfter(eventTime)
-            group.none { member ->
-                currentFlowEvents.any { current ->
-                    balanceOrdering(member, current) == replaySaysNearBefore
-                }
+        // Synthetic card flows have per-leg times and cannot be ordered by a representative
+        // deposit balance. Keep their original timestamp-skew guard, as well as the trade guard.
+        if ((nearLedgerEvents.isNotEmpty() && currentFlowCardSourceIds.isNotEmpty()) ||
+            trades.any { isNearEventTime(it.timestamp, eventTime) } ||
+            eligibleCardFlows.any { flow ->
+                val times = flow.actualPortfolioDeltas.map { it.timestamp }
+                    .ifEmpty { flow.sourceTimes.ifEmpty { listOf(flow.eventTime) } }
+                times.any { isNearEventTime(it, eventTime) }
             }
-        }
-        val nearUnorderableTrade = trades.firstOrNull { isNearEventTime(it.timestamp, eventTime) }
-        val unorderableReference = unorderableLedgerEvent?.ledgerId
-            ?: nearUnorderableTrade?.let { "trade at ${it.timestamp}" }
-        if (unorderableReference != null) {
+        ) {
             throw AthTrustFailureException(
                 reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
-                message = "cannot establish ordering of near-instant event $unorderableReference and " +
-                    "owner flow at $eventTime",
+                message = "cannot establish ordering of near-instant trade or card flow and owner flow at $eventTime",
             )
         }
+        val nearFlowBoundaries = resolveNearFlowBoundaries(nearLedgerEvents, currentFlowEvents, eventTime)
 
         // 1. Reconstruct tracked holdings immediately before the flow
         val reconstructedHoldings = mutableMapOf<String, BigDecimal>()
@@ -1587,6 +1572,21 @@ class PortfolioAnalyzerImpl(
                             (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(delta.amount)
                     }
                 }
+            }
+        }
+
+        // Pairwise balance chains can form a cycle (+X followed by -X, or the reverse).
+        // Only the reconstructed state anchored to the predecessor can establish which
+        // side of the owner flow we reached. Never treat a reversible pair as proof of order.
+        for ((asset, expectedBalance) in nearFlowBoundaries) {
+            if (!isInAthUniverse(asset, universe)) continue
+            val reconstructed = reconstructedHoldings[asset] ?: BigDecimal.ZERO
+            if (reconstructed.subtract(expectedBalance).abs() > INTERVENING_BALANCE_TOLERANCE) {
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
+                    message = "reconstructed pre-flow balance disagrees with authoritative boundary for $asset " +
+                        "at $eventTime",
+                )
             }
         }
 
@@ -1922,31 +1922,53 @@ class PortfolioAnalyzerImpl(
         /** Linked conversion legs share a refid; unlinked rows stand alone under their ledger id. */
         private fun groupKey(event: LedgerEvent): String = event.refid?.trim().orEmpty().ifEmpty { event.ledgerId }
 
-        /**
-         * Orders two same-asset rows from their authoritative resulting balances,
-         * which chain with the amount they record: if [before] precedes [after],
-         * then `before.balance + after.amount == after.balance`. Returns true when
-         * [before] precedes [after], false when [after] precedes [before], and null
-         * when no boundary exists to decide. Two rows on one asset are therefore
-         * ordered even at an identical millisecond — exactly the "more precise
-         * balance boundary" the timestamp check otherwise waits for and never
-         * receives.
-         *
-         * A pair that chains in both directions is an exact reverse: one row's
-         * resulting balance is the other's starting balance, so the flow being
-         * resolved has the same pre-flow basis either way. Those report true, the
-         * order the pre-flow replay already assumes.
-         */
-        private fun balanceOrdering(before: LedgerEvent, after: LedgerEvent): Boolean? {
-            if (!before.hasAuthoritativeBalance || !after.hasAuthoritativeBalance) return null
-            if (before.asset != after.asset) return null
-            val beforeThenAfter = before.balance.add(after.amount).compareTo(after.balance) == 0
-            val afterThenBefore = after.balance.add(before.amount).compareTo(before.balance) == 0
-            return when {
-                beforeThenAfter -> true
-                afterThenBefore -> false
-                else -> null
+        private fun resolveNearFlowBoundaries(
+            nearEvents: List<LedgerEvent>,
+            currentEvents: List<LedgerEvent>,
+            eventTime: Instant,
+        ): List<Pair<String, BigDecimal>> {
+            if (nearEvents.isEmpty()) return emptyList()
+            fun uncertain(): Nothing = throw AthTrustFailureException(
+                reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
+                message = "cannot establish authoritative pre-flow boundaries at $eventTime",
+            )
+            val current = currentEvents.singleOrNull() ?: uncertain()
+            fun validBoundary(event: LedgerEvent): Boolean = event.hasAuthoritativeBalance &&
+                event.hasAuthoritativeFee && event.hasValidFee && event.hasValidAmount && event.fee.signum() >= 0
+            if (!validBoundary(current)) uncertain()
+            val currentAsset = Asset.normalizeLedgerAsset(current.asset).uppercase()
+            val currentDelta = current.netBalanceDelta()
+            val boundaries = mutableListOf(currentAsset to current.balance.subtract(currentDelta))
+            for (group in nearEvents.distinct().groupBy(::groupKey).values) {
+                // A shared refid alone is not an atomicity guarantee. Only a complete,
+                // same-instant conversion may use one asset's boundary for its paired leg.
+                if (group.any { !validBoundary(it) } || group.map { it.time }.distinct().size != 1 ||
+                    (group.size > 1 && !LedgerFlowClassifier.isCompleteConversionGroup(group))
+                ) {
+                    uncertain()
+                }
+                val anchor = group.singleOrNull {
+                    Asset.normalizeLedgerAsset(it.asset).uppercase() == currentAsset
+                } ?: uncertain()
+                val before = !anchor.time.isAfter(eventTime)
+                val difference = if (before) {
+                    anchor.balance.add(currentDelta).subtract(current.balance)
+                } else {
+                    current.balance.add(anchor.netBalanceDelta()).subtract(anchor.balance)
+                }
+                if (difference.abs() > INTERVENING_BALANCE_TOLERANCE) uncertain()
+                for (member in group) {
+                    val asset = Asset.normalizeLedgerAsset(member.asset).uppercase()
+                    val preFlowBalance = if (before) {
+                        member.balance
+                    } else {
+                        member.balance.subtract(member.netBalanceDelta())
+                            .subtract(if (asset == currentAsset) currentDelta else BigDecimal.ZERO)
+                    }
+                    boundaries.add(asset to preFlowBalance)
+                }
             }
+            return boundaries
         }
 
         /**

@@ -3814,7 +3814,124 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
-        "same-instant rows that chain through authoritative balances are ordered instead of deferred" {
+        listOf(
+            "matching predecessor" to (Triple("100000.00", "0.00", "0.00") to "101010.10"),
+            "fee-bearing conversion" to (Triple("100000.00", "5.00", "0.00") to "101010.15"),
+            "fee-bearing owner flow" to (Triple("100000.00", "0.00", "5.00") to "101005.05"),
+            "contradictory predecessor" to (Triple("99000.00", "0.00", "0.00") to null),
+            "split-time conversion" to (Triple("100000.00", "0.00", "0.00") to null),
+            "following conversion" to (Triple("100000.00", "0.00", "0.00") to "101000.00"),
+            "unknown owner fee" to (Triple("100000.00", "0.00", "0.00") to null),
+        ).forEach { (case, inputs) ->
+            "same-instant conversion ordering uses net balances and the $case" {
+                runTest {
+                    val (parameters, expectedAth) = inputs
+                    val (predecessorUsd, feeUsd, ownerFeeUsd) = parameters
+                    val conversionFee = BigDecimal(feeUsd)
+                    val ownerFee = BigDecimal(ownerFeeUsd)
+                    statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        t60.epochSecond.toString(),
+                    )
+                    ledgerRepository.setSyncMetadata(
+                        SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                        t90.epochSecond.toString(),
+                    )
+                    tradeRepository.saveSnapshot(
+                        PortfolioSnapshot(
+                            timestamp = t71,
+                            totalValueUSD = BigDecimal(predecessorUsd),
+                            assets = mapOf(
+                                Asset.USD to TestFixtures.assetSnapshot(
+                                    symbol = Asset.USD,
+                                    balance = BigDecimal(predecessorUsd),
+                                    price = BigDecimal.ONE,
+                                    valueUSD = BigDecimal(predecessorUsd),
+                                    targetPercent = BigDecimal("100.0"),
+                                ),
+                            ),
+                            actions = emptyList(),
+                            drawdownPercent = BigDecimal.ZERO,
+                            fiatDeploymentPercent = BigDecimal.ZERO,
+                            effectiveUsdTargetPercent = BigDecimal("100.0"),
+                            balancesObservedAt = t71,
+                        ),
+                    )
+                    ledgerRepository.saveLedgers(
+                        listOf(
+                            LedgerEvent(
+                                ledgerId = "same-ms-conversion-usd",
+                                refid = "CONV-SAME-MS",
+                                time = if (case == "following conversion") t80.plusMillis(300) else t80,
+                                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                                asset = "USD",
+                                amount = BigDecimal("-1000.00"),
+                                fee = conversionFee,
+                                balance = BigDecimal(if (case == "following conversion") "100000.00" else "99000.00")
+                                    .subtract(conversionFee),
+                                hasAuthoritativeBalance = true,
+                                hasAuthoritativeFee = true,
+                            ),
+                            LedgerEvent(
+                                ledgerId = "same-ms-conversion-usdg",
+                                refid = "CONV-SAME-MS",
+                                time = when (case) {
+                                    "split-time conversion" -> t80.minusMillis(500)
+                                    "following conversion" -> t80.plusMillis(300)
+                                    else -> t80
+                                },
+                                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                                asset = "USDG",
+                                amount = BigDecimal("1000.00"),
+                                balance = BigDecimal("1000.00"),
+                                hasAuthoritativeBalance = true,
+                                hasAuthoritativeFee = true,
+                            ),
+                            LedgerEvent(
+                                ledgerId = "same-ms-deposit",
+                                refid = "FT-same-ms-deposit",
+                                time = t80,
+                                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                                asset = "USD",
+                                amount = BigDecimal("1000.00"),
+                                fee = ownerFee,
+                                balance = BigDecimal(if (case == "following conversion") "101000.00" else "100000.00")
+                                    .subtract(conversionFee).subtract(ownerFee),
+                                hasAuthoritativeBalance = true,
+                                hasAuthoritativeFee = case != "unknown owner fee",
+                            ),
+                        ),
+                    )
+
+                    val result = analyzer(t90).updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("100000.00").subtract(conversionFee).subtract(ownerFee),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                        balancesObservedAt = t90,
+                    )
+
+                    if (expectedAth == null) {
+                        result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                            AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN
+                        statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                        statsRepository.getAppliedAthFlowIds(listOf("same-ms-deposit")) shouldBe emptySet()
+                    } else {
+                        result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                        statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal(expectedAth))
+                        statsRepository.getAppliedAthFlowIds(listOf("same-ms-deposit")) shouldBe
+                            setOf("same-ms-deposit")
+                        analyzer(t90).updateAthAndCalculateDrawdown(
+                            totalPortfolioValueUSD = BigDecimal("100000.00").subtract(conversionFee).subtract(ownerFee),
+                            netExternalFlowUSD = BigDecimal.ZERO,
+                            balancesObservedAt = t90,
+                        ).shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                        statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal(expectedAth))
+                    }
+                }
+            }
+        }
+
+        "a current card representative cannot use an ordinary ledger boundary to hide its source span" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
                 tradeRepository.setSyncMetadata(
@@ -3825,71 +3942,61 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
                     t90.epochSecond.toString(),
                 )
-                tradeRepository.saveSnapshot(
-                    PortfolioSnapshot(
-                        timestamp = t71,
-                        totalValueUSD = BigDecimal("100000.00"),
-                        assets = mapOf(
-                            Asset.USD to TestFixtures.assetSnapshot(
-                                symbol = Asset.USD,
-                                balance = BigDecimal("100000.00"),
-                                price = BigDecimal.ONE,
-                                valueUSD = BigDecimal("100000.00"),
-                                targetPercent = BigDecimal("100.0"),
-                            ),
-                        ),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal("100.0"),
-                        balancesObservedAt = t71,
-                    ),
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t71, BigDecimal("99000.00")))
+                val cardRef = "CARD-CURRENT-BOUNDARY"
+                val spend = LedgerEvent(
+                    ledgerId = "current-card-spend", refid = cardRef, time = t70,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND, asset = "USD",
+                    amount = BigDecimal("-1000.00"), balance = BigDecimal("99000.00"),
+                    hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
                 )
-                ledgerRepository.saveLedgers(
-                    listOf(
-                        LedgerEvent(
-                            ledgerId = "same-ms-conversion-usd",
-                            refid = "CONV-SAME-MS",
-                            time = t80,
-                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
-                            asset = "USD",
-                            amount = BigDecimal("-1000.00"),
-                            balance = BigDecimal("99000.00"),
-                            hasAuthoritativeBalance = true,
-                            hasAuthoritativeFee = true,
-                        ),
-                        LedgerEvent(
-                            ledgerId = "same-ms-conversion-usdg",
-                            refid = "CONV-SAME-MS",
-                            time = t80,
-                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
-                            asset = "USDG",
-                            amount = BigDecimal("1000.00"),
-                            balance = BigDecimal("1000.00"),
-                            hasAuthoritativeBalance = true,
-                            hasAuthoritativeFee = true,
-                        ),
-                        LedgerEvent(
-                            ledgerId = "same-ms-deposit",
-                            refid = "FT-same-ms-deposit",
-                            time = t80,
-                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                val receive = LedgerEvent(
+                    ledgerId = "current-card-receive", refid = cardRef, time = t75,
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE, asset = "BTC",
+                    amount = BigDecimal("0.02"), balance = BigDecimal("0.02"),
+                    hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                )
+                val reward = LedgerEvent(
+                    ledgerId = "current-card-near-reward", refid = "REWARD-CURRENT-CARD", time = t80.minusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING, asset = "USD",
+                    amount = BigDecimal("30.00"), balance = BigDecimal("99030.00"),
+                    hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                )
+                val funding = LedgerEvent(
+                    ledgerId = "current-card-funding", refid = cardRef, time = t80,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT, asset = "USD",
+                    amount = BigDecimal("1000.00"), balance = BigDecimal("100030.00"),
+                    hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                )
+                ledgerRepository.saveLedgers(listOf(spend, receive, reward, funding))
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    t0.minusSeconds(1800).epochSecond to BigDecimal("50000.00"),
+                )
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            cardRef,
                             asset = "USD",
                             amount = BigDecimal("1000.00"),
-                            balance = BigDecimal("100000.00"),
-                            hasAuthoritativeBalance = true,
+                            time = t80,
+                            status = "Success",
+                            method = "Visa",
                         ),
                     ),
                 )
 
-                val result = analyzer(t90).updateAthAndCalculateDrawdown(
-                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                val result = analyzer(t90, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("101030.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = t90,
                 )
 
-                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
-                statsRepository.getAppliedAthFlowIds(listOf("same-ms-deposit")) shouldBe setOf("same-ms-deposit")
+                result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                    AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(
+                    listOf(spend.ledgerId, receive.ledgerId, funding.ledgerId),
+                ) shouldBe emptySet()
             }
         }
 

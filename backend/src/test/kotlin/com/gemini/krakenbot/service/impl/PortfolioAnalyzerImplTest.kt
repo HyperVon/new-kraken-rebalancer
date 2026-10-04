@@ -28,7 +28,6 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -883,9 +882,9 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns TestFixtures.config(
                     settings = TestFixtures.settings(),
-                    allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
                 )
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("100.00"))
                 coEvery {
                     mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns flowTime.epochSecond.toString()
@@ -904,6 +903,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("30.00"),
                     balance = BigDecimal("100.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 val deposit = LedgerEvent(
                     ledgerId = "REVERSE-CHAIN-FLOW",
@@ -914,24 +914,29 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("1000.00"),
                     balance = BigDecimal("1100.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
                     setOf(decidedNear.ledgerId)
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit, decidedNear)
                 coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
-                    listOf(athPredecessor(observation))
+                    listOf(TestFixtures.emptySnapshot(observation, BigDecimal("70.00")))
 
                 val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
-                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    totalPortfolioValueUSD = BigDecimal("1100.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = flowTime,
                 )
 
-                // The reverse balance chain settles the ordering; only later
-                // gates (flow pricing) may still hold this fixture back.
-                (result as? AthUpdateResult.Deferred)?.reason shouldNotBe
-                    AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN
+                result shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("1100.00")) == 0 },
+                        any(),
+                        any(),
+                    )
+                }
             }
         }
 
@@ -973,6 +978,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("30.00"),
                     balance = BigDecimal("101030.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 val deposit = LedgerEvent(
                     ledgerId = "DEPOSIT-FIRST-FLOW",
@@ -983,6 +989,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("1000.00"),
                     balance = BigDecimal("101000.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
                     setOf(laterReward.ledgerId)
@@ -1039,6 +1046,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("7.00"),
                     balance = BigDecimal("42.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 val blankRefNear = LedgerEvent(
                     ledgerId = "DECIDED-BLANK-REFID",
@@ -1049,6 +1057,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("3.00"),
                     balance = BigDecimal("9.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 val deposit = LedgerEvent(
                     ledgerId = "UNCHAINED-FLOW",
@@ -1059,6 +1068,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("1000.00"),
                     balance = BigDecimal("101000.00"),
                     hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
                 )
                 coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns
                     setOf(orphanNear.ledgerId, blankRefNear.ledgerId)

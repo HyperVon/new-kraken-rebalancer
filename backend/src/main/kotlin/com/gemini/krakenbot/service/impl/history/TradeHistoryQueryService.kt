@@ -505,6 +505,8 @@ class TradeHistoryQueryService(
         val configuredAssetUniverse: Set<String>?,
         val requiredCoverageStart: Instant = Instant.EPOCH,
         val reconstructionRevision: String = "",
+        val ledgerCoverageHorizon: Long? = null,
+        val tradeCoverageHorizon: Long? = null,
         val configuredUniverse: String = "",
         val consumedEvidenceDigest: String = "",
         val consumedDependencies: MutableSet<ConsumedOhlcDependency> = ConcurrentHashMap.newKeySet(),
@@ -1161,21 +1163,19 @@ class TradeHistoryQueryService(
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
-            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC),
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
         ).joinToString(separator = "\u0000")
-
-        val capturedConsumedEvidenceDigest = if (comparisonCacheRepository != null) {
-            val horizonEpochMillis = eventUpperBound.toEpochMilli()
-            consumedEvidenceDigest(
-                inceptionResolution?.inceptionTime,
-                horizonEpochMillis,
-                capturedRevision,
-            )
-        } else {
-            ""
-        }
+        val ledgerCoverageHorizon = ledgerRepository.getSyncMetadata(
+            SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+        )?.toLongOrNull()
+        val tradeCoverageHorizon = repository.getSyncMetadata(
+            SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+        )?.toLongOrNull()
+        val capturedConsumedEvidenceDigest = consumedEvidenceDigest(
+            inceptionResolution?.inceptionTime,
+            eventUpperBound.toEpochMilli(),
+            capturedRevision,
+        )
 
         return CapturedComparisonEvidence(
             accountingFrom = accountingFrom,
@@ -1207,6 +1207,8 @@ class TradeHistoryQueryService(
             configuredAssetUniverse = configuredAssetUniverse,
             requiredCoverageStart = requiredCoverageStart,
             reconstructionRevision = reconstructionRevision,
+            ledgerCoverageHorizon = ledgerCoverageHorizon,
+            tradeCoverageHorizon = tradeCoverageHorizon,
             configuredUniverse = configuredUniverse,
             consumedEvidenceDigest = capturedConsumedEvidenceDigest,
         )
@@ -1274,13 +1276,27 @@ class TradeHistoryQueryService(
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
                 ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
-                ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC),
                 repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
-                repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
             ).joinToString(separator = "\u0000")
             if (currentReconstructionRevision != captured.reconstructionRevision) {
+                log.debug("Comparison publication invalidated; reason=RECONSTRUCTION_REVISION_CHANGED")
                 return PublishOutcome.Invalidated
             }
+
+            val currentLedgerHorizon = ledgerRepository.getSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+            )?.toLongOrNull() ?: return PublishOutcome.Invalidated
+            val currentTradeHorizon = repository.getSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+            )?.toLongOrNull() ?: return PublishOutcome.Invalidated
+            val capturedLedgerHorizon = captured.ledgerCoverageHorizon ?: return PublishOutcome.Invalidated
+            val capturedTradeHorizon = captured.tradeCoverageHorizon ?: return PublishOutcome.Invalidated
+            if (currentLedgerHorizon < capturedLedgerHorizon || currentTradeHorizon < capturedTradeHorizon) {
+                log.debug("Comparison publication invalidated; reason=COVERAGE_HORIZON_REGRESSED")
+                return PublishOutcome.Invalidated
+            }
+            val coverageAdvanced = currentLedgerHorizon > capturedLedgerHorizon ||
+                currentTradeHorizon > capturedTradeHorizon
 
             val currentCoverage = latestConfirmedEconomicCoverage(
                 requiredStart = captured.requiredCoverageStart,
@@ -1300,13 +1316,17 @@ class TradeHistoryQueryService(
             }
 
             val currentRevision = repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION).orEmpty()
-            if (currentRevision != captured.capturedRevision && captured.consumedEvidenceDigest.isNotEmpty()) {
+            if (coverageAdvanced || currentRevision != captured.capturedRevision) {
+                // Coverage growth is not a content revision. Rehash the frozen window even when
+                // its revision token stayed unchanged; never expand the captured event horizon.
                 val currentDigest = consumedEvidenceDigest(
                     captured.inceptionResolution?.inceptionTime,
                     captured.eventUpperBound.toEpochMilli(),
                     currentRevision,
+                    forceRefresh = coverageAdvanced,
                 )
                 if (currentDigest != captured.consumedEvidenceDigest) {
+                    log.debug("Comparison publication invalidated; reason=CONSUMED_EVIDENCE_CHANGED")
                     return PublishOutcome.Invalidated
                 }
             }
@@ -1658,11 +1678,12 @@ class TradeHistoryQueryService(
         inceptionTime: Instant?,
         horizonEpochMillis: Long,
         revision: String,
+        forceRefresh: Boolean = false,
     ): String {
         val inceptionMillis = inceptionTime?.toEpochMilli()
         consumedEvidenceMemo.get()
             ?.takeIf {
-                it.inceptionMillis == inceptionMillis &&
+                !forceRefresh && it.inceptionMillis == inceptionMillis &&
                     it.horizonMillis == horizonEpochMillis &&
                     it.revision == revision
             }

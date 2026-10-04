@@ -6,25 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.17.96] - 2026-10-03
+## [6.17.96] - 2026-10-04
 
 ### Fixed
 
-- **Simultaneous ledger rows no longer block ATH forever**: Kraken writes deposits and
-  stablecoin conversions at one identical millisecond, and the ordering gate treated any
-  event within a 1s clock-skew window as unorderable and failed closed. The gate expected a
-  later cycle to supply "a more precise source or balance boundary", but identical timestamps
-  never resolve — the same `EVENT_ORDERING_UNCERTAIN` row deferred every cycle indefinitely.
-  Rows already carry their resulting balance, and that balance chains with the recorded amount,
-  so same-asset rows are ordered even at one shared millisecond: a deposit of `+1000` landing at
-  balance `1389.2793` provably follows the conversion of `-1000` landing at `389.2793`. A
-  linked group (shared `refid`) moves as one unit, so a `USDG` leg is settled by its paired
-  `USD` leg even though it never shares an asset with the owner flow. The derived order must
-  agree with the order the pre-flow replay actually applies, which places a row before the flow
-  when its timestamp is not after it: a row the chain places *after* the flow still fails
-  closed, because folding post-flow value into the pre-flow basis would scale ATH on unearned
-  capital. Trades and rows without authoritative balances also still fail closed, since no
-  boundary exists there and inventing an order on money-moving events is unsafe.
+- **Evidence-backed near-instant ATH replay**: an ordinary owner flow near a ledger event can
+  now proceed when authoritative net-of-fee balances agree with the timestamp replay and the
+  predecessor-anchored reconstructed pre-flow holdings. A reversible debit/credit pair alone
+  does not prove ordering; an inconsistent predecessor still defers without changing ATH or
+  journaling the flow. Only a validated complete same-instant conversion can use one leg's
+  balance boundary for its paired leg, not arbitrary rows sharing a reference. Missing or
+  malformed balance/fee evidence, split-time groups, synthetic card flows, and near-instant
+  trades remain fail-closed. Regression tests assert exact ATH adjustments, fee treatment,
+  unchanged state on deferral, and exactly-once application.
+- **Comparison publication no longer restarts for coverage-only progress**: forward trade or
+  ledger sync watermarks no longer invalidate a calculation whose captured historical window
+  is unchanged. Publication rehashes that frozen window even when the content revision token
+  did not advance; changed consumed rows, regressed coverage, or reconstruction/configuration
+  changes still invalidate. This removes a reproducible path to repeated `COMPARISON_EVALUATING`
+  responses without treating missing OHLC data as reachability evidence.
+- **Routine ATH logging**: off-universe performance-flow skips and balance-key dumps are now
+  DEBUG diagnostics. Excluded owner capital remains a warning, and pre-inception retirement
+  emits one INFO count with per-row detail at DEBUG.
 
 ## [6.17.95] - 2026-10-03
 

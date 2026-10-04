@@ -304,9 +304,16 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      fall back to their save timestamp. Ledger rows in the uncertain interval
      `(balancesObservedAt, predecessor.timestamp]` are accepted only when authoritative post-event balances
      prove one unique embedded prefix; ambiguous, missing-balance, or same-timestamp rows defer the update
-     instead of receiving a lexical order. If a modern snapshot is observed before the flow but saved after
-     it and no snapshot saved before the flow establishes the pre-flow state, the update also defers. Flow-time
-     prices are resolved strictly from event-time evidence:
+      instead of receiving a lexical order. If a modern snapshot is observed before the flow but saved after
+      it and no snapshot saved before the flow establishes the pre-flow state, the update also defers. Flow-time
+      ledger events within the 1-second ordering-skew window remain fail-closed unless a single ordinary
+      owner flow has authoritative balances and valid, authoritative fee evidence. Its net-of-fee balance
+      chain must agree with the timestamp replay, and the reconstructed pre-flow holdings must match the
+      owner row's starting balance and the relevant neighboring ledger boundaries. A reversible debit/credit
+      pair is not ordering proof without that predecessor anchor. Only a validated complete conversion with
+      same-instant legs can use a shared-asset boundary for the paired leg; arbitrary shared references and
+      split-time groups cannot. Near-instant trades and synthetic card-flow contexts still defer. Flow-time
+      prices are resolved strictly from event-time evidence:
      first from a successful non-dry-run trade in the preceding 180s, then from the nearest
      recorded snapshot in the preceding 180s, and finally from a completed 15-minute OHLC candle
      whose `candleStart + 900s <= eventTime` (an exact candle end is valid). Future trades/snapshots and active
@@ -1114,6 +1121,12 @@ calculation actually consumed is unchanged.
   still a hit (one bounded rehash, no replay). Empty or content-identical OHLC refetches do not
   advance the OHLC content revision. Passage of time alone does not invalidate consumed candle
   content; a separate resolver-selection frontier expires on its own bounded freshness deadline.
+- **Publication during sync.** A forward trade or ledger coverage watermark does not restart an
+  in-flight calculation merely for advancing. Its captured event horizon stays pinned, and the
+  consumed-evidence digest is recomputed at that horizon even if the revision token is unchanged.
+  Changed rows inside the frozen window, individual coverage regressions, reconstruction changes,
+  and configuration/inception changes still invalidate publication. A later request can evaluate
+  a newly certified window; accepting forward progress never silently expands the in-flight one.
 - **Funding freshness vs durable identity.** Historical settled Kraken deposits, withdrawals, and
   transfers represent settled ledger events whose provenance identity is immutable once observed.
   Kraken does not mutate the method, status, or asset classification of a settled historical funding
