@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.97] - 2026-10-04
+
+### Fixed
+
+- **Normal-path log noise no longer buries real warnings**: the per-cycle "Skipping ATH scaling
+  for off-universe or terminal flow" line was logged at `WARN` for every off-universe flow on
+  every cycle — about 1,344 warnings in five minutes of normal operation, roughly 80% of all log
+  output, which pushed the handful of genuine warnings out of sight. That line and the raw
+  `Available Balance Keys` dump are now `DEBUG`. The first full scan of pre-inception baseline
+  rows still reports its outcome at `INFO`, but as one summary line instead of one line per row
+  (144 at once), with the per-row detail at `DEBUG`.
+
 ## [6.17.95] - 2026-10-03
 
 ### Fixed

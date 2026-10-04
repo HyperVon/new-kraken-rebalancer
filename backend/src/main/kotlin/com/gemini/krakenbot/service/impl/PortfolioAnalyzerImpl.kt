@@ -71,7 +71,7 @@ class PortfolioAnalyzerImpl(
     override suspend fun fetchObservedBalances(): ObservedBalances {
         val observedAt = nowProvider()
         val balances = krakenService.getBalances()
-        log.info("Available Balance Keys: {}", balances.keys)
+        log.debug("Available Balance Keys: {}", balances.keys)
         return ObservedBalances(balances = balances, observedAt = observedAt)
     }
 
@@ -783,8 +783,15 @@ class PortfolioAnalyzerImpl(
         // an unresolvable row. Journal it decided-but-not-applied here, once.
         val baselineMaterial = scanned.unapplied.filter { predatesStrategyInception(it) }
         if (baselineMaterial.isNotEmpty()) {
+            // A first full scan can journal a large vintage of pre-inception rows at once;
+            // one summary keeps the decision visible without flooding the log.
+            log.info(
+                "Ignoring {} pre-inception unclassifiable funding event(s): predating the strategy, " +
+                    "so they are baseline material and cannot fund it",
+                baselineMaterial.size,
+            )
             baselineMaterial.forEach { event ->
-                log.info(
+                log.debug(
                     "Ignoring pre-inception unclassifiable funding event {} (type={}, asset={}, amount={}) " +
                         "at {}: predates the strategy, so it is baseline material and cannot fund it",
                     event.ledgerId,
@@ -993,7 +1000,10 @@ class PortfolioAnalyzerImpl(
             ) {
                 events.add(event)
             } else if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
-                log.warn(
+                // Expected for every off-universe or terminal flow on every cycle; the
+                // meaningful signal is the ATH adjustment itself. Keep this at debug so
+                // the few real warnings stay visible.
+                log.debug(
                     "Skipping ATH scaling for off-universe or terminal {} flow {} at {} (category {})",
                     event.type,
                     event.ledgerId,
