@@ -1428,24 +1428,15 @@ class TradeHistoryQueryService(
                         // consumed row, regressed coverage, or advanced a reachability frontier since
                         // capture. Revalidate before serving, using the entry's own reachability
                         // dependencies: a Hit runs no calculation, so the captured set is still empty.
-                        // Never wait on the evidence lock here — sync writers hold it across Kraken REST
-                        // I/O. A contended lock falls through to the ordinary compute-and-publish path,
-                        // which is what a cache miss already does.
-                        var revalidated = false
-                        val validated = try {
-                            historyEvidenceCoordinator.tryWithLock("history-comparison-cache-hit") {
-                                revalidated = capturedEvidenceStillCurrent(
-                                    captured,
-                                    reachabilityDependencies = outcome.reachabilityDependencies,
-                                )
-                            }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            log.debug("Cached B&H comparison revalidation failed: {}", e.message)
-                            false
+                        // Waiting for the evidence lock is cheaper than falling through to a full replay,
+                        // which would recompute the whole series only to wait on the same mutex.
+                        val stillCurrent = historyEvidenceCoordinator.withLock("history-comparison-cache-hit") {
+                            capturedEvidenceStillCurrent(
+                                captured,
+                                reachabilityDependencies = outcome.reachabilityDependencies,
+                            )
                         }
-                        if (validated && revalidated) {
+                        if (stillCurrent) {
                             log.debug(
                                 "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
                                 captured.cacheFrom,

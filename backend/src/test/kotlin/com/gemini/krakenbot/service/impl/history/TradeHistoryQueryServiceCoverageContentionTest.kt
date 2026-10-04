@@ -109,6 +109,8 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                     cachedEntry = RebalancerComparisonCacheEntry(
                         inputFingerprint = arg(2),
                         comparison = arg(3),
+                        ohlcDependencies = arg(4),
+                        ohlcReachabilityDependencies = arg(5),
                     )
                 }
             }

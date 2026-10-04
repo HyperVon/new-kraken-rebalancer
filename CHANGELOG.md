@@ -36,10 +36,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   straight from the unlocked cache/OHLC lookup, so a writer correcting a consumed row or
   regressing coverage during that window could leave stale economics on screen. Hits now pass the
   same `capturedEvidenceStillCurrent` check as publication, under the evidence lock, while OHLC
-  fetches stay outside it. The hit revalidates the cached entry's own reachability dependencies,
-  since a hit runs no calculation and therefore has no freshly captured ones, and it never waits
-  on the evidence lock: a contended lock falls through to the ordinary compute-and-publish path a
-  cache miss already takes, so History polling never queues behind sync I/O.
+  fetches stay outside it. A rejected hit replays instead of serving the outdated value. The hit
+  revalidates the cached entry's own reachability dependencies, since a hit runs no calculation
+  and therefore has no freshly captured ones.
 - **Routine ATH logging**: off-universe performance-flow skips and balance-key dumps are now
   DEBUG diagnostics. Excluded owner capital remains a warning, and pre-inception retirement
   emits one INFO count with per-row detail at DEBUG.
