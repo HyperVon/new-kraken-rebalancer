@@ -106,6 +106,7 @@ class SqlitePortfolioStatsRepositoryImpl(
         stats: PortfolioStats,
         appliedFlows: List<AppliedAthFlow>,
         flowWatermarkSec: Long?,
+        athRebasePeakEpochMs: Long?,
     ) {
         database.safeTransactionIO(log, "Failed to save ATH state with flow checkpoint") {
             upsertStats(stats)
@@ -116,6 +117,12 @@ class SqlitePortfolioStatsRepositoryImpl(
                 HistorySyncMetadataTable.upsert {
                     it[key] = SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC
                     it[value] = flowWatermarkSec.toString()
+                }
+            }
+            if (athRebasePeakEpochMs != null) {
+                HistorySyncMetadataTable.upsert {
+                    it[key] = SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS
+                    it[value] = athRebasePeakEpochMs.toString()
                 }
             }
         }

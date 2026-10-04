@@ -112,6 +112,19 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         buildSnapshotsFromRows(latestRow).firstOrNull()
     }
 
+    override suspend fun getHighestValuedSnapshot(): PortfolioSnapshot? = database.readTransactionIO {
+        // Newest first among equal maxima so a re-base always anchors on the same instant.
+        val peakRows = PortfolioSnapshotTable
+            .selectAll()
+            .orderBy(
+                PortfolioSnapshotTable.totalValueUSD to SortOrder.DESC,
+                PortfolioSnapshotTable.timestamp to SortOrder.DESC,
+            )
+            .limit(1)
+            .toList()
+        buildSnapshotsFromRows(peakRows).firstOrNull()
+    }
+
     override suspend fun saveSnapshot(snapshot: PortfolioSnapshot): Int =
         database.safeTransactionIO(log, "Failed to save snapshot to database") {
             insertSnapshotWithChildren(snapshot).also { bumpComparisonEvidenceRevision() }
