@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.config.ATH_REBASE_ENV
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
@@ -58,6 +59,7 @@ class PortfolioAnalyzerImpl(
     private val ledgerRepository: LedgerRepository? = null,
     private val tradeRepository: TradeRepository? = null,
     private val defaultProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
+    private val athRebaseRequested: Boolean = false,
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
@@ -133,6 +135,8 @@ class PortfolioAnalyzerImpl(
         // crash can neither lose an applied flow nor apply one twice.
         val appliedFlows = mutableListOf<AppliedAthFlow>()
         var pendingFlowWatermarkSec: Long? = null
+        // Peak instant of a completed operator re-base, persisted in the same transaction as the ATH.
+        var rebaseMarkerToPersist: Long? = null
 
         if (netExternalFlowUSD.signum() != 0) {
             if (ath > BigDecimal.ZERO) {
@@ -263,10 +267,83 @@ class PortfolioAnalyzerImpl(
             // off-universe owner capital) are terminal regardless of what the scaling loop
             // below does, so they join the journal now and are never re-warned.
             appliedFlows.addAll(flowCalc.skippedDecided)
+            // Operator-requested one-time ATH re-base.
+            //
+            // ATH inherited from before snapshot retention cannot be replayed against the retained
+            // bases: compounding it against a far smaller reconstructed basis inflates it without
+            // bound (a 10k deposit against a 2.6k basis quadrupled a stale 19.6k ATH). The witnessed
+            // portfolio peak already contains every owner-capital flow at or before its instant, so
+            // re-anchoring there and consuming exactly those flows is the self-consistent repair.
+            //
+            // Consuming the pipeline's own decision is what makes this safe: `sequentialFlows` holds
+            // only rows LedgerFlowClassifier already decided to be plain owner capital, with card
+            // groups normalized away upstream. The repair does not re-classify raw ledger rows, so it
+            // cannot retire an ordering or card guard — those already ran to produce this set. No
+            // ordering decision is needed here either, because the peak is strictly later than every
+            // consumed flow, so containment follows from timestamps alone. ATH never moves down: a
+            // peak that understates the true high leaves the existing value in place.
+            var rebaseInstant = tradeRepository
+                ?.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS)
+                ?.toLongOrNull()
+                ?.let(Instant::ofEpochMilli)
+            if (athRebaseRequested && rebaseInstant == null) {
+                // A "witnessed" peak must be a real account observation. Emulator-seeded totals
+                // share the snapshot table and can exceed what the account ever held, so the repair
+                // refuses in simulation; a peak beyond confirmed ledger history is likewise not
+                // corroborated by the exchange record.
+                val simulationActive = configService.getConfig().settings.simulation
+                val coverage = ledgerRepository
+                    ?.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    ?.toLongOrNull()
+                val peak = if (simulationActive) {
+                    log.warn(
+                        "ATH re-base refused: simulation mode is active, so snapshot totals are not real observations",
+                    )
+                    null
+                } else {
+                    tradeRepository?.getHighestValuedSnapshot()
+                }
+                val peakCorroborated = peak != null &&
+                    (coverage == null || peak.timestamp.epochSecond <= coverage)
+                if (peak != null && !peakCorroborated) {
+                    log.warn(
+                        "ATH re-base refused: witnessed peak at {} is not covered by confirmed ledger history (horizon {})",
+                        peak.timestamp,
+                        coverage?.toString() ?: "unknown",
+                    )
+                }
+                val hasPrePeakFlow = peakCorroborated &&
+                    flowCalc.sequentialFlows.any { !it.eventTime.isAfter(peak.timestamp) }
+                if (hasPrePeakFlow && peak.totalValueUSD > ath) {
+                    log.warn(
+                        "Operator-requested ATH re-base: anchoring ATH on the witnessed portfolio " +
+                            "peak at {} ({} -> {}). Owner-capital flows at or before it are already " +
+                            "inside that value and are consumed without rescaling.",
+                        peak.timestamp,
+                        ath.toUsdScale(),
+                        maxOf(peak.totalValueUSD, totalPortfolioValueUSD).toUsdScale(),
+                    )
+                    // Never lower a correct ATH, and never sit below the live value.
+                    ath = maxOf(ath, peak.totalValueUSD, totalPortfolioValueUSD)
+                    rebaseInstant = peak.timestamp
+                    rebaseMarkerToPersist = peak.timestamp.toEpochMilli()
+                }
+            }
             // Bases resolve lazily per group: groups after an early break are
             // never priced, so an unbasis-able later flow cannot fail a cycle
             // whose applicable prefix is fine (it is retried next cycle).
             for ((groupIndex, step) in flowCalc.sequentialFlows.withIndex()) {
+                // Owner capital at or before a recorded re-base peak is already inside that peak's
+                // portfolio value. Scaling it again would compound capital the peak accounts for,
+                // so consume those identities without rescaling.
+                if (rebaseInstant != null && !step.eventTime.isAfter(rebaseInstant)) {
+                    for (ledgerId in step.ledgerIds) {
+                        appliedFlows.add(
+                            flowCalc.appliedFlowSemantics.getValue(ledgerId),
+                        )
+                    }
+                    continue
+                }
                 // A step is checkpointed only when its scaling was actually
                 // applied. Anything after an early break stays unacknowledged
                 // and is retried next cycle.
@@ -374,6 +451,7 @@ class PortfolioAnalyzerImpl(
                 stats = updatedStats,
                 appliedFlows = appliedFlows,
                 flowWatermarkSec = pendingFlowWatermarkSec,
+                athRebasePeakEpochMs = rebaseMarkerToPersist,
             )
         } catch (e: CancellationException) {
             throw e

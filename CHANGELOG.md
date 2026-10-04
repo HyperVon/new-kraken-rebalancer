@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Operator-triggered ATH re-base** (`REBALANCER_REBASE_ATH=true`): re-anchors ATH on the
+  witnessed portfolio peak — the highest total a retained snapshot recorded — and consumes the
+  owner-capital flows at or before that instant without rescaling them, because that capital is
+  already inside the peak's value. This repairs an account whose ATH was inherited from before
+  snapshot retention: such a baseline cannot be replayed against the retained bases, and
+  compounding a stale 19.6k ATH against a ~2.6k basis inflated it 4.8x per deposit toward an
+  impossible value.
+
+  The repair consumes the existing classification rather than re-classifying raw rows: only rows
+  `LedgerFlowClassifier` already decided to be plain owner capital (card groups normalized
+  upstream) are absorbed, so it cannot retire an ordering or card guard. No ordering decision is
+  needed because the peak is strictly later than every consumed flow. ATH never moves down —
+  it is `max(stored, peak, live value)` — and the repair refuses in simulation mode or when the
+  peak is not covered by confirmed ledger history, so an emulator-seeded or uncorroborated total
+  can never become the account's high. A durable `ath_rebase_peak_epoch_ms` marker is written in
+  the same transaction as the ATH, so the repair is applied at most once and survives a crash.
+  ATH is otherwise unchanged: it remains the peak *net of owner capital*, so a retained snapshot
+  total is never an ATH floor on its own.
+
 ## [6.17.96] - 2026-10-04
 
 ### Fixed

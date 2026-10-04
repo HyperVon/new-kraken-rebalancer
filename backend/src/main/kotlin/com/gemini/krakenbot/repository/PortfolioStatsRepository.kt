@@ -37,6 +37,13 @@ interface PortfolioStatsRepository {
         stats: PortfolioStats,
         appliedFlows: List<AppliedAthFlow>,
         flowWatermarkSec: Long?,
+        /**
+         * Durable marker for a completed operator ATH re-base, written in the same transaction as the
+         * ATH itself. Writing it separately would leave a crash window where the re-based ATH is
+         * durable but the marker is not, and the request could then be re-evaluated against a
+         * different peak. Null when no re-base happened.
+         */
+        athRebasePeakEpochMs: Long? = null,
     )
 
     /**

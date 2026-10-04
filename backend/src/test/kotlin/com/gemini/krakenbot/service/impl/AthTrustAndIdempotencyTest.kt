@@ -33,6 +33,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.comparables.shouldBeGreaterThan
+import io.kotest.matchers.comparables.shouldNotBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
@@ -89,6 +90,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
     private fun analyzer(
         now: Instant,
         resolver: FundingProvenanceResolver = testProvenanceResolver,
+        athRebaseRequested: Boolean = false,
     ): PortfolioAnalyzer = object : PortfolioAnalyzer by PortfolioAnalyzerImpl(
         krakenService = krakenService,
         configService = configService,
@@ -96,6 +98,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
         nowProvider = { now },
         ledgerRepository = ledgerRepository,
         tradeRepository = tradeRepository,
+        athRebaseRequested = athRebaseRequested,
     ) {
         override suspend fun updateAthAndCalculateDrawdown(
             totalPortfolioValueUSD: BigDecimal,
@@ -108,6 +111,38 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             resolver,
         )
     }
+
+    private fun peakSnapshot(at: Instant, total: String) = PortfolioSnapshot(
+        timestamp = at,
+        totalValueUSD = BigDecimal(total),
+        assets = mapOf(
+            Asset.USD to TestFixtures.assetSnapshot(
+                symbol = Asset.USD,
+                balance = BigDecimal(total),
+                price = BigDecimal.ONE,
+                valueUSD = BigDecimal(total),
+                targetPercent = BigDecimal("100.0"),
+            ),
+        ),
+        actions = emptyList(),
+        drawdownPercent = BigDecimal.ZERO,
+        fiatDeploymentPercent = BigDecimal.ZERO,
+        effectiveUsdTargetPercent = BigDecimal("100.0"),
+        balancesObservedAt = at,
+    )
+
+    private fun plainDeposit(id: String, at: Instant, amount: String) = LedgerEvent(
+        ledgerId = id,
+        refid = "FT-$id",
+        time = at,
+        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+        asset = "USD",
+        amount = BigDecimal(amount),
+        fee = BigDecimal.ZERO,
+        balance = BigDecimal(amount),
+        hasAuthoritativeBalance = true,
+        hasAuthoritativeFee = true,
+    )
 
     private fun deposit(id: String, time: Instant, amountUsd: String, refid: String? = null) = LedgerEvent(
         ledgerId = id,
@@ -3929,6 +3964,243 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                         statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal(expectedAth))
                     }
                 }
+            }
+        }
+
+        "an operator-requested ATH re-base anchors on the witnessed peak and never rescales absorbed capital" {
+            runTest {
+                // Production shape: ATH 19638.45 inherited from before snapshot retention while the
+                // retained history opens at 1490.81. A 10000 deposit against a ~2.6k basis used to
+                // multiply ATH by 4.8x and compound toward an impossible value.
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t70, "1490.81"))
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "21854.06"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("rebase-deposit", t75, "10000")))
+
+                val result = analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("21648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                // Exactly the witnessed peak, not a scaled multiple of it.
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("21854.06"))
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe
+                    t85.toEpochMilli().toString()
+                // The absorbed capital is consumed, never replayed.
+                statsRepository.getAppliedAthFlowIds(listOf("rebase-deposit")) shouldBe setOf("rebase-deposit")
+            }
+        }
+
+        "an ATH re-base never lowers a correct ATH below the stored value" {
+            runTest {
+                // The retained peak (12000) is far below the ATH inherited from before retention
+                // (30000). Re-basing must not destroy the real high, and the live value is a floor.
+                statsRepository.save(PortfolioStats(BigDecimal("30000.00"), BigDecimal("0.05")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "12000.00"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("lower-deposit", t75, "1000")))
+
+                analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("30000.00"))
+            }
+        }
+
+        "an ATH re-base applies at most once even when the request stays set" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "21854.06"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("once-deposit", t75, "10000")))
+
+                repeat(3) {
+                    analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("21648.29"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                        balancesObservedAt = t90,
+                    )
+                }
+
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("21854.06"))
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe
+                    t85.toEpochMilli().toString()
+            }
+        }
+
+        "an ATH re-base does nothing when no owner capital predates the witnessed peak" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t70, "12000.00"))
+                // The only flow lands after the peak, so the peak already excludes it and there is
+                // nothing to re-anchor: the repair must leave ordinary scaling in charge.
+                ledgerRepository.saveLedgers(listOf(plainDeposit("post-peak-deposit", t85, "500")))
+
+                analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("21648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe null
+            }
+        }
+
+        "an ATH re-base does not re-fire for a backfilled pre-peak flow after a withdrawal" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t70, "1490.81"))
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "21854.06"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("once-deposit", t75, "10000")))
+
+                analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("21648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+                val afterRebase = statsRepository.load().allTimeHigh
+                afterRebase.shouldBeEqualComparingTo(BigDecimal("21854.06"))
+
+                // A withdrawal after the peak scales ATH below it, and a late ledger row dated before
+                // the peak arrives. Without the recorded marker this pair looks exactly like the
+                // original defect and would re-anchor, silently undoing the withdrawal scaling.
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "backfilled-deposit",
+                            refid = "FT-backfilled-deposit",
+                            time = t88,
+                            type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                            asset = "USD",
+                            amount = BigDecimal("-5000"),
+                            fee = BigDecimal.ZERO,
+                            balance = BigDecimal("0"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                    ),
+                )
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t75.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t95.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(listOf(plainDeposit("late-pre-peak-deposit", t75.plusSeconds(1), "100")))
+
+                analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("16648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                // Still strictly below the peak: the marker kept the repair from re-firing.
+                statsRepository.load().allTimeHigh
+                    .shouldNotBeEqualComparingTo(afterRebase)
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe
+                    t85.toEpochMilli().toString()
+            }
+        }
+
+        "an ATH re-base is refused in simulation mode" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "99999.00"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("sim-deposit", t75, "10000")))
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true),
+                )
+
+                analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("21648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                // An emulator-seeded total must never become the account's all-time high.
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe null
+                statsRepository.load().allTimeHigh
+                    .shouldNotBeEqualComparingTo(BigDecimal("99999.00"))
+            }
+        }
+
+        "without an operator request ATH is never re-anchored on a witnessed peak" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "21854.06"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("unrequested-deposit", t75, "10000")))
+
+                analyzer(t90).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("21648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                // No request means ordinary flow scaling, never a jump to the snapshot total.
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe null
+                statsRepository.load().allTimeHigh
+                    .shouldNotBeEqualComparingTo(BigDecimal("21854.06"))
             }
         }
 

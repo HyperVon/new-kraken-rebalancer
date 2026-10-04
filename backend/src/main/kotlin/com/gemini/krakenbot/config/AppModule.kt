@@ -72,6 +72,14 @@ import org.koin.dsl.module
 // Koin qualifier shared with the application entrypoint, which resolves the same scope by name.
 const val APPLICATION_SCOPE_QUALIFIER = "applicationScope"
 
+/**
+ * One-shot operator switch for the ATH re-base. Set `REBALANCER_REBASE_ATH=true` to re-anchor ATH
+ * on the witnessed portfolio peak exactly once; the repair records its own durable marker in the
+ * same transaction as the ATH, so it never repeats even if the variable stays set. Leave it unset
+ * in normal operation.
+ */
+const val ATH_REBASE_ENV = "REBALANCER_REBASE_ATH"
+
 val coreModule =
     module {
         single<HttpClient> {
@@ -229,6 +237,8 @@ val coreModule =
                 ledgerRepository = get(),
                 tradeRepository = get(),
                 defaultProvenanceResolver = get(),
+                // One-shot, operator-driven repair. See PortfolioAnalyzerImpl.updateAthAndCalculateDrawdown.
+                athRebaseRequested = System.getenv(ATH_REBASE_ENV).equals("true", ignoreCase = true),
             )
         }
         single<OrderExecutor> {

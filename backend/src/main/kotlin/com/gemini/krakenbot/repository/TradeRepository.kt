@@ -69,6 +69,15 @@ interface TradeRepository {
     /** Loads the newest snapshot strictly before [timestamp], or null if none exists. */
     suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot?
 
+    /**
+     * Loads the retained snapshot with the highest total USD value, or null when none is retained.
+     *
+     * This is the witnessed portfolio peak: a total the balance feed actually recorded at a known
+     * instant. Only an operator-requested ATH re-base needs it, because ATH inherited from before
+     * snapshot retention cannot be replayed against the retained bases.
+     */
+    suspend fun getHighestValuedSnapshot(): PortfolioSnapshot?
+
     suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
 
     /** Returns true when any trade row exists, including failed and dry-run history. */
