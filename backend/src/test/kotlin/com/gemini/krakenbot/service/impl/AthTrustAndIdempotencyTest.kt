@@ -4000,6 +4000,106 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "asymmetric post-flow conversion exercises the after-branch boundary formula" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t71, BigDecimal("100000.00")))
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "asym-deposit", refid = "FT-asym-deposit", time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT, asset = "USD",
+                            amount = BigDecimal("1000.00"), balance = BigDecimal("101000.00"),
+                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "asym-conversion", refid = "CONV-ASYM", time = t80.plusMillis(300),
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION, asset = "USD",
+                            amount = BigDecimal("-600.00"), balance = BigDecimal("100400.00"),
+                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "asym-conversion-usdg", refid = "CONV-ASYM", time = t80.plusMillis(300),
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION, asset = "USDG",
+                            amount = BigDecimal("600.00"), balance = BigDecimal("600.00"),
+                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                        ),
+                    ),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    t0.minusSeconds(1800).epochSecond to BigDecimal("50000.00"),
+                )
+                val result = analyzer(t90).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100400.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+                // Only the after-branch formula (member.balance - netDelta - currentDelta)
+                // yields the predecessor boundary 100000.00; a hardcoded before-branch would
+                // produce 100400.00 and defer. ATH = 100000 * (1 + 1000/100000).
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("101000.00"))
+            }
+        }
+
+        "shared-refid non-conversion rows cannot borrow a cross-asset balance boundary" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t90.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t71, BigDecimal("100000.00")))
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "shared-ref-usd", refid = "SHARED-REFID", time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING, asset = "USD",
+                            amount = BigDecimal("-1000.00"), balance = BigDecimal("99000.00"),
+                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "shared-ref-usdg", refid = "SHARED-REFID", time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING, asset = "USDG",
+                            amount = BigDecimal("1000.00"), balance = BigDecimal("1000.00"),
+                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "shared-ref-deposit", refid = "FT-shared-ref-deposit", time = t80,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT, asset = "USD",
+                            amount = BigDecimal("1000.00"), balance = BigDecimal("100000.00"),
+                            hasAuthoritativeBalance = true, hasAuthoritativeFee = true,
+                        ),
+                    ),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    t0.minusSeconds(1800).epochSecond to BigDecimal("50000.00"),
+                )
+                val result = analyzer(t90).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+                // isCompleteConversionGroup rejects non-conversion rows, so the group cannot
+                // use the USDG leg's boundary; deleting that gate would let the pair through.
+                result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                    AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            }
+        }
+
         "pre-flow replay uses the observation boundary and replays later rows" {
             runTest {
                 val boundaryReward = LedgerEvent(

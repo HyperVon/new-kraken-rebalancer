@@ -929,7 +929,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = flowTime,
                 )
 
-                result shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                (result as AthUpdateResult.Trusted).drawdownPct
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify(exactly = 1) {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match { it.allTimeHigh.compareTo(BigDecimal("1100.00")) == 0 },

@@ -1295,8 +1295,6 @@ class TradeHistoryQueryService(
                 log.debug("Comparison publication invalidated; reason=COVERAGE_HORIZON_REGRESSED")
                 return PublishOutcome.Invalidated
             }
-            val coverageAdvanced = currentLedgerHorizon > capturedLedgerHorizon ||
-                currentTradeHorizon > capturedTradeHorizon
 
             val currentCoverage = latestConfirmedEconomicCoverage(
                 requiredStart = captured.requiredCoverageStart,
@@ -1316,14 +1314,17 @@ class TradeHistoryQueryService(
             }
 
             val currentRevision = repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION).orEmpty()
-            if (coverageAdvanced || currentRevision != captured.capturedRevision) {
-                // Coverage growth is not a content revision. Rehash the frozen window even when
-                // its revision token stayed unchanged; never expand the captured event horizon.
+            if (currentRevision != captured.capturedRevision || currentLedgerHorizon != capturedLedgerHorizon ||
+                currentTradeHorizon != capturedTradeHorizon
+            ) {
+                // Rehash the frozen window whenever anything observable moved, with a fresh
+                // digest so a stale memo cannot mask a changed consumed row. Never expand the
+                // captured event horizon.
                 val currentDigest = consumedEvidenceDigest(
                     captured.inceptionResolution?.inceptionTime,
                     captured.eventUpperBound.toEpochMilli(),
                     currentRevision,
-                    forceRefresh = coverageAdvanced,
+                    forceRefresh = true,
                 )
                 if (currentDigest != captured.consumedEvidenceDigest) {
                     log.debug("Comparison publication invalidated; reason=CONSUMED_EVIDENCE_CHANGED")
@@ -1624,15 +1625,16 @@ class TradeHistoryQueryService(
                     "${allocation.symbol.value.uppercase()}:${allocation.targetPercent}"
                 }
                 .orEmpty()
+            // Coverage watermarks deliberately stay OUT of the fingerprint: the
+            // consumed-evidence digest already binds the frozen window, and raw
+            // horizon tokens would orphan every published row on each sync write.
             val reconstructionRevision = listOf(
                 repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
                 repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
                 ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
-                ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC),
                 repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
-                repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
             ).joinToString(separator = "\u0000")
             val material = buildString {
                 append(COMPARISON_CACHE_VERSION).append('\u0000')
