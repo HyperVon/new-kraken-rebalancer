@@ -218,7 +218,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
 
     override suspend fun getAllSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
-        database.readTransactionIO {
+        database.readTransactionIO("getAllSnapshotsInRange") {
             val snapshotRows =
                 PortfolioSnapshotTable
                     .selectAll()
@@ -235,17 +235,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 .flatMap(::buildSnapshotsFromRows)
         }
 
-    override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? = database.readTransactionIO {
-        val rows =
-            PortfolioSnapshotTable
-                .selectAll()
-                .where { PortfolioSnapshotTable.timestamp less timestamp.toEpochMilli() }
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
-                .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
-                .limit(1)
-                .toList()
-        buildSnapshotsFromRows(rows).firstOrNull()
-    }
+    override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? =
+        database.readTransactionIO("getSnapshotBefore") {
+            val rows =
+                PortfolioSnapshotTable
+                    .selectAll()
+                    .where { PortfolioSnapshotTable.timestamp less timestamp.toEpochMilli() }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
+                    .limit(1)
+                    .toList()
+            buildSnapshotsFromRows(rows).firstOrNull()
+        }
 
     override suspend fun getSnapshotId(timestamp: Instant, ordinal: Int): Int? = database.readTransactionIO {
         if (ordinal < 0 || ordinal == Int.MAX_VALUE) return@readTransactionIO null
@@ -429,15 +430,16 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     private fun splitList(value: String?): List<String> =
         value?.takeIf { it.isNotBlank() }?.split(DELIMITER)?.map(String::trim).orEmpty()
 
-    override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
-        TradeTable
-            .selectAll()
-            .where {
-                (TradeTable.timestamp greaterEq from.toEpochMilli()) and
-                    (TradeTable.timestamp lessEq to.toEpochMilli())
-            }.orderBy(TradeTable.timestamp, SortOrder.DESC)
-            .map(TradeTable::toModel)
-    }
+    override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> =
+        database.readTransactionIO("getTradesInRange") {
+            TradeTable
+                .selectAll()
+                .where {
+                    (TradeTable.timestamp greaterEq from.toEpochMilli()) and
+                        (TradeTable.timestamp lessEq to.toEpochMilli())
+                }.orderBy(TradeTable.timestamp, SortOrder.DESC)
+                .map(TradeTable::toModel)
+        }
 
     override suspend fun getTradeSummaryStats(): TradeSummaryStats = getTradeSummaryStats(Instant.EPOCH, Instant.now())
 

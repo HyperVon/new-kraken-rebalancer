@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.100] - 2026-10-05
+
+### Added
+
+- **Database call timing**: every repository transaction records its elapsed
+  time — operations over 500 ms log at WARN so slow queries surface at INFO
+  without a debug override; the rest trace at DEBUG on the
+  `com.gemini.krakenbot.db.timing` logger. Comparison hot-path reads carry
+  operation labels, and the comparison evidence digest reports load vs hash
+  time so SQLite I/O can be separated from hashing CPU during the
+  `COMPARISON_EVALUATING` stall investigation. `logback.xml` documents the
+  debug override for the timing and comparison query loggers.
+
 ## [6.17.99] - 2026-10-05
 
 ### Fixed

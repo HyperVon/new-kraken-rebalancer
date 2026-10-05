@@ -456,6 +456,7 @@ class TradeHistoryQueryService(
         /** Covers frontend polling interval while keeping completed comparison results short-lived. */
         private const val COMPARISON_RESULT_TTL_NANOS = 30_000_000_000L
         private const val COMPARISON_RESULT_TTL_MILLIS = 30_000L
+        private const val NANOS_PER_MILLI = 1_000_000L
 
         /**
          * Granularity of the `from` half of [comparisonFlightKey]. One hour is coarse enough
@@ -1484,9 +1485,14 @@ class TradeHistoryQueryService(
                 }
             }
 
+            val computeStartedNanos = System.nanoTime()
             val calculated = withContext(computationDispatcher) {
                 computeComparisonOutsideLock(captured)
             }
+            log.debug(
+                "Comparison computation complete; elapsedMs={}",
+                (System.nanoTime() - computeStartedNanos) / NANOS_PER_MILLI,
+            )
 
             val publishResult = historyEvidenceCoordinator.withLock("history-comparison-publish") {
                 validateAndPublishComparison(captured, calculated)
@@ -1688,11 +1694,14 @@ class TradeHistoryQueryService(
      */
     private suspend fun consumedEvidenceDigest(inceptionTime: Instant?, horizonEpochMillis: Long): String {
         val effectiveInception = inceptionTime ?: Instant.EPOCH
+        val loadsStartedNanos = System.nanoTime()
         val snapshots = loadAllSnapshots(effectiveInception)
         val predecessorSnapshot = repository.getSnapshotBefore(effectiveInception)
         val trades = repository.getTradesInRange(Instant.EPOCH, Instant.ofEpochMilli(horizonEpochMillis))
         val ledgers =
             ledgerRepository.getLedgersInRange(Instant.EPOCH, Instant.ofEpochMilli(horizonEpochMillis))
+        val loadsElapsedMillis = (System.nanoTime() - loadsStartedNanos) / NANOS_PER_MILLI
+        val hashStartedNanos = System.nanoTime()
         val material = buildString {
             append(COMPARISON_CACHE_VERSION).append('\u0000')
             append(effectiveInception).append('\u0000')
@@ -1715,6 +1724,14 @@ class TradeHistoryQueryService(
             for (event in sortedLedgers) appendLedgerDigest(event)
         }
         val digest = sha256Hex(material)
+        log.debug(
+            "Comparison evidence digest; loadMs={} hashMs={} snapshots={} trades={} ledgers={}",
+            loadsElapsedMillis,
+            (System.nanoTime() - hashStartedNanos) / NANOS_PER_MILLI,
+            snapshots.size,
+            trades.size,
+            ledgers.size,
+        )
         return digest
     }
 

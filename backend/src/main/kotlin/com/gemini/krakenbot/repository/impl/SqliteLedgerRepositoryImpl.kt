@@ -39,16 +39,17 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
             inserted
         }
 
-    override suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> = database.readTransactionIO {
-        LedgerTable
-            .selectAll()
-            .where {
-                (LedgerTable.timestamp greaterEq from.toEpochMilli()) and
-                    (LedgerTable.timestamp lessEq to.toEpochMilli())
-            }.orderBy(LedgerTable.timestamp, SortOrder.DESC)
-            .map(LedgerTable::toModel)
-            .let(LedgerEventAliasCanonicalizer::collapseExactSolAliasMirrors)
-    }
+    override suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> =
+        database.readTransactionIO("getLedgersInRange") {
+            LedgerTable
+                .selectAll()
+                .where {
+                    (LedgerTable.timestamp greaterEq from.toEpochMilli()) and
+                        (LedgerTable.timestamp lessEq to.toEpochMilli())
+                }.orderBy(LedgerTable.timestamp, SortOrder.DESC)
+                .map(LedgerTable::toModel)
+                .let(LedgerEventAliasCanonicalizer::collapseExactSolAliasMirrors)
+        }
 
     override suspend fun getLedgersByRefIds(refIds: Collection<String>): List<LedgerEvent> {
         if (refIds.isEmpty()) return emptyList()

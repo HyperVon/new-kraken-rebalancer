@@ -14,7 +14,22 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.io.IOException
+
+private val dbTimingLog = LoggerFactory.getLogger("com.gemini.krakenbot.db.timing")
+
+/** Single reads above this are worth surfacing at INFO without debug logging enabled. */
+const val SLOW_DB_CALL_MILLIS = 500L
+
+fun logDbOperationTiming(operation: String, startedNanos: Long) {
+    val elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L
+    if (elapsedMillis >= SLOW_DB_CALL_MILLIS) {
+        dbTimingLog.warn("Slow database operation; operation={} elapsedMs={}", operation, elapsedMillis)
+    } else {
+        dbTimingLog.debug("Database operation; operation={} elapsedMs={}", operation, elapsedMillis)
+    }
+}
 
 inline fun <T> Database.safeTransaction(
     log: Logger,
@@ -42,15 +57,29 @@ suspend fun <T> Database.safeTransactionIO(
     logMessage: String,
     exceptionMessage: String = "Database write failed",
     block: JdbcTransaction.() -> T,
-): T = withContext(Dispatchers.IO) {
-    safeTransaction(log, logMessage, exceptionMessage, block)
+): T {
+    val startedNanos = System.nanoTime()
+    try {
+        return withContext(Dispatchers.IO) {
+            safeTransaction(log, logMessage, exceptionMessage, block)
+        }
+    } finally {
+        logDbOperationTiming(logMessage, startedNanos)
+    }
 }
 
-suspend fun <T> Database.readTransactionIO(block: JdbcTransaction.() -> T): T = withContext(Dispatchers.IO) {
-    transaction(this@readTransactionIO) { block() }
+suspend fun <T> Database.readTransactionIO(operation: String = "read", block: JdbcTransaction.() -> T): T {
+    val startedNanos = System.nanoTime()
+    try {
+        return withContext(Dispatchers.IO) {
+            transaction(this@readTransactionIO) { block() }
+        }
+    } finally {
+        logDbOperationTiming(operation, startedNanos)
+    }
 }
 
-suspend fun Database.readSyncMetadata(key: String): String? = readTransactionIO {
+suspend fun Database.readSyncMetadata(key: String): String? = readTransactionIO("readSyncMetadata") {
     readSyncMetadataInTransaction(key)
 }
 
