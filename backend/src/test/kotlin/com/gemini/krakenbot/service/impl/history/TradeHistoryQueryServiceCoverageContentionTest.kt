@@ -198,6 +198,26 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
             }
         }
 
+        "forward reconstruction at the exact frozen horizon publishes unchanged evidence once" {
+            runTest {
+                for (withDurableCache in listOf(false, true)) {
+                    val fixture = Fixture(withDurableCache)
+                    fixture.seedReconstruction()
+                    val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                    fixture.tradeMetadata[throughKey] = now.plusSeconds(5400).epochSecond.toString()
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
+                        fixture.tradeMetadata[throughKey] = now.plusSeconds(7200).epochSecond.toString()
+                    }
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.map { it.timestamp } shouldBe listOf(now, now.plusSeconds(3600))
+                    fixture.computations shouldBe 1
+                    fixture.digestQueryHorizons.last() shouldBe now.plusSeconds(5400).plusMillis(999)
+                    fixture.cache?.let { coVerify(exactly = 1) { it.save(any(), any(), any(), any(), any(), any()) } }
+                }
+            }
+        }
+
         "forward reconstruction crossing the frozen horizon invalidates unchanged captured rows" {
             runTest {
                 for (withDurableCache in listOf(false, true)) {

@@ -18,8 +18,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changed markers, reconstruction-version changes, and consumed-row corrections.
 - **History comparison refresh polling**: the browser now retries both
   `COMPARISON_EVALUATING` and `EXTERNAL_EVIDENCE_REFRESHING` until the comparison
-  settles, retaining the range-generation guards. The bounded retry budget is
-  ten minutes instead of five to accommodate cold historical-price discovery.
+  settles, retaining the range-generation guards. The bounded scheduled retry
+  budget is ten minutes instead of five (plus request latency) to accommodate
+  cold historical-price discovery.
   A temporary market-evidence refresh no longer leaves the comparison stuck
   without an automatic follow-up request.
 - **PowerShell ATH repair instructions**: documented `$env:REBALANCER_REBASE_ATH = 'true'`

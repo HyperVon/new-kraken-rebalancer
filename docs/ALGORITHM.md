@@ -262,16 +262,13 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      apply exactly once.
    - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
      confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
-      cannot be skipped if a rebalance cycle runs before ledger polling catches up. In the current cycle order,
-      ledger sync stamps the coverage watermark before the balance observation, so the new observation can be
-      later than the confirmed horizon; in that case the whole ATH update defers, preserving the last trusted
-      drawdown and forcing deployment to zero. When coverage does reach beyond the observation, the
-      reconciliation horizon is the earlier of the two; rows beyond the observation wait for the next cycle
-      because they are not in the observed total yet.
-     When balances were observed
-     after ledger coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce
-     a drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
-     deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
+      cannot be skipped if a rebalance cycle runs before ledger polling catches up. Within a cycle, ATH captures
+      balances before attempting ledger sync. If that sync is throttled after a recent run, its coverage watermark
+      can predate the new observation; the whole ATH update then defers, preserving the last trusted drawdown and
+      forcing deployment to zero until a successful sync advances coverage. When coverage does reach beyond the
+      observation, the reconciliation horizon is the earlier of the two; rows beyond the observation wait for the
+      next cycle because they are not in the observed total yet. Unknown or missing ledger coverage with a dated
+      observation defers the same way
      (a total that may contain unseen owner capital must never ratchet ATH); a malformed flow watermark
      also defers with no state advanced, leaving the key for the operator to repair. Which rows still need a
      decision is determined by identity, not timestamp: every retained ledger row up to the reconciliation
@@ -1138,7 +1135,8 @@ calculation actually consumed is unchanged.
 
 - **Browser retry lifecycle.** `COMPARISON_EVALUATING` and
   `EXTERNAL_EVIDENCE_REFRESHING` are transient states, not terminal failures.
-  The browser retries every five seconds for up to 120 attempts (ten minutes),
+  The browser schedules a five-second retry after each response for up to 120
+  attempts (ten minutes of scheduled wait, plus request latency),
   then shows the comparison-specific error state without hiding other charts.
   The longer bound accommodates cold historical-price discovery. A range
   change starts a new request generation; obsolete responses and callbacks
