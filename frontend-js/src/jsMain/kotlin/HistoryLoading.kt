@@ -349,7 +349,9 @@ private fun loadComparisonWithPolling(requestGeneration: Long, range: String, po
         onError = { showComparisonFetchError() },
     ) { raw ->
         val comparison = parseRebalancerComparison(raw)
-        if (comparison.unavailableReason == ComparisonUnavailableReason.COMPARISON_EVALUATING.name) {
+        if (comparison.unavailableReason == ComparisonUnavailableReason.COMPARISON_EVALUATING.name ||
+            comparison.unavailableReason == ComparisonUnavailableReason.EXTERNAL_EVIDENCE_REFRESHING.name
+        ) {
             if (pollAttempt >= PrecisionConstants.MAX_COMPARISON_POLL_ATTEMPTS) {
                 showComparisonFetchError()
                 return@loadGroup

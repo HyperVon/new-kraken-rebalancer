@@ -123,6 +123,20 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 (ledgerMetadata.getValue(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC).toLong() + 60).toString()
         }
 
+        fun seedReconstruction() {
+            snapshots.replaceAll { it.copy(balancesObservedAt = it.timestamp.minusMillis(1)) }
+            tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION] =
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+            tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION] =
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION] =
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC] =
+                now.minusSeconds(120).epochSecond.toString()
+            tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC] =
+                now.plusSeconds(7200).epochSecond.toString()
+        }
+
         suspend fun compare(dispatcher: CoroutineDispatcher, beforeCompute: (Int) -> Unit): RebalancerComparison {
             val kraken = mockk<KrakenService>(relaxed = true)
             coEvery { kraken.getAssetMetadata() } returns listOf(
@@ -163,6 +177,190 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
     }
 
     init {
+        "forward reconstruction progress publishes frozen evidence once without moving coverage" {
+            runTest {
+                for (withDurableCache in listOf(false, true)) {
+                    val fixture = Fixture(withDurableCache)
+                    fixture.seedReconstruction()
+                    val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
+                        fixture.tradeMetadata[throughKey] =
+                            (fixture.tradeMetadata.getValue(throughKey).toLong() + 10_800).toString()
+                    }
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.unavailableReason shouldBe null
+                    result.points.map { it.timestamp } shouldBe listOf(now, now.plusSeconds(3600))
+                    fixture.computations shouldBe 1
+                    fixture.digestQueryHorizons.last() shouldBe now.plusSeconds(5400).plusMillis(999)
+                    fixture.cache?.let { coVerify(exactly = 1) { it.save(any(), any(), any(), any(), any(), any()) } }
+                }
+            }
+        }
+
+        "forward reconstruction crossing the frozen horizon invalidates unchanged captured rows" {
+            runTest {
+                for (withDurableCache in listOf(false, true)) {
+                    val fixture = Fixture(withDurableCache)
+                    fixture.seedReconstruction()
+                    val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                    fixture.tradeMetadata[throughKey] = now.plusSeconds(5399).epochSecond.toString()
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
+                        if (it == 1) fixture.tradeMetadata[throughKey] = now.plusSeconds(7200).epochSecond.toString()
+                    }
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.map { it.timestamp } shouldBe listOf(now, now.plusSeconds(3600))
+                    fixture.computations shouldBe 2
+                    fixture.cache?.let { coVerify(exactly = 1) { it.save(any(), any(), any(), any(), any(), any()) } }
+                }
+            }
+        }
+
+        "forward reconstruction progress cannot conceal a corrected consumed row" {
+            runTest {
+                for (withDurableCache in listOf(false, true)) {
+                    val fixture = Fixture(withDurableCache)
+                    fixture.seedReconstruction()
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
+                        fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC] =
+                            now.plusSeconds(10_800L * it).epochSecond.toString()
+                        if (it == 1) fixture.snapshots[1] = snapshot(now.plusSeconds(3600), btcPrice = "51000.00")
+                    }
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    fixture.computations shouldBe 2
+                    result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("101000.00"))
+                    fixture.cache?.let { coVerify(exactly = 1) { it.save(any(), any(), any(), any(), any(), any()) } }
+                }
+            }
+        }
+
+        "changed reconstruction progress rejects regressions and nonnumeric transitions before publication" {
+            runTest {
+                val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                val initialThrough = now.plusSeconds(7200).epochSecond.toString()
+                val forwardThrough = now.plusSeconds(10_800).epochSecond.toString()
+                val transitions = listOf(
+                    initialThrough to now.plusSeconds(7140).epochSecond.toString(),
+                    initialThrough to null,
+                    initialThrough to "not-a-timestamp",
+                    null to forwardThrough,
+                    "not-a-timestamp" to forwardThrough,
+                )
+                for ((initial, replacement) in transitions) {
+                    val fixture = Fixture(withDurableCache = true)
+                    fixture.seedReconstruction()
+                    if (initial == null) {
+                        fixture.tradeMetadata.remove(throughKey)
+                    } else {
+                        fixture.tradeMetadata[throughKey] = initial
+                    }
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
+                        if (it == 1) {
+                            if (replacement == null) {
+                                fixture.tradeMetadata.remove(throughKey)
+                            } else {
+                                fixture.tradeMetadata[throughKey] = replacement
+                            }
+                        }
+                    }
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    fixture.computations shouldBe 2
+                    coVerify(exactly = 1) { fixture.cache!!.save(any(), any(), any(), any(), any(), any()) }
+                }
+            }
+        }
+
+        "durable comparison safely replays after forward reconstruction progress before and during lookup" {
+            runTest {
+                val fixture = Fixture(withDurableCache = true)
+                fixture.seedReconstruction()
+                fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {}
+                val warmed = checkNotNull(fixture.cachedEntry)
+                val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                fixture.tradeMetadata[throughKey] = now.plusSeconds(10_800).epochSecond.toString()
+                coEvery { fixture.cache!!.load(any(), any()) } coAnswers {
+                    fixture.tradeMetadata[throughKey] = now.plusSeconds(21_600).epochSecond.toString()
+                    warmed
+                }
+
+                val result = fixture.request()
+
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                fixture.computations shouldBe 2
+                fixture.digestQueryHorizons.last() shouldBe now.plusSeconds(5400).plusMillis(999)
+                (fixture.cachedEntry!!.inputFingerprint == warmed.inputFingerprint) shouldBe false
+                coVerify(exactly = 2) { fixture.cache!!.save(any(), any(), any(), any(), any(), any()) }
+            }
+        }
+
+        "durable fingerprint rejects regressed removed and malformed reconstruction progress before capture" {
+            runTest {
+                val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                for (replacement in listOf(now.plusSeconds(7140).epochSecond.toString(), null, "not-a-timestamp")) {
+                    val fixture = Fixture(withDurableCache = true)
+                    fixture.seedReconstruction()
+                    fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {}
+                    val warmed = checkNotNull(fixture.cachedEntry)
+                    if (replacement == null) {
+                        fixture.tradeMetadata.remove(throughKey)
+                    } else {
+                        fixture.tradeMetadata[throughKey] = replacement
+                    }
+
+                    val result = fixture.request()
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                    fixture.computations shouldBe 2
+                    (fixture.cachedEntry!!.inputFingerprint == warmed.inputFingerprint) shouldBe false
+                    coVerify(exactly = 2) { fixture.cache!!.save(any(), any(), any(), any(), any(), any()) }
+                }
+            }
+        }
+
+        "durable cache hits reject regressed removed and malformed reconstruction progress during lookup" {
+            runTest {
+                val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                for (replacement in listOf(now.plusSeconds(7140).epochSecond.toString(), null, "not-a-timestamp")) {
+                    val fixture = Fixture(withDurableCache = true)
+                    fixture.seedReconstruction()
+                    fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {}
+                    val warmed = checkNotNull(fixture.cachedEntry)
+                    val stale = warmed.copy(
+                        comparison = warmed.comparison.copy(
+                            points = warmed.comparison.points.map {
+                                it.copy(rebalancerValueUSD = BigDecimal("99999.00"))
+                            },
+                        ),
+                    )
+                    var mutated = false
+                    coEvery { fixture.cache!!.load(any(), any()) } coAnswers {
+                        if (!mutated) {
+                            if (replacement == null) {
+                                fixture.tradeMetadata.remove(throughKey)
+                            } else {
+                                fixture.tradeMetadata[throughKey] = replacement
+                            }
+                            mutated = true
+                            stale
+                        } else {
+                            null
+                        }
+                    }
+
+                    val result = fixture.request()
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                    fixture.computations shouldBe 3
+                }
+            }
+        }
+
         "forward coverage growth publishes unchanged evidence once with a pinned event horizon" {
             runTest {
                 for (withDurableCache in listOf(false, true)) {
@@ -378,21 +576,11 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
         "forward coverage does not excuse a changed reconstruction revision" {
             runTest {
                 val fixture = Fixture()
-                fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION] =
-                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
-                fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION] =
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
-                fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION] =
-                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
-                fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC] =
-                    now.minusSeconds(120).epochSecond.toString()
-                fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC] =
-                    now.minusSeconds(60).epochSecond.toString()
+                fixture.seedReconstruction()
                 val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {
                     fixture.advanceCoverage()
                     if (it == 1) {
-                        fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC] =
-                            now.minusSeconds(30).epochSecond.toString()
+                        fixture.tradeMetadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION] = "corrected-version"
                     }
                 }
 

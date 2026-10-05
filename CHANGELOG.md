@@ -6,7 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.17.99] - 2026-10-05
+
+### Fixed
+
+- **Comparison reconstruction progress**: forward-only advances of the
+  snapshot-reconstruction-through watermark no longer restart a calculation
+  whose captured marker already covers its frozen event horizon. Durable cache
+  identity remains sensitive to changes in reconstruction eligibility. Publication
+  still rehashes the frozen window and rejects regressions, removed or malformed
+  changed markers, reconstruction-version changes, and consumed-row corrections.
+- **History comparison refresh polling**: the browser now retries both
+  `COMPARISON_EVALUATING` and `EXTERNAL_EVIDENCE_REFRESHING` until the comparison
+  settles, retaining the range-generation guards. The bounded retry budget is
+  ten minutes instead of five to accommodate cold historical-price discovery.
+  A temporary market-evidence refresh no longer leaves the comparison stuck
+  without an automatic follow-up request.
+- **PowerShell ATH repair instructions**: documented `$env:REBALANCER_REBASE_ATH = 'true'`
+  separately from Command Prompt's `set` syntax. PowerShell's `set` does not
+  populate the environment variable Java reads. Stale ledger coverage still
+  preserves ATH, drawdown, the flow journal, and the repair marker unchanged.
+
+## [6.17.97] - 2026-10-04
 
 ### Added
 

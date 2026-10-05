@@ -865,7 +865,7 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
 
                 var revisionCounter = 0
                 coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC)
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
                 } answers {
                     (++revisionCounter).toString()
                 }

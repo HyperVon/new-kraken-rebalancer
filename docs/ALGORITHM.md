@@ -262,10 +262,12 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      apply exactly once.
    - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
      confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
-     cannot be skipped if a rebalance cycle runs before ledger polling catches up. The cycle takes its balance
-     observation before the ledger sync that stamps the coverage watermark, so coverage normally confirms the
-     whole observation; the reconciliation horizon is the earlier of the two, and rows between the observation
-     and a wider coverage wait for the next cycle because they are not in the observed total yet.
+      cannot be skipped if a rebalance cycle runs before ledger polling catches up. In the current cycle order,
+      ledger sync stamps the coverage watermark before the balance observation, so the new observation can be
+      later than the confirmed horizon; in that case the whole ATH update defers, preserving the last trusted
+      drawdown and forcing deployment to zero. When coverage does reach beyond the observation, the
+      reconciliation horizon is the earlier of the two; rows beyond the observation wait for the next cycle
+      because they are not in the observed total yet.
      When balances were observed
      after ledger coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce
      a drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
@@ -389,6 +391,45 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    target remains unchanged.
 
 Using these effective targets, the **Ideal Value** for each asset is calculated.
+
+### Operator-Requested ATH Re-base
+
+`REBALANCER_REBASE_ATH=true` opts in to the one-time repair described in the
+changelog. It is not enabled during normal operation. Back up the database
+before requesting it, stop the running app, and keep `dryRun=true` and
+`simulation=false` while verifying the result.
+
+Use the syntax for the shell that launches the app. In **PowerShell**:
+
+```powershell
+$env:REBALANCER_REBASE_ATH = 'true'
+$env:REBALANCER_REBASE_ATH
+.\start.bat
+```
+
+The second command must print `true`. PowerShell's `set` is an alias for
+`Set-Variable`, not CMD's environment-setting command; `set
+REBALANCER_REBASE_ATH=true` does not set the environment variable Java reads.
+
+In **Command Prompt (CMD)** instead:
+
+```bat
+set "REBALANCER_REBASE_ATH=true"
+echo %REBALANCER_REBASE_ATH%
+start.bat
+```
+
+The operator-requested re-base log is evidence that the repair ran; ordinary
+`ATH adjusted for owner-capital flow` messages are not. The repair waits for
+confirmed ledger coverage and persists ATH, flow identities, and its
+`ath_rebase_peak_epoch_ms` marker atomically. `LEDGER_COVERAGE_STALE` still
+defers without changing any of those values. The marker prevents a repeat
+after successful persistence, including after restart.
+
+After verification, stop the app and remove the switch before the next
+normal launch. In PowerShell use
+`Remove-Item Env:REBALANCER_REBASE_ATH -ErrorAction SilentlyContinue`; in CMD
+use `set "REBALANCER_REBASE_ATH="`.
 
 ### 2. Deviation Calculation
 
@@ -1095,6 +1136,13 @@ processes, and restarts reuse the reconciled result instead of replaying history
 correctness-preserving: a cached entry is served only while the evidence the authoritative
 calculation actually consumed is unchanged.
 
+- **Browser retry lifecycle.** `COMPARISON_EVALUATING` and
+  `EXTERNAL_EVIDENCE_REFRESHING` are transient states, not terminal failures.
+  The browser retries every five seconds for up to 120 attempts (ten minutes),
+  then shows the comparison-specific error state without hiding other charts.
+  The longer bound accommodates cold historical-price discovery. A range
+  change starts a new request generation; obsolete responses and callbacks
+  cannot overwrite it, and polling stops when the comparison is unmounted.
 - **Entry validity.** A cache entry is keyed by the exact evaluation window (first/last stable
   evaluation snapshot timestamps) and carries an input fingerprint: SHA-256 over the cache format
   version, the certified stable horizon (`stableThrough`), the consumed-evidence digest,
@@ -1127,7 +1175,13 @@ calculation actually consumed is unchanged.
   and revision metadata are unchanged. Durable-cache lookup also hashes current rows rather
   than reusing a revision-keyed digest memo. Identity and economic inputs are captured in one
   evidence-lock scope, so an old snapshot set cannot be paired with a newer digest.
-  Changed rows inside the frozen window, individual coverage regressions, reconstruction changes,
+  The snapshot-reconstruction-through watermark is also progress, not an exact semantic revision:
+  numeric forward advances do not restart unchanged consumed evidence when the captured marker already
+  covers the frozen event horizon. Progress that can change reconstructed-anchor eligibility requires
+  recapture. Durable fingerprints retain the marker so changes between requests cannot reuse an entry
+  from different reconstruction eligibility.
+  Regressions, removal, or malformed changes still invalidate; reconstruction-version changes remain
+  exact checks. Changed rows inside the frozen window, individual coverage regressions,
   and configuration/inception changes still invalidate publication. A later request can evaluate
   a newly certified window; accepting forward progress never silently expands the in-flight one.
 - **Funding freshness vs durable identity.** Historical settled Kraken deposits, withdrawals, and
