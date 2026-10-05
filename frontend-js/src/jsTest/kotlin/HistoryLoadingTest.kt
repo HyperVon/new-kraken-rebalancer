@@ -392,83 +392,85 @@ class HistoryLoadingTest : StringSpec() {
             }
         }
 
-        "loadAll polls comparison when receiving COMPARISON_EVALUATING until terminal result" {
-            resetHistoryUiState()
-            val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom() +
-                "<div id=\"stat-ath-title\"></div>"
-            document.body!!.appendChild(container)
-            window.asDynamic().Chart = mockChartConstructor()
-
-            val oldSetTimeout = window.asDynamic().setTimeout
-            var timeoutCb: (() -> Unit)? = null
-            var timeoutMs = 0
-            window.asDynamic().setTimeout = { cb: () -> Unit, ms: Int ->
-                timeoutCb = cb
-                timeoutMs = ms
-                101
-            }
-
-            var comparisonFetchCount = 0
-            window.asDynamic().fetch = { url: String ->
-                val response: dynamic = json()
-                response.ok = true
-                response.status = 200
-                if (url.contains("comparison")) {
-                    comparisonFetchCount++
-                    response.json = {
-                        if (comparisonFetchCount == 1) {
-                            Promise.resolve<dynamic>(
-                                rebalancerComparisonToDynamic(mockUnavailableComparison("COMPARISON_EVALUATING")),
-                            )
-                        } else {
-                            Promise.resolve<dynamic>(rebalancerComparisonToDynamic(mockAvailableComparison()))
-                        }
-                    }
-                } else if (url.contains("snapshots")) {
-                    response.json =
-                        { Promise.resolve<dynamic>(arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))) }
-                } else if (url.contains("trades")) {
-                    response.json = { Promise.resolve<dynamic>(arrayOf(tradeRecordToDynamic(mockTradeRecord()))) }
-                } else if (url.contains("rewards")) {
-                    response.json =
-                        {
-                            Promise.resolve<dynamic>(
-                                json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
-                            )
-                        }
-                } else {
-                    response.json = { Promise.resolve<dynamic>(historyStatsToDynamic(mockPortfolioStatsRecord())) }
-                }
-                Promise.resolve<dynamic>(response)
-            }
-            registerHistoryGlobals()
-
-            try {
-                loadAll(TimeRange.ALL.key).await()
-
-                comparisonFetchCount shouldBe 1
-                timeoutMs shouldBe 5000
-                (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
-                    .classList.contains("visible") shouldBe true
-                document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)?.textContent shouldBe
-                    "Loading Rebalancer vs hold benchmark comparison…"
-
-                // Fire the polling callback
-                timeoutCb?.invoke()
-                awaitPromiseQueue()
-
-                comparisonFetchCount shouldBe 2
-                (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
-                    .classList.contains("visible") shouldBe false
-                document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
-                    ?.classList?.contains("hidden") shouldBe false
-            } finally {
-                window.asDynamic().setTimeout = oldSetTimeout
-                if (container.parentElement != null) {
-                    document.body!!.removeChild(container)
-                }
+        for (reason in listOf("COMPARISON_EVALUATING", "EXTERNAL_EVIDENCE_REFRESHING")) {
+            "loadAll polls comparison when receiving $reason until terminal result" {
                 resetHistoryUiState()
+                val container = document.createElement("div")
+                container.innerHTML = TestDomBuilders.historyDom() +
+                    "<div id=\"stat-ath-title\"></div>"
+                document.body!!.appendChild(container)
+                window.asDynamic().Chart = mockChartConstructor()
+
+                val oldSetTimeout = window.asDynamic().setTimeout
+                var timeoutCb: (() -> Unit)? = null
+                var timeoutMs = 0
+                window.asDynamic().setTimeout = { cb: () -> Unit, ms: Int ->
+                    timeoutCb = cb
+                    timeoutMs = ms
+                    101
+                }
+
+                var comparisonFetchCount = 0
+                window.asDynamic().fetch = { url: String ->
+                    val response: dynamic = json()
+                    response.ok = true
+                    response.status = 200
+                    if (url.contains("comparison")) {
+                        comparisonFetchCount++
+                        response.json = {
+                            if (comparisonFetchCount == 1) {
+                                Promise.resolve<dynamic>(
+                                    rebalancerComparisonToDynamic(mockUnavailableComparison(reason)),
+                                )
+                            } else {
+                                Promise.resolve<dynamic>(rebalancerComparisonToDynamic(mockAvailableComparison()))
+                            }
+                        }
+                    } else if (url.contains("snapshots")) {
+                        response.json =
+                            { Promise.resolve<dynamic>(arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))) }
+                    } else if (url.contains("trades")) {
+                        response.json = { Promise.resolve<dynamic>(arrayOf(tradeRecordToDynamic(mockTradeRecord()))) }
+                    } else if (url.contains("rewards")) {
+                        response.json =
+                            {
+                                Promise.resolve<dynamic>(
+                                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
+                                )
+                            }
+                    } else {
+                        response.json = { Promise.resolve<dynamic>(historyStatsToDynamic(mockPortfolioStatsRecord())) }
+                    }
+                    Promise.resolve<dynamic>(response)
+                }
+                registerHistoryGlobals()
+
+                try {
+                    loadAll(TimeRange.ALL.key).await()
+
+                    comparisonFetchCount shouldBe 1
+                    timeoutMs shouldBe 5000
+                    (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
+                        .classList.contains("visible") shouldBe true
+                    document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)?.textContent shouldBe
+                        "Loading Rebalancer vs hold benchmark comparison…"
+
+                    // Fire the polling callback
+                    timeoutCb?.invoke()
+                    awaitPromiseQueue()
+
+                    comparisonFetchCount shouldBe 2
+                    (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
+                        .classList.contains("visible") shouldBe false
+                    document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                        ?.classList?.contains("hidden") shouldBe false
+                } finally {
+                    window.asDynamic().setTimeout = oldSetTimeout
+                    if (container.parentElement != null) {
+                        document.body!!.removeChild(container)
+                    }
+                    resetHistoryUiState()
+                }
             }
         }
 
@@ -523,11 +525,25 @@ class HistoryLoadingTest : StringSpec() {
                 comparisonFetchCount shouldBe 1
 
                 repeat(60) {
-                    timeoutCb?.invoke()
+                    val pending = timeoutCb
+                    timeoutCb = null
+                    pending?.invoke()
                     awaitPromiseQueue()
                 }
 
                 comparisonFetchCount shouldBe 61
+                document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)?.textContent shouldBe
+                    "Loading Rebalancer vs hold benchmark comparison…"
+
+                repeat(60) {
+                    val pending = timeoutCb
+                    timeoutCb = null
+                    pending?.invoke()
+                    awaitPromiseQueue()
+                }
+
+                comparisonFetchCount shouldBe 121
+                timeoutCb shouldBe null
                 (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
                     .classList.contains("visible") shouldBe true
                 document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)?.textContent shouldBe

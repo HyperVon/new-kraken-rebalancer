@@ -496,6 +496,8 @@ class TradeHistoryQueryService(
         val configuredAssetUniverse: Set<String>?,
         val requiredCoverageStart: Instant = Instant.EPOCH,
         val reconstructionRevision: String = "",
+        val reconstructionThroughRaw: String? = null,
+        val reconstructionThrough: Long? = null,
         val ledgerCoverageHorizon: Long? = null,
         val tradeCoverageHorizon: Long? = null,
         val configuredUniverse: String = "",
@@ -1147,12 +1149,14 @@ class TradeHistoryQueryService(
 
         val reconstructionRevision = listOf(
             repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
-            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
         ).joinToString(separator = "\u0000")
+        val reconstructionThroughRaw = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+        )
         val ledgerCoverageHorizon = ledgerRepository.getSyncMetadata(
             SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
         )?.toLongOrNull()
@@ -1193,6 +1197,8 @@ class TradeHistoryQueryService(
             configuredAssetUniverse = configuredAssetUniverse,
             requiredCoverageStart = requiredCoverageStart,
             reconstructionRevision = reconstructionRevision,
+            reconstructionThroughRaw = reconstructionThroughRaw,
+            reconstructionThrough = reconstructionThroughRaw?.toLongOrNull(),
             ledgerCoverageHorizon = ledgerCoverageHorizon,
             tradeCoverageHorizon = tradeCoverageHorizon,
             configuredUniverse = configuredUniverse,
@@ -1256,7 +1262,6 @@ class TradeHistoryQueryService(
 
         val currentReconstructionRevision = listOf(
             repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
-            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
@@ -1265,6 +1270,24 @@ class TradeHistoryQueryService(
         if (currentReconstructionRevision != captured.reconstructionRevision) {
             log.debug("Comparison publication invalidated; reason=RECONSTRUCTION_REVISION_CHANGED")
             return false
+        }
+
+        val currentReconstructionThroughRaw = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+        )
+        if (currentReconstructionThroughRaw != captured.reconstructionThroughRaw) {
+            val currentThrough = currentReconstructionThroughRaw?.toLongOrNull()
+            val capturedThrough = captured.reconstructionThrough
+            if (currentThrough == null || capturedThrough == null || currentThrough < capturedThrough) {
+                log.debug("Comparison publication invalidated; reason=RECONSTRUCTION_THROUGH_REGRESSED_OR_INVALID")
+                return false
+            }
+            // Extending reconstruction into the frozen window can change anchor eligibility
+            // without changing any row. Only an already-covered window can accept progress.
+            if (capturedThrough < captured.eventUpperBound.epochSecond) {
+                log.debug("Comparison publication invalidated; reason=RECONSTRUCTION_THROUGH_RECERTIFIES_WINDOW")
+                return false
+            }
         }
 
         val currentLedgerHorizon = ledgerRepository.getSyncMetadata(
@@ -1293,8 +1316,8 @@ class TradeHistoryQueryService(
             if (!selectionStillValid) return false
         }
 
-        // Validate content, not merely metadata movement. A corrected row must not publish or
-        // serve stale economics even when the revision and coverage markers stayed put.
+        // Forward reconstruction/coverage progress is harmless only while the frozen consumed
+        // rows still match. Rehash even when no revision or progress marker moved.
         val currentDigest = consumedEvidenceDigest(
             captured.inceptionResolution?.inceptionTime,
             captured.eventUpperBound.toEpochMilli(),
@@ -1525,8 +1548,8 @@ class TradeHistoryQueryService(
      * invalidate this comparison. Writes beyond the horizon (a new live snapshot awaiting
      * fills, a deposit not yet synced into coverage) bump the global revision and cost one
      * rehash, but the digest is unchanged, so the cache stays valid. Any change to consumed
-     * evidence — an edit, backfill, deletion, reconciliation, a certified coverage watermark
-     * moving, or a consumed OHLC candle changing — invalidates exactly once. Configuration,
+     * evidence — an edit, backfill, deletion, reconciliation, or a consumed OHLC candle
+     * changing — invalidates exactly once. Coverage progress alone preserves it. Configuration,
      * recovery, and prepared funding identities participate separately because they are not
      * all row writes.
      */
@@ -1612,9 +1635,9 @@ class TradeHistoryQueryService(
                     "${allocation.symbol.value.uppercase()}:${allocation.targetPercent}"
                 }
                 .orEmpty()
-            // Coverage watermarks deliberately stay OUT of the fingerprint: the
-            // consumed-evidence digest already binds the frozen window, and raw
-            // horizon tokens would orphan every published row on each sync write.
+            // Coverage watermarks stay OUT: the digest already binds the frozen window.
+            // Reconstruction-through stays IN because it also controls anchor eligibility;
+            // a fresh capture cannot infer whether it regressed since a durable entry was saved.
             val reconstructionRevision = listOf(
                 repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
                 repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),

@@ -4177,6 +4177,40 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "an operator re-base request preserves all ATH state while balance coverage is stale" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    // Covers the retained peak, but not the later balance observation.
+                    t85.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(peakSnapshot(t70, "1490.81"))
+                tradeRepository.saveSnapshot(peakSnapshot(t85, "21854.06"))
+                ledgerRepository.saveLedgers(listOf(plainDeposit("stale-deposit", t75, "10000")))
+
+                val result = analyzer(t90, athRebaseRequested = true).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("21648.29"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t90,
+                )
+
+                val deferred = result.shouldBeInstanceOf<AthUpdateResult.Deferred>()
+                deferred.reason shouldBe AthTrustFailureReason.LEDGER_COVERAGE_STALE
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("19638.45"))
+                statsRepository.load().lastTrustedDrawdownPct!!
+                    .shouldBeEqualComparingTo(BigDecimal("0.1193"))
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_REBASE_PEAK_EPOCH_MS) shouldBe null
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC) shouldBe
+                    t60.epochSecond.toString()
+                statsRepository.getAppliedAthFlowIds(listOf("stale-deposit")) shouldBe emptySet()
+            }
+        }
+
         "without an operator request ATH is never re-anchored on a witnessed peak" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("19638.45"), BigDecimal("0.1193")))
