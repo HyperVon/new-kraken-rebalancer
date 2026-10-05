@@ -85,6 +85,7 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
             SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "test-scope",
         )
         var computations = 0
+        var monotonicTimeNanos = 0L
         var service: TradeHistoryQueryService? = null
         var cachedEntry: RebalancerComparisonCacheEntry? = null
 
@@ -158,6 +159,7 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 historyEvidenceCoordinator = HistoryEvidenceCoordinator(),
                 historicalOhlcCache = ohlc,
                 computationDispatcher = mutatingDispatcher,
+                monotonicTimeProvider = { monotonicTimeNanos },
                 nowProvider = { now.plusSeconds(10_800) },
             )
             return request()
@@ -314,6 +316,74 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 fixture.digestQueryHorizons.last() shouldBe now.plusSeconds(5400).plusMillis(999)
                 (fixture.cachedEntry!!.inputFingerprint == warmed.inputFingerprint) shouldBe false
                 coVerify(exactly = 2) { fixture.cache!!.save(any(), any(), any(), any(), any(), any()) }
+            }
+        }
+
+        "durable cache hit remains valid for forward progress already beyond its frozen horizon" {
+            runTest {
+                val fixture = Fixture(withDurableCache = true)
+                fixture.seedReconstruction()
+                val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                fixture.tradeMetadata[throughKey] = now.plusSeconds(7200).epochSecond.toString()
+                val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+                fixture.compare(dispatcher) {}
+                val warmed = checkNotNull(fixture.cachedEntry)
+                val warmedComputations = fixture.computations
+
+                // Expire the memory result so the follow-up reaches the durable repository.
+                fixture.monotonicTimeNanos = 30_000_000_001L
+                var loaded = false
+                coEvery { fixture.cache!!.load(any(), any()) } coAnswers {
+                    // The capture fingerprint matches the warmed entry; progress advances only
+                    // after load begins, so this must exercise a genuine durable Hit.
+                    fixture.tradeMetadata[throughKey] = now.plusSeconds(10_800).epochSecond.toString()
+                    loaded = true
+                    warmed
+                }
+
+                val result = fixture.request()
+
+                loaded shouldBe true
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                result.points.map { it.timestamp } shouldBe listOf(now, now.plusSeconds(3600))
+                fixture.computations shouldBe warmedComputations
+                // One miss warms the cache; the second call is the genuine durable Hit.
+                coVerify(exactly = 2) { fixture.cache!!.load(any(), any()) }
+            }
+        }
+
+        "durable cache hit is rejected when progress crosses its frozen horizon during lookup" {
+            runTest {
+                val fixture = Fixture(withDurableCache = true)
+                fixture.seedReconstruction()
+                val throughKey = SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC
+                fixture.tradeMetadata[throughKey] = now.plusSeconds(5399).epochSecond.toString()
+                val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+                fixture.compare(dispatcher) {}
+                val warmed = checkNotNull(fixture.cachedEntry)
+                val warmedComputations = fixture.computations
+                // Make the matching entry distinguishable from any recalculated result.
+                val staleHit = warmed.copy(
+                    comparison = warmed.comparison.copy(
+                        points = warmed.comparison.points.map {
+                            it.copy(rebalancerValueUSD = BigDecimal("99999.00"))
+                        },
+                    ),
+                )
+                // Force the next request past the memory cache so it reaches durable lookup.
+                fixture.monotonicTimeNanos = 30_000_000_001L
+                coEvery { fixture.cache!!.load(any(), any()) } coAnswers {
+                    // Fingerprint matched at capture; only then does progress cross the horizon.
+                    fixture.tradeMetadata[throughKey] = now.plusSeconds(7200).epochSecond.toString()
+                    staleHit
+                }
+
+                val result = fixture.request()
+
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                fixture.computations shouldBe warmedComputations + 2
+                fixture.cachedEntry!!.inputFingerprint shouldNotBe warmed.inputFingerprint
             }
         }
 
