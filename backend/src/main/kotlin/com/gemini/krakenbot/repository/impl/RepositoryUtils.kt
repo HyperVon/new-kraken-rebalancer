@@ -19,7 +19,7 @@ import java.io.IOException
 
 private val dbTimingLog = LoggerFactory.getLogger("com.gemini.krakenbot.db.timing")
 
-/** Single reads above this are worth surfacing at INFO without debug logging enabled. */
+/** Single calls at or above this duration log at WARN so they surface in production INFO logs. */
 const val SLOW_DB_CALL_MILLIS = 500L
 
 fun logDbOperationTiming(operation: String, startedNanos: Long) {
@@ -64,7 +64,7 @@ suspend fun <T> Database.safeTransactionIO(
             safeTransaction(log, logMessage, exceptionMessage, block)
         }
     } finally {
-        logDbOperationTiming(logMessage, startedNanos)
+        logDbOperationTiming(logMessage.removePrefix("Failed to "), startedNanos)
     }
 }
 

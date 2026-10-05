@@ -11,13 +11,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Database call timing**: every repository transaction records its elapsed
-  time — operations over 500 ms log at WARN so slow queries surface at INFO
-  without a debug override; the rest trace at DEBUG on the
+  time — operations of at least 500 ms log at WARN so slow queries surface in
+  production INFO logs without a debug override; the rest trace at DEBUG on the
   `com.gemini.krakenbot.db.timing` logger. Comparison hot-path reads carry
   operation labels, and the comparison evidence digest reports load vs hash
-  time so SQLite I/O can be separated from hashing CPU during the
-  `COMPARISON_EVALUATING` stall investigation. `logback.xml` documents the
-  debug override for the timing and comparison query loggers.
+  time (plus snapshot/trade/ledger counts) while the compute phase reports its
+  own elapsed time, so SQLite I/O can be separated from hashing CPU and
+  calculation during the `COMPARISON_EVALUATING` stall investigation.
+  `logback.xml` documents the debug override for the timing and comparison
+  query loggers.
 
 ## [6.17.100] - 2026-10-05
 
@@ -39,6 +41,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   already resolves `braces` 3.0.3 (transitive via `chokidar`/`micromatch` in
   the build toolchain, not the shipped server). Tracked in
   `.agents/improvement-backlog.md` pending an upstream patch.
+
 ## [6.17.99] - 2026-10-05
 
 ### Fixed

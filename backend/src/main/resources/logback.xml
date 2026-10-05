@@ -4,10 +4,14 @@
          which logs every Exposed SQL statement (hundreds of per-candle UPSERTs per
          OHLC persist). Debug diagnostics stay available via explicit overrides.
          For DB/comparison timing diagnostics, run with -Dlogback.configurationFile
-         pointing at a copy of this file that adds:
+         pointing at a copy of this file that adds the two lines below. The override
+         file replaces this one entirely, so keep the CONSOLE appender and root
+         level in the copy; the query-service class logger enables all its DEBUG
+         (including comparison publication reasons), not only the timing lines.
            <logger name="com.gemini.krakenbot.db.timing" level="DEBUG" />
            <logger name="com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService" level="DEBUG" />
-         Individual DB calls over 500ms already log at WARN without any override. -->
+         Individual DB calls of at least 500 ms already log at WARN without any
+         override. -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
