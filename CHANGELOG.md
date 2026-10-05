@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.100] - 2026-10-05
+
+### Changed
+
+- **Dependency updates**: `com.diffplug.spotless` 8.10.2 → 8.10.3,
+  `org.jetbrains.kotlin-wrappers:kotlin-css-jvm` 2026.9.2 → 2026.9.3,
+  `ch.qos.logback:logback-classic` 1.6.4 → 1.6.5, and `@playwright/mcp`
+  0.0.82 → 0.0.83 (dev tooling). Supersedes Dependabot PRs #390–#393.
+  Stack documentation in `README.md` and `.agents/AGENTS.md` re-synced to the
+  version catalog (Kotlin 2.4.20 stable, KSP 2.3.12, Kotest 6.2.5,
+  Spotless 8.10.3, Gradle 9.8.0).
+
+### Security
+
+- **`braces` CVE-2026-93687 (GHSA-vfj7-8cjw-p6xm, high)**: stack-exhaustion
+  denial of service through deeply nested patterns. Vulnerable range is
+  `<= 3.0.3` and no patched release exists yet; `kotlin-js-store/yarn.lock`
+  already resolves `braces` 3.0.3 (transitive via `chokidar`/`micromatch` in
+  the build toolchain, not the shipped server). Tracked in
+  `.agents/improvement-backlog.md` pending an upstream patch.
+
 ## [6.17.99] - 2026-10-05
 
 ### Fixed

@@ -43,6 +43,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| SEC-BRACES | S | open | deps | `braces` CVE-2026-93687 (GHSA-vfj7-8cjw-p6xm, high): stack-exhaustion DoS via deeply nested patterns | 32 | Issue #394. Vulnerable `<= 3.0.3`; 3.0.3 is latest published and already resolved in `kotlin-js-store/yarn.lock` — no patch available. Transitive via `chokidar`/`micromatch` in the build toolchain only (not shipped server). Re-check when `braces` > 3.0.3 is published |
 | QO-ARCH01 | M | deferred | architecture | Extract `:backend` subproject & KMP alignment | QO-1 | Roadmap: Next |
 | QO-ARCH02 | S/M | deferred | architecture | Decouple simulation seeding & migration from `SnapshotStore` | QO-1 | Roadmap: Now |
 | QO-ARCH03 | M | deferred | architecture | Consolidated KSP entity mapping pipeline | QO-1 | Roadmap: Later |
