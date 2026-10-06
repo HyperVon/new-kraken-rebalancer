@@ -425,6 +425,14 @@ chooses between them; the chart legend names the one actually plotted:
 | **Configuration-matched hold** (default) | Follows the strategy's own major allocation changes, applying one synthetic transition per inferred regime change, and otherwise holds. Isolates the value of routine rebalancing from asset selection. Its allocation history is **inferred** from persistent trading behavior, not retained as proven configuration. |
 | **Fixed-inception hold** (forensic reference) | Freezes the approved inception portfolio and holds it forever. Requestable via `?benchmark=FIXED_INCEPTION_HOLD`. |
 
+Configuration-matched hold checks inferred changes against reconciled historical
+Spot balances, including assets missing from older configured-only snapshots. A
+missing asset row does not mean the wallet held zero. If a high-confidence change
+cannot be established, shown to have settled, or funded from retained evidence,
+the comparison displays a specific unavailable message instead of silently
+skipping that change. These messages describe historical comparison evidence,
+not a live order or a trading cycle waiting to finish.
+
 - **Buy & Hold** starts from the exact recorded comparison anchor across all view windows: the
   trusted strategy baseline when one exists, or—when lifetime recovery is unresolved—the earliest
   genuinely recorded snapshot on or after the bounded passive evidence floor. The comparison
@@ -542,6 +550,10 @@ The comparison cannot be computed when:
 | Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window, or the window assets differ from the inception baseline. |
+| Configuration balance evidence missing | Retained Spot balances cannot establish a high-confidence historical configuration transition. Missing snapshot rows alone do not prove zero holdings. |
+| Configuration transition incomplete | The local retained observations do not establish that all named removals reached zero and additions became positive. |
+| Configuration transition unsettled | The named balances are still changing across the local retained observations, so no stable anchor can be chosen safely. |
+| Configuration funding evidence missing | Retained evidence cannot establish an addition funding split, historical funding marks, or value released by the named synthetic removals. No unrelated holdings are diluted to invent funding. |
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
 | Ambiguous trade ownership | Trade ownership labels do not affect pure Buy & Hold; the passive basket never mirrors a trade. The overall comparison still remains unavailable when actual-history reconciliation cannot explain a tracked fill or balance change. |
 | Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, a known event does not reconcile to the next snapshot, or owner-flow source evidence has an unprovable order. |

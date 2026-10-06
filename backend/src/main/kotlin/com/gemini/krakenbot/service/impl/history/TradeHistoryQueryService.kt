@@ -371,18 +371,18 @@ class TradeHistoryQueryService(
         /**
          * Bump when the serialized comparison payload or its cache invalidation contract changes.
          *
-         * Version 7 invalidates results computed before checkpoint-chain ordering was required.
+         * Version 9 requires reconciled Spot transition anchors and explicit configuration failures.
          * Benchmark identity also separates the inferred configuration-matched benchmark: it
          * must never be served from, or stored in, a cache row produced by the fixed-inception
          * benchmark, because the two answer different questions from the same Actual portfolio.
          */
-        private const val COMPARISON_CACHE_VERSION = "7"
+        private const val COMPARISON_CACHE_VERSION = "9"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
         private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
         private const val PROPOSAL_CONTINUATION_MAX_PACING_MS = 30_000L
-        private const val PROPOSAL_SEARCH_VERSION = "11"
+        private const val PROPOSAL_SEARCH_VERSION = "13"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -392,7 +392,7 @@ class TradeHistoryQueryService(
          * interpreted. Independent of [PROPOSAL_SEARCH_VERSION] — the later-start proposal
          * scan and the baseline proof are separate state machines.
          */
-        private const val AUTOMATIC_BASELINE_VERIFICATION_VERSION = "2"
+        private const val AUTOMATIC_BASELINE_VERIFICATION_VERSION = "4"
         private const val AUTOMATIC_BASELINE_STATUS_VERIFIED = "VERIFIED"
         private const val AUTOMATIC_BASELINE_STATUS_INVALIDATED = "INVALIDATED"
 
@@ -410,6 +410,10 @@ class TradeHistoryQueryService(
                 ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                 ComparisonUnavailableReason.MISSING_PRICE,
                 ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+                ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING,
+                ComparisonUnavailableReason.CONFIGURATION_TRANSITION_INCOMPLETE,
+                ComparisonUnavailableReason.CONFIGURATION_TRANSITION_UNSETTLED,
+                ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING,
             )
 
         /**
@@ -417,14 +421,15 @@ class TradeHistoryQueryService(
          * cure: an OHLC backfill, correction, or provider recovery supplies the missing price
          * with NO new snapshot/trade/ledger row, so the evidence digest and the horizon never
          * witness the change. A stored EXHAUSTED carrying one of these is re-probed with a
-         * single bounded frontier-candidate trial per call. The remaining append-sensitive
-         * reason (INSUFFICIENT_SNAPSHOTS) can only be cured by new rows, which advance the
-         * horizon and reopen the scan, so it stays strictly terminal.
+         * single bounded frontier-candidate trial per call. Configuration funding can depend on
+         * the named additions' historical marks too. Snapshot and balance-evidence failures need
+         * new rows, which advance the horizon and reopen the scan.
          */
         private val PRICE_SENSITIVE_FRONTIER_REASONS =
             setOf(
                 ComparisonUnavailableReason.MISSING_PRICE,
                 ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+                ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING,
             )
 
         /**

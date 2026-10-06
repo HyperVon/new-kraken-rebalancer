@@ -471,6 +471,32 @@ class ProposalSearchResumabilityTest : StringSpec() {
             }
         }
 
+        "configuration failures at an exhausted frontier are revisited after an evidence append" {
+            runTest {
+                for (reason in listOf(
+                    ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING,
+                    ComparisonUnavailableReason.CONFIGURATION_TRANSITION_INCOMPLETE,
+                    ComparisonUnavailableReason.CONFIGURATION_TRANSITION_UNSETTLED,
+                    ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING,
+                )) {
+                    val g = snapshot(3600, 1)
+                    val candidate = stableSnapshot(7200)
+                    val metadata = mutableMapOf<String, String>()
+                    val (service, repository, _) = harness(metadata, listOf(g, candidate))
+                    service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] = reason.name
+
+                    coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
+                        listOf(g, candidate, stableSnapshot(10800), stableSnapshot(14400))
+                    val cured = service.getComparisonStartProposal(now)
+
+                    cured?.status shouldBe ComparisonProposalStatus.VERIFIED
+                    cured?.timestamp shouldBe candidate.timestamp
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+                }
+            }
+        }
+
         "an OHLC outage leaves a price-sensitive exhausted frontier bounded, and recovery cures it" {
             runTest {
                 // S1/S2 hold 1 BTC, a BTC deposit lands at +9000s, and S3 holds 3 BTC. With

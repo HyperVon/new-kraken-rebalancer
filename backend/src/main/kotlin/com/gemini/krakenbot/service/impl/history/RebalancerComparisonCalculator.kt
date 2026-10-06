@@ -343,11 +343,16 @@ object RebalancerComparisonCalculator {
             )
         }
 
+        val sharedPriceProvider = observationPriceProvider(
+            effectiveSnapshots + baseline,
+            comparisonAssetScope.currencyAssets,
+            priceProvider,
+        )
         val priceError = try {
             validatePrices(
                 effectiveSnapshots,
                 baseline,
-                priceProvider,
+                sharedPriceProvider,
                 comparisonAssetScope.currencyAssets,
                 benchmarkMethod,
             )
@@ -661,51 +666,9 @@ object RebalancerComparisonCalculator {
         // contribution is invested by the same weights instead of leaving new money in cash.
         val inceptionWeights = baselineValueWeights(baseline, comparisonAssetScope.currencyAssets)
 
-        // The inferred configuration-matched thesis instead follows the strategy's own major,
-        // persistent allocation changes, each anchored to the earliest trustworthy state at or after
-        // that change's local cluster completes. Contributions always use the epoch already in force
-        // at their own timestamp, so capital is never invested using a not-yet-observable regime.
-        val inferredRegimes = if (benchmarkMethod == BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD) {
-            if (forensicRegimes == null) {
-                buildInferredRegimes(
-                    trades = trades,
-                    ledgerEvents = spotRewards,
-                    snapshots = effectiveSnapshots,
-                    baseline = baseline,
-                    comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
-                )
-            } else {
-                anchorSuppliedRegimes(
-                    transitions = forensicRegimes,
-                    snapshots = effectiveSnapshots,
-                    baseline = baseline,
-                    comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
-                    trades = trades,
-                )
-            }
-        } else {
-            emptyList()
-        }
-        // Owner contributions are invested by the synthetic configuration actually in force, which
-        // only ever moves what an inferred transition names. It never inherits Actual drift, a
-        // transiently zero Actual balance, or Actual's incidental cash weight.
-        val anchoredRegimes = attachConfigurationAllocations(inferredRegimes, inceptionWeights)
-        val epochWeightsAt: (Instant) -> Map<String, BigDecimal> = { timestamp ->
-            anchoredRegimes.lastOrNull { it.anchor.timestamp <= timestamp }?.configurationAllocation
-                ?: inceptionWeights
-        }
-        val configurationResetEvents = anchoredRegimes.map { regime ->
-            BenchmarkEvent.ConfigurationReset(
-                timestamp = regime.anchor.timestamp,
-                transition = regime.transition,
-                additionFundingShares = regime.additionFundingShares,
-                configurationAllocation = regime.configurationAllocation,
-            )
-        }
-
         val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
             if (Asset.normalizeLedgerAsset(feeAsset).uppercase() in comparisonAssetScope.currencyAssets) {
-                priceProvider?.priceAt(feeAsset, timestamp)
+                sharedPriceProvider.priceAt(feeAsset, timestamp)
             } else {
                 null
             }
@@ -730,8 +693,10 @@ object RebalancerComparisonCalculator {
                     it.ledger.ledgerId in orphanTradeLedgerIds
                 },
                 baseline = baseline,
-                epochWeightsAt = epochWeightsAt,
-                priceProvider = priceProvider,
+                // Actual replay needs ledger economics, not synthetic allocation. Resolve the
+                // latter only after this replay has established the transition checkpoints.
+                epochWeightsAt = null,
+                priceProvider = sharedPriceProvider,
                 classifications = ledgerClassifications,
                 cardNormalizations = cardNormalizations,
                 rewards = rewards,
@@ -768,11 +733,6 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        // Configuration resets join the same ordered stream as owner flows, so a contribution
-        // timestamped before an anchor is invested by the epoch in force and is then carried into the
-        // next reset, while a contribution after the anchor uses the new epoch directly. Sorting is
-        // stable, so a reset sharing a timestamp with a flow is applied by that flow's source order.
-        val candidateBenchmarkEvents = (benchmarkBuilt.events + configurationResetEvents).sortedBy { it.timestamp }
         val fullWalletReplay = reconstructFullWalletBalances(
             plan = passedBalanceResult.replayPlan,
             benchmarkEvents = benchmarkBuilt.events,
@@ -786,6 +746,94 @@ object RebalancerComparisonCalculator {
                 baselineTimestamp = baseline.timestamp,
             )
         }
+        val balanceAtSnapshot: (PortfolioSnapshot, String) -> BigDecimal? = { snapshot, symbol ->
+            val normalized = canonical(symbol)
+            // Terminal ledger state does not identify an omitted asset's intra-instant checkpoint.
+            if (normalized in fullWalletReplay.spotEventSymbolsByTimestamp[snapshot.timestamp].orEmpty() &&
+                snapshot.assets.keys.none { canonical(it) == normalized }
+            ) {
+                null
+            } else {
+                fullWalletReplay.balancesBySnapshot[snapshot]?.get(normalized)
+                    ?: normalizedAssetBalances(snapshot)[normalized]?.takeIf { it.signum() == 0 }
+            }
+        }
+        val regimeAnchoring = try {
+            if (benchmarkMethod != BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD) {
+                RegimeAnchoring.Ready(emptyList())
+            } else if (forensicRegimes == null) {
+                buildInferredRegimes(
+                    trades = trades,
+                    ledgerEvents = spotRewards,
+                    snapshots = effectiveSnapshots,
+                    baseline = baseline,
+                    comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
+                    balanceAtSnapshot = balanceAtSnapshot,
+                    priceProvider = sharedPriceProvider,
+                )
+            } else {
+                anchorSuppliedRegimes(
+                    transitions = forensicRegimes,
+                    snapshots = effectiveSnapshots,
+                    baseline = baseline,
+                    comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
+                    trades = trades,
+                    balanceAtSnapshot = balanceAtSnapshot,
+                    priceProvider = sharedPriceProvider,
+                )
+            }
+        } catch (e: HistoricalPriceSourceException) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+                unavailableAt = e.eventTime,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+        val inferredRegimes = when (regimeAnchoring) {
+            is RegimeAnchoring.Unavailable -> return unavailable(
+                reason = regimeAnchoring.reason,
+                unavailableAt = regimeAnchoring.at,
+                baselineTimestamp = baseline.timestamp,
+            )
+
+            is RegimeAnchoring.Ready -> regimeAnchoring.regimes
+        }
+        // The synthetic configuration never inherits Actual drift or incidental cash weights.
+        val anchoredRegimes = attachConfigurationAllocations(inferredRegimes, inceptionWeights)
+        val allocatedEvents = try {
+            benchmarkBuilt.events.map { event ->
+                if (event !is BenchmarkEvent.OwnerContribution) return@map event
+                val weights = anchoredRegimes.lastOrNull { it.anchor.timestamp <= event.timestamp }
+                    ?.configurationAllocation ?: inceptionWeights
+                val allocations = contributionAllocations(
+                    event.contributionUsd,
+                    weights,
+                    event.event.time,
+                    sharedPriceProvider,
+                ) ?: return unavailable(
+                    reason = ComparisonUnavailableReason.MISSING_PRICE,
+                    unavailableAt = event.timestamp,
+                    baselineTimestamp = baseline.timestamp,
+                )
+                event.copy(allocations = allocations)
+            }
+        } catch (e: HistoricalPriceSourceException) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+                unavailableAt = e.eventTime,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+        val configurationResetEvents = anchoredRegimes.map { regime ->
+            BenchmarkEvent.ConfigurationReset(
+                timestamp = regime.anchor.timestamp,
+                transition = regime.transition,
+                additionFundingShares = regime.additionFundingShares,
+                configurationAllocation = regime.configurationAllocation,
+            )
+        }
+        // Stable source ordering and proven ledger ordering still govern coincident owner flows.
+        val candidateBenchmarkEvents = (allocatedEvents + configurationResetEvents).sortedBy { it.timestamp }
         val unorderedAt = findUnorderedBenchmarkEventTimestamp(
             events = candidateBenchmarkEvents,
             baselineAssetSymbols = baseline.assets.keys
@@ -851,7 +899,7 @@ object RebalancerComparisonCalculator {
                         replayBenchmarkEvent(
                             runningSyntheticBalances,
                             nextLedgerEvent,
-                            priceProvider,
+                            sharedPriceProvider,
                             comparisonAssetScope.tokenizedAssets,
                         )
                     } catch (e: HistoricalPriceSourceException) {
@@ -890,6 +938,59 @@ object RebalancerComparisonCalculator {
                 }
             }
 
+            val hasUnpricedSnapshotHolding = snapshot.assets.any { (symbol, asset) ->
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                normalizedSymbol in comparisonAssetScope.currencyAssets && normalizedSymbol != Asset.USD &&
+                    asset.balance.signum() > 0 && asset.price.signum() <= 0
+            }
+            if (snapshot.assets.any { (symbol, asset) ->
+                    val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                    val recordedPrice = if (normalizedSymbol == Asset.USD) BigDecimal.ONE else asset.price
+                    normalizedSymbol in comparisonAssetScope.currencyAssets &&
+                        (
+                            asset.valueUSD.signum() < 0 || (
+                                !hasUnpricedSnapshotHolding && recordedPrice.signum() > 0 &&
+                                    asset.balance.multiply(recordedPrice).toUsdScale()
+                                        .subtract(asset.valueUSD).abs() > baselineMismatchTolerance
+                                )
+                            )
+                }
+            ) {
+                return unavailable(
+                    reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                    unavailableAt = snapshot.timestamp,
+                    baselineTimestamp = baseline.timestamp,
+                )
+            }
+
+            // Both books must share the same mark, even if a provider refreshes between lookups.
+            val recordedPointMarks = mutableMapOf<String, BigDecimal>()
+            for ((symbol, asset) in snapshot.assets) {
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                if (normalizedSymbol !in comparisonAssetScope.currencyAssets) continue
+                val price = if (normalizedSymbol == Asset.USD) BigDecimal.ONE else asset.price
+                if (price.signum() <= 0) continue
+                val previous = recordedPointMarks.putIfAbsent(normalizedSymbol, price)
+                if (previous != null && previous.compareTo(price) != 0) {
+                    return unavailable(
+                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                        unavailableAt = snapshot.timestamp,
+                        baselineTimestamp = baseline.timestamp,
+                    )
+                }
+            }
+            val pointMarks = mutableMapOf<String, BigDecimal?>()
+            val pointPriceProvider = HistoricalPriceProvider { symbol, _ ->
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                if (normalizedSymbol !in pointMarks) {
+                    pointMarks[normalizedSymbol] = recordedPointMarks[normalizedSymbol] ?: sharedPriceProvider.priceAt(
+                        normalizedSymbol,
+                        snapshot.timestamp,
+                    )
+                }
+                pointMarks[normalizedSymbol]
+            }
+
             try {
                 for ((symbol, balance) in runningSyntheticBalances) {
                     val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
@@ -898,10 +999,7 @@ object RebalancerComparisonCalculator {
                     ) {
                         continue
                     }
-                    val recordedPrice = snapshot.assets.entries.firstOrNull {
-                        Asset.normalizeLedgerAsset(it.key).uppercase() == normalizedSymbol
-                    }?.value?.price?.takeIf { it.signum() > 0 }
-                    val historicalPrice = recordedPrice ?: priceProvider?.priceAt(symbol, snapshot.timestamp)
+                    val historicalPrice = pointPriceProvider.priceAt(symbol, snapshot.timestamp)
                     if (historicalPrice == null || historicalPrice.signum() <= 0) {
                         return unavailable(
                             reason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -923,7 +1021,7 @@ object RebalancerComparisonCalculator {
                 snapshot = snapshot,
                 baselineTimestamp = baseline.timestamp,
                 baselinePrices = extractBaselinePrices(baseline, comparisonAssetScope.currencyAssets),
-                priceProvider = priceProvider,
+                priceProvider = pointPriceProvider,
                 comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
             )
             if (buyAndHoldValue.signum() <= 0) {
@@ -949,7 +1047,7 @@ object RebalancerComparisonCalculator {
                             balances = reconciledBalances,
                             nonSpotBalances = fullWalletReplay.nonSpotBalancesBySnapshot[snapshot].orEmpty(),
                             baselineBalances = baselineBalances,
-                            priceProvider = priceProvider,
+                            priceProvider = pointPriceProvider,
                             comparisonAssetSymbols = comparisonAssetScope.currencyAssets,
                         )
                     ) {
@@ -1045,6 +1143,47 @@ object RebalancerComparisonCalculator {
         )
     }
 
+    private fun observationPriceProvider(
+        snapshots: List<PortfolioSnapshot>,
+        comparisonAssetSymbols: Set<String>,
+        fallback: HistoricalPriceProvider?,
+    ): HistoricalPriceProvider {
+        val recordedMarks = mutableMapOf<Pair<String, Instant>, BigDecimal?>()
+        for (snapshot in snapshots) {
+            for ((symbol, asset) in snapshot.assets) {
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                if (normalizedSymbol !in comparisonAssetSymbols) continue
+                val price = if (normalizedSymbol == Asset.USD) BigDecimal.ONE else asset.price
+                if (price.signum() <= 0) continue
+                val key = normalizedSymbol to snapshot.timestamp
+                recordedMarks[key] = if (key in recordedMarks && recordedMarks[key]?.compareTo(price) != 0) {
+                    null
+                } else {
+                    price
+                }
+            }
+        }
+        val historicalMarks = mutableMapOf<Pair<String, Instant>, BigDecimal?>()
+        return HistoricalPriceProvider { symbol, timestamp ->
+            val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+            val key = normalizedSymbol to timestamp
+            // Exact timestamp only: using the next observation would look ahead when valuing a flow.
+            when {
+                normalizedSymbol == Asset.USD -> BigDecimal.ONE
+
+                key in recordedMarks -> recordedMarks[key]
+
+                else -> {
+                    if (key !in historicalMarks) {
+                        historicalMarks[key] =
+                            fallback?.priceAt(normalizedSymbol, timestamp)?.takeIf { it.signum() > 0 }
+                    }
+                    historicalMarks[key]
+                }
+            }
+        }
+    }
+
     private sealed class TrackedBalanceValidation {
         data class Passed(val ledgers: List<ReconciledLedger>, val replayPlan: FullWalletBalanceReplayPlan) :
             TrackedBalanceValidation()
@@ -1069,6 +1208,7 @@ object RebalancerComparisonCalculator {
         val unsupportedTradeAt: Instant? = null,
         val unavailableReason: ComparisonUnavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
         val provenLedgerOrderPairs: Set<Pair<String, String>> = emptySet(),
+        val spotEventSymbolsByTimestamp: Map<Instant, Set<String>> = emptyMap(),
     )
 
     private data class ScopedWalletAsset(
@@ -2318,7 +2458,6 @@ object RebalancerComparisonCalculator {
                 is BenchmarkEvent.ConfigurationReset -> emptyList()
 
                 is BenchmarkEvent.OwnerWithdrawal -> {
-                    var syntheticTotal = BigDecimal.ZERO
                     benchmarkEventSymbols += Asset.normalizeLedgerAsset(event.event.asset).uppercase()
                     event.sourceLedgerIds
                 }
@@ -2853,6 +2992,19 @@ object RebalancerComparisonCalculator {
                 )
             events += orderedTrades
         }
+        val spotEventSymbolsByTimestamp = events
+            .filter { it.walletScope !in nonSpotLedgerWalletScopes }
+            .groupBy(ReplayEvent::timestamp)
+            .mapValues { (_, sameInstant) ->
+                sameInstant.flatMapTo(mutableSetOf()) { event ->
+                    val trade = event.tradeReplay
+                    if (trade != null) {
+                        listOf(trade.base, trade.quote)
+                    } else {
+                        listOf(Asset.normalizeLedgerAsset(event.ledger!!.asset).uppercase())
+                    }
+                }
+            }
         val balances = baseline.assets.entries
             .filter { (symbol, asset) ->
                 val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
@@ -3077,9 +3229,8 @@ object RebalancerComparisonCalculator {
                     }
                 }
             }
-            for ((symbol, asset) in snapshot.assets) {
-                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
-                if (normalizedSymbol in fullWalletUniverse) snapshotBalances[normalizedSymbol] = asset.balance
+            for ((symbol, balance) in normalizedAssetBalances(snapshot)) {
+                if (symbol in fullWalletUniverse) snapshotBalances[symbol] = balance
             }
             result[snapshot] = snapshotBalances.toMap()
             nonSpotResult[snapshot] = nonSpotBalances.entries
@@ -3090,6 +3241,7 @@ object RebalancerComparisonCalculator {
             balancesBySnapshot = result,
             nonSpotBalancesBySnapshot = nonSpotResult,
             provenLedgerOrderPairs = provenLedgerOrderPairs,
+            spotEventSymbolsByTimestamp = spotEventSymbolsByTimestamp,
         )
     }
 
@@ -3204,11 +3356,10 @@ object RebalancerComparisonCalculator {
             }
             .groupBy { (symbol, _) -> Asset.normalizeLedgerAsset(symbol).uppercase() }
             .mapValues { (_, entries) -> entries.fold(BigDecimal.ZERO) { sum, entry -> sum.add(entry.value) } }
-        val hasUnpricedNewSnapshotHolding = snapshot.assets.any { (symbol, asset) ->
+        val hasUnpricedSnapshotHolding = snapshot.assets.any { (symbol, asset) ->
             val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
             asset.balance.signum() > 0 && normalizedSymbol in comparisonAssetSymbols && normalizedSymbol != Asset.USD &&
-                asset.price.signum() <= 0 &&
-                (baselineBalances[normalizedSymbol] ?: BigDecimal.ZERO).signum() <= 0
+                asset.price.signum() <= 0
         }
         val hasScopedNonSpotBalance = nonSpotBalances.any { (symbol, balance) ->
             Asset.normalizeLedgerAsset(symbol).uppercase() in comparisonAssetSymbols && balance.signum() != 0
@@ -3219,7 +3370,7 @@ object RebalancerComparisonCalculator {
             balance.signum() != 0 && Asset.normalizeLedgerAsset(symbol).uppercase() !in comparisonAssetSymbols
         }
         if (omittedBalances.isEmpty() && !hasScopedNonSpotBalance &&
-            !hasUnpricedNewSnapshotHolding
+            !hasUnpricedSnapshotHolding
         ) {
             return ActualPortfolioValuation.Value(scopedSnapshotValue(snapshot, comparisonAssetSymbols))
         }
@@ -3230,6 +3381,7 @@ object RebalancerComparisonCalculator {
         var representedRawValue = BigDecimal.ZERO
         var representedRecordedValue = BigDecimal.ZERO
         var unpricedSnapshotValueDelta = BigDecimal.ZERO
+        var hasConflictingUnpricedBaselineValue = false
         for ((symbol, asset) in snapshot.assets) {
             val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
             if (normalizedSymbol !in comparisonAssetSymbols) continue
@@ -3247,18 +3399,28 @@ object RebalancerComparisonCalculator {
             }
             representedRecordedValue = representedRecordedValue.add(asset.valueUSD)
             val baselineBalance = baselineBalances[normalizedSymbol] ?: BigDecimal.ZERO
-            if (!hasRecordedPrice && baselineBalance.signum() > 0) {
-                representedRawValue = representedRawValue.add(asset.valueUSD)
-                continue
-            }
             val price = priceProvider?.priceAt(normalizedSymbol, snapshot.timestamp)
                 ?: return ActualPortfolioValuation.MissingPrice
             if (price.signum() <= 0) return ActualPortfolioValuation.MissingPrice
             val valuedBalance = asset.balance.multiply(price)
+            if (baselineBalance.signum() > 0 && asset.valueUSD.signum() > 0 &&
+                valuedBalance.toUsdScale().subtract(asset.valueUSD).abs() > baselineMismatchTolerance
+            ) {
+                hasConflictingUnpricedBaselineValue = true
+            }
             representedRawValue = representedRawValue.add(valuedBalance)
             if (!hasRecordedPrice) {
                 unpricedSnapshotValueDelta = unpricedSnapshotValueDelta.add(valuedBalance.subtract(asset.valueUSD))
             }
+        }
+
+        // Legacy rows can attribute a newly provider-priced reward to another asset's value.
+        // Such a discrepancy is explainable only when the complete represented NAV reconciles.
+        if (hasConflictingUnpricedBaselineValue &&
+            representedRawValue.subtract(scopedSnapshotValue(snapshot, comparisonAssetSymbols)).abs() >
+            snapshotPersistenceRoundingEnvelope(snapshot)
+        ) {
+            return ActualPortfolioValuation.InconsistentSnapshotValue
         }
 
         // Snapshot totals are stored to cents. Preserve the recorded row total, adding a
@@ -4188,14 +4350,26 @@ object RebalancerComparisonCalculator {
      * rebalance is told apart from a settled one. That is deliberately the only forward-looking step:
      * it gates *which* snapshot is chosen, never the value of anything held.
      */
-    private fun buildInferredRegimes(
+    private sealed interface RegimeAnchoring {
+        data class Ready(val regimes: List<AnchoredRegimeTransition>) : RegimeAnchoring
+        data class Unavailable(val reason: ComparisonUnavailableReason, val at: Instant) : RegimeAnchoring
+    }
+
+    private sealed interface AnchorSettlement {
+        data class Ready(val anchor: PortfolioSnapshot) : AnchorSettlement
+        data class Unavailable(val reason: ComparisonUnavailableReason) : AnchorSettlement
+    }
+
+    private suspend fun buildInferredRegimes(
         trades: List<TradeRecord>,
         ledgerEvents: List<LedgerEvent>,
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
         activitiesOverride: List<AssetRegimeActivity>? = null,
-    ): List<AnchoredRegimeTransition> {
+        balanceAtSnapshot: (PortfolioSnapshot, String) -> BigDecimal?,
+        priceProvider: HistoricalPriceProvider?,
+    ): RegimeAnchoring {
         val baselineBalances = normalizedAssetBalances(baseline)
         val activities = activitiesOverride ?: buildAssetRegimeActivities(
             trades = trades,
@@ -4211,6 +4385,8 @@ object RebalancerComparisonCalculator {
             baseline = baseline,
             comparisonAssetSymbols = comparisonAssetSymbols,
             fundingEvidence = ClusterFundingEvidence(trades),
+            balanceAtSnapshot = balanceAtSnapshot,
+            priceProvider = priceProvider,
         )
     }
 
@@ -4219,18 +4395,22 @@ object RebalancerComparisonCalculator {
      * comparison differs only in *which* configuration history is assumed and never in how that
      * history is applied.
      */
-    private fun anchorSuppliedRegimes(
+    private suspend fun anchorSuppliedRegimes(
         transitions: List<InferredRegimeTransition>,
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
         trades: List<TradeRecord>,
-    ): List<AnchoredRegimeTransition> = anchorRegimes(
+        balanceAtSnapshot: (PortfolioSnapshot, String) -> BigDecimal?,
+        priceProvider: HistoricalPriceProvider?,
+    ): RegimeAnchoring = anchorRegimes(
         transitions = transitions,
         snapshots = snapshots,
         baseline = baseline,
         comparisonAssetSymbols = comparisonAssetSymbols,
         fundingEvidence = ClusterFundingEvidence(trades),
+        balanceAtSnapshot = balanceAtSnapshot,
+        priceProvider = priceProvider,
     )
 
     /**
@@ -4277,38 +4457,58 @@ object RebalancerComparisonCalculator {
         }
     }
 
-    private fun anchorRegimes(
+    private suspend fun anchorRegimes(
         transitions: List<InferredRegimeTransition>,
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
         fundingEvidence: ClusterFundingEvidence,
-    ): List<AnchoredRegimeTransition> {
+        balanceAtSnapshot: (PortfolioSnapshot, String) -> BigDecimal?,
+        priceProvider: HistoricalPriceProvider?,
+    ): RegimeAnchoring {
         val ordered = snapshots.filter { it.timestamp >= baseline.timestamp }
         // Epoch resolution picks the latest anchor at or before a timestamp, so the list must be in
         // anchor order regardless of how the transitions were supplied. Two transitions may settle on
         // one snapshot: they are distinct membership changes, so both apply, in cluster order, and the
         // configuration fold composes them. Sorting on cluster end as well as anchor time keeps that
         // composition independent of the order the transitions were supplied in.
-        return transitions.mapNotNull { transition ->
-            if (transition.confidence != RegimeTransitionConfidence.HIGH) return@mapNotNull null
-            val anchor = settledAnchorAtOrAfter(ordered, transition) ?: return@mapNotNull null
+        val anchored = mutableListOf<AnchoredRegimeTransition>()
+        for (transition in transitions.sortedBy(InferredRegimeTransition::clusterEnd)) {
+            if (transition.confidence != RegimeTransitionConfidence.HIGH) continue
+            val anchor = when (val settlement = settledAnchorAtOrAfter(ordered, transition, balanceAtSnapshot)) {
+                is AnchorSettlement.Ready -> settlement.anchor
+
+                is AnchorSettlement.Unavailable ->
+                    return RegimeAnchoring.Unavailable(settlement.reason, transition.clusterEnd)
+            }
             val shares = additionFundingShares(
                 transition = transition,
                 anchor = anchor,
                 comparisonAssetSymbols = comparisonAssetSymbols,
                 fundingEvidence = fundingEvidence,
-            ) ?: return@mapNotNull null
-            AnchoredRegimeTransition(
+                balanceAtSnapshot = balanceAtSnapshot,
+                priceProvider = priceProvider,
+            ) ?: return RegimeAnchoring.Unavailable(
+                ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING,
+                anchor.timestamp,
+            )
+            anchored += AnchoredRegimeTransition(
                 transition = transition,
                 anchor = anchor,
                 additionFundingShares = shares,
             )
-        }.sortedWith(compareBy({ it.anchor.timestamp }, { it.transition.clusterEnd }))
+        }
+        return RegimeAnchoring.Ready(
+            anchored.sortedWith(
+                compareBy({
+                    it.anchor.timestamp
+                }, { it.transition.clusterEnd }),
+            ),
+        )
     }
 
     /**
-     * First observation at or after [clusterEnd] that is settled enough to carry transition evidence.
+     * First observation at or after the cluster that is settled enough to carry transition evidence.
      *
      * The earliest retained snapshot after a cluster can land mid-cycle: a sell-first rebalance may
      * have executed the removal leg but not yet re-established the additions, and a same-day balance
@@ -4325,47 +4525,67 @@ object RebalancerComparisonCalculator {
      * affect which snapshot is chosen.
      *
      * The search is bounded by [ANCHOR_SETTLEMENT_OBSERVATION_WINDOW] so an unrelated later regime
-     * cannot postpone an earlier transition indefinitely. Retained observations are minutes to hours
-     * apart and a rebalance cycle completes well inside a day, so a qualified candidate is normally
-     * found; when none qualifies in the window the transition is not applied, because its evidence
-     * never settled and guessing would be indistinguishable from copying arbitrary portfolio state.
+     * cannot postpone an earlier transition indefinitely. A missing snapshot row is not proof of
+     * zero: production supplies the reconciled Spot book at each exact observation checkpoint.
+     * Missing evidence, incomplete membership and still-moving balances are reported separately.
      */
     private fun settledAnchorAtOrAfter(
         candidates: List<PortfolioSnapshot>,
         transition: InferredRegimeTransition,
-    ): PortfolioSnapshot? {
+        balanceAtSnapshot: (PortfolioSnapshot, String) -> BigDecimal?,
+    ): AnchorSettlement {
         val removals = transition.removals.mapTo(linkedSetOf()) { canonical(it) }
         val additions = transition.additions.mapTo(linkedSetOf()) { canonical(it) }
         val start = candidates.indexOfFirst { it.timestamp >= transition.clusterEnd }
-        if (start < 0) return null
+        if (start < 0) {
+            return AnchorSettlement.Unavailable(
+                ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING,
+            )
+        }
         val end = minOf(candidates.lastIndex, start + ANCHOR_SETTLEMENT_OBSERVATION_WINDOW)
+        val named = removals + additions
+        var missing = 0
+        var incomplete = 0
+        var changing = 0
         for (index in start..end) {
             val current = candidates[index]
-            if (!transitionCompletedAt(current, removals, additions)) continue
-            val next = candidates.getOrNull(index + 1)
-            if (next == null || (removals + additions).all {
-                    balanceAt(current, it).compareTo(balanceAt(next, it)) == 0
-                }
+            val balances = named.associateWith { balanceAtSnapshot(current, it) }
+            if (balances.values.any { it == null }) {
+                missing++
+                continue
+            }
+            if (removals.any { balances.getValue(it)!!.signum() != 0 } ||
+                additions.any { balances.getValue(it)!!.signum() <= 0 }
             ) {
-                return current
+                incomplete++
+                continue
+            }
+            val next = candidates.getOrNull(index + 1)
+            if (next == null) return AnchorSettlement.Ready(current)
+            val nextBalances = named.associateWith { balanceAtSnapshot(next, it) }
+            if (nextBalances.values.any { it == null }) {
+                missing++
+            } else if (named.all { balances.getValue(it)!!.compareTo(nextBalances.getValue(it)!!) == 0 }) {
+                return AnchorSettlement.Ready(current)
+            } else {
+                changing++
             }
         }
+        val reason = when {
+            changing > 0 -> ComparisonUnavailableReason.CONFIGURATION_TRANSITION_UNSETTLED
+            missing > 0 -> ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING
+            else -> ComparisonUnavailableReason.CONFIGURATION_TRANSITION_INCOMPLETE
+        }
         log.warn(
-            "Configuration transition ending {} has no settled observation within {} retained snapshots; " +
-                "it is not applied",
+            "Configuration transition ending {} cannot be anchored: reason={} missing={} incomplete={} changing={}",
             transition.clusterEnd,
-            ANCHOR_SETTLEMENT_OBSERVATION_WINDOW,
+            reason,
+            missing,
+            incomplete,
+            changing,
         )
-        return null
+        return AnchorSettlement.Unavailable(reason)
     }
-
-    /** A transition has landed once every named removal is drained and every named addition holds a balance. */
-    private fun transitionCompletedAt(
-        snapshot: PortfolioSnapshot,
-        removals: Set<String>,
-        additions: Set<String>,
-    ): Boolean = removals.all { balanceAt(snapshot, it).signum() == 0 } &&
-        additions.all { balanceAt(snapshot, it).signum() > 0 }
 
     private fun balanceAt(snapshot: PortfolioSnapshot, symbol: String): BigDecimal {
         var total = BigDecimal.ZERO
@@ -4387,14 +4607,16 @@ object RebalancerComparisonCalculator {
      *    alone. Weaker, because the anchor also carries post-cluster drift, but still confined to
      *    the assets the transition names.
      *
-     * Returns null when neither source can prove a split, and the transition is then not applied:
-     * an addition must never be funded by whole-portfolio weights or hand-entered ratios.
+     * Returns null when neither source can prove a split; the caller withholds the comparison.
+     * An addition must never be funded by whole-portfolio weights or hand-entered ratios.
      */
-    private fun additionFundingShares(
+    private suspend fun additionFundingShares(
         transition: InferredRegimeTransition,
         anchor: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
         fundingEvidence: ClusterFundingEvidence,
+        balanceAtSnapshot: (PortfolioSnapshot, String) -> BigDecimal?,
+        priceProvider: HistoricalPriceProvider?,
     ): Map<String, BigDecimal>? {
         val additions = transition.additions.mapTo(sortedSetOf()) { canonical(it) }
             .filterNotTo(sortedSetOf()) { canonical(it) in transition.removals.map { canonical(it) } }
@@ -4403,7 +4625,16 @@ object RebalancerComparisonCalculator {
         val fromCluster = fundingEvidence.netAcquiredUsd(transition, additions)
         if (fromCluster != null) return normalizedValueWeights(fromCluster, sumOf(fromCluster))
 
-        val observed = observedInScopeValues(anchor, comparisonAssetSymbols, additions) ?: return null
+        val observed = if (priceProvider == null) {
+            observedInScopeValues(anchor, comparisonAssetSymbols, additions) ?: return null
+        } else {
+            additions.associateWith { symbol ->
+                if (symbol !in comparisonAssetSymbols) return null
+                val balance = balanceAtSnapshot(anchor, symbol) ?: return null
+                val price = priceOf(symbol, anchor.timestamp, priceProvider) ?: return null
+                balance.multiply(price)
+            }
+        }
         if (additions.any { (observed[it] ?: BigDecimal.ZERO).signum() <= 0 }) return null
         val scoped = additions.associateWith { observed.getValue(it) }
         return normalizedValueWeights(scoped, sumOf(scoped))
@@ -4659,7 +4890,7 @@ object RebalancerComparisonCalculator {
     private suspend fun buildBenchmarkEvents(
         ledgers: List<ReconciledLedger>,
         baseline: PortfolioSnapshot,
-        epochWeightsAt: (Instant) -> Map<String, BigDecimal>,
+        epochWeightsAt: ((Instant) -> Map<String, BigDecimal>)?,
         priceProvider: HistoricalPriceProvider?,
         classifications: Map<String, FlowCategory>,
         cardNormalizations: List<NormalizedFundingTransaction>,
@@ -4818,7 +5049,7 @@ object RebalancerComparisonCalculator {
                             timestamp = representative.timestamp,
                             netBalanceDelta = BigDecimal.ZERO,
                             cashUsdOverride = norm.netOwnerCapitalUsd,
-                            inceptionWeights = epochWeightsAt(representative.timestamp),
+                            inceptionWeights = epochWeightsAt?.invoke(representative.timestamp),
                             priceProvider = priceProvider,
                             sourceLedgerIds = norm.sourceLedgerIds,
                             sourceEventTimestamps = norm.actualPortfolioDeltas.map { it.timestamp }.toSet()
@@ -4841,7 +5072,7 @@ object RebalancerComparisonCalculator {
                             timestamp = representative.timestamp,
                             netBalanceDelta = BigDecimal.ZERO,
                             cashUsdOverride = norm.netOwnerCapitalUsd,
-                            inceptionWeights = epochWeightsAt(representative.timestamp),
+                            inceptionWeights = epochWeightsAt?.invoke(representative.timestamp),
                             priceProvider = priceProvider,
                             sourceLedgerIds = norm.sourceLedgerIds,
                             sourceEventTimestamps = norm.actualPortfolioDeltas.map { it.timestamp }.toSet()
@@ -4988,7 +5219,7 @@ object RebalancerComparisonCalculator {
                         timestamp = reconciledLedger.timestamp,
                         netBalanceDelta = BigDecimal.ZERO,
                         cashUsdOverride = netDividendUsd,
-                        inceptionWeights = epochWeightsAt(reconciledLedger.timestamp),
+                        inceptionWeights = epochWeightsAt?.invoke(reconciledLedger.timestamp),
                         priceProvider = priceProvider,
                         sourceLedgerIds = listOf(ledger.ledgerId),
                     )
@@ -5006,7 +5237,7 @@ object RebalancerComparisonCalculator {
                         ledgerType = ledger.type,
                         timestamp = reconciledLedger.timestamp,
                         netBalanceDelta = reconciledLedger.netBalanceDelta,
-                        inceptionWeights = epochWeightsAt(reconciledLedger.timestamp),
+                        inceptionWeights = epochWeightsAt?.invoke(reconciledLedger.timestamp),
                         priceProvider = priceProvider,
                         sourceLedgerIds = listOf(ledger.ledgerId),
                     )
@@ -5381,7 +5612,7 @@ object RebalancerComparisonCalculator {
         timestamp: Instant,
         netBalanceDelta: BigDecimal,
         cashUsdOverride: BigDecimal? = null,
-        inceptionWeights: Map<String, BigDecimal>,
+        inceptionWeights: Map<String, BigDecimal>?,
         priceProvider: HistoricalPriceProvider?,
         sourceLedgerIds: List<String>,
         sourceEventTimestamps: Set<Instant> = setOf(ledger.time),
@@ -5398,20 +5629,12 @@ object RebalancerComparisonCalculator {
         }
         return when (ledgerType.lowercase()) {
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
-                if (cashUsd.signum() <= 0 || inceptionWeights.isEmpty()) {
-                    if (cashUsd.signum() > 0) return OwnerFlowBuild.Unpriceable
-                    return OwnerFlowBuild.Skip
-                }
-                val allocations = mutableMapOf<String, BigDecimal>()
-                for ((weightSymbol, weight) in inceptionWeights) {
-                    val price = if (weightSymbol == Asset.USD) {
-                        BigDecimal.ONE
-                    } else {
-                        priceProvider?.priceAt(weightSymbol, ledger.time)
-                    }
-                    if (price == null || price.signum() <= 0) return OwnerFlowBuild.Unpriceable
-                    allocations[weightSymbol] =
-                        cashUsd.multiply(weight).divide(price, ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
+                if (cashUsd.signum() <= 0) return OwnerFlowBuild.Skip
+                val allocations = if (inceptionWeights == null) {
+                    emptyMap()
+                } else {
+                    contributionAllocations(cashUsd, inceptionWeights, ledger.time, priceProvider)
+                        ?: return OwnerFlowBuild.Unpriceable
                 }
                 OwnerFlowBuild.Event(
                     BenchmarkEvent.OwnerContribution(
@@ -5461,6 +5684,19 @@ object RebalancerComparisonCalculator {
      * (reason, event timestamp) pair when replay cannot proceed honestly
      * (caller fails closed), null on success.
      */
+    private suspend fun contributionAllocations(
+        cashUsd: BigDecimal,
+        weights: Map<String, BigDecimal>,
+        timestamp: Instant,
+        priceProvider: HistoricalPriceProvider?,
+    ): Map<String, BigDecimal>? {
+        if (weights.isEmpty()) return null
+        return weights.mapValues { (symbol, weight) ->
+            val price = priceOf(symbol, timestamp, priceProvider) ?: return null
+            cashUsd.multiply(weight).divide(price, ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
+        }
+    }
+
     private suspend fun replayBenchmarkEvent(
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent,
@@ -5535,13 +5771,10 @@ object RebalancerComparisonCalculator {
                 when (val outcome = applyConfigurationReset(balances, event, priceProvider)) {
                     is ConfigurationResetOutcome.Failed -> return outcome.reason to outcome.at
 
-                    // An unapplied transition is a documented non-event, not a failure: the
-                    // benchmark simply keeps holding what it had.
-                    is ConfigurationResetOutcome.Skipped -> log.warn(
-                        "Configuration transition at {} not applied: {}",
-                        event.timestamp,
-                        outcome.reason,
-                    )
+                    is ConfigurationResetOutcome.Skipped -> {
+                        log.warn("Configuration transition at {} not applied: {}", event.timestamp, outcome.reason)
+                        return ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING to event.timestamp
+                    }
 
                     is ConfigurationResetOutcome.Applied -> Unit
                 }
@@ -5599,7 +5832,7 @@ object RebalancerComparisonCalculator {
         if (additions.isNotEmpty() && !fundingResolvable(event.transition, event.additionFundingShares)) {
             // An addition with no evidence-backed funding source must not be created out of thin
             // value, and must not be funded by silently diluting holdings the transition never named.
-            // Leaving the transition unapplied keeps the book and the configuration in agreement.
+            // Refusal is atomic; the replay driver reports the comparison as unavailable.
             return ConfigurationResetOutcome.Skipped(
                 "named additions ${additions.sorted()} have no usable funding evidence",
             )
@@ -6188,34 +6421,37 @@ object RebalancerComparisonCalculator {
      * hierarchy, and the contribution-allocation state can all be exercised against synthetic
      * activity without a full production-sized replay.
      */
-    internal fun anchoredRegimesForTest(
+    internal suspend fun anchoredRegimesForTest(
         activities: List<AssetRegimeActivity>,
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
         inceptionWeights: Map<String, BigDecimal> = emptyMap(),
         trades: List<TradeRecord> = emptyList(),
-    ): List<AnchoredRegimeTransition> = attachConfigurationAllocations(
-        buildInferredRegimes(
+    ): List<AnchoredRegimeTransition> {
+        val anchoring = buildInferredRegimes(
             trades = trades,
             ledgerEvents = emptyList(),
             activitiesOverride = activities,
             snapshots = snapshots,
             baseline = baseline,
             comparisonAssetSymbols = comparisonAssetSymbols,
-        ),
-        inceptionWeights,
-    )
+            balanceAtSnapshot = ::balanceAt,
+            priceProvider = null,
+        )
+        return when (anchoring) {
+            is RegimeAnchoring.Ready -> attachConfigurationAllocations(anchoring.regimes, inceptionWeights)
+            is RegimeAnchoring.Unavailable -> emptyList()
+        }
+    }
 
-    internal fun inferRegimesForTest(
+    internal suspend fun inferRegimesForTest(
         activities: List<AssetRegimeActivity>,
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
         comparisonAssetSymbols: Set<String>,
-    ): List<Pair<InferredRegimeTransition, PortfolioSnapshot>> = buildInferredRegimes(
-        trades = emptyList(),
-        ledgerEvents = emptyList(),
-        activitiesOverride = activities,
+    ): List<Pair<InferredRegimeTransition, PortfolioSnapshot>> = anchoredRegimesForTest(
+        activities = activities,
         snapshots = snapshots,
         baseline = baseline,
         comparisonAssetSymbols = comparisonAssetSymbols,
@@ -6236,12 +6472,7 @@ object RebalancerComparisonCalculator {
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent.ConfigurationReset,
         priceProvider: HistoricalPriceProvider?,
-    ): Pair<ComparisonUnavailableReason, Instant>? =
-        when (val outcome = applyConfigurationReset(balances, event, priceProvider)) {
-            is ConfigurationResetOutcome.Failed -> outcome.reason to outcome.at
-            is ConfigurationResetOutcome.Applied -> null
-            is ConfigurationResetOutcome.Skipped -> null
-        }
+    ): Pair<ComparisonUnavailableReason, Instant>? = replayBenchmarkEvent(balances, event, priceProvider, emptySet())
 
     internal suspend fun buildBenchmarkEventsForTest(
         ledgers: List<LedgerEvent>,

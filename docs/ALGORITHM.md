@@ -1092,6 +1092,36 @@ external capital over time:
   initiated it; ownership ambiguity alone does not block a re-anchored passive report. A fill that
   cannot reconcile to the actual recorded balance series still fails closed as an unexplained
   balance change.
+- **Inferred configuration settlement:** actual-wallet reconstruction runs before
+  synthetic contribution allocation. A transition is anchored against the validated
+  historical Spot balances at each accounting checkpoint, including assets omitted by
+  configured-only snapshots. Missing rows are not zero-balance evidence. Every named
+  removal must be drained and every addition positive; named quantities must remain
+  exactly unchanged in the next retained observation, except at the true series end.
+  The existing local bound is unchanged. Same-instant source ordering and wallet-scope
+  validation still apply. A hidden asset touched by a Spot event at the candidate's exact
+  timestamp has no proven intra-instant checkpoint ownership; its terminal replay balance
+  cannot certify that candidate. A later observation or an explicitly recorded quantity
+  is required. Funding uses only the transition's named additions: net
+  acquisitions within its cluster first, then reconciled anchor quantities valued with
+  the shared historical marks. Unnamed holdings and current target percentages cannot
+  supply a guessed funding ratio. A high-confidence transition that cannot anchor or
+  fund makes the inferred comparison unavailable with an explicit missing-evidence,
+  incomplete-membership, unsettled-balances, or funding-evidence reason. Ambiguous
+  inferred transitions remain unapplied. Owner contributions use the synthetic epoch
+  established at their effective event timestamp, with original event-time prices.
+- **Valuation consistency:** both books share a resolved mark per normalized asset/time.
+  A cash flow at exactly a retained observation's timestamp uses its recorded market mark;
+  a flow before the observation retains its historical price, never the later observation's
+  mark. Nonpositive historical marks and conflicting positive prices across aliases
+  of one asset fail closed. An unpriced
+  baseline holding is valued with the same historical mark as its synthetic counterpart.
+  If that mark contradicts the recorded USD evidence and the complete represented NAV
+  cannot reconcile within the persistence rounding envelope, the result is unavailable
+  rather than an artificial performance difference. Existing explained legacy reward
+  residuals remain supported. Comparison cache version 9, automatic-baseline proof version
+  4, and proposal search version 13 invalidate results and verification records produced
+  under the prior rules.
 - **Owner contributions after the selected anchor are invested by the fixed recorded-anchor value
   weights** (existing synthetic holdings untouched); only the new money moves. This is the same
   weighting policy used to capitalize the exact recorded anchor value.
