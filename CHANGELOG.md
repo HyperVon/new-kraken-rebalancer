@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.102] - 2026-10-06
+
+### Added
+
+- **Windows debug launch**: `start.bat debug` starts the rebalancer with
+  `logback-debug.xml` (a diagnostics copy of the packaged logback config that
+  enables the `com.gemini.krakenbot.db.timing` and
+  `TradeHistoryQueryService` DEBUG loggers). Plain `start.bat` is unchanged;
+  slow database calls still warn at 500 ms without any override.
+
 ## [6.17.101] - 2026-10-05
 
 ### Added

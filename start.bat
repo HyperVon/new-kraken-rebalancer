@@ -17,5 +17,9 @@ if not exist "%JAR_PATH%" (
 )
 
 echo Starting Kraken Rebalancer...
-java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar "%JAR_PATH%"
+if /i "%~1"=="debug" (
+    java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -Dlogback.configurationFile="%~dp0logback-debug.xml" -jar "%JAR_PATH%"
+) else (
+    java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar "%JAR_PATH%"
+)
 pause
