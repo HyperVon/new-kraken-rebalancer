@@ -20,6 +20,7 @@ import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.repository.AppliedAthFlow
+import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -91,13 +92,14 @@ class AthTrustAndIdempotencyTest : StringSpec() {
         now: Instant,
         resolver: FundingProvenanceResolver = testProvenanceResolver,
         athRebaseRequested: Boolean = false,
+        trades: TradeRepository = tradeRepository,
     ): PortfolioAnalyzer = object : PortfolioAnalyzer by PortfolioAnalyzerImpl(
         krakenService = krakenService,
         configService = configService,
         portfolioStatsRepository = statsRepository,
         nowProvider = { now },
         ledgerRepository = ledgerRepository,
-        tradeRepository = tradeRepository,
+        tradeRepository = trades,
         athRebaseRequested = athRebaseRequested,
     ) {
         override suspend fun updateAthAndCalculateDrawdown(
@@ -2992,6 +2994,87 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                 )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("bare-transfer")) shouldBe emptySet()
+            }
+        }
+
+        for (initialAth in listOf(true, false)) {
+            "${if (initialAth) "initial" else "established"} ATH reads inception once per batch and refreshes it" {
+                runTest {
+                    statsRepository.save(
+                        PortfolioStats(
+                            if (initialAth) BigDecimal.ZERO else BigDecimal("100000.00"),
+                            BigDecimal.ZERO,
+                        ),
+                    )
+                    if (!initialAth) {
+                        tradeRepository.setSyncMetadata(
+                            SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                            t60.epochSecond.toString(),
+                        )
+                    }
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        t80.toEpochMilli().toString(),
+                    )
+                    ledgerRepository.setSyncMetadata(
+                        SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                        t120.epochSecond.toString(),
+                    )
+                    ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                    val baselineRows = (0 until 100).map { index ->
+                        LedgerEvent(
+                            ledgerId = "baseline-$index",
+                            time = if (index == 99) t80 else t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            asset = "USD",
+                            amount = BigDecimal.ONE,
+                            fee = BigDecimal.ZERO,
+                        )
+                    }
+                    ledgerRepository.saveLedgers(baselineRows)
+                    var inceptionReads = 0
+                    val countingRepository = object : TradeRepository by tradeRepository {
+                        override suspend fun getSyncMetadata(key: String): String? {
+                            if (key == SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) inceptionReads++
+                            return tradeRepository.getSyncMetadata(key)
+                        }
+                    }
+                    val subject = analyzer(t90, trades = countingRepository)
+                    subject.updateAthAndCalculateDrawdown(
+                        BigDecimal("110000.00"),
+                        BigDecimal.ZERO,
+                        t90,
+                    ).shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                    statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("110000.00"))
+                    val baselineIds = baselineRows.map { it.ledgerId }
+                    statsRepository.getAppliedAthFlowIds(baselineIds) shouldBe baselineIds.toSet()
+                    inceptionReads shouldBe 1
+
+                    subject.updateAthAndCalculateDrawdown(
+                        BigDecimal("110000.00"),
+                        BigDecimal.ZERO,
+                        t90,
+                    ).shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                    statsRepository.getAppliedAthFlowIds(baselineIds) shouldBe baselineIds.toSet()
+                    inceptionReads shouldBe 1
+
+                    // A new batch must re-read inception, not keep a cache that can absorb real funding.
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        t60.toEpochMilli().toString(),
+                    )
+                    ledgerRepository.saveLedgers(
+                        listOf(baselineRows.first().copy(ledgerId = "late-ambiguous", time = t75)),
+                    )
+                    subject.updateAthAndCalculateDrawdown(
+                        BigDecimal("110000.00"),
+                        BigDecimal.ZERO,
+                        t120,
+                    ) shouldBe AthUpdateResult.Deferred(BigDecimal("0.0000"), AthTrustFailureReason.AMBIGUOUS_FUNDING)
+                    statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("110000.00"))
+                    statsRepository.getAppliedAthFlowIds(listOf("late-ambiguous")) shouldBe emptySet()
+                    inceptionReads shouldBe 2
+                }
             }
         }
 

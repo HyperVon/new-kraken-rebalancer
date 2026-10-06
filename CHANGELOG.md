@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.104] - 2026-10-06
+
+### Fixed
+
+- **ATH ledger-scan query amplification**: initial-baseline absorption and
+  established-ATH reconciliation now read the strategy inception once per
+  ledger batch instead of opening one metadata transaction per undecided row.
+  The batch-local value is refreshed on the next scan; inclusive inception
+  boundaries, missing/malformed metadata handling, flow journaling, and
+  post-inception fail-closed classification are preserved. Regression tests
+  cover both ATH paths and metadata changes between batches.
+
 ## [6.17.103] - 2026-10-06
 
 ### Changed

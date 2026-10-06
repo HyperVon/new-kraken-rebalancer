@@ -501,7 +501,7 @@ class PortfolioAnalyzerImpl(
     )
 
     /**
-     * True when [event] predates the accepted strategy inception.
+     * Selects [events] at or before the accepted strategy inception using one batch-local read.
      *
      * A flow before the strategy existed cannot be owner capital entering it: its effect is
      * already measured into the baseline snapshot's portfolio value. The classifier cannot
@@ -512,11 +512,13 @@ class PortfolioAnalyzerImpl(
      * baseline material, and are never re-scanned. Post-inception ambiguous flows still fail
      * closed: they can move ATH on unearned capital.
      */
-    private suspend fun predatesStrategyInception(event: LedgerEvent): Boolean {
+    private suspend fun preInceptionFlows(events: List<LedgerEvent>): List<LedgerEvent> {
+        if (events.isEmpty()) return emptyList()
         val inceptionEpochMs = tradeRepository
             ?.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
-            ?.toLongOrNull() ?: return false
-        return !event.time.isAfter(Instant.ofEpochMilli(inceptionEpochMs))
+            ?.toLongOrNull() ?: return emptyList()
+        val inception = Instant.ofEpochMilli(inceptionEpochMs)
+        return events.filter { !it.time.isAfter(inception) }
     }
 
     /**
@@ -619,7 +621,7 @@ class PortfolioAnalyzerImpl(
         // Baseline material first: a row at or before the strategy inception can never be
         // resolved, and the fatal check below would otherwise refuse to establish the
         // initial ATH over one unresolvable row forever.
-        val baselineMaterial = scanned.unapplied.filter { predatesStrategyInception(it) }
+        val baselineMaterial = preInceptionFlows(scanned.unapplied)
         val baselineIds = baselineMaterial.mapTo(mutableSetOf()) { it.ledgerId }
         val unapplied = scanned.unapplied.filterNot { it.ledgerId in baselineIds }
         val classifications = scanned.classifications
@@ -859,7 +861,7 @@ class PortfolioAnalyzerImpl(
         // strategy), so leaving it in `unapplied` would let the straddling-group and
         // ambiguous-normalization checks below fail the update closed on every cycle for
         // an unresolvable row. Journal it decided-but-not-applied here, once.
-        val baselineMaterial = scanned.unapplied.filter { predatesStrategyInception(it) }
+        val baselineMaterial = preInceptionFlows(scanned.unapplied)
         if (baselineMaterial.isNotEmpty()) {
             log.info(
                 "Ignoring {} pre-inception funding events already represented by the baseline",
@@ -923,7 +925,7 @@ class PortfolioAnalyzerImpl(
         // The one exception is baseline material — a row at or before the strategy
         // inception, which can never be resolved because the evidence predates the
         // strategy. Those are journaled decided-but-not-applied (see
-        // predatesStrategyInception) so a single unresolvable row cannot hold ATH
+        // preInceptionFlows) so a single unresolvable row cannot hold ATH
         // hostage forever.
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
         val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
