@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.107] - 2026-10-06
+
+### Fixed
+
+- **Historical configuration anchoring**: inferred transitions now use the
+  reconciled historical Spot wallet at each retained checkpoint, so holdings
+  omitted by configured-only snapshots are not mistaken for zero balances.
+  Completion, exact named-balance stability, and the bounded local search remain
+  required. Owner contributions are allocated only after actual-wallet replay
+  establishes the applicable synthetic epoch. High-confidence transitions with
+  missing balance evidence, incomplete membership, changing balances, or unusable
+  funding now make the comparison explicitly unavailable rather than silently
+  omitting a reset. History and Settings show shared reason text; README and the
+  User Guide explain the benchmark modes and diagnostics. Comparison cache version 9, automatic-baseline proof
+  version 4, and proposal search version 13 reject prior-policy results. Synthetic
+  regressions cover complete/configured-only parity and distinct rejection cases.
+
+## [6.17.106] - 2026-10-06
+
+### Fixed
+
+- **Comparison valuation consistency**: actual-wallet and hold valuations now
+  share a resolved mark for each asset/time instead of allowing repeated price
+  lookups or conflicting canonical aliases to manufacture performance. A cash
+  flow exactly coinciding with an observation uses that observation's recorded
+  mark; earlier flows retain their historical price without looking ahead.
+  Unpriced baseline holdings no longer mix a stored USD value on one side with
+  an incompatible historical mark on the other. Contradictory valuations fail
+  closed, while explainable legacy reward residuals remain supported. Comparison
+  cache version 8, automatic-baseline proof version 3, and proposal search version
+  12 invalidate results and proofs produced under the prior valuation rules.
+  Nonpositive historical marks also fail closed during off-observation withdrawal
+  valuation. Regressions cover both benchmark methods, no-event parity, aliases,
+  contribution/withdrawal timing, and invalid withdrawal prices.
+
 ## [6.17.105] - 2026-10-06
 
 ### Fixed

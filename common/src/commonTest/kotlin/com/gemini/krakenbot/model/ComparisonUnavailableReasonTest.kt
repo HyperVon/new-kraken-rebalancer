@@ -94,6 +94,24 @@ class ComparisonUnavailableReasonTest {
     }
 
     @Test
+    fun configurationTransitionReasonsExplainRetainedEvidenceFailures() {
+        val expectedTexts = mapOf(
+            "CONFIGURATION_BALANCE_EVIDENCE_MISSING" to
+                "Retained historical spot balance evidence is missing at a configuration change.",
+            "CONFIGURATION_TRANSITION_INCOMPLETE" to
+                "Retained history does not confirm completion of asset additions or removals in the transition window.",
+            "CONFIGURATION_TRANSITION_UNSETTLED" to
+                "Historical balances for the affected assets were still changing in the transition window.",
+            "CONFIGURATION_FUNDING_EVIDENCE_MISSING" to
+                "Retained history cannot establish the funding split for assets added at a configuration change.",
+        )
+        expectedTexts.forEach { (reason, expectedText) ->
+            assertEquals(expectedText, ComparisonUnavailableReason.valueOf(reason).displayText)
+            assertEquals(expectedText, ComparisonUnavailableReason.displayTextFor(reason))
+        }
+    }
+
+    @Test
     fun displayTextForDefaultsToInvalidResponseOnUnknownOrNull() {
         assertEquals(
             "Comparison data could not be validated.",

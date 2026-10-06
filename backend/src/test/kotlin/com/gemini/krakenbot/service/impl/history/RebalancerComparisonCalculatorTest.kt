@@ -9722,7 +9722,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe inconsistentPartial.timestamp
         }
 
-        "unpriced snapshot row for a baseline holding preserves its recorded value during wallet revaluation" {
+        "unpriced recorded holdings cannot manufacture performance with unchanged quantities" {
             val baseline = snapshot(
                 now,
                 "110.00",
@@ -9741,21 +9741,209 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
+            for (method in BenchmarkMethod.entries) {
+                for (btcPrice in listOf("90.00", "98.00")) {
+                    val result = calculate(
+                        snapshots = listOf(baseline, after),
+                        inceptionSnapshot = baseline,
+                        configuredAssetUniverse = setOf("BTC", "USD"),
+                        priceProvider = mapPriceProvider(
+                            mapOf("BTC" to BigDecimal(btcPrice), "ADA" to BigDecimal("10.00")),
+                        ),
+                        benchmarkMethod = method,
+                    )
+
+                    if (btcPrice == "90.00") {
+                        result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                        result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                        result.unavailableAt shouldBe after.timestamp
+                        result.points shouldBe emptyList()
+                    } else {
+                        result.availability shouldBe ComparisonAvailability.AVAILABLE
+                        result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("108.00")
+                        result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("108.00")
+                        result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                    }
+                }
+            }
+        }
+
+        "both portfolios use one resolved historical mark per asset and observation" {
+            val baseline = snapshot(
+                now,
+                "110.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "ADA" to assetRow("1.00", "10.00", "10.00")),
+            )
+            val after = snapshot(now.plusSeconds(60), "100.00", mapOf("BTC" to assetRow("1.00", "100.00", "100.00")))
+            var priceReads = 0L
             val result = calculate(
                 snapshots = listOf(baseline, after),
                 inceptionSnapshot = baseline,
-                configuredAssetUniverse = setOf("BTC", "USD"),
-                priceProvider = mapPriceProvider(
-                    mapOf("BTC" to BigDecimal("90.00"), "ADA" to BigDecimal("10.00")),
-                ),
+                configuredAssetUniverse = setOf("BTC"),
+                priceProvider = HistoricalPriceProvider { symbol, _ ->
+                    check(symbol == "ADA")
+                    BigDecimal.TEN.add(BigDecimal.valueOf(priceReads++))
+                },
             )
 
-            check(result.availability == ComparisonAvailability.AVAILABLE) {
-                "${result.unavailableReason} at ${result.unavailableAt}"
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("110.00")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            priceReads shouldBe 1L
+        }
+
+        "contradictory recorded price and value fail closed instead of manufacturing performance" {
+            val baseline = snapshot(now, "100.00", mapOf("BTC" to assetRow("1.00", "100.00", "100.00")))
+            val after = snapshot(now.plusSeconds(60), "98.00", mapOf("BTC" to assetRow("1.00", "90.00", "98.00")))
+
+            val result = calculate(snapshots = listOf(baseline, after), inceptionSnapshot = baseline)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe after.timestamp
+            result.points shouldBe emptyList()
+        }
+
+        "canonical aliases require a consistent price and use a priced alias before historical fallback" {
+            val baseline = snapshot(now, "200.00", mapOf("BTC" to assetRow("2.00", "100.00", "200.00")))
+            for (aliasPrice in listOf("0.00", "100.00", "101.00")) {
+                val aliasValue = if (aliasPrice == "101.00") "101.00" else "100.00"
+                val after = snapshot(
+                    now.plusSeconds(60),
+                    if (aliasPrice == "101.00") "201.00" else "200.00",
+                    mapOf(
+                        "XXBT" to assetRow("1.00", aliasPrice, aliasValue),
+                        "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    ),
+                )
+                val result = calculate(
+                    snapshots = listOf(baseline, after),
+                    inceptionSnapshot = baseline,
+                    configuredAssetUniverse = setOf("BTC"),
+                    priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("90.00"))),
+                )
+
+                if (aliasPrice == "101.00") {
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                } else {
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+                    result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+                    result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                }
             }
-            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("108.00")
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("8.00")
+        }
+
+        "cash flows share the observation mark only at the exact observation timestamp" {
+            val afterTime = now.plusSeconds(60)
+            val baseline = snapshot(
+                now,
+                "200.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "USD" to assetRow("100.00", "1.00", "100.00")),
+            )
+            val after = snapshot(
+                afterTime,
+                "300.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "USD" to assetRow("200.00", "1.00", "200.00")),
+            )
+            for (method in BenchmarkMethod.entries) {
+                for (secondsBefore in listOf(0L, 1L)) {
+                    val deposit = ledgerEvent(
+                        timestamp = afterTime.minusSeconds(secondsBefore),
+                        asset = "USD",
+                        amount = "100.00",
+                        balance = "200.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    )
+                    val result = calculate(
+                        snapshots = listOf(baseline, after),
+                        inceptionSnapshot = baseline,
+                        rewards = listOf(deposit),
+                        priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("90.00"))),
+                        benchmarkMethod = method,
+                    )
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("300.00")
+                    result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo
+                        BigDecimal(if (secondsBefore == 0L) "300.00" else "305.56")
+                    result.points.last().differenceUSD shouldBeEqualComparingTo
+                        BigDecimal(if (secondsBefore == 0L) "0.00" else "-5.56")
+                }
+            }
+        }
+
+        "off-observation withdrawals reject nonpositive historical marks" {
+            val eventTime = now.plusSeconds(30)
+            val baseline = snapshot(
+                now,
+                "200.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "USD" to assetRow("100.00", "1.00", "100.00")),
+            )
+            val after = snapshot(
+                now.plusSeconds(60),
+                "190.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "USD" to assetRow("90.00", "1.00", "90.00")),
+            )
+            val withdrawal = ledgerEvent(
+                timestamp = eventTime,
+                asset = "USD",
+                amount = "-10.00",
+                balance = "90.00",
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            )
+            for (method in BenchmarkMethod.entries) {
+                for (invalidPrice in listOf(BigDecimal.ZERO, BigDecimal("-1.00"))) {
+                    val result = calculate(
+                        snapshots = listOf(baseline, after),
+                        inceptionSnapshot = baseline,
+                        rewards = listOf(withdrawal),
+                        priceProvider = mapPriceProvider(mapOf("BTC" to invalidPrice)),
+                        benchmarkMethod = method,
+                    )
+
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+                    result.unavailableAt shouldBe eventTime
+                }
+            }
+        }
+
+        "coincident withdrawals value synthetic liquidation with the observation mark" {
+            val afterTime = now.plusSeconds(60)
+            val baseline = snapshot(
+                now,
+                "300.00",
+                mapOf("BTC" to assetRow("2.00", "100.00", "200.00"), "USD" to assetRow("100.00", "1.00", "100.00")),
+            )
+            val after = snapshot(
+                afterTime,
+                "200.00",
+                mapOf("BTC" to assetRow("2.00", "100.00", "200.00"), "USD" to assetRow("0.00", "1.00", "0.00")),
+            )
+            val withdrawal = ledgerEvent(
+                timestamp = afterTime,
+                asset = "USD",
+                amount = "-100.00",
+                balance = "0.00",
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            )
+            for (method in BenchmarkMethod.entries) {
+                val result = calculate(
+                    snapshots = listOf(baseline, after),
+                    inceptionSnapshot = baseline,
+                    rewards = listOf(withdrawal),
+                    priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("90.00"))),
+                    benchmarkMethod = method,
+                )
+
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+                result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+                result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            }
         }
 
         "partial snapshot with an unexplained total residual fails closed during actual NAV reconstruction" {

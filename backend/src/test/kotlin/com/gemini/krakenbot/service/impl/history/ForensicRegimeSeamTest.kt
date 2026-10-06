@@ -146,6 +146,93 @@ class ForensicRegimeSeamTest : StringSpec() {
     )
 
     init {
+        "ledger-established additions anchor identically in complete and configured-only snapshots" {
+            val start = snapshot(
+                t0,
+                "1000.00",
+                mapOf("OLD" to row("100.0", "10.00", "1000.00"), "USD" to row("0.00", "1.00", "0.00")),
+            )
+            val sell = TradeRecord(
+                timestamp = t1,
+                pair = "OLDUSD",
+                side = "SELL",
+                symbol = "OLD",
+                volume = BigDecimal("100.0"),
+                usdAmount = BigDecimal("1000.00"),
+                success = true,
+                dryRun = false,
+                price = BigDecimal("10.00"),
+                fee = BigDecimal.ZERO,
+                source = TradeSource.API_FILL,
+                tradeId = "SELL",
+            )
+            val sellLegs = listOf(
+                LedgerEvent(
+                    ledgerId = "SELL_BASE",
+                    refid = "SELL",
+                    time = t1,
+                    type = "trade",
+                    subtype = "tradespot",
+                    aclass = "currency",
+                    asset = "OLD",
+                    amount = BigDecimal("-100.0"),
+                    fee = BigDecimal.ZERO,
+                    balance = BigDecimal.ZERO,
+                    hasAuthoritativeBalance = true,
+                ),
+                LedgerEvent(
+                    ledgerId = "SELL_QUOTE",
+                    refid = "SELL",
+                    time = t1,
+                    type = "trade",
+                    subtype = "tradespot",
+                    aclass = "currency",
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    fee = BigDecimal.ZERO,
+                    balance = BigDecimal("1000.00"),
+                    hasAuthoritativeBalance = true,
+                ),
+            )
+            val later = t2.plusSeconds(3_600)
+            val transition = btcEstablishment(t1).copy(removals = setOf("OLD"))
+            for (omitAddition in listOf(false, true)) {
+                val anchorAssets = mapOf(
+                    "OLD" to row("0.0", "10.00", "0.00"),
+                    "USD" to row("500.00", "1.00", "500.00"),
+                ) + if (omitAddition) emptyMap() else mapOf("BTC" to row("5.0", "100.00", "500.00"))
+                val laterAssets = anchorAssets +
+                    if (omitAddition) emptyMap() else mapOf("BTC" to row("5.0", "200.00", "1000.00"))
+                val result = RebalancerComparisonCalculator.calculateWithForensicRegimes(
+                    snapshots = listOf(
+                        start,
+                        snapshot(t2, if (omitAddition) "500.00" else "1000.00", anchorAssets),
+                        snapshot(later, if (omitAddition) "500.00" else "1500.00", laterAssets),
+                    ),
+                    trades = listOf(sell) + acquisitionEvents().first,
+                    assetMetadata = assetMetadata,
+                    rewards = sellLegs + acquisitionEvents().second,
+                    inceptionSnapshot = start,
+                    priceProvider = HistoricalPriceProvider { symbol, at ->
+                        if (symbol == "BTC") {
+                            BigDecimal(if (at >= later) "200.00" else "100.00")
+                        } else {
+                            prices.priceAt(symbol, at)
+                        }
+                    },
+                    forensicRegimes = listOf(transition),
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+
+                withClue("omitted=$omitAddition reason=${result.unavailableReason} at=${result.unavailableAt}") {
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                }
+                result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("1500.00"))
+                result.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("2000.00"))
+                result.points.last().differenceUSD.shouldBeEqualComparingTo(BigDecimal("-500.00"))
+            }
+        }
+
         "the shipping entry point infers configuration history generically" {
             val result = RebalancerComparisonCalculator.calculate(
                 snapshots = listOf(baseline(), settled()),
@@ -203,7 +290,7 @@ class ForensicRegimeSeamTest : StringSpec() {
             }
         }
 
-        "forensic epochs are applied by the internal seam only" {
+        "a high-confidence addition without named released funding is explicitly unavailable" {
             val forensic = RebalancerComparisonCalculator.calculateWithForensicRegimes(
                 snapshots = listOf(baseline(), settled()),
                 trades = acquisitionEvents().first,
@@ -216,12 +303,11 @@ class ForensicRegimeSeamTest : StringSpec() {
             )
 
             withClue("reason=${forensic.unavailableReason} at=${forensic.unavailableAt}") {
-                forensic.availability shouldBe
-                    ComparisonAvailability.AVAILABLE
+                forensic.availability shouldBe ComparisonAvailability.UNAVAILABLE
             }
-            // The supplied epoch reweights the benchmark to the observed settled composition, so the
-            // benchmark now holds the same BTC/USD mix the Actual strategy settled into.
-            forensic.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+            forensic.unavailableReason shouldBe ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING
+            forensic.unavailableAt shouldBe t2
+            forensic.points shouldBe emptyList()
             forensic.configurationEvidence shouldBe ConfigurationEvidence.INFERRED
         }
 
@@ -248,7 +334,7 @@ class ForensicRegimeSeamTest : StringSpec() {
             forensic.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
         }
 
-        "a forensic epoch without an anchorable settled state is skipped" {
+        "a high-confidence epoch outside retained observations reports missing evidence" {
             val forensic = RebalancerComparisonCalculator.calculateWithForensicRegimes(
                 snapshots = listOf(baseline(), settled()),
                 trades = acquisitionEvents().first,
@@ -262,12 +348,13 @@ class ForensicRegimeSeamTest : StringSpec() {
             )
 
             withClue("reason=${forensic.unavailableReason} at=${forensic.unavailableAt}") {
-                forensic.availability shouldBe
-                    ComparisonAvailability.AVAILABLE
+                forensic.availability shouldBe ComparisonAvailability.UNAVAILABLE
             }
+            forensic.unavailableReason shouldBe ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING
+            forensic.unavailableAt shouldBe lateTrade
         }
 
-        "a forensic reset still fails closed when a target price is unavailable" {
+        "a named addition without a known balance is not silently omitted" {
             val unpriceable = btcEstablishment(t0.plusSeconds(30))
                 .copy(additions = setOf("MISSING"))
 
@@ -282,11 +369,108 @@ class ForensicRegimeSeamTest : StringSpec() {
                 benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
             )
 
-            // Price fail-closed is not bypassable by supplying configuration history.
             withClue("reason=${forensic.unavailableReason} at=${forensic.unavailableAt}") {
-                forensic.availability shouldBe
-                    ComparisonAvailability.AVAILABLE
+                forensic.availability shouldBe ComparisonAvailability.UNAVAILABLE
             }
+            forensic.unavailableReason shouldBe ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING
+            forensic.unavailableAt shouldBe t0.plusSeconds(30)
+        }
+
+        "omitted same-instant holdings do not acquire terminal checkpoint ownership" {
+            val hidden = snapshot(t1, "500.00", mapOf("USD" to row("500.00", "1.00", "500.00")))
+            for (observationCount in 1..2) {
+                val result = RebalancerComparisonCalculator.calculateWithForensicRegimes(
+                    snapshots = listOf(baseline()) + List(observationCount) { hidden },
+                    trades = acquisitionEvents().first,
+                    assetMetadata = assetMetadata,
+                    rewards = acquisitionEvents().second,
+                    inceptionSnapshot = baseline(),
+                    priceProvider = prices,
+                    forensicRegimes = listOf(btcEstablishment(t1)),
+                    benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                )
+
+                withClue("observations=$observationCount reason=${result.unavailableReason}") {
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.unavailableReason shouldBe ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING
+                }
+                result.unavailableAt shouldBe t1
+            }
+        }
+
+        "a known zero addition reports incomplete membership rather than missing evidence" {
+            val knownZero = baseline().copy(
+                assets = baseline().assets + (
+                    "BTC" to settled().assets.getValue("BTC").copy(
+                        balance = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                    )
+                    ),
+            )
+            val result = RebalancerComparisonCalculator.calculateWithForensicRegimes(
+                snapshots = listOf(knownZero, knownZero.copy(timestamp = t1), knownZero.copy(timestamp = t2)),
+                trades = emptyList(),
+                assetMetadata = assetMetadata,
+                rewards = emptyList(),
+                inceptionSnapshot = knownZero,
+                priceProvider = prices,
+                forensicRegimes = listOf(btcEstablishment(t1)),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.CONFIGURATION_TRANSITION_INCOMPLETE
+            result.unavailableAt shouldBe t1
+        }
+
+        "complete but still-changing additions report unsettled balances without widening the window" {
+            val snapshots = mutableListOf(baseline())
+            val trades = mutableListOf<TradeRecord>()
+            val ledgers = mutableListOf<LedgerEvent>()
+            for (index in 1..27) {
+                val at = t1.plusSeconds(index.toLong())
+                val balance = BigDecimal.valueOf(index.toLong()).movePointLeft(1)
+                val usd = BigDecimal("1000.00").subtract(BigDecimal.valueOf(index.toLong() * 10))
+                val (buy, legs) = acquisitionEvents()
+                val id = "BUY_$index"
+                trades += buy.single().copy(
+                    timestamp = at,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("10.00"),
+                    tradeId = id,
+                )
+                ledgers += legs.map { leg ->
+                    leg.copy(
+                        ledgerId = "${leg.ledgerId}_$index",
+                        refid = id,
+                        time = at,
+                        amount = if (leg.asset == "USD") BigDecimal("-10.00") else BigDecimal("0.1"),
+                        balance = if (leg.asset == "USD") usd else balance,
+                    )
+                }
+                snapshots += snapshot(
+                    at,
+                    "1000.00",
+                    mapOf(
+                        "BTC" to row(balance.toPlainString(), "100.00", (balance * BigDecimal("100")).toPlainString()),
+                        "USD" to row(usd.toPlainString(), "1.00", usd.toPlainString()),
+                    ),
+                )
+            }
+            val result = RebalancerComparisonCalculator.calculateWithForensicRegimes(
+                snapshots = snapshots,
+                trades = trades,
+                assetMetadata = assetMetadata,
+                rewards = ledgers,
+                inceptionSnapshot = baseline(),
+                priceProvider = prices,
+                forensicRegimes = listOf(btcEstablishment(t1.plusSeconds(1))),
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.CONFIGURATION_TRANSITION_UNSETTLED
+            result.unavailableAt shouldBe t1.plusSeconds(1)
         }
 
         "the forensic seam is internal and never exposed as a benchmark method" {
