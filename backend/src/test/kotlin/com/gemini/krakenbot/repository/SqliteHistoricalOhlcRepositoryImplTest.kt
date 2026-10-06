@@ -207,6 +207,68 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
             }
         }
 
+        "loadFetchProofs isolates exact pair and interval and returns every request since" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.loadFetchProofs(pair, intervalMinutes) shouldBe emptyList()
+
+                repository.saveFetch(pair, intervalMinutes, 100L, 9_000L, emptyList(), mayBeTruncated = false)
+                repository.saveFetch(pair, intervalMinutes, 200L, 10_000L, emptyList(), mayBeTruncated = false)
+                repository.saveFetch("BABYUSD_ALT", intervalMinutes, 300L, 11_000L, emptyList(), mayBeTruncated = false)
+                repository.saveFetch(pair, 60, 400L, 12_000L, emptyList(), mayBeTruncated = false)
+
+                repository.loadFetchProofs(pair, intervalMinutes) shouldBe listOf(
+                    HistoricalOhlcFetchProof(200L, 200L, 10_000L, 10_000L),
+                    HistoricalOhlcFetchProof(100L, 100L, 9_000L, 9_000L),
+                )
+                repository.loadFetchProofs("BABYUSD_ALT", intervalMinutes) shouldBe listOf(
+                    HistoricalOhlcFetchProof(300L, 300L, 11_000L, 11_000L),
+                )
+                repository.loadFetchProofs(pair, 60) shouldBe listOf(
+                    HistoricalOhlcFetchProof(400L, 400L, 12_000L, 12_000L),
+                )
+                repository.loadFetchProofs("MISSINGUSD", intervalMinutes) shouldBe emptyList()
+            }
+        }
+
+        "loadFetchProofs keeps older narrow and disjoint coverage ordered by fetch wall" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    100L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                    mayBeTruncated = true,
+                )
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    100L,
+                    11_000L,
+                    listOf(5_000L to BigDecimal("0.0179")),
+                    mayBeTruncated = true,
+                )
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    100L,
+                    10_000L,
+                    listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0176")),
+                    mayBeTruncated = true,
+                )
+
+                repository.loadFetchProofs(pair, intervalMinutes) shouldBe listOf(
+                    HistoricalOhlcFetchProof(100L, 5_000L, 5_900L, 11_000L),
+                    HistoricalOhlcFetchProof(100L, 1_000L, 2_800L, 10_000L),
+                    HistoricalOhlcFetchProof(100L, 1_000L, 1_900L, 9_000L),
+                )
+            }
+        }
+
         "repeated revalidations keep the fetch-proof lineage bounded" {
             runTest {
                 val database = DatabaseConfig.init(
@@ -832,6 +894,9 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 checkNotNull(marker).coverageFromEpochSecond shouldBe 1_000_000L
                 marker.coverageUntilEpochSecond shouldBe 1_000_000L
                 marker.candles shouldBe emptyList()
+                repository.loadFetchProofs(pair, intervalMinutes) shouldBe listOf(
+                    HistoricalOhlcFetchProof(1_000_000L, 1_000_000L, 1_000_000L, 2_000_000L),
+                )
             }
         }
 
@@ -972,19 +1037,26 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 val legacyPair = pair
                 val legacyInterval = intervalMinutes
                 transaction(database) {
-                    // Explicit NULL coverage bounds: the pre-migration row shape.
-                    HistoricalOhlcFetchTable.insert {
-                        it[HistoricalOhlcFetchTable.pair] = legacyPair
-                        it[HistoricalOhlcFetchTable.intervalMinutes] = legacyInterval
-                        it[HistoricalOhlcFetchTable.sinceEpochSecond] = 1_000_000L
-                        it[HistoricalOhlcFetchTable.fetchedAtEpochSecond] = 2_000_000L
-                        it[HistoricalOhlcFetchTable.coverageFromEpochSecond] = null
-                        it[HistoricalOhlcFetchTable.coverageUntilEpochSecond] = null
+                    listOf(
+                        null to null,
+                        1_000_000L to null,
+                        null to 2_000_000L,
+                    ).forEachIndexed { index, (from, until) ->
+                        HistoricalOhlcFetchTable.insert {
+                            it[HistoricalOhlcFetchTable.pair] = legacyPair
+                            it[HistoricalOhlcFetchTable.intervalMinutes] = legacyInterval
+                            it[HistoricalOhlcFetchTable.sinceEpochSecond] = 1_000_000L
+                            it[HistoricalOhlcFetchTable.fetchedAtEpochSecond] = 2_000_000L + index
+                            it[HistoricalOhlcFetchTable.coverageFromEpochSecond] = from
+                            it[HistoricalOhlcFetchTable.coverageUntilEpochSecond] = until
+                        }
                     }
                 }
 
                 // Old rows cannot prove whether they were full or truncated: miss.
                 repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L) shouldBe null
+                repository.loadFetchProofs(pair, intervalMinutes) shouldBe emptyList()
+                fetchProofCount(database, pair, intervalMinutes, 1_000_000L) shouldBe 3
 
                 // The next save of the lineage drops the dead row and writes a real proof.
                 repository.saveFetch(
@@ -996,6 +1068,9 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     mayBeTruncated = false,
                 ) shouldBe true
                 fetchProofCount(database, pair, intervalMinutes, 1_000_000L) shouldBe 1
+                repository.loadFetchProofs(pair, intervalMinutes) shouldBe listOf(
+                    HistoricalOhlcFetchProof(1_000_000L, 1_000_000L, 2_010_000L, 2_010_000L),
+                )
                 val stored = repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L)?.candles.orEmpty()
                 stored.any { it.first == 1_000_000L } shouldBe true
             }

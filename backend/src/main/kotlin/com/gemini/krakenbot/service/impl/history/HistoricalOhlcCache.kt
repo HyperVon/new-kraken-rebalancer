@@ -13,12 +13,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListMap
+import kotlin.coroutines.coroutineContext
 
 sealed interface OhlcRevalidationResult {
     data class Unchanged(val updatedDependency: ConsumedOhlcDependency) : OhlcRevalidationResult
@@ -223,6 +225,15 @@ class HistoricalOhlcCache(
     private val reachabilityPositiveClearWalls = ConcurrentHashMap<SeriesKey, Long>()
     private val loggedFrontierRetryAfter = ConcurrentHashMap<SeriesKey, Long>()
 
+    internal suspend fun <T> withReadBatch(block: suspend (HistoricalOhlcReadBatch?) -> T): T {
+        val repository = persistentRepository ?: return block(null)
+        val batch = HistoricalOhlcReadBatch(this, repository)
+        return withContext(batch) { block(batch) }
+    }
+
+    private suspend fun currentReadBatch(): HistoricalOhlcReadBatch? =
+        coroutineContext[HistoricalOhlcReadBatch]?.takeIf { it.cache === this }
+
     /**
      * Series-level outage backoff: earliest epoch second at which a revalidation of any range
      * of the series may retry the live source after a failure. Short and series-wide on purpose:
@@ -311,6 +322,9 @@ class HistoricalOhlcCache(
         val existingFrontier = loadReachabilityFrontier(seriesKey)
         if (existingFrontier?.isFresh(nowProvider().epochSecond) == true && existingFrontier.blocks(upTo.epochSecond)) {
             logReachabilitySkip(existingFrontier, upTo.epochSecond)
+            // Record every frontier skip here — not in the batch consult — so a skip reached via
+            // the fallback lookup is re-proved just like a batch-certified one.
+            currentReadBatch()?.recordSkipped(normalizedPair, intervalMinutes, sinceEpochSecond, upTo.epochSecond)
             reportReachabilityDependency(existingFrontier, onReachabilityResolved)
             return emptyList()
         }
@@ -383,6 +397,12 @@ class HistoricalOhlcCache(
                     val frontier = loadReachabilityFrontier(seriesKey)
                     if (frontier?.isFresh(fetchWallEpochSecond) == true && frontier.blocks(upTo.epochSecond)) {
                         logReachabilitySkip(frontier, upTo.epochSecond)
+                        currentReadBatch()?.recordSkipped(
+                            seriesKey.pair,
+                            seriesKey.intervalMinutes,
+                            sinceEpochSecond,
+                            upTo.epochSecond,
+                        )
                         reportReachabilityDependency(frontier, onReachabilityResolved)
                         return emptyList()
                     }
@@ -424,6 +444,12 @@ class HistoricalOhlcCache(
             val frontier = loadReachabilityFrontier(seriesKey)
             if (frontier?.isFresh(nowProvider().epochSecond) == true && frontier.blocks(upTo.epochSecond)) {
                 logReachabilitySkip(frontier, upTo.epochSecond)
+                currentReadBatch()?.recordSkipped(
+                    seriesKey.pair,
+                    seriesKey.intervalMinutes,
+                    sinceEpochSecond,
+                    upTo.epochSecond,
+                )
                 reportReachabilityDependency(frontier, onReachabilityResolved)
                 return emptyList()
             }
@@ -497,6 +523,12 @@ class HistoricalOhlcCache(
                 val frontier = loadReachabilityFrontier(seriesKey)
                 if (frontier?.isFresh(fetchWallEpochSecond) == true && frontier.blocks(upTo.epochSecond)) {
                     logReachabilitySkip(frontier, upTo.epochSecond)
+                    currentReadBatch()?.recordSkipped(
+                        seriesKey.pair,
+                        seriesKey.intervalMinutes,
+                        sinceEpochSecond,
+                        upTo.epochSecond,
+                    )
                     reportReachabilityDependency(frontier, onReachabilityResolved)
                     flight.complete(outcome)
                     return emptyList()
@@ -537,6 +569,12 @@ class HistoricalOhlcCache(
         val sharedFrontier = loadReachabilityFrontier(seriesKey)
         if (sharedFrontier?.isFresh(nowProvider().epochSecond) == true && sharedFrontier.blocks(upTo.epochSecond)) {
             logReachabilitySkip(sharedFrontier, upTo.epochSecond)
+            currentReadBatch()?.recordSkipped(
+                seriesKey.pair,
+                seriesKey.intervalMinutes,
+                sinceEpochSecond,
+                upTo.epochSecond,
+            )
             reportReachabilityDependency(sharedFrontier, onReachabilityResolved)
             return emptyList()
         }
@@ -1351,6 +1389,17 @@ class HistoricalOhlcCache(
         upToEpochSecond: Long,
     ): CoveredSeries? {
         val repository = persistentRepository ?: return null
+        val frontier = reachabilityFrontiers[seriesKey]
+        if (frontier?.isFresh(nowProvider().epochSecond) == true && frontier.blocks(upToEpochSecond) &&
+            currentReadBatch()?.mayCover(
+                seriesKey.pair,
+                seriesKey.intervalMinutes,
+                sinceEpochSecond,
+                upToEpochSecond,
+            ) == false
+        ) {
+            return null
+        }
         val stored = try {
             repository.loadCovered(
                 pair = seriesKey.pair,
@@ -1613,6 +1662,8 @@ class HistoricalOhlcCache(
                 seriesKey.intervalMinutes,
                 e.message,
             )
+        } finally {
+            currentReadBatch()?.invalidate(seriesKey.pair, seriesKey.intervalMinutes)
         }
     }
 

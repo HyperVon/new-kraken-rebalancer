@@ -506,6 +506,7 @@ class TradeHistoryQueryService(
         val consumedDependencies: MutableSet<ConsumedOhlcDependency> = ConcurrentHashMap.newKeySet(),
         val reachabilityDependencies: MutableSet<OhlcReachabilityDependency> = ConcurrentHashMap.newKeySet(),
         val ohlcHadFailures: AtomicBoolean = AtomicBoolean(false),
+        var ohlcReadBatch: HistoricalOhlcReadBatch? = null,
         val initialUnavailableResult: RebalancerComparison? = null,
     )
 
@@ -1207,6 +1208,24 @@ class TradeHistoryQueryService(
         )
     }
 
+    /**
+     * Installs the calculation-scoped OHLC proof index and returns the calculation's own result.
+     * It never rejects that result: a batch recheck that failed here would either discard work the
+     * caller is about to validate successfully, or let an unvalidated placeholder escape as the
+     * final answer. The publication path owns rejection — [validateAndPublishComparison] under the
+     * History evidence lock, and the pre-persistence check for Settings.
+     */
+    private suspend fun withBatchedOhlcReads(
+        onReadBatch: ((HistoricalOhlcReadBatch?) -> Unit)? = null,
+        calculation: suspend () -> RebalancerComparison,
+    ): RebalancerComparison {
+        val cache = historicalOhlcCache ?: return calculation()
+        return cache.withReadBatch { batch ->
+            onReadBatch?.invoke(batch)
+            calculation()
+        }
+    }
+
     private suspend fun computeComparisonOutsideLock(captured: CapturedComparisonEvidence): RebalancerComparison {
         val priceEvidence = FrozenHistoricalPriceEvidence(
             trades = captured.retainedMarketTrades + captured.trades,
@@ -1339,6 +1358,10 @@ class TradeHistoryQueryService(
         captured: CapturedComparisonEvidence,
         calculated: RebalancerComparison,
     ): PublishOutcome {
+        if (captured.ohlcReadBatch?.isStillCurrent() == false) {
+            log.debug("Comparison publication invalidated; reason=OHLC_COVERAGE_PROOFS_CHANGED")
+            return PublishOutcome.Invalidated
+        }
         if (captured.forensicRegimes == null && !capturedEvidenceStillCurrent(captured)) {
             return PublishOutcome.Invalidated
         }
@@ -1487,7 +1510,9 @@ class TradeHistoryQueryService(
 
             val computeStartedNanos = System.nanoTime()
             val calculated = withContext(computationDispatcher) {
-                computeComparisonOutsideLock(captured)
+                withBatchedOhlcReads({ captured.ohlcReadBatch = it }) {
+                    computeComparisonOutsideLock(captured)
+                }
             }
             log.debug(
                 "Comparison computation complete; elapsedMs={}",
@@ -2492,21 +2517,43 @@ class TradeHistoryQueryService(
                     // it runs from getComparisonStartProposalUnderEvidenceLock the caller is
                     // holding the evidence lock, so leaving it on the caller dispatcher stalls
                     // the request and starves the shared pool.
+                    var settingsReadBatch: HistoricalOhlcReadBatch? = null
                     val calculated = withContext(computationDispatcher) {
-                        calculateComparison(
-                            orderedSnapshots = captured.stableSnapshots,
-                            inceptionResolution = captured.inceptionResolution,
-                            assetMetadata = assetMetadata,
-                            benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
-                            eventUpperBound = certifiedEventUpperBound(captured.stableThrough),
-                            suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(captured.inceptionResolution),
-                            onOhlcDependencyConsumed = consumedDependencies::add,
-                            onOhlcReachabilityResolved = reachabilityDependencies::add,
-                            onOhlcSourceFailure = { ohlcHadFailures.set(true) },
-                            ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
-                        )
+                        withBatchedOhlcReads({ settingsReadBatch = it }) {
+                            calculateComparison(
+                                orderedSnapshots = captured.stableSnapshots,
+                                inceptionResolution = captured.inceptionResolution,
+                                assetMetadata = assetMetadata,
+                                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+                                eventUpperBound = certifiedEventUpperBound(captured.stableThrough),
+                                suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(captured.inceptionResolution),
+                                onOhlcDependencyConsumed = consumedDependencies::add,
+                                onOhlcReachabilityResolved = reachabilityDependencies::add,
+                                onOhlcSourceFailure = { ohlcHadFailures.set(true) },
+                                ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
+                            )
+                        }
                     }
-                    if (calculated.availability == ComparisonAvailability.AVAILABLE) {
+                    // Settings has no publish lock, so recheck the batch immediately before
+                    // persistence. A covering proof landed by another writer after the calculation
+                    // makes this result unpublishable: never cache it or verify a baseline on it.
+                    val publishable = if (settingsReadBatch?.isStillCurrent() == false) {
+                        log.debug("Settings comparison not persisted; reason=OHLC_COVERAGE_PROOFS_CHANGED")
+                        RebalancerComparison(
+                            availability = ComparisonAvailability.UNAVAILABLE,
+                            confidence = null,
+                            baselineTimestamp = calculated.baselineTimestamp,
+                            points = emptyList(),
+                            latestDifferenceUSD = null,
+                            latestDifferencePercent = null,
+                            unavailableReason = ComparisonUnavailableReason.COMPARISON_EVALUATING,
+                            unavailableAt = null,
+                            benchmarkMethod = calculated.benchmarkMethod,
+                        )
+                    } else {
+                        calculated
+                    }
+                    if (publishable.availability == ComparisonAvailability.AVAILABLE) {
                         persistCachedComparison(
                             from = settingsCacheFrom,
                             to = settingsCacheTo,
@@ -2515,14 +2562,14 @@ class TradeHistoryQueryService(
                             snapshots = captured.stableSnapshots,
                             assetMetadataDigest = assetMetadataDigest,
                             benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
-                            comparison = calculated,
+                            comparison = publishable,
                             ohlcDependencies = consumedDependencies.toList(),
                             ohlcReachabilityDependencies = reachabilityDependencies.toList(),
                             ohlcHadFailures = ohlcHadFailures.get(),
                         )
                     }
-                    flight.complete(calculated)
-                    calculated
+                    flight.complete(publishable)
+                    publishable
                 } catch (e: CancellationException) {
                     flight.completeExceptionally(e)
                     throw e

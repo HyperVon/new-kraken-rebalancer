@@ -1095,6 +1095,9 @@ class TradeHistoryQueryServiceContentionTest : StringSpec() {
                 val krakenService = mockk<KrakenService>(relaxed = true)
                 val comparisonCache = mockk<RebalancerComparisonCacheRepository>(relaxed = true)
                 val ohlcCache = mockk<HistoricalOhlcCache>(relaxed = true)
+                coEvery { ohlcCache.withReadBatch<RebalancerComparison>(any()) } coAnswers {
+                    firstArg<suspend (HistoricalOhlcReadBatch?) -> RebalancerComparison>().invoke(null)
+                }
 
                 coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
                     repository.getSnapshotsInRange(firstArg(), secondArg())
