@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.103] - 2026-10-06
+
+### Changed
+
+- **Debug logs roll to file**: `logback-debug.xml` now writes diagnostics to
+  `logs/rebalancer-debug.*.log` in addition to the console (50 MB per file,
+  5 rotated files kept, ~250 MB cap), so long debug runs can be captured and
+  shared. Console output is unchanged.
+
 ## [6.17.102] - 2026-10-06
 
 ### Added
