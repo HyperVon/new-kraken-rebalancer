@@ -1235,7 +1235,8 @@ calculation actually consumed is unchanged.
   Only an indexed coverage miss bypasses the per-window SQLite lookup; positive proofs retain
   their normal precedence and candle-loading path. The index is scoped to one calculation and
   invalidated by local fetch persistence, including writes that change only proof metadata.
-  Before accepting the result, skipped windows are checked against freshly loaded metadata.
+  Before accepting the result, every frontier-skipped window — including skips reached through
+  the fallback covering lookup — is checked against freshly loaded metadata.
   A new covering proof forces replay even when another writer left the frontier unchanged;
   proofs outside the skipped windows do not. History repeats this check under its publication
   lock. Unsupported or failed batch reads fall back to ordinary lookups, and failed publication

@@ -322,6 +322,9 @@ class HistoricalOhlcCache(
         val existingFrontier = loadReachabilityFrontier(seriesKey)
         if (existingFrontier?.isFresh(nowProvider().epochSecond) == true && existingFrontier.blocks(upTo.epochSecond)) {
             logReachabilitySkip(existingFrontier, upTo.epochSecond)
+            // Record every frontier skip here — not in the batch consult — so a skip reached via
+            // the fallback lookup is re-proved just like a batch-certified one.
+            currentReadBatch()?.recordSkipped(normalizedPair, intervalMinutes, sinceEpochSecond, upTo.epochSecond)
             reportReachabilityDependency(existingFrontier, onReachabilityResolved)
             return emptyList()
         }

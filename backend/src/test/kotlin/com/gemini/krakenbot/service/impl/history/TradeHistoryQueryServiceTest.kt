@@ -32,6 +32,8 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.ConsumedOhlcDependency
+import com.gemini.krakenbot.repository.HistoricalOhlcFetchProof
+import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.OrderIntentRepository
@@ -7874,6 +7876,57 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "settings verification persists nothing when coverage proofs change after the calculation" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val cache = InMemoryComparisonCache()
+                val proofRepository = mockk<HistoricalOhlcRepository>()
+                coEvery { proofRepository.loadFetchProofs(any(), any()) } returns emptyList()
+                val ohlc = mockk<HistoricalOhlcCache>(relaxed = true)
+                var batches = 0
+                coEvery { ohlc.withReadBatch<RebalancerComparison>(any()) } coAnswers {
+                    val batch = HistoricalOhlcReadBatch(ohlc, proofRepository)
+                    // A valuation blocked by a fresh frontier is a certified miss at calculation time.
+                    val mayCover = batch.mayCover(
+                        "XBTUSD",
+                        15,
+                        fixture.anchorTime.epochSecond,
+                        fixture.laterTime.epochSecond,
+                    )
+                    if (!mayCover) {
+                        batch.recordSkipped(
+                            "XBTUSD",
+                            15,
+                            fixture.anchorTime.epochSecond,
+                            fixture.laterTime.epochSecond,
+                        )
+                    }
+                    val calculated = firstArg<suspend (HistoricalOhlcReadBatch?) -> RebalancerComparison>()(batch)
+                    batches++
+                    // Another writer lands covering candles before the result can be persisted.
+                    coEvery { proofRepository.loadFetchProofs(any(), any()) } returns listOf(
+                        HistoricalOhlcFetchProof(
+                            requestSinceEpochSecond = fixture.anchorTime.epochSecond,
+                            coverageFromEpochSecond = fixture.anchorTime.epochSecond,
+                            coverageUntilEpochSecond = fixture.laterTime.epochSecond,
+                            fetchedAtEpochSecond = fixture.laterTime.epochSecond,
+                        ),
+                    )
+                    calculated
+                }
+                val service = automaticBaselineService(fixture, cache, ohlc)
+
+                val status = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                batches shouldBe 1
+                status.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                status.unavailableReason shouldBe ComparisonUnavailableReason.COMPARISON_EVALUATING
+                status.baselineStatus shouldBe null
+                cache.saveCount shouldBe 0
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldNotBe "VERIFIED"
+            }
+        }
+
         "history does not persist automatic baseline proof for auto-detected inception" {
             runTest {
                 val fixture = automaticBaselineFixture()
@@ -9350,6 +9403,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     private fun automaticBaselineService(
         fixture: AutomaticBaselineFixture,
         comparisonCacheRepository: RebalancerComparisonCacheRepository? = null,
+        historicalOhlcCache: HistoricalOhlcCache? = null,
     ) = TradeHistoryQueryService(
         repository = repository,
         portfolioStatsRepository = statsRepository,
@@ -9358,6 +9412,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         inceptionDiscoveryService = fixture.inceptionService,
         fundingProvenanceResolver = fixture.fundingProvenanceResolver,
         comparisonCacheRepository = comparisonCacheRepository,
+        historicalOhlcCache = historicalOhlcCache,
         nowProvider = { now },
         krakenService = FakeKrakenService(),
     )

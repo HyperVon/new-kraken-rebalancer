@@ -28,13 +28,27 @@ internal class HistoricalOhlcReadBatch(
     private val proofs = mutableMapOf<Series, List<HistoricalOhlcFetchProof>>()
     private val misses = mutableMapOf<Series, MutableSet<Window>>()
 
+    /**
+     * Whether the indexed proofs might cover this window. False lets the caller skip its
+     * per-window SQLite lookup; true — including when the index cannot be read — always falls
+     * back to that lookup. Presence of a proof is decided here; whether the window was actually
+     * skipped is reported separately via [recordSkipped].
+     */
     suspend fun mayCover(pair: String, intervalMinutes: Int, since: Long, upTo: Long): Boolean = mutex.withLock {
         val series = Series(pair, intervalMinutes)
         val index = proofs[series] ?: loadProofs(series)?.also { proofs[series] = it } ?: return@withLock true
-        val window = Window(since, upTo)
-        if (index.any { it.covers(window) }) return@withLock true
-        misses.getOrPut(series) { mutableSetOf() }.add(window)
-        false
+        index.any { it.covers(Window(since, upTo)) }
+    }
+
+    /**
+     * Records a window the cache really skipped on a reachability frontier, whichever lookup
+     * path led there. [isStillCurrent] must re-prove each of these: a covering proof added by
+     * any writer makes the calculated result unpublishable.
+     */
+    suspend fun recordSkipped(pair: String, intervalMinutes: Int, since: Long, upTo: Long) {
+        mutex.withLock {
+            misses.getOrPut(Series(pair, intervalMinutes)) { mutableSetOf() }.add(Window(since, upTo))
+        }
     }
 
     /** A live fetch can add coverage without changing any candle content revision. */
@@ -42,22 +56,41 @@ internal class HistoricalOhlcReadBatch(
         mutex.withLock { proofs.remove(Series(pair, intervalMinutes)) }
     }
 
+    /**
+     * False means a skipped window may now be covered **or** its proof metadata could not be
+     * re-read; callers must treat both as unpublishable and never as proof that history is absent.
+     * A repository that exposes no batched proof metadata contributes no recheck signal and is
+     * left on the pre-existing per-window lookup behavior.
+     */
     suspend fun isStillCurrent(): Boolean {
         val skipped = mutex.withLock { misses.mapValues { (_, windows) -> windows.toList() } }
         for ((series, windows) in skipped) {
-            val current = loadProofs(series) ?: return false
+            val current = try {
+                repository.loadFetchProofs(series.pair, series.intervalMinutes)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A read failure cannot certify that history is still absent.
+                log.warn(
+                    "Unable to recheck OHLC coverage proofs for pair {} interval {}",
+                    series.pair,
+                    series.intervalMinutes,
+                )
+                return false
+            } ?: continue
             if (windows.any { window -> current.any { it.covers(window) } }) return false
         }
         return true
     }
 
+    /** Null means "no batched metadata for this series", never "no proofs exist". */
     private suspend fun loadProofs(series: Series): List<HistoricalOhlcFetchProof>? = try {
         repository.loadFetchProofs(series.pair, series.intervalMinutes)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        // An unsupported or failed batch read never certifies absence. Ordinary lookups
-        // retain their existing fallback; publication fails closed if rechecking fails.
+        // A failed batch read never certifies absence: the caller falls back to the ordinary
+        // per-window lookup, and a later recheck failure keeps the result unpublishable.
         log.warn(
             "Unable to load OHLC coverage proof batch for pair {} interval {}",
             series.pair,

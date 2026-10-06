@@ -195,6 +195,50 @@ class HistoricalOhlcReadBatchTest : StringSpec() {
             }
         }
 
+        "a fallback frontier skip is still rechecked when a covering proof lands later" {
+            val failingReads = AtomicInteger(1)
+            val coveringReads = AtomicInteger(0)
+            val failing = object : HistoricalOhlcRepository by repository {
+                override suspend fun loadFetchProofs(
+                    pair: String,
+                    intervalMinutes: Int,
+                ): List<HistoricalOhlcFetchProof>? {
+                    if (failingReads.getAndDecrement() > 0) error("temporary proof read failure")
+                    return repository.loadFetchProofs(pair, intervalMinutes)
+                }
+
+                override suspend fun loadCovered(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    upToEpochSecond: Long,
+                ): HistoricalOhlcSeries? {
+                    coveringReads.incrementAndGet()
+                    return repository.loadCovered(pair, intervalMinutes, sinceEpochSecond, upToEpochSecond)
+                }
+            }
+            repository.saveReachabilityFrontier(frontier)
+            val subject = cache(failing)
+            subject.withReadBatch { batch ->
+                // The first lookup warms the RAM frontier; the second reaches its skip through the
+                // fallback covering lookup because the proof index read failed.
+                subject.getOHLC(pair, interval, since, Instant.ofEpochSecond(upTo)) shouldBe emptyList()
+                subject.getOHLC(pair, interval, since + 67, Instant.ofEpochSecond(upTo + 67)) shouldBe emptyList()
+                coveringReads.get() shouldBe 2
+                requireNotNull(batch).isStillCurrent() shouldBe true
+
+                repository.saveFetch(
+                    pair,
+                    interval,
+                    since + 67,
+                    wall,
+                    listOf((upTo + 67 - 900) to BigDecimal("127")),
+                    false,
+                )
+                batch.isStillCurrent() shouldBe false
+            }
+        }
+
         "repositories without batched metadata retain per-window coverage checks" {
             val coveringReads = AtomicInteger(0)
             val unsupported = object : HistoricalOhlcRepository by repository {

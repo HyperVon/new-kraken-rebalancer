@@ -605,8 +605,13 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                     var batches = 0
                     coEvery { ohlc.withReadBatch<RebalancerComparison>(any()) } coAnswers {
                         val batch = HistoricalOhlcReadBatch(ohlc, proofRepository)
+                        // Seeding the certified miss stands in for a frontier-blocked valuation; the
+                        // cache wiring that records such skips is covered by HistoricalOhlcReadBatchTest.
                         val mayCover = batch.mayCover("BTCUSD", 60, now.epochSecond, now.plusSeconds(3600).epochSecond)
                         mayCover shouldBe (++batches > 1)
+                        if (!mayCover) {
+                            batch.recordSkipped("BTCUSD", 60, now.epochSecond, now.plusSeconds(3600).epochSecond)
+                        }
                         val calculated = firstArg<suspend (HistoricalOhlcReadBatch?) -> RebalancerComparison>()(batch)
                         if (batches == 1) {
                             // The helper has already validated. Only the locked publication recheck can see this.

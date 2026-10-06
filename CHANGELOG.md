@@ -15,7 +15,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   avoiding a SQLite coverage miss for every shifted valuation behind a fresh
   provider frontier. Stored positive proofs keep their existing precedence and
   candle-loading path. Local fetches invalidate the batch index, and publication
-  rechecks skipped windows against fresh metadata so an external covering proof
+  rechecks every frontier-skipped window (including skips reached through the
+  fallback covering lookup) against fresh metadata so an external covering proof
   forces replay even if the frontier did not move. Failed reads and cancellation
   never become evidence of absence. OHLC timing logs distinguish coverage,
   exact-request proof, frontier, and batched metadata reads. Regressions cover 100-window read counts,
