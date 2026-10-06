@@ -13,12 +13,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListMap
+import kotlin.coroutines.coroutineContext
 
 sealed interface OhlcRevalidationResult {
     data class Unchanged(val updatedDependency: ConsumedOhlcDependency) : OhlcRevalidationResult
@@ -222,6 +224,15 @@ class HistoricalOhlcCache(
      * restore a frontier that a response at that wall already contradicted. */
     private val reachabilityPositiveClearWalls = ConcurrentHashMap<SeriesKey, Long>()
     private val loggedFrontierRetryAfter = ConcurrentHashMap<SeriesKey, Long>()
+
+    internal suspend fun <T> withReadBatch(block: suspend (HistoricalOhlcReadBatch?) -> T): T {
+        val repository = persistentRepository ?: return block(null)
+        val batch = HistoricalOhlcReadBatch(this, repository)
+        return withContext(batch) { block(batch) }
+    }
+
+    private suspend fun currentReadBatch(): HistoricalOhlcReadBatch? =
+        coroutineContext[HistoricalOhlcReadBatch]?.takeIf { it.cache === this }
 
     /**
      * Series-level outage backoff: earliest epoch second at which a revalidation of any range
@@ -1351,6 +1362,17 @@ class HistoricalOhlcCache(
         upToEpochSecond: Long,
     ): CoveredSeries? {
         val repository = persistentRepository ?: return null
+        val frontier = reachabilityFrontiers[seriesKey]
+        if (frontier?.isFresh(nowProvider().epochSecond) == true && frontier.blocks(upToEpochSecond) &&
+            currentReadBatch()?.mayCover(
+                seriesKey.pair,
+                seriesKey.intervalMinutes,
+                sinceEpochSecond,
+                upToEpochSecond,
+            ) == false
+        ) {
+            return null
+        }
         val stored = try {
             repository.loadCovered(
                 pair = seriesKey.pair,
@@ -1613,6 +1635,8 @@ class HistoricalOhlcCache(
                 seriesKey.intervalMinutes,
                 e.message,
             )
+        } finally {
+            currentReadBatch()?.invalidate(seriesKey.pair, seriesKey.intervalMinutes)
         }
     }
 

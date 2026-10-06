@@ -8,6 +8,8 @@ import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.HistoricalOhlcFetchProof
+import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OhlcReachabilityDependency
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -560,6 +562,9 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                     earliestReachableEpochSecond = now.plusSeconds(3600).epochSecond,
                 )
                 val ohlc = mockk<HistoricalOhlcCache>(relaxed = true)
+                coEvery { ohlc.withReadBatch<RebalancerComparison>(any()) } coAnswers {
+                    firstArg<suspend (HistoricalOhlcReadBatch?) -> RebalancerComparison>().invoke(null)
+                }
                 // The unlocked lookup check runs first and must still pass; the frontier only moves
                 // afterwards, so the rejection has to come from the locked revalidation.
                 var frontierChecks = 0
@@ -587,6 +592,42 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 // The stale cached economics must not be served; a replay is required.
                 result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 fixture.computations shouldBe warmedComputations + 1
+            }
+        }
+
+        "a new OHLC covering proof between calculation and publication forces replay" {
+            runTest {
+                for (withDurableCache in listOf(false, true)) {
+                    val proofs = mutableListOf<HistoricalOhlcFetchProof>()
+                    val proofRepository = mockk<HistoricalOhlcRepository>()
+                    coEvery { proofRepository.loadFetchProofs(any(), any()) } answers { proofs.toList() }
+                    val ohlc = mockk<HistoricalOhlcCache>(relaxed = true)
+                    var batches = 0
+                    coEvery { ohlc.withReadBatch<RebalancerComparison>(any()) } coAnswers {
+                        val batch = HistoricalOhlcReadBatch(ohlc, proofRepository)
+                        val mayCover = batch.mayCover("BTCUSD", 60, now.epochSecond, now.plusSeconds(3600).epochSecond)
+                        mayCover shouldBe (++batches > 1)
+                        val calculated = firstArg<suspend (HistoricalOhlcReadBatch?) -> RebalancerComparison>()(batch)
+                        if (batches == 1) {
+                            // The helper has already validated. Only the locked publication recheck can see this.
+                            proofs += HistoricalOhlcFetchProof(
+                                now.epochSecond,
+                                now.epochSecond,
+                                now.plusSeconds(3600).epochSecond,
+                                now.plusSeconds(7200).epochSecond,
+                            )
+                        }
+                        calculated
+                    }
+                    val fixture = Fixture(withDurableCache, ohlc)
+
+                    val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {}
+
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                    batches shouldBe 2
+                    fixture.cache?.let { coVerify(exactly = 1) { it.save(any(), any(), any(), any(), any(), any()) } }
+                }
             }
         }
 

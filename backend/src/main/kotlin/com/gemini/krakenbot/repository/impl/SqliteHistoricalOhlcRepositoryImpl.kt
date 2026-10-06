@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.HistoricalOhlcFetchProof
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.HistoricalOhlcSeries
 import com.gemini.krakenbot.repository.OhlcCoverage
@@ -25,6 +26,7 @@ import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
@@ -39,8 +41,34 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         const val SQLITE_IN_CHUNK_SIZE = 500
     }
 
+    override suspend fun loadFetchProofs(pair: String, intervalMinutes: Int): List<HistoricalOhlcFetchProof> =
+        database.readTransactionIO("loadHistoricalOhlcFetchProofs") {
+            HistoricalOhlcFetchTable
+                .select(
+                    HistoricalOhlcFetchTable.sinceEpochSecond,
+                    HistoricalOhlcFetchTable.coverageFromEpochSecond,
+                    HistoricalOhlcFetchTable.coverageUntilEpochSecond,
+                    HistoricalOhlcFetchTable.fetchedAtEpochSecond,
+                )
+                .where {
+                    (HistoricalOhlcFetchTable.pair eq pair) and
+                        (HistoricalOhlcFetchTable.intervalMinutes eq intervalMinutes) and
+                        HistoricalOhlcFetchTable.coverageFromEpochSecond.isNotNull() and
+                        HistoricalOhlcFetchTable.coverageUntilEpochSecond.isNotNull()
+                }
+                .orderBy(HistoricalOhlcFetchTable.fetchedAtEpochSecond, SortOrder.DESC)
+                .map { row ->
+                    HistoricalOhlcFetchProof(
+                        requestSinceEpochSecond = row[HistoricalOhlcFetchTable.sinceEpochSecond],
+                        coverageFromEpochSecond = checkNotNull(row[HistoricalOhlcFetchTable.coverageFromEpochSecond]),
+                        coverageUntilEpochSecond = checkNotNull(row[HistoricalOhlcFetchTable.coverageUntilEpochSecond]),
+                        fetchedAtEpochSecond = row[HistoricalOhlcFetchTable.fetchedAtEpochSecond],
+                    )
+                }
+        }
+
     override suspend fun loadReachabilityFrontier(pair: String, intervalMinutes: Int): OhlcReachabilityFrontier? =
-        database.readTransactionIO {
+        database.readTransactionIO("loadHistoricalOhlcFrontier") {
             HistoricalOhlcReachabilityFrontierTable
                 .selectAll()
                 .where {
@@ -117,7 +145,7 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         intervalMinutes: Int,
         sinceEpochSecond: Long,
         upToEpochSecond: Long,
-    ): HistoricalOhlcSeries? = database.readTransactionIO {
+    ): HistoricalOhlcSeries? = database.readTransactionIO("loadHistoricalOhlcCovered") {
         // Only the PROVEN span counts: the original request since and fetch wall must
         // never substitute for coverage. Legacy rows with null coverage fail closed.
         val fetch = HistoricalOhlcFetchTable
@@ -165,7 +193,7 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         pair: String,
         intervalMinutes: Int,
         sinceEpochSecond: Long,
-    ): HistoricalOhlcSeries? = database.readTransactionIO {
+    ): HistoricalOhlcSeries? = database.readTransactionIO("loadHistoricalOhlcLatestProof") {
         // Newest proof for this exact request range, covering or not: the cache paces
         // insufficient same-since requests off it while fresh. Legacy rows with null
         // coverage fail closed. Marker proofs (empty span) yield no candles.

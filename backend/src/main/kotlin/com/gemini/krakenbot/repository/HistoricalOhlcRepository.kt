@@ -67,6 +67,13 @@ fun authoritativeOhlcCoverage(
     )
 }
 
+data class HistoricalOhlcFetchProof(
+    val requestSinceEpochSecond: Long,
+    val coverageFromEpochSecond: Long,
+    val coverageUntilEpochSecond: Long,
+    val fetchedAtEpochSecond: Long,
+)
+
 data class HistoricalOhlcSeries(
     val requestSinceEpochSecond: Long,
     val coverageFromEpochSecond: Long,
@@ -123,6 +130,15 @@ data class OhlcReachabilityDependency(
 )
 
 interface HistoricalOhlcRepository {
+    /**
+     * Loads all fetch-proof metadata for the exact pair and interval, newest fetch wall first,
+     * without candles. Legacy rows missing either coverage bound are excluded; empty markers
+     * are included, so callers must exclude nonpositive spans when checking coverage.
+     * Null means this batched read is unsupported and callers must fall back to [loadCovered];
+     * an empty list means the supported read found no valid proofs.
+     */
+    suspend fun loadFetchProofs(pair: String, intervalMinutes: Int): List<HistoricalOhlcFetchProof>? = null
+
     /** Loads the single bounded negative reachability observation for this series, if present. */
     suspend fun loadReachabilityFrontier(pair: String, intervalMinutes: Int): OhlcReachabilityFrontier? = null
 

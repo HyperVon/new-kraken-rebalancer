@@ -1230,6 +1230,16 @@ calculation actually consumed is unchanged.
   keep the existing exact-range path. A frontier emits at most one INFO discovery diagnostic per
   freshness window; per-valuation skips and candidate exhaustion stay DEBUG-only because resolver
   `since` values change per valuation.
+- **Calculation-local durable proof batching.** History and Settings reconciliation load durable
+  fetch-proof metadata once per pair/interval when a fresh provider frontier blocks a valuation.
+  Only an indexed coverage miss bypasses the per-window SQLite lookup; positive proofs retain
+  their normal precedence and candle-loading path. The index is scoped to one calculation and
+  invalidated by local fetch persistence, including writes that change only proof metadata.
+  Before accepting the result, skipped windows are checked against freshly loaded metadata.
+  A new covering proof forces replay even when another writer left the frontier unchanged;
+  proofs outside the skipped windows do not. History repeats this check under its publication
+  lock. Unsupported or failed batch reads fall back to ordinary lookups, and failed publication
+  checks remain fail-closed. No read failure is memoized as missing history.
 - **Resolver-selection evidence.** An `AVAILABLE` comparison stores frontier skips in a separate
   selection manifest from consumed candle dependencies. A cache hit rechecks that each selected
   frontier still exists, remains fresh, and has the same boundary. Expiry, deletion, or a changed

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.105] - 2026-10-06
+
+### Fixed
+
+- **Comparison OHLC query amplification**: History and Settings reconciliation
+  batch durable fetch-proof metadata per pair/interval during each calculation,
+  avoiding a SQLite coverage miss for every shifted valuation behind a fresh
+  provider frontier. Stored positive proofs keep their existing precedence and
+  candle-loading path. Local fetches invalidate the batch index, and publication
+  rechecks skipped windows against fresh metadata so an external covering proof
+  forces replay even if the frontier did not move. Failed reads and cancellation
+  never become evidence of absence. OHLC timing logs distinguish coverage,
+  exact-request proof, frontier, and batched metadata reads. Regressions cover 100-window read counts,
+  narrow stored proofs, concurrent scopes, content-identical local writes, and
+  proof insertion between calculation and locked publication.
+
 ## [6.17.104] - 2026-10-06
 
 ### Fixed
