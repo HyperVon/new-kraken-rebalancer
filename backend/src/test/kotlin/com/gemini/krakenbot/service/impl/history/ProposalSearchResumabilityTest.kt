@@ -471,7 +471,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             }
         }
 
-        "configuration failures at an exhausted frontier are revisited after an evidence append" {
+        "stored configuration frontier reasons are revisited after an evidence append" {
             runTest {
                 for (reason in listOf(
                     ComparisonUnavailableReason.CONFIGURATION_BALANCE_EVIDENCE_MISSING,
@@ -494,6 +494,48 @@ class ProposalSearchResumabilityTest : StringSpec() {
                     cured?.timestamp shouldBe candidate.timestamp
                     metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
                 }
+            }
+        }
+
+        "a stored funding-evidence frontier is re-probed and cured by price recovery alone" {
+            runTest {
+                // Funding evidence depends on the named additions' historical marks, so a stored
+                // CONFIGURATION_FUNDING_EVIDENCE_MISSING frontier must be re-probed when only the
+                // price source recovers (no snapshot/trade/ledger row changes).
+                val s1 = stableSnapshot(3600)
+                val s2 = stableSnapshot(7200)
+                val s3 = fundedSnapshot(10800)
+                val metadata = mutableMapOf<String, String>()
+                val krakenService = mockk<KrakenService>()
+                coEvery { krakenService.getAssetMetadata() } returns listOf(
+                    KrakenAssetMetadata("BTC", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                    KrakenAssetMetadata("USD", KrakenApiConstants.ASSET_CLASS_CURRENCY),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } throws
+                    RuntimeException("OHLC outage")
+                val (service, _) = harness(
+                    metadata,
+                    listOf(s1, s2, s3),
+                    ledgers = listOf(btcDeposit(now.plusSeconds(9000))),
+                    fundingResolver = externalFundingResolver(),
+                    krakenService = krakenService,
+                    historicalOhlcCache = HistoricalOhlcCache(krakenService),
+                )
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                // Store the funding-evidence frontier reason that this policy must keep price-sensitive.
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] =
+                    ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING.name
+
+                // Price-only cure: no row changes, the source recovers.
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    (now.plusSeconds(9000).epochSecond - 900) to BigDecimal("50000"),
+                )
+                val cured = service.getComparisonStartProposal(now)
+
+                cured?.status shouldBe ComparisonProposalStatus.VERIFIED
+                cured?.timestamp shouldBe s1.timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
             }
         }
 

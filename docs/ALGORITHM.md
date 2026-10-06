@@ -1106,8 +1106,10 @@ external capital over time:
   acquisitions within its cluster first, then reconciled anchor quantities valued with
   the shared historical marks. Unnamed holdings and current target percentages cannot
   supply a guessed funding ratio. A high-confidence transition that cannot anchor or
-  fund makes the inferred comparison unavailable with an explicit missing-evidence,
-  incomplete-membership, unsettled-balances, or funding-evidence reason. Ambiguous
+  fund makes the inferred comparison unavailable with an explicit
+  `CONFIGURATION_BALANCE_EVIDENCE_MISSING`, `CONFIGURATION_TRANSITION_INCOMPLETE`,
+  `CONFIGURATION_TRANSITION_UNSETTLED`, or `CONFIGURATION_FUNDING_EVIDENCE_MISSING`
+  reason. Ambiguous
   inferred transitions remain unapplied. Owner contributions use the synthetic epoch
   established at their effective event timestamp, with original event-time prices.
 - **Valuation consistency:** both books share a resolved mark per normalized asset/time.

@@ -34,9 +34,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mark; earlier flows retain their historical price without looking ahead.
   Unpriced baseline holdings no longer mix a stored USD value on one side with
   an incompatible historical mark on the other. Contradictory valuations fail
-  closed, while explainable legacy reward residuals remain supported. Comparison
-  cache version 8, automatic-baseline proof version 3, and proposal search version
-  12 invalidate results and proofs produced under the prior valuation rules.
+  closed, while explainable legacy reward residuals remain supported. Prior-version
+  comparison caches, automatic-baseline proofs, and proposal-search decisions
+  produced under the prior valuation rules are invalidated.
   Nonpositive historical marks also fail closed during off-observation withdrawal
   valuation. Regressions cover both benchmark methods, no-event parity, aliases,
   contribution/withdrawal timing, and invalid withdrawal prices.

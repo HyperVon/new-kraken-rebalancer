@@ -2699,7 +2699,14 @@ object RebalancerComparisonCalculator {
                 ledger.hasAuthoritativeBalance &&
                 !ledger.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true)
             ) {
-                includeLedger(ledger, ledger.time, ledger.netBalanceDelta())
+                // Key the checkpoint map by the effective replay instant, matching the
+                // assigned-ledger path; a raw ledger time that disagrees with its effective
+                // placement must not let the terminal replay balance certify the wrong checkpoint.
+                includeLedger(
+                    ledger,
+                    effectiveLedgerTimestampsById[ledger.ledgerId] ?: ledger.time,
+                    ledger.netBalanceDelta(),
+                )
                 replayEvents += replayLedgersById.getValue(ledger.ledgerId)
             }
         }
@@ -2992,8 +2999,14 @@ object RebalancerComparisonCalculator {
                 )
             events += orderedTrades
         }
+        // walletScope marks the non-Spot replay branch, so consult resolved scope for the
+        // events that did not carry one; only confirmed non-Spot activity leaves the Spot
+        // balance untouched, and unresolved scope stays conservative (counts as a touch).
         val spotEventSymbolsByTimestamp = events
-            .filter { it.walletScope !in nonSpotLedgerWalletScopes }
+            .filter { event ->
+                val scope = event.walletScope ?: plan.resolvedLedgerScopes[event.ledger?.ledgerId]
+                scope !in nonSpotLedgerWalletScopes
+            }
             .groupBy(ReplayEvent::timestamp)
             .mapValues { (_, sameInstant) ->
                 sameInstant.flatMapTo(mutableSetOf()) { event ->
@@ -6352,9 +6365,10 @@ object RebalancerComparisonCalculator {
             val price = if (symbol == Asset.USD) {
                 BigDecimal.ONE
             } else {
-                // New-asset deposits after baseline legitimately lack a
-                // baseline price; skip symbols the current snapshot cannot
-                // price rather than crashing the comparison.
+                // Conflicting alias marks are already rejected while building the shared
+                // per-point marks, so the first recorded row here carries that resolved mark.
+                // New-asset deposits after baseline legitimately lack a baseline price; skip
+                // symbols the current snapshot cannot price rather than crashing the comparison.
                 val snapshotPrice = snapshot.assets.entries.firstOrNull { (snapshotSymbol, _) ->
                     Asset.normalizeLedgerAsset(snapshotSymbol).uppercase() == symbol
                 }?.value?.price?.takeIf { it.signum() > 0 }
