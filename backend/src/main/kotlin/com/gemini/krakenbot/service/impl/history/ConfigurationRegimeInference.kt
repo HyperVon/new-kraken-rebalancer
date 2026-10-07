@@ -18,13 +18,14 @@ data class AssetRegimeActivity(
     val firstFill: Instant?,
     val lastFill: Instant?,
     /**
-     * First instant at which the asset's authoritative balance reached economic zero after having
-     * been materially positive, or null when it never fully exited.
+     * First authoritative zero strictly after the last observed positive balance (including a
+     * materially held baseline), or null when no terminal exit is observed.
      */
     val fullExitAt: Instant?,
     /**
-     * How long the asset stayed economically present after establishment, measured to its terminal
-     * exit, or to its last observed positive balance when it is still held.
+     * Duration of the first observed positive episode meeting the presence threshold, or the first
+     * episode when none qualifies. An authoritative zero ends an episode; an open episode ends at
+     * its last positive observation. Baseline presence starts at the baseline, not its ordering sentinel.
      *
      * This is deliberately separate from the fill span: trading activity can be spread over months
      * while the position itself is repeatedly opened and dumped. Requiring BOTH is what separates a
@@ -32,8 +33,8 @@ data class AssetRegimeActivity(
      */
     val economicallyPresentSpanMillis: Long?,
     /**
-     * First instant at which the asset's authoritative balance became materially positive, or null
-     * when it was never established in the observed window.
+     * Start of the same episode used for presence duration, or null when no positive episode is
+     * observed. Later sustained ownership must not backdate establishment across an earlier zero gap.
      */
     val establishedAt: Instant?,
     /** True when the asset was materially positive immediately before the comparison baseline. */
@@ -83,7 +84,8 @@ private data class MembershipChange(val at: Instant, val symbol: String, val isR
  *    one transition per fill.
  *
  * A removal is only inferred when the asset fully exited, was never re-established afterwards, and
- * was materially present at the baseline. That combination is what separates a deliberate exit from
+ * was materially present at the baseline or subsequently met the persistence requirements.
+ * That combination is what separates a deliberate exit from
  * ordinary drift: routine rebalancing in this account sells slices and trades the position back
  * within hours, whereas a genuine exit leaves an authoritative zero that never becomes positive
  * again while the account keeps trading.
@@ -170,7 +172,7 @@ object ConfigurationRegimeInference {
 
     /**
      * A removal is only inferred when the asset sustained a real holding before exiting: either it
-     * was materially held at the baseline, or its final positive episode ran at least as long as
+     * was materially held at the baseline, or a positive episode ran at least as long as
      * [MIN_PARTICIPATION_SPAN]. That is what separates a deliberate exit from onboarding churn, which
      * is bought and fully sold inside a single burst. It does not require survival to the evidence
      * horizon, so an asset that joins a regime and later leaves it still has a real earlier removal.
@@ -178,7 +180,8 @@ object ConfigurationRegimeInference {
     private fun AssetRegimeActivity.sustainedPriorHolding(): Boolean = materiallyPresentAtBaseline || isPersistent()
 
     /**
-     * Sustained participation, measured as fills spanning at least [MIN_PARTICIPATION_SPAN]. Final
+     * Sustained participation: fills spanning at least [MIN_PARTICIPATION_SPAN] AND a positive
+     * ownership episode lasting at least [MIN_PARTICIPATION_SPAN]. Final
      * balance is deliberately not part of this test: a later regime change may legitimately end the
      * participation.
      */
@@ -188,8 +191,7 @@ object ConfigurationRegimeInference {
         val last = lastFill ?: first
         if (fillCount < MIN_FILLS) return false
         if (Duration.between(first, last) < MIN_PARTICIPATION_SPAN) return false
-        // A member stays a member only while it is economically present. An asset traded often
-        // across a long window but repeatedly sold back to zero is churn, not a regime.
+        // Account-wide fill participation alone cannot bridge separately observed holding episodes.
         val present = economicallyPresentSpanMillis ?: return false
         return present >= MIN_PARTICIPATION_SPAN.toMillis()
     }

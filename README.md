@@ -459,7 +459,11 @@ The dedicated History view provides detailed analysis and charts tracking portfo
   with `?benchmark=FIXED_INCEPTION_HOLD`. Both begin at a recorded full-wallet
   baseline, separate from today's configured targets. The default applies only
   high-confidence inferred changes supported by reconciled historical Spot
-  balances and named funding evidence; missing snapshot rows are not proof of
+  balances and named funding evidence. Addition timing uses the earliest observed
+  positive ownership episode lasting at least 60 days, without bridging an
+  authoritative zero; successful-live-fill participation is checked separately.
+  This is inferred ownership history, not proof of exact past configuration.
+  Missing snapshot rows are not proof of
   zero holdings. Unprovable completion, stability, or funding makes the comparison
   explicitly unavailable instead of silently omitting a transition. Contributions
   use the applicable synthetic epoch's value weights and withdrawals scale the

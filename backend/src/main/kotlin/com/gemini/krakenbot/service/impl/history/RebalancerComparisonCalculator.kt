@@ -4387,6 +4387,7 @@ object RebalancerComparisonCalculator {
         val activities = activitiesOverride ?: buildAssetRegimeActivities(
             trades = trades,
             ledgerEvents = ledgerEvents,
+            baselineTimestamp = baseline.timestamp,
             baselineBalances = baselineBalances,
             baselinePrices = extractBaselinePrices(baseline, comparisonAssetSymbols),
             comparisonAssetSymbols = comparisonAssetSymbols,
@@ -4822,6 +4823,7 @@ object RebalancerComparisonCalculator {
     ): List<AssetRegimeActivity> = buildAssetRegimeActivities(
         trades = trades,
         ledgerEvents = ledgerEvents,
+        baselineTimestamp = baseline.timestamp,
         baselineBalances = normalizedAssetBalances(baseline),
         baselinePrices = extractBaselinePrices(baseline, comparisonAssetSymbols),
         comparisonAssetSymbols = comparisonAssetSymbols,
@@ -4830,6 +4832,7 @@ object RebalancerComparisonCalculator {
     private fun buildAssetRegimeActivities(
         trades: List<TradeRecord>,
         ledgerEvents: List<LedgerEvent>,
+        baselineTimestamp: Instant,
         baselineBalances: Map<String, BigDecimal>,
         baselinePrices: Map<String, BigDecimal>,
         comparisonAssetSymbols: Set<String>,
@@ -4861,6 +4864,7 @@ object RebalancerComparisonCalculator {
         }
         for (ledger in ledgerEvents) {
             if (!ledger.hasAuthoritativeBalance) continue
+            if (ledger.time < baselineTimestamp) continue
             val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
             if (symbol !in comparisonAssetSymbols) continue
             ledgerBalanceSeries.getOrPut(symbol) { mutableListOf() } += ledger.time to ledger.balance
@@ -4874,27 +4878,48 @@ object RebalancerComparisonCalculator {
             // exit, so the exit is the first zero after the asset's LAST positive balance. Taking
             // the first zero instead would classify every brief flip as an exit and hide the real
             // terminal one behind a later "re-establishment".
+            val zeroInstants = series.filter { (_, balance) ->
+                balance.signum() == 0
+            }.mapTo(mutableSetOf()) { it.first }
             val positives = series.filter { (time, balance) ->
                 if (time == MIN_INSTANT) isMaterial(symbol, balance) else balance.signum() > 0
-            }
-            val establishedAt = positives.firstOrNull()?.first
+            }.filterNot { (time, _) -> time in zeroInstants }
             val lastPositiveAt = positives.lastOrNull()?.first
             val fullExitAt = lastPositiveAt?.let { lastPositive ->
                 series.firstOrNull { (time, balance) -> time > lastPositive && balance.signum() == 0 }?.first
             }
+            val episodes = mutableListOf<Pair<Instant, Instant>>()
+            var episodeStart: Instant? = null
+            var lastObservedPositive = baselineTimestamp
+            for ((time, rows) in series.groupBy { it.first }) {
+                val observedAt = if (time == MIN_INSTANT) baselineTimestamp else time
+                // A zero ends presence; coincident positive rows do not prove its terminal ordering.
+                if (rows.any { (_, balance) -> balance.signum() == 0 }) {
+                    episodeStart?.let { episodes += it to observedAt }
+                    episodeStart = null
+                } else if (rows.any { (_, balance) ->
+                        if (time == MIN_INSTANT) isMaterial(symbol, balance) else balance.signum() > 0
+                    }
+                ) {
+                    if (episodeStart == null) episodeStart = observedAt
+                    lastObservedPositive = observedAt
+                }
+            }
+            episodeStart?.let { episodes += it to lastObservedPositive }
+            // Later ownership cannot retroactively turn an initial round trip into persistent membership.
+            val episode = episodes.firstOrNull { (start, end) ->
+                Duration.between(start, end) >= ConfigurationRegimeInference.MIN_PARTICIPATION_SPAN
+            } ?: episodes.firstOrNull()
             AssetRegimeActivity(
                 symbol = symbol,
                 fillCount = fills.size,
                 firstFill = fills.minOfOrNull { it.timestamp },
                 lastFill = fills.maxOfOrNull { it.timestamp },
                 fullExitAt = fullExitAt,
-                // Present from establishment until it leaves, or until the last balance we can
-                // observe when it is still held.
-                economicallyPresentSpanMillis = establishedAt?.let { start ->
-                    (fullExitAt ?: lastPositiveAt)
-                        ?.let { end -> Duration.between(start, end).toMillis() }
+                economicallyPresentSpanMillis = episode?.let { (start, end) ->
+                    Duration.between(start, end).toMillis()
                 },
-                establishedAt = establishedAt,
+                establishedAt = episode?.first,
                 materiallyPresentAtBaseline = isMaterial(symbol, baselineBalance),
             )
         }

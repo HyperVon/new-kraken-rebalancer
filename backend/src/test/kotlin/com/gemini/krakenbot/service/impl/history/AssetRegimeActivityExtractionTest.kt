@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -74,6 +75,132 @@ class AssetRegimeActivityExtractionTest : StringSpec() {
     ).associateBy { it.symbol }
 
     init {
+        "a later persistent episode does not backdate membership to an initial round trip" {
+            val laterEntry = t0.plus(Duration.ofDays(90))
+            val lastPositive = laterEntry.plus(Duration.ofDays(90))
+            val terminalExit = lastPositive.plus(Duration.ofDays(10))
+            val fills = mutableListOf<TradeRecord>()
+            val ledgers = mutableListOf<LedgerEvent>()
+            repeat(ConfigurationRegimeInference.MIN_FILLS - 1) { index ->
+                val entry = t0.plus(Duration.ofDays(index * 3L)).plusSeconds(10)
+                val exit = entry.plusSeconds(20)
+                fills += trade(entry, "AAA")
+                fills += trade(exit, "AAA").copy(side = "SELL")
+                ledgers += ledger("initial_$index", entry, "AAA", "1")
+                ledgers += ledger("initial_exit_$index", exit, "AAA", "0")
+            }
+            fills += trade(laterEntry, "AAA")
+            ledgers += listOf(
+                ledger("later_entry", laterEntry, "AAA", "1"),
+                ledger("later_positive", lastPositive, "AAA", "1"),
+                ledger("terminal_exit", terminalExit, "AAA", "0"),
+            )
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("0", "10", "0"))),
+                trades = fills,
+                ledgers = ledgers,
+            )
+            val activity = result.getValue("AAA")
+
+            activity.establishedAt shouldBe laterEntry
+            activity.economicallyPresentSpanMillis shouldBe Duration.ofDays(100).toMillis()
+            activity.fullExitAt shouldBe terminalExit
+            val transitions = ConfigurationRegimeInference.infer(result.values)
+            transitions.first { "AAA" in it.additions }.clusterEnd shouldBe laterEntry
+            transitions.first { "AAA" in it.removals }.clusterEnd shouldBe terminalExit
+        }
+
+        "months of short round trips cannot manufacture sustained balance presence" {
+            val fills = mutableListOf<TradeRecord>()
+            val ledgers = mutableListOf<LedgerEvent>()
+            repeat(ConfigurationRegimeInference.MIN_FILLS) { index ->
+                val entry = t0.plus(Duration.ofDays(index * 7L))
+                val exit = entry.plusSeconds(3_600)
+                fills += trade(entry, "AAA")
+                fills += trade(exit, "AAA").copy(side = "SELL")
+                ledgers += ledger("entry_$index", entry, "AAA", "5")
+                ledgers += ledger("exit_$index", exit, "AAA", "0")
+            }
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("0", "10", "0"))),
+                trades = fills,
+                ledgers = ledgers,
+            )
+
+            result.getValue("AAA").economicallyPresentSpanMillis shouldBe Duration.ofHours(1).toMillis()
+            ConfigurationRegimeInference.infer(result.values) shouldBe emptyList()
+        }
+
+        "conflicting same-instant balances do not establish an ordered positive episode" {
+            val mixedAt = t0.plusSeconds(3_600)
+            val laterEntry = t0.plus(Duration.ofDays(90))
+            val lastPositive = laterEntry.plus(Duration.ofDays(90))
+            val mixed = listOf(
+                ledger("mixed_zero", mixedAt, "AAA", "0"),
+                ledger("mixed_positive", mixedAt, "AAA", "5"),
+            )
+            for (coincidentRows in listOf(mixed, mixed.reversed())) {
+                val result = activities(
+                    baseline = snapshot(mapOf("AAA" to Triple("0", "10", "0"))),
+                    ledgers = listOf(ledger("initial", t0.plusSeconds(10), "AAA", "5")) +
+                        coincidentRows + listOf(
+                            ledger("later_entry", laterEntry, "AAA", "5"),
+                            ledger("later_positive", lastPositive, "AAA", "5"),
+                        ),
+                )
+
+                result.getValue("AAA").establishedAt shouldBe laterEntry
+                result.getValue("AAA").economicallyPresentSpanMillis shouldBe Duration.ofDays(90).toMillis()
+            }
+        }
+
+        "the first qualifying episode wins over a longer later episode" {
+            val firstExit = t0.plus(Duration.ofDays(70))
+            val laterEntry = t0.plus(Duration.ofDays(200))
+            val laterObservation = laterEntry.plus(Duration.ofDays(100))
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("0", "10", "0"))),
+                ledgers = listOf(
+                    ledger("first_entry", t0, "AAA", "5"),
+                    ledger("first_exit", firstExit, "AAA", "0"),
+                    ledger("later_entry", laterEntry, "AAA", "5"),
+                    ledger("later_observation", laterObservation, "AAA", "5"),
+                ),
+            )
+
+            result.getValue("AAA").establishedAt shouldBe t0
+            result.getValue("AAA").economicallyPresentSpanMillis shouldBe Duration.ofDays(70).toMillis()
+            result.getValue("AAA").fullExitAt shouldBe null
+        }
+
+        "baseline presence duration starts at the baseline rather than the ordering sentinel" {
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("100", "10", "1000"))),
+                ledgers = listOf(ledger("exit", t0.plusSeconds(27), "AAA", "0")),
+            )
+
+            result.getValue("AAA").economicallyPresentSpanMillis shouldBe 27_000L
+            result.getValue("AAA").fullExitAt shouldBe t0.plusSeconds(27)
+            ConfigurationRegimeInference.infer(result.values).single().removals shouldBe setOf("AAA")
+        }
+
+        "pre-baseline ledger rows cannot close the baseline episode or create backwards spans" {
+            val result = activities(
+                baseline = snapshot(mapOf("AAA" to Triple("100", "10", "1000"))),
+                ledgers = listOf(
+                    ledger("pre_zero", t0.minusSeconds(3600), "AAA", "0"),
+                    ledger("pre_positive", t0.minusSeconds(1800), "AAA", "5"),
+                    ledger("exit", t0.plusSeconds(27), "AAA", "0"),
+                ),
+            )
+            val activity = result.getValue("AAA")
+
+            activity.establishedAt shouldBe t0
+            activity.economicallyPresentSpanMillis shouldBe 27_000L
+            activity.fullExitAt shouldBe t0.plusSeconds(27)
+            ConfigurationRegimeInference.infer(result.values).single().removals shouldBe setOf("AAA")
+        }
+
         "a baseline holding fully sold by the first ledger row still shows its exit" {
             // The ledger only records the post-trade zero, so without baseline seeding the exit
             // would be invisible and the flagship removal would never be inferred.

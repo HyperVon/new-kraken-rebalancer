@@ -1092,6 +1092,20 @@ external capital over time:
   initiated it; ownership ambiguity alone does not block a re-anchored passive report. A fill that
   cannot reconcile to the actual recorded balance series still fails closed as an unexplained
   balance change.
+- **Inferred configuration membership:** persistent participation requires both
+  at least 20 successful non-dry-run fills for the asset spanning at least 60 days
+  across the account history and an observed positive Spot ownership episode
+  lasting at least 60 days. These tests are independent: fills spread across
+  months cannot bridge separate ownership episodes. Authoritative zero balances
+  end an episode; a missing asset row does not. Coincident zero and positive rows
+  close any existing episode without establishing the order needed to start a
+  new one. The earliest qualifying episode supplies both its establishment time
+  and duration. If none qualifies, the first episode remains the nonpersistent
+  evidence. An open episode ends at its last positive checkpoint, not the overall
+  history horizon; baseline presence starts at the actual baseline timestamp,
+  not its internal ordering sentinel. This establishes persistent observed
+  ownership, not the exact historical configuration. Terminal-exit and
+  material-baseline rules remain unchanged.
 - **Inferred configuration settlement:** actual-wallet reconstruction runs before
   synthetic contribution allocation. A transition is anchored against the validated
   historical Spot balances at each accounting checkpoint, including assets omitted by
@@ -1121,9 +1135,9 @@ external capital over time:
   If that mark contradicts the recorded USD evidence and the complete represented NAV
   cannot reconcile within the persistence rounding envelope, the result is unavailable
   rather than an artificial performance difference. Existing explained legacy reward
-  residuals remain supported. Comparison cache version 9, automatic-baseline proof version
-  4, and proposal search version 13 invalidate results and verification records produced
-  under the prior rules.
+  residuals remain supported. Comparison cache version 10, automatic-baseline proof version
+  5, and proposal search version 14 invalidate results and verification records produced
+  under the prior valuation, anchoring, and ownership-episode rules.
 - **Owner contributions after the selected anchor are invested by the fixed recorded-anchor value
   weights** (existing synthetic holdings untouched); only the new money moves. This is the same
   weighting policy used to capitalize the exact recorded anchor value.
