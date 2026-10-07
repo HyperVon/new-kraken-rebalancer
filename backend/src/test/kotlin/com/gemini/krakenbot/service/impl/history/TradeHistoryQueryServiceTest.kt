@@ -7840,7 +7840,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 status.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 status.baselineTimestamp shouldBe fixture.anchorTime.toString()
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
-                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "2"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "4"
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS] shouldBe
                     fixture.anchorTime.toEpochMilli().toString()
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_INCEPTION_EPOCH_MS] shouldBe
@@ -8626,12 +8626,12 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val fixture = automaticBaselineFixture()
                 val service = automaticBaselineService(fixture)
                 service.getSettingsComparisonStatus(fixture.anchorTime)
-                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] = "1"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] = "3"
 
                 service.getSettingsComparisonStatus(fixture.anchorTime)
 
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
-                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "2"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "4"
             }
         }
 

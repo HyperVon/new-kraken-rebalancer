@@ -492,7 +492,7 @@ class ConfigurationResetEvidenceTest : StringSpec() {
             regimes shouldHaveSize 0
         }
 
-        "a skipped reset reports no failure to the replay driver" {
+        "an unfunded reset fails explicitly without mutating the benchmark book" {
             val balances = mutableMapOf("HBAR" to BigDecimal("100.0"))
 
             val failure = RebalancerComparisonCalculator.replayBenchmarkEventForTest(
@@ -505,8 +505,8 @@ class ConfigurationResetEvidenceTest : StringSpec() {
                 priceProvider = prices,
             )
 
-            // An unapplicable transition is a documented non-event, not a comparison failure.
-            failure shouldBe null
+            failure shouldBe (ComparisonUnavailableReason.CONFIGURATION_FUNDING_EVIDENCE_MISSING to t1)
+            balances.getValue("HBAR").shouldBeEqualComparingTo(BigDecimal("100.0"))
             balances.containsKey("AVAX") shouldBe false
         }
 
