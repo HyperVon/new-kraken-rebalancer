@@ -371,18 +371,18 @@ class TradeHistoryQueryService(
         /**
          * Bump when the serialized comparison payload or its cache invalidation contract changes.
          *
-         * Version 9 requires reconciled Spot transition anchors and explicit configuration failures.
+         * Version 10 requires reconciled Spot transition anchors and explicit configuration failures.
          * Benchmark identity also separates the inferred configuration-matched benchmark: it
          * must never be served from, or stored in, a cache row produced by the fixed-inception
          * benchmark, because the two answer different questions from the same Actual portfolio.
          */
-        private const val COMPARISON_CACHE_VERSION = "9"
+        private const val COMPARISON_CACHE_VERSION = "10"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
         private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
         private const val PROPOSAL_CONTINUATION_MAX_PACING_MS = 30_000L
-        private const val PROPOSAL_SEARCH_VERSION = "13"
+        private const val PROPOSAL_SEARCH_VERSION = "14"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -392,7 +392,7 @@ class TradeHistoryQueryService(
          * interpreted. Independent of [PROPOSAL_SEARCH_VERSION] — the later-start proposal
          * scan and the baseline proof are separate state machines.
          */
-        private const val AUTOMATIC_BASELINE_VERIFICATION_VERSION = "4"
+        private const val AUTOMATIC_BASELINE_VERIFICATION_VERSION = "5"
         private const val AUTOMATIC_BASELINE_STATUS_VERIFIED = "VERIFIED"
         private const val AUTOMATIC_BASELINE_STATUS_INVALIDATED = "INVALIDATED"
 

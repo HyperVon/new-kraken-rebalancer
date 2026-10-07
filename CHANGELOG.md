@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.108] - 2026-10-06
+
+### Fixed
+
+- **Historical configuration membership**: inferred additions now start at the
+  earliest observed positive Spot ownership episode lasting at least 60 days,
+  rather than bridging an earlier round-trip through zero to later ownership.
+  Authoritative zero balances split episodes; coincident zero and positive rows
+  close an existing episode without proving a newly ordered entry. Open episodes
+  end at their last positive checkpoint, and baseline holdings use the actual
+  baseline timestamp rather than an internal ordering sentinel. The separate
+  20-successful-live-fill and 60-day fill-span requirements, terminal-exit and
+  material-baseline rules, and high-confidence settlement/funding checks remain
+  unchanged. This is evidence of persistent observed ownership, not proof of the
+  exact historical configuration. Comparison cache version 10, automatic-baseline
+  proof version 5, and proposal search version 14 reject prior-policy results.
+  Five extraction regressions cover the episode-selection boundary, and a normal
+  calculator regression verifies a funded later transition without mirroring
+  subsequent purchases into the hold benchmark.
+
 ## [6.17.107] - 2026-10-06
 
 ### Fixed

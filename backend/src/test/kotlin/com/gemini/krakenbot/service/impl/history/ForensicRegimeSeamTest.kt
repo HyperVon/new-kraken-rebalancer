@@ -16,6 +16,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 import com.gemini.krakenbot.api.RebalancerComparison as ApiRebalancerComparison
 
@@ -146,6 +147,120 @@ class ForensicRegimeSeamTest : StringSpec() {
     )
 
     init {
+        "normal inference resets hold at sustained re-entry rather than an initial round trip" {
+            val snapshots = mutableListOf<PortfolioSnapshot>()
+            val trades = mutableListOf<TradeRecord>()
+            val ledgers = mutableListOf<LedgerEvent>()
+            val balances = mutableMapOf("BTC" to BigDecimal.ZERO, "ETH" to BigDecimal.ZERO, "OLD" to BigDecimal("50"))
+            var cash = BigDecimal("500.00")
+            fun observation(at: Instant, btcPrice: String = "100", ethPrice: String = "50") = snapshot(
+                at,
+                (
+                    cash + balances.getValue("OLD") * BigDecimal.TEN + balances.getValue("BTC") * BigDecimal(btcPrice) +
+                        balances.getValue("ETH") * BigDecimal(ethPrice)
+                    ).toPlainString(),
+                mapOf(
+                    "USD" to row(cash.toPlainString(), "1", cash.toPlainString()),
+                    "OLD" to row(
+                        balances.getValue("OLD").toPlainString(),
+                        "10",
+                        (balances.getValue("OLD") * BigDecimal.TEN).toPlainString(),
+                    ),
+                    "BTC" to row(
+                        balances.getValue("BTC").toPlainString(),
+                        btcPrice,
+                        (balances.getValue("BTC") * BigDecimal(btcPrice)).toPlainString(),
+                    ),
+                    "ETH" to row(
+                        balances.getValue("ETH").toPlainString(),
+                        ethPrice,
+                        (balances.getValue("ETH") * BigDecimal(ethPrice)).toPlainString(),
+                    ),
+                ),
+            )
+            fun fill(at: Instant, symbol: String, quantity: String, side: String) {
+                val volume = BigDecimal(quantity)
+                val price = when (symbol) {
+                    "BTC" -> BigDecimal("100")
+                    "ETH" -> BigDecimal("50")
+                    else -> BigDecimal.TEN
+                }
+                val sign = if (side == "BUY") BigDecimal.ONE else BigDecimal.ONE.negate()
+                val amount = volume * sign
+                val cost = volume * price
+                balances[symbol] = balances.getValue(symbol) + amount
+                cash -= cost * sign
+                val id = "FILL_${trades.size}"
+                trades += TradeRecord(
+                    timestamp = at,
+                    pair = "${symbol}USD",
+                    side = side,
+                    symbol = symbol,
+                    volume = volume,
+                    usdAmount = cost,
+                    success = true,
+                    dryRun = false,
+                    price = price,
+                    fee = BigDecimal.ZERO,
+                    source = TradeSource.API_FILL,
+                    tradeId = id,
+                )
+                ledgers += LedgerEvent(
+                    ledgerId = "${id}_BASE",
+                    refid = id,
+                    time = at,
+                    type = "trade",
+                    subtype = "tradespot",
+                    aclass = "currency",
+                    asset = symbol,
+                    amount = amount,
+                    balance = balances.getValue(symbol),
+                    hasAuthoritativeBalance = true,
+                )
+                ledgers += LedgerEvent(
+                    ledgerId = "${id}_QUOTE",
+                    refid = id,
+                    time = at,
+                    type = "trade",
+                    subtype = "tradespot",
+                    aclass = "currency",
+                    asset = "USD",
+                    amount = cost * sign.negate(),
+                    balance = cash,
+                    hasAuthoritativeBalance = true,
+                )
+                snapshots += observation(at)
+                snapshots += observation(at.plusSeconds(1))
+            }
+            val start = observation(t0)
+            snapshots += start
+            fill(t1, "BTC", "1", "BUY")
+            fill(t2, "BTC", "1", "SELL")
+            val laterEntry = t0.plus(Duration.ofDays(90))
+            fill(laterEntry.minusSeconds(2), "OLD", "50", "SELL")
+            repeat(ConfigurationRegimeInference.MIN_FILLS) { index ->
+                val at = laterEntry.plusSeconds(index * 90L * 86_400 / 19)
+                fill(at, "BTC", "0.1", "BUY")
+                fill(at.plusSeconds(2), "ETH", "0.1", "BUY")
+            }
+            snapshots += observation(laterEntry.plus(Duration.ofDays(91)), "200", "50")
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = trades,
+                assetMetadata = assetMetadata,
+                rewards = ledgers,
+                inceptionSnapshot = start,
+                priceProvider = prices,
+                benchmarkMethod = BenchmarkMethod.INFERRED_CONFIGURATION_MATCHED_HOLD,
+            )
+
+            withClue("${result.unavailableReason} at ${result.unavailableAt}") {
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+            }
+            result.points.last().rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("1200.00"))
+            result.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1333.33"))
+        }
+
         "ledger-established additions anchor identically in complete and configured-only snapshots" {
             val start = snapshot(
                 t0,

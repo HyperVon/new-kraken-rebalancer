@@ -422,8 +422,16 @@ chooses between them; the chart legend names the one actually plotted:
 
 | Benchmark | Behaviour |
 | :--- | :--- |
-| **Configuration-matched hold** (default) | Follows the strategy's own major allocation changes, applying one synthetic transition per inferred regime change, and otherwise holds. Isolates the value of routine rebalancing from asset selection. Its allocation history is **inferred** from persistent trading behavior, not retained as proven configuration. |
+| **Configuration-matched hold** (default) | Follows the strategy's own major allocation changes, applying one synthetic transition per inferred regime change, and otherwise holds. Isolates the value of routine rebalancing from asset selection. Its allocation history is **inferred** from persistent observed Spot ownership and trading behavior, not retained as proven configuration. |
 | **Fixed-inception hold** (forensic reference) | Freezes the approved inception portfolio and holds it forever. Requestable via `?benchmark=FIXED_INCEPTION_HOLD`. |
+
+An inferred addition starts at the earliest observed positive Spot ownership
+episode lasting at least 60 days. Authoritative zero balances separate episodes,
+so a brief initial purchase and sale cannot move a later sustained holding's
+entry date backward. The asset must separately have at least 20 successful live
+fills spanning 60 days across the account history; these fills need not all fall
+within the selected ownership episode. This evidence does not prove the exact
+historical allocation settings.
 
 Configuration-matched hold checks inferred changes against reconciled historical
 Spot balances, including assets missing from older configured-only snapshots. A
