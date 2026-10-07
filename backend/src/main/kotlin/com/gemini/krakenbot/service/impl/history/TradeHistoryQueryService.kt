@@ -1391,6 +1391,14 @@ class TradeHistoryQueryService(
                 ohlcReachabilityDependencies = captured.reachabilityDependencies.toList(),
                 ohlcHadFailures = captured.ohlcHadFailures.get(),
             )
+            // A wider proof landing between the pre-persist check and persistence makes the
+            // cached result unpublishable: drop it so the next request recalculates.
+            if (captured.ohlcReadBatch?.isStillCurrent() == false) {
+                log.debug("Comparison cache rolled back after persistence; reason=OHLC_COVERAGE_PROOFS_CHANGED")
+                comparisonCacheRepository?.delete(captured.cacheFrom.toEpochMilli(), captured.cacheTo.toEpochMilli())
+                invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.COVERAGE_CHANGED)
+                return PublishOutcome.Invalidated
+            }
         }
 
         var finalResult = calculated
@@ -2507,6 +2515,7 @@ class TradeHistoryQueryService(
                 CachedComparisonOutcome.Miss -> null
             }
         }
+        var settingsReadBatch: HistoricalOhlcReadBatch? = null
         val current = if (cachedSettingsComparison != null) {
             cachedSettingsComparison
         } else {
@@ -2522,7 +2531,6 @@ class TradeHistoryQueryService(
                     // it runs from getComparisonStartProposalUnderEvidenceLock the caller is
                     // holding the evidence lock, so leaving it on the caller dispatcher stalls
                     // the request and starves the shared pool.
-                    var settingsReadBatch: HistoricalOhlcReadBatch? = null
                     val calculated = withContext(computationDispatcher) {
                         withBatchedOhlcReads({ settingsReadBatch = it }) {
                             calculateComparison(
@@ -2572,6 +2580,17 @@ class TradeHistoryQueryService(
                             ohlcReachabilityDependencies = reachabilityDependencies.toList(),
                             ohlcHadFailures = ohlcHadFailures.get(),
                         )
+                        // A wider proof landing between the pre-persist check and persistence
+                        // makes the cached result unpublishable: drop it so the next request
+                        // recalculates.
+                        if (settingsReadBatch?.isStillCurrent() == false) {
+                            log.debug("Settings comparison cache rolled back; reason=OHLC_COVERAGE_PROOFS_CHANGED")
+                            comparisonCacheRepository?.delete(
+                                settingsCacheFrom.toEpochMilli(),
+                                settingsCacheTo.toEpochMilli(),
+                            )
+                            invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.COVERAGE_CHANGED)
+                        }
                     }
                     flight.complete(publishable)
                     publishable
@@ -2621,7 +2640,7 @@ class TradeHistoryQueryService(
             // The proof's evidence horizon is the newest stable snapshot: unstable live-tail
             // rows after the certified coverage horizon are append-only evidence the proof
             // did not consume, so they can neither invalidate it nor extend its horizon.
-            if (cachedSettingsComparison == null) {
+            if (cachedSettingsComparison == null && settingsReadBatch?.isStillCurrent() != false) {
                 // HistoryEvidenceCoordinator's mutex is not reentrant: a caller that already
                 // owns it (settings-save resolving a comparison start) must persist inline
                 // instead of re-acquiring, or the coroutine deadlocks against itself and the

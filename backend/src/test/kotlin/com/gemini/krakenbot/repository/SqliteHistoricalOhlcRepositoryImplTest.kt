@@ -993,6 +993,45 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
             }
         }
 
+        "wide proof survives same-lineage truncated revalidations" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-wide-proof-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val since = 1_000_000L
+                // Wide proof: non-truncated, covers [since, wall).
+                repository.saveFetch(
+                    pair = pair,
+                    intervalMinutes = intervalMinutes,
+                    sinceEpochSecond = since,
+                    fetchedAtEpochSecond = 2_000_000L,
+                    candles = listOf(
+                        1_000_000L to BigDecimal("0.0170"),
+                        1_001_800L to BigDecimal("0.0171"),
+                    ),
+                    mayBeTruncated = false,
+                ) shouldBe true
+
+                // Three truncated revalidations sharing the same coverage start.
+                listOf(2_001_000L, 2_002_000L, 2_003_000L).forEach { wall ->
+                    repository.saveFetch(
+                        pair = pair,
+                        intervalMinutes = intervalMinutes,
+                        sinceEpochSecond = since,
+                        fetchedAtEpochSecond = wall,
+                        candles = listOf(1_000_000L to BigDecimal("0.0170")),
+                        mayBeTruncated = true,
+                    )
+                }
+
+                // The wide proof must survive: it is the only proof covering the full original window.
+                val proofs = repository.loadFetchProofs(pair, intervalMinutes)
+                requireNotNull(proofs)
+                proofs.any { it.fetchedAtEpochSecond == 2_000_000L } shouldBe true
+            }
+        }
+
         "absolute per-request cap evicts the oldest lineage first" {
             runTest {
                 val database = DatabaseConfig.init(

@@ -724,5 +724,36 @@ class TradeHistoryQueryServiceCoverageContentionTest : StringSpec() {
                 fixture.computations shouldBe 2
             }
         }
+
+        "comparison cache is rolled back after persistence if a wider proof lands" {
+            runTest {
+                val proofs = mutableListOf<HistoricalOhlcFetchProof>()
+                val proofRepository = mockk<HistoricalOhlcRepository>()
+                coEvery { proofRepository.loadFetchProofs(any(), any()) } answers { proofs.toList() }
+                val ohlc = mockk<HistoricalOhlcCache>(relaxed = true)
+                coEvery { ohlc.withReadBatch<RebalancerComparison>(any()) } coAnswers {
+                    val batch = HistoricalOhlcReadBatch(ohlc, proofRepository)
+                    if (proofs.isEmpty()) {
+                        batch.recordSkipped("BTCUSD", 60, now.epochSecond, now.plusSeconds(3600).epochSecond)
+                    }
+                    firstArg<suspend (HistoricalOhlcReadBatch?) -> RebalancerComparison>()(batch)
+                }
+                val fixture = Fixture(withDurableCache = true, ohlc = ohlc)
+                coEvery { fixture.cache!!.save(any(), any(), any(), any(), any(), any()) } answers {
+                    proofs += HistoricalOhlcFetchProof(
+                        now.epochSecond,
+                        now.epochSecond,
+                        now.plusSeconds(3600).epochSecond,
+                        now.plusSeconds(7200).epochSecond,
+                    )
+                }
+
+                val result = fixture.compare(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher) {}
+
+                coVerify(atLeast = 1) { fixture.cache!!.delete(any(), any()) }
+                fixture.computations shouldBe 2
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+            }
+        }
     }
 }
