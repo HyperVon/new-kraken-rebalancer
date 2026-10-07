@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.109] - 2026-10-07
+
+### Fixed
+
+- **Benchmark configuration reset recognizes already-held additions**: when
+  additions in an inferred configuration transition are already held with
+  positive balances in the synthetic benchmark portfolio, their existing value
+  is recognized as funding rather than requiring proceeds from removals.
+  Transitions with already-held additions and no removals no longer fail at
+  `CONFIGURATION_FUNDING_EVIDENCE_MISSING`, correctly preserving existing
+  holdings and allowing subsequent history replay to proceed.
+- **OHLC proof pruning retains the widest proof per lineage**: a truncated
+  revalidation sharing the same coverage start no longer evicts the only proof
+  covering the full original window. The widest proof is always retained
+  alongside the newest few.
+- **Comparison cache rollback on proof race**: if a wider OHLC proof lands
+  between the pre-persist currency check and persistence, the cached comparison
+  and automatic-baseline verification are dropped so the next request
+  recalculates instead of serving a stale frontier-skipped valuation.
+
 ## [6.17.108] - 2026-10-06
 
 ### Fixed

@@ -5876,10 +5876,15 @@ object RebalancerComparisonCalculator {
             )
         }
         if (additions.isNotEmpty() && released.signum() <= 0) {
-            return ConfigurationResetOutcome.Skipped(
-                "named additions ${additions.sorted()} have no released value to fund them; " +
-                    "removals $removals released nothing",
-            )
+            // Additions already held by the benchmark are recognized as members, not newly
+            // purchased: their existing value is the funding, so no released value is required.
+            val alreadyHeld = additions.all { (preValue[it] ?: BigDecimal.ZERO).signum() > 0 }
+            if (!alreadyHeld) {
+                return ConfigurationResetOutcome.Skipped(
+                    "named additions ${additions.sorted()} have no released value to fund them; " +
+                        "removals $removals released nothing",
+                )
+            }
         }
 
         // Resolve every price and unit quantity before touching the book, so a refusal leaves the

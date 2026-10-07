@@ -475,5 +475,90 @@ class ConfigurationResetReplayTest : StringSpec() {
 
             balances.getValue("AVAX").shouldBeEqualComparingTo(BigDecimal("100.0"))
         }
+
+        "already-held additions succeed when released value is zero without buying new units" {
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal("1.5"),
+                "ETH" to BigDecimal("10.0"),
+                "TRX" to BigDecimal("1000.0"),
+            )
+
+            val outcome = RebalancerComparisonCalculator.replayConfigurationResetForTest(
+                balances = balances,
+                event = reset(
+                    removals = emptySet(),
+                    additions = setOf("BTC", "ETH"),
+                    shares = mapOf("BTC" to BigDecimal("0.5"), "ETH" to BigDecimal("0.5")),
+                ),
+                priceProvider = prices,
+            )
+
+            val turnover = applied(outcome)
+            balances.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("1.5"))
+            balances.getValue("ETH").shouldBeEqualComparingTo(BigDecimal("10.0"))
+            balances.getValue("TRX").shouldBeEqualComparingTo(BigDecimal("1000.0"))
+            turnover.cryptoBuyNotional.shouldBeEqualComparingTo(BigDecimal("0.0"))
+            turnover.cryptoSellNotional.shouldBeEqualComparingTo(BigDecimal("0.0"))
+            turnover.cashDelta.shouldBeEqualComparingTo(BigDecimal("0.0"))
+        }
+
+        "additions not held in the benchmark are skipped when released value is zero" {
+            val balances = mutableMapOf(
+                "TRX" to BigDecimal("1000.0"),
+            )
+
+            val outcome = RebalancerComparisonCalculator.replayConfigurationResetForTest(
+                balances = balances,
+                event = reset(
+                    removals = emptySet(),
+                    additions = setOf("BTC"),
+                    shares = mapOf("BTC" to BigDecimal("1.0")),
+                ),
+                priceProvider = prices,
+            )
+
+            outcome.shouldBeInstanceOf<RebalancerComparisonCalculator.ConfigurationResetOutcome.Skipped>()
+            balances.containsKey("BTC") shouldBe false
+        }
+
+        "partially held additions are skipped when released value is zero" {
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal("1.5"),
+                "TRX" to BigDecimal("1000.0"),
+            )
+
+            val outcome = RebalancerComparisonCalculator.replayConfigurationResetForTest(
+                balances = balances,
+                event = reset(
+                    removals = emptySet(),
+                    additions = setOf("BTC", "ETH"),
+                    shares = mapOf("BTC" to BigDecimal("0.5"), "ETH" to BigDecimal("0.5")),
+                ),
+                priceProvider = prices,
+            )
+
+            outcome.shouldBeInstanceOf<RebalancerComparisonCalculator.ConfigurationResetOutcome.Skipped>()
+            balances.containsKey("ETH") shouldBe false
+            balances.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("1.5"))
+        }
+
+        "additions held with zero balance are not considered already-held and are skipped when released is zero" {
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal.ZERO,
+                "TRX" to BigDecimal("1000.0"),
+            )
+
+            val outcome = RebalancerComparisonCalculator.replayConfigurationResetForTest(
+                balances = balances,
+                event = reset(
+                    removals = emptySet(),
+                    additions = setOf("BTC"),
+                    shares = mapOf("BTC" to BigDecimal("1.0")),
+                ),
+                priceProvider = prices,
+            )
+
+            outcome.shouldBeInstanceOf<RebalancerComparisonCalculator.ConfigurationResetOutcome.Skipped>()
+        }
     }
 }

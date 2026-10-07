@@ -408,13 +408,29 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
             }
             .orderBy(HistoricalOhlcFetchTable.fetchedAtEpochSecond, SortOrder.DESC)
             .map {
-                it[HistoricalOhlcFetchTable.coverageFromEpochSecond] to
-                    it[HistoricalOhlcFetchTable.fetchedAtEpochSecond]
+                Triple(
+                    it[HistoricalOhlcFetchTable.coverageFromEpochSecond],
+                    it[HistoricalOhlcFetchTable.fetchedAtEpochSecond],
+                    it[HistoricalOhlcFetchTable.coverageUntilEpochSecond],
+                )
             }
         val retainedByLineage = lineageWalls
-            .groupBy({ it.first }, { it.second })
+            .groupBy({ it.first }, { it.second to it.third!! })
             .values
-            .flatMap { walls -> walls.take(RETAINED_FETCH_PROOFS) }
+            .flatMap { proofs ->
+                // The widest proof per lineage is never evicted: a truncated revalidation must
+                // not prune the only proof that covers the full original window.
+                var widestFetchedAt = proofs.first().first
+                var maxCoverageUntil = proofs.first().second
+                for (proof in proofs) {
+                    if (proof.second > maxCoverageUntil) {
+                        maxCoverageUntil = proof.second
+                        widestFetchedAt = proof.first
+                    }
+                }
+                val newest = proofs.take(RETAINED_FETCH_PROOFS).map { it.first }
+                (newest + widestFetchedAt).toSet()
+            }
             .toSet()
         val retainedFetchedAt = lineageWalls
             .map { it.second }
