@@ -7,6 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
 import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
 import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
@@ -15,6 +16,7 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.impl.SqliteExecutionAccountBindingRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteFundingEvidenceIdentityStoreImpl
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
@@ -23,6 +25,7 @@ import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteRebalancerComparisonCacheRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
@@ -33,6 +36,7 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.TradeProjectionService
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
 import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
@@ -101,8 +105,24 @@ val coreModule =
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
         single<ExecutionOrderIntentRepository> { SqliteExecutionOrderIntentRepositoryImpl(database = get()) }
+        single<ExecutionAccountBindingRepository> { SqliteExecutionAccountBindingRepositoryImpl(database = get()) }
         single<OrderIntentRepository> { get<ExecutionOrderIntentRepository>() }
-        singleOf(::OrderIntentServiceImpl) { bind<OrderIntentService>() }
+        single<ExecutionAccountBindingService> {
+            ExecutionAccountBindingService(
+                database = get(),
+                bindingRepository = get(),
+                krakenService = get(),
+                configService = get(),
+                accountHistoryScopeGuard = get(),
+            )
+        }
+        single<ExecutionAccountBindingVerifier> { get<ExecutionAccountBindingService>() }
+        single<OrderIntentService> {
+            OrderIntentServiceImpl(
+                repository = get(),
+                accountBindingVerifier = get(),
+            )
+        }
         single<ExecutionJournalBootstrap> {
             ExecutionJournalBootstrap(database = get(), repository = get())
         }

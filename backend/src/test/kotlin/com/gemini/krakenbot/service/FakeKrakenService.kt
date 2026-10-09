@@ -38,6 +38,7 @@ class FakeKrakenService :
     var withdrawStatusSupplier: (Long?, Long?) -> List<WithdrawStatusRecord> = { _, _ -> emptyList() }
     var internalTransfersSupplier: (Long?, Long?) -> List<InternalTransferRecord> = { _, _ -> emptyList() }
     var fundingEvidenceScopeSupplier: () -> String = { "fake-account" }
+    var authenticatedAccountIdentitySupplier: () -> String? = { "AA00 TEST TEST TEST" }
 
     /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -65,6 +66,7 @@ class FakeKrakenService :
     var getWithdrawStatusCallCount = 0
     var getInternalTransfersCallCount = 0
     var getOHLCCallCount = 0
+    var getAuthenticatedAccountIdentityCallCount = 0
 
     private var seededLedgerEntries: List<LedgerEvent> = emptyList()
 
@@ -167,6 +169,11 @@ class FakeKrakenService :
     }
 
     override suspend fun getFundingEvidenceScope(): String = fundingEvidenceScopeSupplier()
+
+    override suspend fun getAuthenticatedAccountIdentity(): String? {
+        getAuthenticatedAccountIdentityCallCount++
+        return authenticatedAccountIdentitySupplier()
+    }
 
     /**
      * Pre-seeds ledger entries (e.g. staking rewards or consumer spend/receive legs) and serves them like the Kraken

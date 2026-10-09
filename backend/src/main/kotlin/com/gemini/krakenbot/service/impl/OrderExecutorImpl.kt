@@ -65,19 +65,23 @@ class OrderExecutorImpl(
         cycleId: String,
         availableBalances: RawBalances?,
     ) {
-        if (!settings.dryRun && !settings.simulation) {
-            val executionJournal = orderIntentService
+        val executionJournal = if (!settings.dryRun && !settings.simulation) {
+            val journal = orderIntentService
                 ?: throw IllegalStateException("Live order submission requires the execution journal.")
-            executionJournal.ensureReadyForSubmission()
-            if (executionJournal.hasUnresolvedIntents()) {
+            journal.ensureReadyForSubmission()
+            if (journal.hasUnresolvedIntents()) {
                 log.error("Refusing live orders while an unresolved submission intent exists")
                 actionLog.add(ViewText.ERROR_LIVE_ORDERS_BLOCKED)
                 return
             }
+            journal
+        } else {
+            null
         }
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
         // each placement so a mid-cycle config flip cannot change backend or dry-run mode.
         krakenService.withStableBackend { backend ->
+            executionJournal?.ensureAccountBindingForSubmission()
             val cycleTradeIds = mutableListOf<Int>()
             val context = RebalanceSessionContext(
                 cycleId = cycleId,

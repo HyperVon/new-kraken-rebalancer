@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.ExecutionDatabase
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RebalancerEngine
@@ -19,12 +20,14 @@ import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepository
 import com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.ReportingDispatcher
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -1443,17 +1446,61 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val previousExecutionPath = System.getProperty("kraken.execution.db.path")
                 System.setProperty("kraken.db.path", reportingPath)
                 System.setProperty("kraken.execution.db.path", executionPath)
+                Files.writeString(
+                    directory.resolve("rebalancer-config.json"),
+                    """
+                    {
+                      "kraken": {
+                        "apiKey": "${TestFixtures.TRADE_HISTORY_API_KEY}",
+                        "privateKey": "${TestFixtures.TRADE_HISTORY_API_SECRET}"
+                      },
+                      "settings": {
+                        "loopDelaySeconds": 60,
+                        "deviationTriggerPercent": 2.0,
+                        "minimumOrderSizeUSD": 5.0,
+                        "dryRun": false,
+                        "simulation": false
+                      },
+                      "allocations": [
+                        {"symbol": "BTC", "targetPercent": 50.0},
+                        {"symbol": "ETH", "targetPercent": 30.0},
+                        {"symbol": "USD", "targetPercent": 20.0}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
                 val fake = FakeKrakenService()
                 val application = koinApplication {
                     modules(
                         appModule,
-                        module { single<KrakenService> { fake } },
+                        module {
+                            single<KrakenService> { fake }
+                            single<ConfigService> {
+                                ConfigServiceImpl(
+                                    objectMapper = get(),
+                                    configFilePath = directory.resolve("rebalancer-config.json").toString(),
+                                )
+                            }
+                        },
                     )
                 }
                 try {
                     val bootstrap = application.koin.get<ExecutionJournalBootstrap>()
                     val executor = application.koin.get<OrderExecutor>()
                     runTest {
+                        application.koin.get<ConfigService>().updateConfig(
+                            TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                                kraken = KrakenCredentials(
+                                    TestFixtures.TRADE_HISTORY_API_KEY,
+                                    TestFixtures.TRADE_HISTORY_API_SECRET,
+                                ),
+                                settings = TestFixtures.settings(
+                                    dryRun = false,
+                                    simulation = false,
+                                    loopDelaySeconds = 60L,
+                                ),
+                            ),
+                        )
                         bootstrap.initialize()
                         executeOneLiveBuy(executor)
                     }
@@ -1678,6 +1725,39 @@ class ExecutionJournalCutoverTest : StringSpec() {
             }
         }
 
+        "v1 execution journals migrate to an unbound execution account anchor" {
+            withTempDirectory { directory ->
+                val reportingPath = directory.resolve("reporting.db")
+                val executionPath = directory.resolve("execution.db")
+                DatabaseConfig.init(reportingPath.toString())
+                val beforeMigration = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
+                val originalJournalId = beforeMigration.journalId()
+                DriverManager.getConnection("jdbc:sqlite:$executionPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("DROP TABLE execution_account_binding_audit")
+                        statement.execute("DROP TABLE execution_account_binding")
+                        statement.execute(
+                            "ALTER TABLE execution_journal_metadata " +
+                                "DROP COLUMN account_binding_initialized",
+                        )
+                        statement.execute("DELETE FROM execution_schema_migrations WHERE version=2")
+                    }
+                }
+
+                val upgraded = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
+
+                upgraded.journalId() shouldBe originalJournalId
+                readSingleLong(
+                    executionPath,
+                    "SELECT COUNT(*) FROM execution_schema_migrations WHERE version=2 AND name='execution-account-binding'",
+                ) shouldBe 1L
+                readSingleLong(
+                    executionPath,
+                    "SELECT account_binding_initialized FROM execution_journal_metadata WHERE singleton_id=1",
+                ) shouldBe 0L
+            }
+        }
+
         "new execution journal refuses a schema version written by a newer binary" {
             withTempDirectory { directory ->
                 val executionPath = directory.resolve("future.db")
@@ -1689,7 +1769,7 @@ class ExecutionJournalCutoverTest : StringSpec() {
                         )
                         it.execute(
                             "INSERT INTO execution_schema_migrations(version, name, applied_at) " +
-                                "VALUES (2, 'future', 0)",
+                                "VALUES (3, 'future', 0)",
                         )
                     }
                 }
@@ -1866,7 +1946,8 @@ class ExecutionJournalCutoverTest : StringSpec() {
         return database to SqliteExecutionOrderIntentRepositoryImpl(database)
     }
 
-    private fun orderIntentService(repository: ExecutionOrderIntentRepository) = OrderIntentServiceImpl(repository)
+    private fun orderIntentService(repository: ExecutionOrderIntentRepository) =
+        OrderIntentServiceImpl(repository, ExecutionAccountBindingVerifier { })
 
     private suspend fun executeOneLiveBuy(executor: OrderExecutor, cycleId: String = "live-cycle") =
         executor.executeOrders(

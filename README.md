@@ -849,6 +849,15 @@ witness, and the reporting database together. By default the witness is beside
 the reporting database; see the [execution-journal recovery notes](SECURITY.md#execution-journal-storage-and-recovery)
 for its failure-domain limits and upgrade steps.
 
+Before a real live order, the execution journal must hold a verified Kraken
+account binding. Its first binding authenticates the account IIBAN and validates
+the legacy reporting account scope; credential rotations must authenticate to
+the same IIBAN. The journal stores only digests and an audit trail. A mismatch,
+missing or corrupt binding, or post-cutover live-order history without a binding
+blocks live submission. After binding, steady-state checks use the execution
+journal and do not depend on reporting-database availability. Simulation and
+dry-run modes do not create a live account binding.
+
 > **Note:** `minimumOrderSizeUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
 > **Note:** the passive Buy & Hold anchor uses an independent invested-thesis floor of
 > `$5.00` (see `docs/ALGORITHM.md`); it mirrors the template default of

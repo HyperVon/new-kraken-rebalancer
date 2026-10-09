@@ -91,10 +91,24 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
                         """
                         CREATE TABLE IF NOT EXISTS execution_journal_metadata (
                             singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
-                            journal_id TEXT NOT NULL
+                            journal_id TEXT NOT NULL,
+                            account_binding_initialized INTEGER NOT NULL DEFAULT 0
+                                CHECK(account_binding_initialized IN (0, 1))
                         )
                         """.trimIndent(),
                     )
+                    val hasAccountBindingAnchor = statement.executeQuery(
+                        "PRAGMA table_info(execution_journal_metadata)",
+                    ).use { resultSet ->
+                        generateSequence { if (resultSet.next()) resultSet.getString("name") else null }
+                            .any { it == "account_binding_initialized" }
+                    }
+                    if (!hasAccountBindingAnchor) {
+                        statement.execute(
+                            "ALTER TABLE execution_journal_metadata ADD COLUMN account_binding_initialized " +
+                                "INTEGER NOT NULL DEFAULT 0 CHECK(account_binding_initialized IN (0, 1))",
+                        )
+                    }
                     statement.execute(
                         """
                         CREATE TABLE IF NOT EXISTS execution_order_intents (
@@ -162,6 +176,30 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
                         """.trimIndent(),
                     )
                     statement.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS execution_account_binding (
+                            singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                            account_identity_digest TEXT NOT NULL,
+                            credential_generation_digest TEXT NOT NULL,
+                            binding_version INTEGER NOT NULL,
+                            verification_method TEXT NOT NULL,
+                            verified_at INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS execution_account_binding_audit (
+                            event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            account_identity_digest TEXT NOT NULL,
+                            previous_credential_generation_digest TEXT,
+                            credential_generation_digest TEXT NOT NULL,
+                            verification_method TEXT NOT NULL,
+                            verified_at INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.execute(
                         "INSERT OR IGNORE INTO execution_journal_metadata(singleton_id, journal_id) VALUES (1, '${UUID.randomUUID()}')",
                     )
                     if (maxVersion == 0) {
@@ -170,6 +208,16 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
                         ).use { insert ->
                             insert.setInt(1, 1)
                             insert.setString(2, "separate-execution-journal-and-projection-outbox")
+                            insert.setLong(3, System.currentTimeMillis())
+                            insert.executeUpdate()
+                        }
+                    }
+                    if (maxVersion < 2) {
+                        connection.prepareStatement(
+                            "INSERT INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+                        ).use { insert ->
+                            insert.setInt(1, 2)
+                            insert.setString(2, "execution-account-binding")
                             insert.setLong(3, System.currentTimeMillis())
                             insert.executeUpdate()
                         }
@@ -209,7 +257,7 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
     companion object {
         private const val BUSY_TIMEOUT_MILLIS = 5_000
         private const val SQLITE_SYNCHRONOUS_FULL = 2
-        private const val CURRENT_EXECUTION_SCHEMA_VERSION = 1
+        private const val CURRENT_EXECUTION_SCHEMA_VERSION = 2
         private val log = LoggerFactory.getLogger(ExecutionDatabase::class.java)
         private val keepAliveConnections = ConcurrentHashMap<String, Connection>()
 

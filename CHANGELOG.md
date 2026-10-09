@@ -27,6 +27,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Execution journal recovery**: legacy order-intent safety rows are retained
   during cutover, and a missing previously initialized execution database now
   fails closed instead of being recreated as an empty journal.
+- **Live account binding**: the execution journal stores digests of Kraken's
+  authenticated account IIBAN and the verified credential generation. Initial
+  binding requires the legacy account-scope guard; credential rotation must
+  authenticate to the same account. Missing or corrupt binding evidence and
+  unbound post-cutover order history block live submission, while an established
+  binding is checked without reporting-database access.
 
 ## [6.17.109] - 2026-10-07
 

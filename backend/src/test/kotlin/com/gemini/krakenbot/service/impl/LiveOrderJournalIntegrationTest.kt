@@ -8,6 +8,7 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
+import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.FakeKrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -392,7 +393,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             reportingPath = reportingPath,
             executionPath = executionPath,
             database = database,
-            intentService = OrderIntentServiceImpl(repository),
+            intentService = OrderIntentServiceImpl(repository, ExecutionAccountBindingVerifier { }),
         )
     }
 

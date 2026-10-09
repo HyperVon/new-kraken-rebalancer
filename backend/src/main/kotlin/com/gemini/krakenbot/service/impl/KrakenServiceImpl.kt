@@ -104,6 +104,15 @@ class KrakenServiceImpl(
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
+    override suspend fun getAuthenticatedAccountIdentity(): String? {
+        val accountIdentity = queryPrivate(KrakenApiConstants.PATH_API_KEY_INFO, emptyMap())
+            .path(KrakenApiConstants.FIELD_IBAN)
+        return accountIdentity.takeIf { it.isTextual }
+            ?.asText()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+    }
+
     private suspend fun <T> retryWithFlow(
         actionName: String,
         maxAttempts: Int = 5,
