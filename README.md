@@ -3,8 +3,8 @@
 A production-grade, autonomous portfolio rebalancing engine for
 the [Kraken](https://www.kraken.com/) cryptocurrency exchange. The system
 continuously monitors your portfolio and automatically executes trades to
-maintain target asset allocations — with intelligent strategies for handling
-deposits, withdrawals, and market drawdowns.
+maintain configured target asset allocations, including a fixed target for
+cash.
 
 **This application has been running in production managing a live portfolio for
 several months.**
@@ -21,15 +21,14 @@ walkthrough of Dashboard, Settings, History, and safety modes
 
 - **Stay disciplined automatically** — define the mix you want and let the bot
   correct meaningful drift instead of reacting to headlines or price swings.
-- **Optionally put cash to work gradually during drawdowns** — configure the bot
-  to retain a target cash allocation, then progressively deploy it as the
-  portfolio falls from its all-time high rather than making one all-or-nothing
-  entry.
+- **Set a fixed cash allocation** — the configured USD target is part of the
+  portfolio allocation and does not change with ATH or drawdown calculations.
 - **Absorb deposits and withdrawals cleanly** — rebalance new cash after a
   deposit, or respond to a cash withdrawal by selling overweight assets, without
   maintaining a spreadsheet and placing every order by hand.
-- **Keep control and an audit trail** — inspect current allocations, intended or
-  completed trades, fees, slippage, and portfolio history from a local dashboard.
+- **Keep control and an order audit trail** — inspect current allocations,
+  intended orders, and trade prices, fees, and slippage labeled as local estimates
+  or exchange-reported fills in a local dashboard.
 - **Test before trusting it with funds** — learn with the offline simulator, then
   rehearse against live market data in dry-run mode before enabling real orders.
 
@@ -247,12 +246,13 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Sells overweight assets first to generate liquidity, then buys underweight
   assets
 
-### Dynamic Fiat Deployment
+### Fixed Cash Allocation
 
-- Tracks portfolio All-Time High (ATH) and calculates real-time drawdown
-- Progressively deploys idle cash into the market as drawdowns deepen
-- Configurable deployment curve via an exponent parameter (linear, aggressive,
-  or conservative)
+- Treats the configured USD allocation as a fixed target during each rebalance
+- Bases orders on current account balances, market prices, configured weights,
+  and the deviation threshold
+- Retains legacy drawdown and deployment settings in the configuration format
+  for historical reports; those values do not change current orders
 
 ### Intelligent Fiat Correction
 
@@ -300,7 +300,8 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ### Historical Trades Synchronization
 
-- Automatically synchronizes executed trade history from Kraken API (`/0/private/TradesHistory`) on startup
+- Synchronizes historical trade data when a History workflow requests it; the
+  periodic rebalancing loop does not wait for this work
 - Persists historical trades to the SQLite database
 - Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
 - Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
@@ -421,8 +422,8 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 ### Dashboard
 
 The main dashboard leads with a hero portfolio KPI and 24h delta, plus cash and
-crypto tiles (effective target adjusted for drawdown deployment), an allocation
-chart, and a sortable asset performance table.
+crypto tiles showing configured targets, an allocation chart, and a sortable
+asset performance table.
 
 The canonical dashboard above is deliberately shown once at a constrained
 display width. The full responsive capture matrix remains available through
@@ -436,8 +437,9 @@ views so high-DPI source PNGs do not dominate the page at 100% browser zoom.
 ### Settings
 
 All configuration is managed through the web UI — loop interval, deviation
-trigger, minimum order size, fiat deployment parameters, per-asset allocation
-targets, and per-asset chart colors.
+trigger, minimum order size, fixed USD allocation, per-asset allocation
+targets, and per-asset chart colors. Legacy drawdown and deployment settings
+are retained for historical calculations.
 
 <p><a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings" width="720"></a></p>
 
@@ -502,15 +504,18 @@ graph LR
         DC --> DV[DashboardView]
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
-        PM --> THS
+        PM --> RD[ReportingDispatcher]
 
         PA --> KS[KrakenService]
         PA --> CS
-        PA --> PSR["PortfolioStatsRepository (SQLite)"]
         PA --> PC[PortfolioCalculations]
         OE --> KS
-        OE --> THS
+        OE --> EJ["Execution journal (SQLite)"]
+        RD --> THS
+        RD --> TP[TradeProjectionService]
         THS --> TR["TradeRepository (SQLite)"]
+        TP -->|"read immutable events"| EJ
+        TP -->|"trade + cursor transaction"| TR
         KS --> RL[RateLimiter]
     end
 
@@ -529,14 +534,15 @@ Each cycle executes three phases:
 
 ```mermaid
 flowchart LR
-    A["📸 Snapshot\nFetch balances & prices\nCalculate portfolio value"] --> B["📊 Analysis\nCompute deviations\nApply drawdown adjustments\nDetermine trades"]
-    B --> C["⚡ Execution\nSell overweight assets\nBuy underweight assets\nRecord snapshot"]
-    C --> D["💤 delay()\n(configurable interval)"]
+    A["📸 Snapshot\nFetch current balances & prices\nCalculate portfolio value"] --> B["📊 Analysis\nCompare with configured allocation\nUse fixed USD target\nDetermine trades"]
+    B --> C["⚡ Execution\nSell overweight assets\nBuy underweight assets\nPersist live intent"]
+    C --> R["Queue snapshot and trade report\nfor asynchronous persistence"]
+    R --> D["💤 delay()\n(configurable interval)"]
     D --> A
 ```
 
-See **[ALGORITHM.md](docs/ALGORITHM.md)** for a detailed breakdown of the rebalancing
-logic, fiat correction strategy, and dynamic deployment math.
+See **[ALGORITHM.md](docs/ALGORITHM.md)** for the fixed-target rebalance logic,
+order sequence, and the separate retained-history calculations.
 
 See **[FLOWS.md](docs/FLOWS.md)** for sequence diagrams and a comprehensive breakdown
 of how Kotlin's hot `SharedFlow` and cold `Flow` streams orchestrate configuration updates,
@@ -549,11 +555,10 @@ two complementary `SharedFlow` channels:
 
 #### Portfolio Snapshot Stream (Dashboard SSE)
 
-1. **Kotlin SharedFlow**: `TradeHistorySnapshotStore` owns a
-   `MutableSharedFlow<PortfolioSnapshot>` as a hot event broadcaster (exposed
-   through the `TradeHistoryServiceImpl` façade via `getHistoryFlow()` /
-   `addSnapshot`). Whenever a rebalance cycle records a new snapshot, it is
-   emitted via `tryEmit()`.
+1. **Asynchronous report queue**: `PortfolioManagerImpl` places a snapshot in
+   the bounded `ReportingDispatcher` queue without waiting on SQLite. The
+   reporting worker persists the snapshot through `TradeHistoryServiceImpl`;
+   that store emits it on its `MutableSharedFlow<PortfolioSnapshot>` for SSE.
 2. **Ktor Server-Sent Events (SSE)**: The `/api/status/stream` route installs
    Ktor 3's native `SSE` plugin. When a client connects, Ktor pushes the latest
    cached snapshot and then collects subsequent snapshots from the
@@ -641,7 +646,9 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
 │   │   ├── config/
 │   │   │   ├── AppModule.kt                  # Koin dependency injection module
-│   │   │   ├── DatabaseConfig.kt             # SQLite connect + Exposed schema migrate
+│   │   │   ├── DatabaseConfig.kt             # Reporting SQLite + Exposed schema migrate
+│   │   │   ├── ExecutionDatabase.kt          # Separate live-order SQLite journal
+│   │   │   ├── ExecutionJournalBootstrap.kt  # Legacy intent import + restart recovery
 │   │   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
 │   │   │   ├── IndexRepair.kt                # SQLite index validation and rebuild
 │   │   │   ├── KtorConfig.kt                 # CORS, compression, content negotiation
@@ -655,7 +662,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
 │   │   ├── model/                             # OrderIntent, LedgerEvent, RewardsOverTime, HistoryStats, RebalancerComparison, PortfolioStats
-│   │   ├── repository/                        # TradeRepository, OrderIntentRepository, LedgerRepository, PortfolioStatsRepository
+│   │   ├── repository/                        # Reporting repositories + execution-intent repository
 │   │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
 │   │   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
 │   │   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
@@ -670,7 +677,9 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
 │   │   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
 │   │   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
-│   │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
+│   │   │       ├── ReportingDispatcher.kt    # Bounded asynchronous reporting queues
+│   │   │       ├── TradeProjectionServiceImpl.kt # Idempotent execution-outcome projection
+│   │   │       ├── PortfolioAnalyzerImpl.kt  # Live balance, price, and plan calculations
 │   │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │   │       ├── PublicRateLimiter.kt      # Conservative public-call pacing
 │   │   │       ├── RateLimiter.kt            # Kraken private call-counter limiter
@@ -725,7 +734,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
   **Data: Query ledger entries** (covered by **Query Ledgers**); the application
   does not need withdrawal-placement permission. If either endpoint is denied,
   the runtime reports the missing permission and keeps ATH/Buy & Hold funding
-  unresolved rather than guessing.
+  unresolved in historical reports rather than guessing.
 - For **`simulation: true`**: no real keys required — template placeholders are
   enough; the emulator never calls Kraken
 
@@ -749,8 +758,9 @@ Edit `rebalancer-config.json`:
 - Add your Kraken API Key and Private Key
 - Define your desired `allocations` (must sum to 100%, must include USD)
 - Set `dryRun` to `true` for initial testing
-- Optionally configure `fiatMaxDrawdown` and `fiatDeploymentExponent` for
-  dynamic cash deployment
+- `allocations.USD` sets the fixed cash target used by current rebalance plans
+- `fiatMaxDrawdown` and `fiatDeploymentExponent` are retained for historical
+  calculations and do not alter current order targets
 
 ### 2. Start the Application
 
@@ -820,15 +830,33 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 
 ## Configuration Reference
 
-| Field                     | Type      | Default                 | Description                                                                           |
-|---------------------------|-----------|-------------------------|---------------------------------------------------------------------------------------|
-| `loopDelaySeconds`        | `Long`    | — (template `60`)       | Seconds between rebalance cycles; required in JSON                                    |
-| `deviationTriggerPercent` | `Double`  | — (template `5.0`)      | Minimum absolute deviation % to trigger a trade; required in JSON                     |
-| `minimumOrderSizeUSD`     | `Double`  | `5.0`                   | Min significant USD deviation (order generation) and min order notional (execution)   |
-| `dryRun`                  | `Boolean` | — (template `true`)     | Required in JSON; suppresses order placement on the active backend (live or emulator) |
-| `simulation`              | `Boolean` | `false`                 | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
-| `fiatMaxDrawdown`         | `Double`  | `0.0`                   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
-| `fiatDeploymentExponent`  | `Double`  | `1.0`                   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+| Field                            | Type      | Default             | Description                                                                           |
+|----------------------------------|-----------|---------------------|---------------------------------------------------------------------------------------|
+| `loopDelaySeconds`               | `Long`    | — (template `60`)   | Seconds between rebalance cycles; required in JSON                                    |
+| `deviationTriggerPercent`        | `Double`  | — (template `5.0`)  | Minimum absolute deviation % to trigger a trade; required in JSON                     |
+| `minimumOrderSizeUSD`            | `Double`  | `5.0`               | Min significant USD deviation (order generation) and min order notional (execution)   |
+| `dryRun`                         | `Boolean` | — (template `true`) | Required in JSON; suppresses order placement on the active backend (live or emulator) |
+| `simulation`                     | `Boolean` | `false`             | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
+| `fiatMaxDrawdown`                | `Double`  | `0.0`               | Retained for historical reporting; does not change the current rebalance target       |
+| `fiatDeploymentExponent`         | `Double`  | `1.0`               | Retained for historical reporting; does not change the current rebalance target       |
+| `fiatDeploymentThresholdPercent` | `Double`  | `0.0`               | Retained for historical reporting; does not change the current rebalance target       |
+
+The reporting database defaults to `kraken-rebalancer.db`. The separate live
+execution journal defaults to its sibling `kraken-rebalancer-execution.db` and
+can be relocated with the JVM property `kraken.execution.db.path`. Back up the
+execution database, its `.journal-id` identity sidecar, the execution-journal
+witness, and the reporting database together. By default the witness is beside
+the reporting database; see the [execution-journal recovery notes](SECURITY.md#execution-journal-storage-and-recovery)
+for its failure-domain limits and upgrade steps.
+
+Before a real live order, the execution journal must hold a verified Kraken
+account binding. Its first binding authenticates the account IIBAN and validates
+the legacy reporting account scope; credential rotations must authenticate to
+the same IIBAN. The journal stores only digests and an audit trail. A mismatch,
+missing or corrupt binding, or post-cutover live-order history without a binding
+blocks live submission. After binding, steady-state checks use the execution
+journal and do not depend on reporting-database availability. Simulation and
+dry-run modes do not create a live account binding.
 
 > **Note:** `minimumOrderSizeUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
 > **Note:** the passive Buy & Hold anchor uses an independent invested-thesis floor of
@@ -913,7 +941,7 @@ Tests cover:
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result
   verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
-- `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
+- `PortfolioManagerDrawdownTest` — fixed USD target behavior and historical ATH math
 - `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing and
   successful execution verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption

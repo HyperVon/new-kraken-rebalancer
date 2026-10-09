@@ -36,6 +36,8 @@ object TradeTable : Table("trades") {
     val hasValidCost = bool("has_valid_cost").default(true)
     val hasValidPrice = bool("has_valid_price").default(true)
     val hasValidFee = bool("has_valid_fee").default(true)
+    val executionJournalId = varchar("execution_journal_id", 64).nullable()
+    val executionIntentId = integer("execution_intent_id").nullable()
 
     init {
         index("idx_trades_timestamp", false, timestamp)
@@ -44,6 +46,7 @@ object TradeTable : Table("trades") {
         index("idx_trades_cycle_id", false, cycleId)
         index("idx_trades_trade_id", false, tradeId)
         index("idx_trades_submission_state", false, submissionState)
+        uniqueIndex("ux_trades_execution_identity", executionJournalId, executionIntentId)
     }
 
     override val primaryKey = PrimaryKey(id)
@@ -73,6 +76,8 @@ object TradeTable : Table("trades") {
         hasValidCost = row[hasValidCost],
         hasValidPrice = row[hasValidPrice],
         hasValidFee = row[hasValidFee],
+        executionJournalId = row[executionJournalId],
+        executionIntentId = row[executionIntentId],
     )
 
     fun applyTo(builder: UpdateBuilder<*>, trade: TradeRecord) {
@@ -99,5 +104,7 @@ object TradeTable : Table("trades") {
         builder[hasValidCost] = trade.hasValidCost
         builder[hasValidPrice] = trade.hasValidPrice
         builder[hasValidFee] = trade.hasValidFee
+        builder[executionJournalId] = trade.executionJournalId
+        builder[executionIntentId] = trade.executionIntentId
     }
 }

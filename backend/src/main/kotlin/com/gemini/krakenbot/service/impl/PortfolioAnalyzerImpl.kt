@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.config.ATH_REBASE_ENV
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
@@ -54,7 +53,7 @@ import com.gemini.krakenbot.domain.resolveBalance as resolveBalanceFromKeys
 class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
-    private val portfolioStatsRepository: PortfolioStatsRepository,
+    private val portfolioStatsRepository: PortfolioStatsRepository? = null,
     private val nowProvider: () -> Instant = Instant::now,
     private val ledgerRepository: LedgerRepository? = null,
     private val tradeRepository: TradeRepository? = null,
@@ -125,7 +124,10 @@ class PortfolioAnalyzerImpl(
         balancesObservedAt: Instant?,
         provenanceResolver: FundingProvenanceResolver,
     ): AthUpdateResult {
-        val stats = portfolioStatsRepository.load()
+        val statsRepository = checkNotNull(portfolioStatsRepository) {
+            "Portfolio stats repository is required."
+        }
+        val stats = statsRepository.load()
         var ath = stats.allTimeHigh
         // Initial ATH may only be established from a zero starting point. A
         // positive ATH that flows zeroed mid-cycle must stay zero: resurrecting
@@ -447,7 +449,7 @@ class PortfolioAnalyzerImpl(
         val drawdownPct = RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)
         val updatedStats = stats.copy(allTimeHigh = ath, lastTrustedDrawdownPct = drawdownPct)
         try {
-            portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+            statsRepository.saveAthStateWithFlowCheckpoint(
                 stats = updatedStats,
                 appliedFlows = appliedFlows,
                 flowWatermarkSec = pendingFlowWatermarkSec,
@@ -578,7 +580,7 @@ class PortfolioAnalyzerImpl(
                 message = failure.message,
             )
         }
-        val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
+        val decided = checkNotNull(portfolioStatsRepository).getAppliedAthFlowIds(rows.map { it.ledgerId })
         val unapplied = preHorizonRows.filterNot { it.ledgerId in decided }
         // Any undecided pre-horizon leg sharing a refid with a post-horizon
         // sibling is held back. This includes passthrough-first arrival, where
@@ -829,7 +831,7 @@ class PortfolioAnalyzerImpl(
             // the upgrade; rows arriving after migration reconcile by
             // identity.
             val legacyRows = ledgersRepo.getLedgersInRange(Instant.EPOCH, Instant.ofEpochSecond(watermarkSec))
-            portfolioStatsRepository.journalPresumedDecidedFlows(
+            checkNotNull(portfolioStatsRepository).journalPresumedDecidedFlows(
                 legacyRows.map { AppliedAthFlow(ledgerId = it.ledgerId, eventTimeSec = it.time.epochSecond) },
             )
             ledgersRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
@@ -878,7 +880,7 @@ class PortfolioAnalyzerImpl(
                     event.time,
                 )
             }
-            portfolioStatsRepository.journalPresumedDecidedFlows(
+            checkNotNull(portfolioStatsRepository).journalPresumedDecidedFlows(
                 baselineMaterial.map { appliedFlowFor(it, FlowCategory.AMBIGUOUS) },
             )
         }
@@ -1160,7 +1162,8 @@ class PortfolioAnalyzerImpl(
         // Distinguishes decision status (already applied/journaled to ATH) from whether
         // their actual balance effect is required to reconstruct historical holdings for
         // a later-discovered earlier-timestamp flow.
-        val decidedJournalFlows = portfolioStatsRepository.getAppliedAthFlows(allRetained.map { it.ledgerId })
+        val decidedJournalFlows = checkNotNull(portfolioStatsRepository)
+            .getAppliedAthFlows(allRetained.map { it.ledgerId })
             .associateBy { it.ledgerId }
         val decidedOrdinaryOwnerEvents = mutableListOf<LedgerEvent>()
         val decidedOwnerFlowContexts = mutableListOf<ActualOwnerFlowContext>()

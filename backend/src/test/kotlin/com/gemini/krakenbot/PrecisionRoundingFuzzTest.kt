@@ -132,7 +132,6 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
-                        tradeHistoryService = tradeHistoryService,
                         portfolioAnalyzer = portfolioAnalyzer,
                         orderExecutor = orderExecutor,
                     )

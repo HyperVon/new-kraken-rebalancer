@@ -88,7 +88,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             runTest {
                 val service = createService()
                 val config = TestFixtures.config(
-                    settings = TestFixtures.settings(dryRun = false),
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(TestFixtures.USD, 50.0),
@@ -145,6 +145,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
         "rebuildHistoricalSnapshotsIfNeeded_skipsCurrentVersion" {
             runTest {
                 val service = createService()
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
+                )
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
                 } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
@@ -165,6 +168,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
         "rebuildHistoricalSnapshotsIfNeeded_doesNotTrustMarkerWithoutCoverageProvenance" {
             runTest {
                 val service = createService()
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
+                )
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
                 } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
@@ -182,6 +188,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
         "rebuildHistoricalSnapshotsIfNeeded_skipsCurrentMarkerWhenCoverageIsStale" {
             runTest {
                 val service = createService()
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
+                )
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
                 } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
@@ -964,6 +973,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     kraken = KrakenCredentials("", TestFixtures.TRADE_HISTORY_API_SECRET),
                     settings = TestFixtures.settings(
                         dryRun = false,
+                        simulation = false,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
                         minimumOrderSizeUSD = 5.0,

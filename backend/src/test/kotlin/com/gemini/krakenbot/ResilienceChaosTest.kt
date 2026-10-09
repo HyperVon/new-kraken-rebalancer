@@ -77,7 +77,6 @@ class ResilienceChaosTest : StringSpec() {
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
-                        tradeHistoryService = mockTradeHistoryService,
                         portfolioAnalyzer = portfolioAnalyzer,
                         orderExecutor = orderExecutor,
                     )
@@ -132,7 +131,6 @@ class ResilienceChaosTest : StringSpec() {
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
-                        tradeHistoryService = mockTradeHistoryService,
                         portfolioAnalyzer = portfolioAnalyzer,
                         orderExecutor = orderExecutor,
                     )

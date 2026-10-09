@@ -42,6 +42,9 @@ data class TradeRecord(
     val hasValidCost: Boolean = true,
     val hasValidPrice: Boolean = true,
     val hasValidFee: Boolean = true,
+    /** Stable source identity for idempotent, downstream execution-journal projection. */
+    val executionJournalId: String? = null,
+    val executionIntentId: Int? = null,
 )
 
 /** True only when all raw economic fields parsed cleanly at ingestion. */

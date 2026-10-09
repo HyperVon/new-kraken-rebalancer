@@ -52,7 +52,6 @@ class OverviewGridComponent {
                 }
                 div(CssClass.Hero.Value) { +"$${Formatter.formatCurrency(latest.totalValueUSD)}" }
                 renderDeltaRow(delta24h)
-                renderDrawdown(latest.drawdownPercent)
             }
             val spark = sparklineSvg(history)
             if (spark.isNotEmpty()) {
@@ -78,18 +77,6 @@ class OverviewGridComponent {
             val sign = if (signum > 0) "+" else ""
             span(cls) { +"$sign${Formatter.formatPercent(delta)}%" }
             span(CssClass.Hero.DeltaWindow) { +ViewText.DELTA_WINDOW_24H }
-        }
-    }
-
-    private fun DIV.renderDrawdown(drawdown: BigDecimal) {
-        val cls =
-            if (drawdown.signum() > 0) {
-                CssClass.Utility.TextDanger + CssClass.Hero.Drawdown
-            } else {
-                CssClass.Hero.Drawdown
-            }
-        span(cls) {
-            +"${ViewText.DRAWDOWN_PREFIX}${Formatter.formatPercent(drawdown)}%"
         }
     }
 

@@ -15,9 +15,8 @@ section. For rebalancing math internals, see [ALGORITHM.md](ALGORITHM.md).
 Market moves, deposits, and withdrawals cause a portfolio to drift away from its
 target allocation. Correcting that drift by hand requires repeated monitoring,
 calculations, and order entry. Kraken Rebalancer automates those rules so a
-Kraken user can follow a chosen allocation consistently, optionally configure a
-cash reserve to deploy progressively during drawdowns, and review what the
-strategy did from one local dashboard.
+Kraken user can follow a chosen allocation consistently, including a fixed USD
+cash allocation, and review what the strategy did from one local dashboard.
 
 This is an execution and monitoring tool, not a source of trading signals. You
 choose the assets, targets, and risk settings; the application does not predict
@@ -78,7 +77,7 @@ Live Trading settings.
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Live portfolio snapshot, allocation bars, performance table, recent activity |
 | **History** | `/history` | Time-range charts, summary cards, full trade log |
-| **Settings** | `/settings` | Loop timing, triggers, fiat deployment, safety modes, allocations |
+| **Settings** | `/settings` | Loop timing, triggers, fixed USD target, safety modes, allocations |
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 **Only the Dashboard** shows a stream-health chip in the header next to the mode
@@ -104,8 +103,8 @@ The top of the Dashboard is a hero card plus two tiles:
 
 | Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta when a true ≥24h baseline exists (green up / red down / muted flat), or an explicit unavailable label when it does not; current **drawdown** and an inline **sparkline** of recent retained snapshots. |
-| **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, plus **effective** target % after drawdown-based fiat deployment (and the configured **Base** target when they differ) and deviation. |
+| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta when a true ≥24h baseline exists (green up / red down / muted flat), or an explicit unavailable label when it does not; an inline **sparkline** of recent retained snapshots. |
+| **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, the configured USD target, and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
 ### Loop control
@@ -209,11 +208,13 @@ work finishes.
 | **Loop Interval (Seconds)** | How often the rebalancer wakes up to snapshot and potentially trade. Minimum **1**. |
 | **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. Minimum **0**. |
 | **Minimum Order Size ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. **Minimum `2` (enforced).** |
-| **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
-| **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
-| **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
 | **Inception Date (Optional)** | Manual strategy-start anchor. Use the UTC date picker and save, or review the compact **Recommended strategy start** row and select **Use estimated start** to approve the exact timestamp in one step. Select **Show evidence** when you want the supporting history details; they stay collapsed by default to keep the form compact. The estimate remains explicitly user-approved evidence, not automatic proof of bot ownership. If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. Stale evidence from another account or simulation scope is withheld, display reads never trigger Kraken recovery, and allocation changes do not falsely claim a new strategy start. Approving a start also rebuilds the Buy & Hold baseline from Kraken history. Once the comparison has proven the strategy start is the valid automatic baseline, that proof is remembered: reloading Settings or restarting the app reuses the verified baseline without replaying the entire comparison (the stored proof is re-checked against the retained history), and the proof is re-checked automatically whenever the underlying history or configuration changes. The Settings form shows the proven baseline on fast loads without claiming the current comparison was evaluated; a separate unavailable message appears only when a full comparison evaluation runs and fails. Verification itself uses only the latest stable, coverage-confirmed historical state: a snapshot written while its cycle's trades and ledgers are still syncing stays outside the verification horizon until history catches up, so a brief sync race defers the proof instead of reporting a deposit/withdrawal error. A confirmed baseline can still have an unavailable comparison if later balance reconciliation cannot be completed; when lifetime recovery is ambiguous or truncated, History may instead show a bounded passive report from the earliest genuinely recorded post-floor snapshot. That report does not approve or rewrite strategy inception. |
 | **Comparison Start (Optional)** | UTC anchor for the Buy & Hold comparison. Set automatically when you accept a verified start proposal. The form displays a UTC date, while an accepted proposal preserves its exact UTC timestamp. Requires an inception date at or before it. |
+
+Existing `fiatMaxDrawdown`, `fiatDeploymentExponent`, and
+`fiatDeploymentThresholdPercent` values remain in the configuration format for
+historical calculations. The Settings page does not expose these legacy fields,
+and current order targets use the configured allocations directly.
 
 ### Safety modes
 
@@ -320,7 +321,7 @@ which one:
 | **Largest single position** | Am I concentrated? | The **whole book**, including the targets preserved for unscored assets. |
 | **Effective independent bets** | How many genuinely separate positions do I hold? | The **whole book**. `1 / Σ(share²)`: equals the leg count when evenly weighted, and **1** when everything sits in one asset. Two assets at 86 / 14 behave like **1.3** bets, not 2. |
 
-Deeper behavior (drawdown deployment, sell-then-buy, dust) is documented in
+The fixed USD target, sell-then-buy sequence, and dust handling are documented in
 [ALGORITHM.md](ALGORITHM.md).
 
 ---
@@ -333,6 +334,20 @@ all six summary cards and the charts use that window. Datasets appear as their
 requests finish. If a request fails, its old data is cleared and a retry message
 appears; successful datasets remain visible for the selected window. Select the
 same range again to retry. A comparison failure has its own unavailable message.
+
+Live order outcomes are recorded in the execution journal, separate from the
+historical reporting database. Historical reporting-database writes do not delay
+order placement. The pre-order intent and final outcome/outbox commit remain
+synchronous safety steps; a failed final commit leaves the intent unresolved
+and blocks later live orders until an operator verifies and resolves it. The
+trade-log row is first projected from the order intent using its planning quote
+and estimated fee. An explicit Kraken History sync can reconcile it to exchange
+fills and fees. Dashboard snapshots
+and non-live estimates use best-effort reporting queues and may be absent after
+a queue or reporting failure. The History trade log and snapshots therefore do
+not constitute a complete or authoritative Actual performance record. A live
+trade row remains a planning-price and estimated-fee record until Kraken fill
+history replaces those estimates with exchange-reported execution economics.
 
 The selected window controls which reconciled points are displayed; it does not
 shorten the accounting evidence used to build the comparison. Buy & Hold and
@@ -585,17 +600,11 @@ Late fills are accepted only when their ownership is authoritative and their
 complete tracked balance change reconciles. Rendered comparisons are fully
 reconciled.
 
-### ATH trust status
+### Historical ATH calculations
 
-When ATH cannot safely establish a drawdown, the cycle records a concrete
-`lastAthDeferredReason` in the backend status and disables fiat deployment for
-that cycle. Reasons include `LEDGER_COVERAGE_STALE`, `LEDGER_COVERAGE_UNKNOWN`,
-`FUNDING_PROVENANCE_UNAVAILABLE`, `AMBIGUOUS_FUNDING`,
-`UNSUPPORTED_LEDGER_EVENT`, `HISTORICAL_PRICE_UNAVAILABLE`,
-`PRE_FLOW_BASIS_UNCERTAIN`, `BALANCE_OBSERVATION_UNCERTAIN`,
-`EVENT_ORDERING_UNCERTAIN`, and `PERSISTENCE_FAILURE`. A funding-status
-permission denial is reported as `FUNDING_PROVENANCE_UNAVAILABLE` with the
-required Kraken permission in the server log.
+Legacy drawdown and cash-deployment values remain loadable from configuration
+for retained historical calculations. They do not alter the configured USD
+target used by the current rebalance cycle.
 
 ### Staking, Promotion & Earn Rewards
 

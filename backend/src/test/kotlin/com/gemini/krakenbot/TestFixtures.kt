@@ -133,7 +133,7 @@ object TestFixtures {
     fun settings(
         dryRun: Boolean = true,
         minimumOrderSizeUSD: Double = 5.0,
-        simulation: Boolean = false,
+        simulation: Boolean = !dryRun,
         loopDelaySeconds: Long = 0L,
         deviationTriggerPercent: Double = 2.0,
         fiatMaxDrawdown: Double = 0.0,

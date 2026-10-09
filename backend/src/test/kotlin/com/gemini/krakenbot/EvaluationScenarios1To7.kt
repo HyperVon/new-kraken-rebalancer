@@ -574,22 +574,15 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             val executor =
                 OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
-            val capturedActions = mutableListOf<String>()
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
-            }
-
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
-            pm.performRebalanceCycle()
+            val snapshot = pm.performRebalanceCycle()
 
-            val dryRunPass = capturedActions.any { it.startsWith("[DRY RUN]") }
+            val dryRunPass = snapshot?.actions?.any { it.startsWith("[DRY RUN]") } == true
 
             // Sub-case B: Minimum Order Size Filtering
             val appConfigDust =
@@ -617,7 +610,6 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             val pmDust =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
@@ -646,7 +638,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
 
             val finalPass = dryRunPass && dustPass && networkFailurePropagationPass && priceFailPass
             val evidence =
-                "Sub-case A (Dry Run Mode): $dryRunPass (Actions: $capturedActions)\n" +
+                "Sub-case A (Dry Run Mode): $dryRunPass (Actions: ${snapshot?.actions.orEmpty()})\n" +
                     "Sub-case B (Minimum Order Size): $dustPass " +
                     "(Trades executed: ${fakeKraken.executedOrders.size})\n" +
                     "Sub-case C (Network Failure propagated out of cycle to loop boundary): " +
@@ -787,5 +779,5 @@ private fun evaluationPortfolioManager(
 ): PortfolioManagerImpl {
     val analyzer = PortfolioAnalyzerImpl(fakeKraken, configService, mockk(relaxed = true))
     val executor = OrderExecutorImpl(fakeKraken, tradeHistoryService)
-    return PortfolioManagerImpl(configService, mockk(relaxed = true), analyzer, executor)
+    return PortfolioManagerImpl(configService, analyzer, executor)
 }

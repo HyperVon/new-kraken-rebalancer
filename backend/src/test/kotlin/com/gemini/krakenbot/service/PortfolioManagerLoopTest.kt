@@ -22,21 +22,17 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
-import com.gemini.krakenbot.service.impl.history.AccountScopeValidationResult
-import com.gemini.krakenbot.service.impl.history.AccountScopeValidationStatus
-import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -45,14 +41,12 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.time.Instant
-import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerLoopTest : StringSpec() {
 
@@ -61,7 +55,6 @@ class PortfolioManagerLoopTest : StringSpec() {
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val inceptionDiscoveryService = mockk<InceptionDiscoveryService>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
     private lateinit var portfolioAnalyzer: PortfolioAnalyzer
     private lateinit var orderExecutor: OrderExecutor
@@ -81,10 +74,8 @@ class PortfolioManagerLoopTest : StringSpec() {
             orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
-                tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
                 orderExecutor = orderExecutor,
-                inceptionDiscoveryService = inceptionDiscoveryService,
             )
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)
@@ -108,278 +99,132 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
 
-                // Startup observation + the cycle's pre-rebalance fetch.
-                krakenService.getBalancesCallCount shouldBe 2
+                krakenService.getBalancesCallCount shouldBe 1
             }
         }
 
-        "runLoop_SkipsHistoryWorkWhenAccountScopeDoesNotMatch" {
-            runTest {
-                val config = TestFixtures.config(settings = TestFixtures.settings(loopDelaySeconds = 60L))
-                every { configService.getConfig() } returns config
-                val scopeGuard = mockk<AccountHistoryScopeGuard>()
-                coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
-                    AccountScopeValidationStatus.SCOPE_MISMATCH,
-                    "configured account differs from bound history",
-                )
-                val guardedManager = PortfolioManagerImpl(
-                    configService = configService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor,
-                    krakenService = krakenService,
-                    inceptionDiscoveryService = inceptionDiscoveryService,
-                    accountHistoryScopeGuard = scopeGuard,
-                )
-
-                guardedManager.startRebalancingLoop()
-                val job = launch { guardedManager.runLoop() }
-                runCurrent()
-                guardedManager.stopRebalancingLoop()
-                job.cancel()
-
-                coVerify(exactly = 2) { scopeGuard.validateAccountScope() }
-                krakenService.getBalancesCallCount shouldBe 0
-                coVerify(exactly = 0) { tradeHistoryService.syncLedgersFromKraken() }
-                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
-                coVerify(exactly = 0) { tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded(any()) }
-            }
-        }
-
-        "runLoop_AllowsSimulationScopeValidationToProceed" {
+        "normal rebalance cycles do not call retrospective history services" {
             runTest {
                 val config = TestFixtures.config(
                     settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
                 )
                 every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                val scopeGuard = mockk<AccountHistoryScopeGuard>()
-                coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult.SIMULATION
-                val guardedManager = PortfolioManagerImpl(
-                    configService = configService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor,
-                    krakenService = krakenService,
-                    inceptionDiscoveryService = inceptionDiscoveryService,
-                    accountHistoryScopeGuard = scopeGuard,
-                )
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
 
-                guardedManager.startRebalancingLoop()
-                val job = launch { guardedManager.runLoop() }
+                portfolioManager.startRebalancingLoop()
+                val job = launch { portfolioManager.runLoop() }
                 runCurrent()
-                guardedManager.stopRebalancingLoop()
-                job.cancel()
+                portfolioManager.stopRebalancingLoop()
+                job.join()
 
-                coVerify(exactly = 2) { scopeGuard.validateAccountScope() }
-                krakenService.getBalancesCallCount shouldBe 2
+                krakenService.getBalancesCallCount shouldBe 1
+                coVerify(exactly = 0) { tradeHistoryService.syncLedgersFromKraken() }
+                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
+                coVerify(exactly = 0) { tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded(any()) }
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
 
-        "stopRebalancingLoop_StopsExecution" {
+        "runLoop called before start does not enter the trading cycle" {
             runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(
-                    settings = settings,
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(loopDelaySeconds = 60L),
                 )
-                every { configService.getConfig() } returns config
-
-                portfolioManager.startRebalancingLoop()
-                portfolioManager.stopRebalancingLoop()
 
                 portfolioManager.runLoop()
 
                 krakenService.getBalancesCallCount shouldBe 0
-                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
-            }
-        }
-
-        "checkAndRunCycle_HandlesExceptionGracefully" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(
-                    settings = settings,
-                )
-                every { configService.getConfig() } returns config
-
-                krakenService.balanceSupplier =
-                    { throw RuntimeException("API Error!") }
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch {
-                    portfolioManager.runLoop()
-                }
-                runCurrent()
-                portfolioManager.stopRebalancingLoop()
-                job.cancel()
-
-                // Startup observation + the cycle's rebalance-phase fetch (which throws).
-                krakenService.getBalancesCallCount shouldBe 2
-            }
-        }
-
-        "runLoop_HandlesSyncTradesExceptionGracefully" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(
-                    settings = settings,
-                )
-                every { configService.getConfig() } returns config
-
-                coEvery { tradeHistoryService.syncTradesFromKraken() } throws RuntimeException("Sync error!")
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch {
-                    portfolioManager.runLoop()
-                }
-                runCurrent()
-                advanceTimeBy(60_001.milliseconds)
-                runCurrent()
-                portfolioManager.stopRebalancingLoop()
-                job.join()
-
-                coVerify(atLeast = 2) { tradeHistoryService.syncTradesFromKraken() }
-            }
-        }
-
-        "runLoop_SynchronizesLedgersBeforeTrades" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                val syncOrder = mutableListOf<String>()
-                coEvery { tradeHistoryService.syncLedgersFromKraken() } answers {
-                    syncOrder += "ledgers"
-                }
-                coEvery { tradeHistoryService.syncTradesFromKraken() } answers {
-                    syncOrder += "trades"
-                }
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch { portfolioManager.runLoop() }
-                runCurrent()
-                portfolioManager.stopRebalancingLoop()
-                job.join()
-
-                syncOrder.take(2) shouldBe listOf("ledgers", "trades")
-            }
-        }
-
-        "runLoop_ContinuesRebalanceWhenLedgerSyncFails" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                coEvery {
-                    tradeHistoryService.syncLedgersFromKraken()
-                } throws RuntimeException("Ledger sync error!")
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch { portfolioManager.runLoop() }
-                runCurrent()
-                portfolioManager.stopRebalancingLoop()
-                job.join()
-
-                coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
-                krakenService.getBalancesCallCount shouldBe 2
-                portfolioManager.getOperationalStatus().lastCycleSyncWarning shouldContain
-                    "Ledger synchronization"
-            }
-        }
-
-        "runLoop_CombinesLedgerAndTradeSyncWarningsInFailureOrder" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                coEvery {
-                    tradeHistoryService.syncLedgersFromKraken()
-                } throws RuntimeException("Ledger sync error!")
-                coEvery {
-                    tradeHistoryService.syncTradesFromKraken()
-                } throws RuntimeException("Trade sync error!")
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch { portfolioManager.runLoop() }
-                runCurrent()
-                portfolioManager.stopRebalancingLoop()
-                job.join()
-
-                krakenService.getBalancesCallCount shouldBe 2
-                portfolioManager.getOperationalStatus().lastCycleSyncWarning shouldBe
-                    "Ledger synchronization during cycle failed (RuntimeException); " +
-                    "Trade synchronization during cycle failed (RuntimeException)"
-            }
-        }
-
-        "runLoop_ContinuesRebalanceWhenSnapshotRebuildFails" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                coEvery {
-                    tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded(any())
-                } throws RuntimeException("Snapshot rebuild error!")
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch { portfolioManager.runLoop() }
-                runCurrent()
-                portfolioManager.stopRebalancingLoop()
-                job.join()
-
-                // Startup observation + the cycle's rebalance-phase fetch.
-                krakenService.getBalancesCallCount shouldBe 2
-            }
-        }
-
-        "runLoop propagates cancellation from startup sync instead of entering the loop" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(
-                    settings = settings,
-                )
-                every { configService.getConfig() } returns config
-
-                coEvery {
-                    tradeHistoryService.syncTradesFromKraken()
-                } throws CancellationException("shutting down")
-
-                portfolioManager.startRebalancingLoop()
-
-                shouldThrow<CancellationException> { portfolioManager.runLoop() }
-
-                // The startup observation is the only fetch: if cancellation were swallowed the
-                // cycle would proceed and fetch again.
-                krakenService.getBalancesCallCount shouldBe 1
                 portfolioManager.isLoopRunning() shouldBe false
             }
         }
 
-        "cancellation during in-cycle sync stops the cycle before any rebalance work" {
+        "runLoop records a failed cycle and keeps its worker alive for the next interval" {
             runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(loopDelaySeconds = 3600L),
+                )
+                krakenService.balanceSupplier = { throw IllegalStateException("balance endpoint unavailable") }
+
+                val worker = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+
+                krakenService.getBalancesCallCount shouldBe 1
+                portfolioManager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
+                portfolioManager.isLoopRunning() shouldBe true
+
+                portfolioManager.stopRebalancingLoop()
+                worker.join()
+                portfolioManager.isLoopRunning() shouldBe false
+            }
+        }
+
+        "an order execution exception still produces an actual portfolio snapshot" {
+            runTest {
                 val config = TestFixtures.config(
-                    settings = settings,
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0),
+                    ),
                 )
                 every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 100.0) }
+                val failedExecutor = mockk<OrderExecutor>()
+                coEvery {
+                    failedExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                } throws IllegalStateException("order adapter failed")
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = failedExecutor,
+                    krakenService = krakenService,
+                )
 
-                var syncCalls = 0
-                coEvery { tradeHistoryService.syncTradesFromKraken() } answers {
-                    syncCalls++
-                    // Succeed on startup, then cancel once the loop body syncs.
-                    if (syncCalls > 1) throw CancellationException("config changed")
+                val snapshot = manager.performRebalanceCycle().shouldNotBeNull()
+
+                snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("100.00"))
+                manager.getOperationalStatus().lastCycleError shouldBe "Order execution failed"
+                snapshot.actions.any { it.contains("order adapter failed") } shouldBe true
+                coVerify(exactly = 1) {
+                    failedExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
                 }
+            }
+        }
 
-                portfolioManager.startRebalancingLoop()
-                portfolioManager.runLoop()
+        "post-trade valuation failure retains the independently observed pre-trade snapshot" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.USD, 60.0),
+                    ),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to 0.2, Asset.USD to 80.0)
+                }
+                var priceReads = 0
+                krakenService.pricesSupplier = {
+                    priceReads += 1
+                    if (priceReads == 1) mapOf(Asset.BTC_USD_PAIR to 100.0) else emptyMap()
+                }
+                val successfulExecutor = mockk<OrderExecutor>(relaxed = true)
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = successfulExecutor,
+                    krakenService = krakenService,
+                )
 
-                // Only the startup observation ran; the cycle aborted at the in-cycle sync
-                // before the rebalance fetch.
-                krakenService.getBalancesCallCount shouldBe 1
+                val snapshot = manager.performRebalanceCycle().shouldNotBeNull()
+
+                snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("100.00"))
+                snapshot.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("0.2"))
+                manager.getOperationalStatus().lastCycleError shouldBe "Post-trade valuation failed"
+                krakenService.getBalancesCallCount shouldBe 2
             }
         }
 
@@ -401,8 +246,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 runCurrent()
 
                 val cyclesBeforeChange = krakenService.getBalancesCallCount
-                // Startup observation + one cycle.
-                cyclesBeforeChange shouldBe 2
+                cyclesBeforeChange shouldBe 1
 
                 // Emitted while the loop is parked in the 1h delay: collectLatest must cancel and
                 // restart the cycle immediately with the new settings.
@@ -412,122 +256,6 @@ class PortfolioManagerLoopTest : StringSpec() {
                 krakenService.getBalancesCallCount shouldBe cyclesBeforeChange + 1
 
                 job.cancel()
-            }
-        }
-
-        "hot config lifecycle stops and restarts one managed worker without overlap" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 3600L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-
-                val configFlow = MutableSharedFlow<Settings>(replay = 1, extraBufferCapacity = 8)
-                every { configService.watchConfigChanges() } returns configFlow
-                val firstCycleSyncStarted = CompletableDeferred<Unit>()
-                val restartedCycleSyncStarted = CompletableDeferred<Unit>()
-                var syncCalls = 0
-                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
-                    syncCalls++
-                    if (syncCalls == 2) {
-                        firstCycleSyncStarted.complete(Unit)
-                        awaitCancellation()
-                    }
-                    if (syncCalls == 4) {
-                        restartedCycleSyncStarted.complete(Unit)
-                        awaitCancellation()
-                    }
-                }
-
-                configFlow.emit(settings)
-                val firstWorker = portfolioManager.startRebalancingLoop(this)
-                runCurrent()
-                firstCycleSyncStarted.await()
-
-                // A second caller must not become a second hot-flow collector or startup sync.
-                val duplicateCaller = launch { portfolioManager.runLoop() }
-                duplicateCaller.join()
-                syncCalls shouldBe 2
-
-                portfolioManager.stopRebalancingLoop()
-                firstWorker.join()
-
-                // The replayed setting is still available, but the stopped worker must not consume it.
-                configFlow.emit(settings)
-                syncCalls shouldBe 2
-                val secondWorker = portfolioManager.startRebalancingLoop(this)
-                runCurrent()
-                restartedCycleSyncStarted.await()
-
-                syncCalls shouldBe 4
-                (secondWorker !== firstWorker) shouldBe true
-
-                portfolioManager.stopRebalancingLoop()
-                secondWorker.join()
-            }
-        }
-
-        "restart immediately after stop drains the cancelled worker before the new loop starts" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 3600L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-
-                val configFlow = MutableSharedFlow<Settings>(replay = 1, extraBufferCapacity = 8)
-                every { configService.watchConfigChanges() } returns configFlow
-                val firstCycleSyncStarted = CompletableDeferred<Unit>()
-                val restartedCycleSyncStarted = CompletableDeferred<Unit>()
-                val firstWorkerGate = CompletableDeferred<Unit>()
-                val restartedWorkerGate = CompletableDeferred<Unit>()
-                var syncCalls = 0
-                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
-                    syncCalls++
-                    // The gate is awaited inside NonCancellable so stop() cannot release the mutex
-                    // through cancellation propagation; the new worker must therefore wait for the
-                    // predecessor's join (and would never reach its own sync without it).
-                    when (syncCalls) {
-                        1 -> {
-                            firstCycleSyncStarted.complete(Unit)
-                            withContext(NonCancellable) { firstWorkerGate.await() }
-                        }
-
-                        2 -> {
-                            restartedCycleSyncStarted.complete(Unit)
-                            withContext(NonCancellable) { restartedWorkerGate.await() }
-                        }
-
-                        else -> throw AssertionError("unexpected sync call #$syncCalls")
-                    }
-                }
-
-                configFlow.emit(settings)
-                val firstWorker = portfolioManager.startRebalancingLoop(this)
-                runCurrent()
-                firstCycleSyncStarted.await()
-
-                // The first worker is still holding runLoopMutex (suspended in NonCancellable),
-                // so a stop+start without the join would let the new runLoop hit tryLock-fail
-                // and the replacement would never call syncTradesFromKraken again.
-                portfolioManager.stopRebalancingLoop()
-                val secondWorker = portfolioManager.startRebalancingLoop(this)
-                runCurrent()
-
-                // The new worker is blocked on staleJob.join() and has not yet entered runLoop.
-                restartedCycleSyncStarted.isCompleted shouldBe false
-                syncCalls shouldBe 1
-
-                // Release the first worker; its drain lets the new worker acquire the mutex
-                // and run its own startup sync.
-                firstWorkerGate.complete(Unit)
-                runCurrent()
-                restartedCycleSyncStarted.await()
-                syncCalls shouldBe 2
-                (secondWorker !== firstWorker) shouldBe true
-
-                portfolioManager.stopRebalancingLoop()
-                restartedWorkerGate.complete(Unit)
-                runCurrent()
-                secondWorker.join()
-                firstWorker.join()
             }
         }
 
@@ -559,7 +287,6 @@ class PortfolioManagerLoopTest : StringSpec() {
                 }
                 val manager = PortfolioManagerImpl(
                     configService = configService,
-                    tradeHistoryService = tradeHistoryService,
                     portfolioAnalyzer = portfolioAnalyzer,
                     orderExecutor = blockingExecutor,
                     krakenService = krakenService,
@@ -578,7 +305,7 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
-        "cycle pins config and backend across sync and staged config publication" {
+        "cycle pins config and backend across staged config publication" {
             runTest {
                 val objectMapper = jacksonObjectMapper()
                 val configFile = Files.createTempDirectory("cycle-pin").resolve("config.json").toFile()
@@ -605,19 +332,11 @@ class PortfolioManagerLoopTest : StringSpec() {
                     Asset.USD to BigDecimal("4000.00"),
                 )
                 val prices = mapOf(Asset.BTC_USD_PAIR to BigDecimal("50000.00"))
-
                 coEvery { simulatedBackend.getBalances() } returns balances
-                var realBalanceCalls = 0
-                coEvery { realBackend.getBalances() } coAnswers {
-                    realBalanceCalls++
-                    balances
-                }
                 coEvery { simulatedBackend.getTickerPrices(any()) } returns prices
-                coEvery { realBackend.getTickerPrices(any()) } returns prices
-                coEvery { simulatedBackend.getLedgers(any(), any(), any(), any()) } returns emptyList()
-                coEvery { realBackend.getLedgers(any(), any(), any(), any()) } returns emptyList()
-                coEvery { simulatedBackend.getTradeHistory(any(), any()) } returns emptyList()
-                coEvery { realBackend.getTradeHistory(any(), any()) } returns emptyList()
+
+                val orderEntered = CompletableDeferred<Unit>()
+                val releaseOrder = CompletableDeferred<Unit>()
                 val successfulOrder = OrderResult(
                     success = true,
                     pair = Asset.BTC_USD_PAIR,
@@ -627,34 +346,13 @@ class PortfolioManagerLoopTest : StringSpec() {
                 )
                 coEvery {
                     simulatedBackend.executeOrder(any(), any(), any(), any(), any(), any())
-                } returns successfulOrder
-                coEvery {
-                    realBackend.executeOrder(any(), any(), any(), any(), any(), any())
-                } returns successfulOrder
+                } coAnswers {
+                    orderEntered.complete(Unit)
+                    releaseOrder.await()
+                    successfulOrder
+                }
 
                 val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-                coEvery { statsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
-                val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-                val syncEntered = CompletableDeferred<Unit>()
-                val releaseSync = CompletableDeferred<Unit>()
-                val snapshotAdded = CompletableDeferred<Unit>()
-                val releaseSnapshot = CompletableDeferred<Unit>()
-                var ledgerSyncCalls = 0
-                coEvery { tradeHistoryService.syncLedgersFromKraken() } coAnswers {
-                    ledgerSyncCalls++
-                    dynamicKrakenService.getLedgers()
-                    if (ledgerSyncCalls == 2) {
-                        syncEntered.complete(Unit)
-                        releaseSync.await()
-                    }
-                }
-                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
-                    dynamicKrakenService.getTradeHistory()
-                }
-                coEvery { tradeHistoryService.addSnapshot(any()) } coAnswers {
-                    snapshotAdded.complete(Unit)
-                    releaseSnapshot.await()
-                }
                 val analyzer = PortfolioAnalyzerImpl(
                     krakenService = dynamicKrakenService,
                     configService = realConfigService,
@@ -662,15 +360,13 @@ class PortfolioManagerLoopTest : StringSpec() {
                 )
                 val manager = PortfolioManagerImpl(
                     configService = realConfigService,
-                    tradeHistoryService = tradeHistoryService,
                     portfolioAnalyzer = analyzer,
-                    orderExecutor = OrderExecutorImpl(dynamicKrakenService, tradeHistoryService),
+                    orderExecutor = OrderExecutorImpl(dynamicKrakenService, null),
                     krakenService = dynamicKrakenService,
                 )
 
                 val publishedSettings = initialSettings.copy(
-                    simulation = false,
-                    loopDelaySeconds = 7200L,
+                    deviationTriggerPercent = initialSettings.deviationTriggerPercent + 1.0,
                 )
                 val publishedConfig = runtimeInitialConfig.copy(settings = publishedSettings)
                 val configEvents = mutableListOf<Settings>()
@@ -685,7 +381,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 configEvents shouldBe listOf(initialSettings)
 
                 val worker = manager.startRebalancingLoop(this)
-                syncEntered.await()
+                orderEntered.await()
 
                 realConfigService.updateConfig(publishedConfig)
                 runCurrent()
@@ -693,34 +389,26 @@ class PortfolioManagerLoopTest : StringSpec() {
                 realConfigService.getConfig() shouldBe runtimeInitialConfig
                 configEvents shouldBe listOf(initialSettings)
 
-                releaseSync.complete(Unit)
-                snapshotAdded.await()
-                coVerify(atLeast = 2) { simulatedBackend.getLedgers(any(), any(), any(), any()) }
-                coVerify(atLeast = 2) { simulatedBackend.getTradeHistory(any(), any()) }
+                releaseOrder.complete(Unit)
+                publication.await()
                 coVerify(atLeast = 1) { simulatedBackend.getBalances() }
                 coVerify(atLeast = 1) { simulatedBackend.getTickerPrices(any()) }
-                coVerify {
+                coVerify(atLeast = 1) {
                     simulatedBackend.executeOrder(any(), any(), any(), any(), true, any())
                 }
-                coVerify(exactly = 0) { realBackend.getLedgers(any(), any(), any(), any()) }
-                coVerify(exactly = 0) { realBackend.getTradeHistory(any(), any()) }
                 coVerify(exactly = 0) { realBackend.getBalances() }
                 coVerify(exactly = 0) { realBackend.getTickerPrices(any()) }
                 coVerify(exactly = 0) {
                     realBackend.executeOrder(any(), any(), any(), any(), any(), any())
                 }
+                coVerify(exactly = 0) { realBackend.getLedgers(any(), any(), any(), any()) }
+                coVerify(exactly = 0) { realBackend.getTradeHistory(any(), any()) }
 
-                releaseSnapshot.complete(Unit)
-                publication.await()
                 realConfigService.getConfig() shouldBe publishedConfig
                 configEvents shouldBe listOf(initialSettings, publishedSettings)
                 manager.stopRebalancingLoop()
                 worker.join()
                 configCollector.cancel()
-
-                val realBalanceCallsBeforeUnpinnedRead = realBalanceCalls
-                dynamicKrakenService.getBalances()
-                realBalanceCalls shouldBe realBalanceCallsBeforeUnpinnedRead + 1
             }
         }
 
@@ -734,7 +422,6 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val executor = mockk<OrderExecutor>(relaxed = true)
                 val manager = PortfolioManagerImpl(
                     configService = configService,
-                    tradeHistoryService = tradeHistoryService,
                     portfolioAnalyzer = analyzer,
                     orderExecutor = executor,
                     krakenService = null,
@@ -778,129 +465,6 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
-        "deferred ATH update disables fiat deployment and preserves trusted drawdown" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-
-                val analyzer = mockk<PortfolioAnalyzer>()
-                val executor = mockk<OrderExecutor>(relaxed = true)
-                val manager = PortfolioManagerImpl(
-                    configService = configService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = analyzer,
-                    orderExecutor = executor,
-                    krakenService = null,
-                )
-                val balances = emptyMap<String, BigDecimal>()
-                val prices = emptyMap<String, BigDecimal>()
-                coEvery { analyzer.fetchBalances() } returns balances
-                coEvery { analyzer.fetchObservedBalances() } returns ObservedBalances(balances, Instant.now())
-                coEvery { analyzer.fetchPrices() } returns prices
-                every { analyzer.calculatePortfolioValues(any(), any()) } returns Result.Success(
-                    PortfolioValues(
-                        totalValueUSD = BigDecimal("110000.00"),
-                        currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("110000.00")),
-                    ),
-                )
-                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns
-                    AthUpdateResult.Deferred(BigDecimal("20.0000"), AthTrustFailureReason.LEDGER_COVERAGE_STALE)
-                // Trap: must never be consulted while deferred.
-                every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal("99")
-                every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
-                every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE
-                every { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns
-                    RebalancePlan(
-                        buyOrders = emptyMap(),
-                        sellOrders = emptyMap(),
-                        events = emptyList(),
-                    )
-                val drawdownSlot = io.mockk.slot<BigDecimal>()
-                val fiatSlot = io.mockk.slot<BigDecimal>()
-                every {
-                    analyzer.buildSnapshot(
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        capture(drawdownSlot),
-                        capture(fiatSlot),
-                        any(),
-                        any(),
-                    )
-                } returns TestFixtures.emptySnapshot(Instant.now(), BigDecimal("110000.00"))
-
-                manager.performRebalanceCycle()
-
-                drawdownSlot.captured.shouldBeEqualComparingTo(BigDecimal("20.0000"))
-                fiatSlot.captured shouldBe BigDecimal.ZERO
-            }
-        }
-
-        "deferred ATH update without trusted drawdown snapshots zero drawdown and fiat" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-
-                val analyzer = mockk<PortfolioAnalyzer>()
-                val executor = mockk<OrderExecutor>(relaxed = true)
-                val manager = PortfolioManagerImpl(
-                    configService = configService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = analyzer,
-                    orderExecutor = executor,
-                    krakenService = null,
-                )
-                val balances = emptyMap<String, BigDecimal>()
-                val prices = emptyMap<String, BigDecimal>()
-                coEvery { analyzer.fetchBalances() } returns balances
-                coEvery { analyzer.fetchObservedBalances() } returns ObservedBalances(balances, Instant.now())
-                coEvery { analyzer.fetchPrices() } returns prices
-                every { analyzer.calculatePortfolioValues(any(), any()) } returns Result.Success(
-                    PortfolioValues(
-                        totalValueUSD = BigDecimal("110000.00"),
-                        currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("110000.00")),
-                    ),
-                )
-                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns
-                    AthUpdateResult.Deferred(null, AthTrustFailureReason.LEDGER_COVERAGE_STALE)
-                every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal("99")
-                every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
-                every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE
-                every { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns
-                    RebalancePlan(
-                        buyOrders = emptyMap(),
-                        sellOrders = emptyMap(),
-                        events = emptyList(),
-                    )
-                val drawdownSlot = io.mockk.slot<BigDecimal>()
-                val fiatSlot = io.mockk.slot<BigDecimal>()
-                every {
-                    analyzer.buildSnapshot(
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        capture(drawdownSlot),
-                        capture(fiatSlot),
-                        any(),
-                        any(),
-                    )
-                } returns TestFixtures.emptySnapshot(Instant.now(), BigDecimal("110000.00"))
-
-                manager.performRebalanceCycle()
-
-                drawdownSlot.captured shouldBe BigDecimal.ZERO
-                fiatSlot.captured shouldBe BigDecimal.ZERO
-            }
-        }
-
         "pauseLoop_SetsPausedFlagAndCancelsWorker" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)
@@ -917,29 +481,18 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "resumeLoop_AfterPause_RestartsWorker" {
             runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
+                val settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
+                    settings = settings,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
                 every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-
-                val firstWorkerStarted = CompletableDeferred<Unit>()
-                val secondWorkerStarted = CompletableDeferred<Unit>()
-                var startupSyncCalls = 0
-                coEvery { tradeHistoryService.syncLedgersFromKraken() } coAnswers {
-                    startupSyncCalls++
-                    when (startupSyncCalls) {
-                        1 -> {
-                            firstWorkerStarted.complete(Unit)
-                            awaitCancellation()
-                        }
-
-                        2 -> secondWorkerStarted.complete(Unit)
-                    }
-                }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
 
                 val initialWorker = portfolioManager.startRebalancingLoop(this)
                 runCurrent()
-                firstWorkerStarted.isCompleted shouldBe true
+                val firstCycleBalanceCalls = krakenService.getBalancesCallCount
+                firstCycleBalanceCalls shouldBe 1
                 portfolioManager.pauseLoop()
                 portfolioManager.isLoopPaused() shouldBe true
 
@@ -947,8 +500,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 runCurrent()
 
                 portfolioManager.isLoopPaused() shouldBe false
-                secondWorkerStarted.isCompleted shouldBe true
-                portfolioManager.stopRebalancingLoop()
+                krakenService.getBalancesCallCount shouldBe firstCycleBalanceCalls + 1
+                portfolioManager.stopRebalancingLoop()?.join()
                 initialWorker.join()
             }
         }
@@ -957,7 +510,6 @@ class PortfolioManagerLoopTest : StringSpec() {
             runTest {
                 val pm = PortfolioManagerImpl(
                     configService = configService,
-                    tradeHistoryService = tradeHistoryService,
                     portfolioAnalyzer = portfolioAnalyzer,
                     orderExecutor = orderExecutor,
                 )
@@ -967,10 +519,13 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "startRebalancingLoop with active worker returns existing job and reports running" {
             runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
+                val settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
+                    settings = settings,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
                 every { configService.getConfig() } returns config
-                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers { awaitCancellation() }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
 
                 val job1 = portfolioManager.startRebalancingLoop(this)
                 runCurrent()
@@ -982,46 +537,60 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 portfolioManager.stopRebalancingLoop()
                 runCurrent()
+                job1.join()
                 portfolioManager.isLoopRunning() shouldBe false
             }
         }
 
-        "shutdown joins the current worker after pause and resume, not the stale startup worker" {
+        "shutdown joins the current worker after pause and resume, not the stale worker" {
             runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
+                val settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
+                    settings = settings,
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0),
+                    ),
+                )
                 every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 1000.0) }
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 100.0) }
 
                 val aGate = CompletableDeferred<Unit>()
                 val bGate = CompletableDeferred<Unit>()
-                var syncCalls = 0
-                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
-                    syncCalls++
-                    when (syncCalls) {
+                var executionCalls = 0
+                val blockingExecutor = mockk<OrderExecutor>()
+                coEvery {
+                    blockingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                } coAnswers {
+                    executionCalls++
+                    when (executionCalls) {
                         1 -> withContext(NonCancellable) { aGate.await() }
                         2 -> withContext(NonCancellable) { bGate.await() }
-                        else -> error("unexpected sync call #$syncCalls")
+                        else -> error("unexpected execution call #$executionCalls")
                     }
                 }
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = blockingExecutor,
+                    krakenService = krakenService,
+                )
 
-                // Worker A starts and parks inside its startup sync.
-                val a = portfolioManager.startRebalancingLoop(this)
+                val a = manager.startRebalancingLoop(this)
                 runCurrent()
-                syncCalls shouldBe 1
+                executionCalls shouldBe 1
 
-                // Pause cancels A, then release A so it can drain to completion.
-                portfolioManager.pauseLoop()
+                manager.pauseLoop()
                 aGate.complete(Unit)
                 runCurrent()
 
-                // Resume creates replacement worker B, which parks inside its own startup sync.
-                portfolioManager.resumeLoop()
+                manager.resumeLoop()
                 runCurrent()
-                syncCalls shouldBe 2
-                portfolioManager.isLoopPaused() shouldBe false
+                executionCalls shouldBe 2
+                manager.isLoopPaused() shouldBe false
 
-                // Shutdown stops the current worker and returns the job it actually cancelled.
-                val stoppedWorker = portfolioManager.stopRebalancingLoop()!!
+                val stoppedWorker = manager.stopRebalancingLoop()!!
                 (stoppedWorker !== a) shouldBe true
 
                 var dependenciesReleased = false
@@ -1030,11 +599,6 @@ class PortfolioManagerLoopTest : StringSpec() {
                     dependenciesReleased = true
                 }
                 runCurrent()
-
-                // B is still draining inside its NonCancellable gate (cancellation is deferred until
-                // the gate releases), so the dependency release must not proceed yet. A is already
-                // complete, so joining the stale startup worker would have released immediately --
-                // proving shutdown now waits on the live worker B.
                 stoppedWorker.isCompleted shouldBe false
                 a.isCompleted shouldBe true
                 dependenciesReleased shouldBe false

@@ -90,7 +90,7 @@ private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
 private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
 
 class DashboardController(
-    private val tradeHistoryService: TradeHistoryService,
+    tradeHistoryService: TradeHistoryService?,
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
     private val dashboardView: DashboardView,
@@ -98,7 +98,12 @@ class DashboardController(
     private val orderIntentService: OrderIntentService,
     private val nowProvider: () -> Instant = Instant::now,
     private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
+    private val tradeHistoryServiceProvider: (() -> TradeHistoryService)? = null,
 ) {
+    private val tradeHistoryService: TradeHistoryService by lazy {
+        tradeHistoryServiceProvider?.invoke()
+            ?: checkNotNull(tradeHistoryService) { "Reporting history is unavailable." }
+    }
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
     private val activeProposalRequests = AtomicInteger(0)
     private val proposalRequestSequence = AtomicLong(0)
@@ -650,17 +655,6 @@ class DashboardController(
         val loopDelaySeconds =
             params.requiredSingle(FormFields.LOOP_DELAY_SECONDS, ViewText.INVALID_LOOP_DELAY)
                 .requiredLong(ViewText.INVALID_LOOP_DELAY)
-        val fiatMaxDrawdown =
-            params.requiredSingle(FormFields.FIAT_MAX_DRAWDOWN, ViewText.INVALID_FIAT_MAX_DRAWDOWN)
-                .requiredFiniteDouble(ViewText.INVALID_FIAT_MAX_DRAWDOWN)
-        val fiatDeploymentExponent =
-            params.requiredSingle(FormFields.FIAT_DEPLOYMENT_EXPONENT, ViewText.INVALID_FIAT_DEPLOYMENT_EXPONENT)
-                .requiredFiniteDouble(ViewText.INVALID_FIAT_DEPLOYMENT_EXPONENT)
-        val fiatDeploymentThresholdPercent =
-            params[FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT]?.trim()?.takeIf(String::isNotBlank)?.let {
-                it.toDoubleOrNull()?.takeIf { d -> d.isFinite() && d >= 0.0 && d <= 100.0 }
-                    ?: throw IllegalArgumentException(ViewText.INVALID_FIAT_DEPLOYMENT_THRESHOLD)
-            } ?: 0.0
         val inceptionDate = params[FormFields.INCEPTION_DATE]?.trim()?.takeIf(String::isNotBlank)?.let { dateStr ->
             InceptionDiscoveryService.parseInceptionDate(dateStr)
                 ?: throw IllegalArgumentException(ViewText.INVALID_INCEPTION_DATE)
@@ -682,9 +676,9 @@ class DashboardController(
                 minimumOrderSizeUSD = minimumOrderSizeUSD,
                 dryRun = params[FormFields.DRY_RUN] != null,
                 simulation = params[FormFields.SIMULATION] != null,
-                fiatMaxDrawdown = fiatMaxDrawdown,
-                fiatDeploymentExponent = fiatDeploymentExponent,
-                fiatDeploymentThresholdPercent = fiatDeploymentThresholdPercent,
+                fiatMaxDrawdown = currentConfig.settings.fiatMaxDrawdown,
+                fiatDeploymentExponent = currentConfig.settings.fiatDeploymentExponent,
+                fiatDeploymentThresholdPercent = currentConfig.settings.fiatDeploymentThresholdPercent,
                 inceptionDate = inceptionDate,
                 comparisonStartDate = comparisonStartDate,
             )
@@ -789,13 +783,6 @@ class DashboardController(
             loopDelaySeconds = singleValue(FormFields.LOOP_DELAY_SECONDS),
             deviationTriggerPercent = singleValue(FormFields.DEVIATION_TRIGGER_PERCENT),
             minimumOrderSizeUsd = singleValue(FormFields.MINIMUM_ORDER_SIZE_USD),
-            fiatMaxDrawdown = singleValue(FormFields.FIAT_MAX_DRAWDOWN),
-            fiatDeploymentExponent = singleValue(FormFields.FIAT_DEPLOYMENT_EXPONENT),
-            // The settings parser treats an omitted or blank threshold as zero.
-            fiatDeploymentThresholdPercent = this[FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT]
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?: "0.0",
             inceptionDate = this[FormFields.INCEPTION_DATE].orEmpty(),
             comparisonStartDate = this[FormFields.COMPARISON_START_DATE].orEmpty(),
             simulation = this[FormFields.SIMULATION] != null,

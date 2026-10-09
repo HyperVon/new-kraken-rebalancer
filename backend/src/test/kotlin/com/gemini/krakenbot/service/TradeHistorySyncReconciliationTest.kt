@@ -61,6 +61,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     kraken = KrakenCredentials("", ""),
                     settings = TestFixtures.settings(
                         dryRun = false,
+                        simulation = false,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
                         minimumOrderSizeUSD = 5.0,
@@ -944,6 +945,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     ),
                     settings = TestFixtures.settings(
                         dryRun = false,
+                        simulation = false,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
                         minimumOrderSizeUSD = 5.0,

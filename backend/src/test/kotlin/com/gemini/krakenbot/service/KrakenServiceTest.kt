@@ -47,6 +47,26 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         checkNotNull(javaClass.getResource("/kraken-assets/$name")).readText()
 
     init {
+        "getAuthenticatedAccountIdentity reads the IIBAN returned by Kraken" {
+            runTest {
+                val paths = mutableListOf<String>()
+                val service = createService(
+                    """{"error":[],"result":{"iban":"AA00 TEST ACCOUNT A","apiKey":"not-returned"}}""",
+                ) { request -> paths += request.url.encodedPath }
+
+                service.getAuthenticatedAccountIdentity() shouldBe "AA00 TEST ACCOUNT A"
+                paths shouldBe listOf(KrakenApiConstants.PATH_API_KEY_INFO)
+            }
+        }
+
+        "getAuthenticatedAccountIdentity is unavailable when Kraken omits the IIBAN" {
+            runTest {
+                val service = createService("""{"error":[],"result":{"permissions":[]}}""")
+
+                service.getAuthenticatedAccountIdentity() shouldBe null
+            }
+        }
+
         "getBalances_Success" {
             runTest {
                 val responseJson =

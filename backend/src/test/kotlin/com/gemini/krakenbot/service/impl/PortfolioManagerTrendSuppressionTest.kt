@@ -30,7 +30,6 @@ class PortfolioManagerTrendSuppressionTest : StringSpec() {
 
     private fun manager(krakenService: KrakenService?): PortfolioManagerImpl = PortfolioManagerImpl(
         configService = mockk<ConfigService>(),
-        tradeHistoryService = mockk<TradeHistoryService>(),
         portfolioAnalyzer = mockk<PortfolioAnalyzer>(),
         orderExecutor = mockk<OrderExecutor>(),
         krakenService = krakenService,

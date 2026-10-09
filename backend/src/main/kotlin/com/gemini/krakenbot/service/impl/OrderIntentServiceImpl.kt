@@ -4,14 +4,24 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.repository.OrderIntentRepository
+import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.OrderIntentService
 import java.time.Instant
 
-class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : OrderIntentService {
+class OrderIntentServiceImpl(
+    private val repository: OrderIntentRepository,
+    private val accountBindingVerifier: ExecutionAccountBindingVerifier? = null,
+) : OrderIntentService {
     private companion object {
         const val MAX_RESOLUTION_EVIDENCE_LENGTH = 500
         const val MAX_ORDER_TXID_LENGTH = 64
     }
+
+    override suspend fun ensureReadyForSubmission() = repository.ensureReadyForSubmission()
+
+    override suspend fun ensureAccountBindingForSubmission() = checkNotNull(accountBindingVerifier) {
+        "Live order submission requires the execution account binding service."
+    }.ensureVerifiedForSubmission()
 
     override suspend fun savePending(intent: OrderIntent): Int = repository.savePending(
         intent.copy(state = OrderIntentState.PENDING),
@@ -29,6 +39,7 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
             orderTxid = result.orderTxid,
             errorMessage = result.errorMessage,
             resolvedAt = if (state == OrderIntentState.UNCERTAIN) null else Instant.now(),
+            outcomeVolume = result.volume,
         )
     }
 

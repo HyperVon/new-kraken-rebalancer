@@ -5,18 +5,20 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.SyncMetadataKeys
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
@@ -233,7 +235,12 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
         runTest {
             val cycleId = "test-cycle-35"
             val appConfig = TestFixtures.config(
-                settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, minimumOrderSizeUSD = 2.0),
+                settings = TestFixtures.settings(
+                    dryRun = false,
+                    simulation = false,
+                    loopDelaySeconds = 60L,
+                    minimumOrderSizeUSD = 2.0,
+                ),
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
                     Allocation(Asset.ETH, 50.0),
@@ -257,22 +264,25 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
                 }
             }
 
-            val pendingSlots = mutableListOf<TradeRecord>()
-            val updateSlots =
-                mutableListOf<Pair<TradeRecord, TradeRecord>>()
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+            val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+            val intents = mutableListOf<OrderIntent>()
+            val outcomes = mutableListOf<Pair<Int, OrderResult>>()
+            var hasUnresolvedIntent = false
             var nextId = 100
-            coEvery { mockHistory.saveTrade(any()) } answers {
-                val rec = firstArg<TradeRecord>()
-                pendingSlots.add(rec)
+            coEvery { orderIntentService.hasUnresolvedIntents() } coAnswers { hasUnresolvedIntent }
+            coEvery { orderIntentService.savePending(any()) } answers {
+                intents.add(firstArg<OrderIntent>())
                 nextId++
             }
-            coEvery { mockHistory.updateTrade(any(), any()) } answers {
-                updateSlots.add(firstArg<TradeRecord>() to secondArg())
+            coEvery { orderIntentService.recordOutcome(any(), any()) } answers {
+                val id = firstArg<Int>()
+                val result = secondArg<OrderResult>()
+                outcomes.add(id to result)
+                if (result.submissionUncertain) hasUnresolvedIntent = true
+                true
             }
-            coEvery { mockHistory.hasPendingSubmissions() } returns false
 
-            val executor = OrderExecutorImpl(fakeKraken, mockHistory)
+            val executor = OrderExecutorImpl(fakeKraken, null, orderIntentService)
             val actionLog = mutableListOf<String>()
             var thrown: Throwable? = null
             try {
@@ -303,12 +313,12 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
                 thrown = e
             }
 
-            // PENDING persisted before each attempt (at least 2: BTC success + ETH failure)
-            (pendingSlots.size shouldBe 2)
-            pendingSlots[0].submissionState shouldBe OrderSubmissionState.PENDING
-            pendingSlots[0].clientOrderId shouldBe expectedBtcSellId
-            pendingSlots[1].submissionState shouldBe OrderSubmissionState.PENDING
-            pendingSlots[1].clientOrderId shouldBe expectedEthSellId
+            // Execution intent persistence precedes each attempt; the reporting store is not involved.
+            intents.size shouldBe 2
+            intents[0].state shouldBe OrderIntentState.PENDING
+            intents[0].clientOrderId shouldBe expectedBtcSellId
+            intents[1].state shouldBe OrderIntentState.PENDING
+            intents[1].clientOrderId shouldBe expectedEthSellId
 
             // cl_ord_id determinism: same cycleId|symbol|side yields same UUID; SOL never reached so no id observed
             val observedClOrdIds = fakeKraken.executedOrders.map { it.clOrdId }
@@ -317,12 +327,13 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
             (expectedSolSellId != expectedBtcSellId).shouldBeTrue()
             (expectedSolSellId != expectedEthSellId).shouldBeTrue()
 
-            // First trade resolved to success (no UNCERTAIN), second to UNCERTAIN
-            updateSlots.size shouldBe 2
-            updateSlots[0].second.submissionState shouldBe null
-            updateSlots[0].second.success.shouldBeTrue()
-            updateSlots[1].second.submissionState shouldBe OrderSubmissionState.UNCERTAIN
-            updateSlots[1].second.success shouldBe false
+            // First intent confirmed; second remains blocking UNCERTAIN after an ambiguous exception.
+            outcomes.size shouldBe 2
+            outcomes[0].second.success.shouldBeTrue()
+            outcomes[0].second.orderTxid shouldBe "FAKE-ORDER-1"
+            outcomes[1].second.submissionUncertain shouldBe true
+            outcomes[1].second.success shouldBe false
+            hasUnresolvedIntent shouldBe true
 
             // Batch abort: only 2 backend calls, SOL never attempted
             callCount shouldBe 2
@@ -332,10 +343,9 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
             thrown!!.message shouldBe "Simulated transport failure #2"
 
             // Blocking: a subsequent live cycle must be refused while UNCERTAIN persists
-            // Simulate persisted UNCERTAIN gate
-            coEvery { mockHistory.hasPendingSubmissions() } returns true
+            // The execution journal's unresolved intent gate blocks the next live cycle.
             val blockedKraken = FakeKrakenService()
-            val blockedExecutor = OrderExecutorImpl(blockedKraken, mockHistory)
+            val blockedExecutor = OrderExecutorImpl(blockedKraken, null, orderIntentService)
             val blockedLog = mutableListOf<String>()
             blockedExecutor.executeOrders(
                 buyOrders = mapOf(Asset.BTC to BigDecimal("10.00")),
@@ -351,8 +361,7 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
                 true
 
             val evidence =
-                "pending=${pendingSlots.map { it.clientOrderId to it.submissionState }} " +
-                    "updates=${updateSlots.map { it.second.submissionState }} " +
+                "intentCount=${intents.size} uncertain=${outcomes.last().second.submissionUncertain} " +
                     "clOrdIds=$observedClOrdIds callCount=$callCount blockedSize=${blockedKraken.executedOrders.size}"
             EvaluationScenariosTest.recordResult(
                 "Scenario 39",
@@ -400,14 +409,9 @@ internal fun EvaluationScenariosTest.registerScenarios36To41() {
 
             val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
             val executor = OrderExecutorImpl(fakeKraken, tradeHistoryService)
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                firstArg<PortfolioSnapshot>()
-            }
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )

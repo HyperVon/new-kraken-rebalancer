@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.SNAPSHOT_IDENTITY_METADATA_KEYS
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.downsampleSnapshots
@@ -56,6 +57,13 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     private val log =
         LoggerFactory.getLogger(SqliteTradeRepositoryImpl::class.java)
+
+    private fun executionProjectionCursorKey(journalId: String): String {
+        require(journalId.isNotBlank()) { "Execution journal identity is required for projection." }
+        val key = "execution-projection:$journalId"
+        require(key.length <= 64) { "Execution journal identity is too long for the reporting cursor." }
+        return key
+    }
 
     override suspend fun save(history: List<PortfolioSnapshot>) {
         database.safeTransactionIO(log, "Failed to save history to database") {
@@ -136,6 +144,78 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 TradeTable.applyTo(it, trade)
             }[TradeTable.id].also { bumpComparisonEvidenceRevision() }
         }
+
+    override suspend fun getExecutionProjectionCursor(journalId: String): Long =
+        parseExecutionProjectionCursor(database.readSyncMetadata(executionProjectionCursorKey(journalId)))
+
+    override suspend fun upsertExecutionProjection(
+        journalId: String,
+        eventId: Long,
+        intentId: Int,
+        legacyTradeId: Int?,
+        trade: TradeRecord,
+    ): Boolean = database.safeTransactionIO(log, "Failed to project execution journal trade") {
+        require(eventId > 0L) { "Execution projection event ID must be positive." }
+        val cursorKey = executionProjectionCursorKey(journalId)
+        val lastProjectedEventId = parseExecutionProjectionCursor(readSyncMetadataInTransaction(cursorKey))
+        if (eventId <= lastProjectedEventId) return@safeTransactionIO false
+
+        val projection = trade.copy(executionJournalId = journalId, executionIntentId = intentId)
+        val existingProjectionId = TradeTable
+            .select(TradeTable.id)
+            .where {
+                (TradeTable.executionJournalId eq journalId) and
+                    (TradeTable.executionIntentId eq intentId)
+            }
+            .limit(1)
+            .firstOrNull()
+            ?.get(TradeTable.id)
+        val legacyCandidate = if (existingProjectionId == null && legacyTradeId != null) {
+            TradeTable.selectAll()
+                .where { TradeTable.id eq legacyTradeId }
+                .singleOrNull()
+                ?.let(TradeTable::toModel)
+        } else {
+            null
+        }
+        val canReuseLegacyRow = legacyCandidate?.let { candidate ->
+            candidate.timestamp.toEpochMilli() == projection.timestamp.toEpochMilli() &&
+                candidate.pair == projection.pair &&
+                candidate.symbol == projection.symbol &&
+                candidate.side.equals(projection.side, ignoreCase = true) &&
+                candidate.volume.compareTo(projection.volume) == 0 &&
+                candidate.usdAmount.compareTo(projection.usdAmount) == 0 &&
+                !candidate.dryRun &&
+                candidate.source in setOf(null, TradeSource.LOCAL_ESTIMATE) &&
+                (candidate.clientOrderId == null || candidate.clientOrderId == projection.clientOrderId)
+        } == true
+        val targetId = existingProjectionId ?: legacyTradeId.takeIf { canReuseLegacyRow }
+        if (targetId == null) {
+            TradeTable.insert {
+                TradeTable.applyTo(it, projection)
+            }
+        } else {
+            val updated = TradeTable.update({ TradeTable.id eq targetId }) {
+                TradeTable.applyTo(it, projection.copy(id = targetId))
+            }
+            check(updated == 1) { "Execution projection row $targetId disappeared during update." }
+        }
+        HistorySyncMetadataTable.upsert {
+            it[HistorySyncMetadataTable.key] = cursorKey
+            it[HistorySyncMetadataTable.value] = eventId.toString()
+        }
+        bumpComparisonEvidenceRevision()
+        true
+    }
+
+    private fun parseExecutionProjectionCursor(value: String?): Long {
+        if (value == null) return 0L
+        val cursor = requireNotNull(value.toLongOrNull()) {
+            "Reporting execution projection cursor is not a valid integer."
+        }
+        require(cursor >= 0L) { "Reporting execution projection cursor cannot be negative." }
+        return cursor
+    }
 
     override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
         database.safeTransactionIO(log, "Failed to update trade in database", "Database update failed") {

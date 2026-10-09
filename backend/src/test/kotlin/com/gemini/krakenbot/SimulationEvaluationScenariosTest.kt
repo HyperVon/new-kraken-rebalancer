@@ -10,6 +10,8 @@ import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.ReportingDispatcher
+import com.gemini.krakenbot.service.TradeProjectionService
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
@@ -95,14 +97,22 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                 configService = configService,
                 objectMapper = objectMapper,
             )
-        val orderExecutor = OrderExecutorImpl(dynamic, tradeHistory)
+        val reportingDispatcher = ReportingDispatcher(
+            historyServiceProvider = { tradeHistory },
+            projectionServiceProvider = { mockk<TradeProjectionService>(relaxed = true) },
+        )
+        val orderExecutor = OrderExecutorImpl(
+            dynamic,
+            tradeHistoryService = null,
+            reportingDispatcher = reportingDispatcher,
+        )
         val portfolioManager =
             PortfolioManagerImpl(
                 configService = configService,
-                tradeHistoryService = tradeHistory,
                 portfolioAnalyzer = analyzer,
                 orderExecutor = orderExecutor,
                 krakenService = dynamic,
+                reportingDispatcher = reportingDispatcher,
             )
 
         return SimStack(configService, simulated, portfolioManager, tradeHistory, repository)

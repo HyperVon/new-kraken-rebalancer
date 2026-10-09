@@ -25,6 +25,12 @@ internal val expectedIndexes = listOf(
     ExpectedIndex("trades", "idx_trades_cycle_id", false, listOf("cycle_id")),
     ExpectedIndex("trades", "idx_trades_trade_id", false, listOf("trade_id")),
     ExpectedIndex("trades", "idx_trades_submission_state", false, listOf("submission_state")),
+    ExpectedIndex(
+        "trades",
+        "ux_trades_execution_identity",
+        true,
+        listOf("execution_journal_id", "execution_intent_id"),
+    ),
     ExpectedIndex("order_intents", "idx_order_intents_state", false, listOf("state")),
     ExpectedIndex("order_intents", "idx_order_intents_created_at", false, listOf("created_at")),
     ExpectedIndex("order_intents", "idx_order_intents_local_trade_id", false, listOf("local_trade_id")),

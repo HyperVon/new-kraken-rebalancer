@@ -98,7 +98,6 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
@@ -161,7 +160,6 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
@@ -321,21 +319,15 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
                     mockConfig,
                     statsRepo,
                 )
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedSnapshots.add(firstArg())
-            }
-            val executor = OrderExecutorImpl(fakeKraken, mockHistory)
+            val executor = OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
-            pm.performRebalanceCycle()
+            val snapshot = requireNotNull(pm.performRebalanceCycle())
 
             fakeKraken.executedOrders.size shouldBe 1
             val order = fakeKraken.executedOrders.single()
@@ -345,8 +337,6 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
             order.volume.shouldBeEqualComparingTo(BigDecimal("0.00001030"))
             order.dryRun shouldBe true
 
-            capturedSnapshots.size shouldBe 1
-            val snapshot = capturedSnapshots.single()
             snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1.00"))
             snapshot.assets.getValue(Asset.USD).valueUSD.shouldBeEqualComparingTo(BigDecimal("1.00"))
             snapshot.assets.getValue(Asset.BTC).valueUSD.shouldBeEqualComparingTo(BigDecimal("0.00"))
@@ -427,7 +417,6 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )

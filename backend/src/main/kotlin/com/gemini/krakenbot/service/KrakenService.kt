@@ -97,6 +97,9 @@ interface KrakenService {
      */
     suspend fun getFundingEvidenceScope(): String = this::class.java.name
 
+    /** Authenticated stable account identity (Kraken Spot IIBAN); never use a credential hash here. */
+    suspend fun getAuthenticatedAccountIdentity(): String? = null
+
     /** Total ledger entry count from the last [getLedgers] response (Kraken `count`). */
     fun getLastLedgerTotalCount(): Int = 0
 

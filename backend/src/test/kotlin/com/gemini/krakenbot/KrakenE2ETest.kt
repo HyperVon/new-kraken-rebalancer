@@ -141,7 +141,6 @@ class KrakenE2ETest : StringSpec() {
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
-                        tradeHistoryService = tradeHistoryService,
                         portfolioAnalyzer = portfolioAnalyzer,
                         orderExecutor = orderExecutor,
                     )
@@ -265,7 +264,6 @@ class KrakenE2ETest : StringSpec() {
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
-                        tradeHistoryService = tradeHistoryService,
                         portfolioAnalyzer = portfolioAnalyzer,
                         orderExecutor = orderExecutor,
                     )

@@ -55,7 +55,9 @@ class KrakenRebalancerApplicationTest :
             }
 
             val previousDbPath = System.getProperty("kraken.db.path")
+            val previousExecutionDbPath = System.getProperty("kraken.execution.db.path")
             System.setProperty("kraken.db.path", TestFixtures.MEMORY_)
+            System.setProperty("kraken.execution.db.path", TestFixtures.MEMORY_)
             try {
                 // Koin's context is global: another spec may have left one running.
                 stopKoin()
@@ -70,10 +72,7 @@ class KrakenRebalancerApplicationTest :
                 val resolver: FundingProvenanceResolver by inject()
                 resolver.shouldBeInstanceOf<KrakenFundingProvenanceResolver>()
                 val analyzer: PortfolioAnalyzer by inject()
-                val analyzerField = PortfolioAnalyzerImpl::class.java
-                    .getDeclaredField("defaultProvenanceResolver")
-                    .also { it.isAccessible = true }
-                analyzerField.get(analyzer) shouldBe resolver
+                analyzer.shouldBeInstanceOf<PortfolioAnalyzerImpl>()
                 val query: TradeHistoryQueryService by inject()
                 val queryField = TradeHistoryQueryService::class.java
                     .getDeclaredField("fundingProvenanceResolver")
@@ -87,6 +86,11 @@ class KrakenRebalancerApplicationTest :
                     System.setProperty("kraken.db.path", previousDbPath)
                 } else {
                     System.clearProperty("kraken.db.path")
+                }
+                if (previousExecutionDbPath != null) {
+                    System.setProperty("kraken.execution.db.path", previousExecutionDbPath)
+                } else {
+                    System.clearProperty("kraken.execution.db.path")
                 }
                 if (!existed) {
                     configFile.delete()

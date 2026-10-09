@@ -80,27 +80,20 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             val executor =
                 OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val capturedActions = mutableListOf<String>()
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
-            }
-
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
-            pm.performRebalanceCycle()
+            val snapshot = requireNotNull(pm.performRebalanceCycle())
 
-            val failureLogged = capturedActions.any { it.contains("FAILED BUY BTC: Insufficient funds") }
+            val failureLogged = snapshot.actions.any { it.contains("FAILED BUY BTC: Insufficient funds") }
 
             val evidence =
                 "Target: buy 0.01 BTC ($500).\n" +
                     "Order result mocked to fail with 'Insufficient funds'.\n" +
-                    "Captured actions in history snapshot: $capturedActions\n" +
+                    "Cycle actions: ${snapshot.actions}\n" +
                     "Error successfully logged in snapshot: $failureLogged"
 
             failureLogged.shouldBeTrue()
@@ -147,7 +140,6 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
@@ -267,32 +259,25 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             val executor =
                 OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val capturedActions = mutableListOf<String>()
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
-            }
-
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
-            pm.performRebalanceCycle()
+            val snapshot = requireNotNull(pm.performRebalanceCycle())
 
-            val btcFailedLogged = capturedActions.any { it.contains("FAILED BUY BTC: Order minimum size not met") }
-            val ethSucceededLogged = capturedActions.any {
+            val btcFailedLogged = snapshot.actions.any { it.contains("FAILED BUY BTC: Order minimum size not met") }
+            val ethSucceededLogged = snapshot.actions.any {
                 it.startsWith("BUY ETH ") && !it.startsWith("FAILED BUY ETH")
             }
-            val ethFailedLogged = capturedActions.any { it.startsWith("FAILED BUY ETH") }
+            val ethFailedLogged = snapshot.actions.any { it.startsWith("FAILED BUY ETH") }
             val ordersPlaced = fakeKraken.executedOrders.size == 2
 
             val success = btcFailedLogged && ethSucceededLogged && !ethFailedLogged && ordersPlaced
             val evidence =
                 "Executed order calls: ${fakeKraken.executedOrders}\n" +
-                    "Captured actions in history snapshot: $capturedActions\n" +
+                    "Cycle actions: ${snapshot.actions}\n" +
                     "BTC failure logged: $btcFailedLogged, ETH success logged: $ethSucceededLogged, " +
                     "ETH failure logged: $ethFailedLogged"
 
@@ -345,7 +330,6 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
@@ -470,7 +454,6 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
