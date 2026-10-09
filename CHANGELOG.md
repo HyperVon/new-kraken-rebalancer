@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.110] - 2026-10-08
+
+### Changed
+
+- **Fixed cash target**: live rebalance plans use the configured USD allocation
+  without ATH-based deployment. The older drawdown settings remain available to
+  retained historical calculations.
+- **Execution/reporting isolation**: live order intents and outcomes use a
+  separate durable SQLite journal; completed outcomes project to historical
+  trade records asynchronously. The outbox is append-only, and the reporting
+  database stores the projection cursor with each trade update.
+- **Dashboard drawdown value**: removed the current drawdown number because
+  current cycles no longer calculate historical ATH drawdown.
+- **Settings form**: removed the legacy ATH cash-deployment controls; existing
+  configuration values remain stored and are ignored by current order planning.
+
+### Security
+
+- **Execution journal recovery**: legacy order-intent safety rows are retained
+  during cutover, and a missing previously initialized execution database now
+  fails closed instead of being recreated as an empty journal.
+
 ## [6.17.109] - 2026-10-07
 
 ### Fixed

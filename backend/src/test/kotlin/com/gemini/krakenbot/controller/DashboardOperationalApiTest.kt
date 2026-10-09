@@ -430,8 +430,8 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 totalFeesPaid = BigDecimal.ZERO,
                 latestSnapshotTime = snapshot.timestamp,
             )
-            val liveConfig = TestFixtures.config(settings = TestFixtures.settings(dryRun = false))
-            val dryRunConfig = TestFixtures.config(settings = TestFixtures.settings(dryRun = true))
+            val liveConfig = TestFixtures.config(settings = TestFixtures.settings(dryRun = false, simulation = false))
+            val dryRunConfig = TestFixtures.config(settings = TestFixtures.settings(dryRun = true, simulation = false))
             coEvery { tradeHistoryService.getHistoryStats() } returns stats
             coEvery { tradeHistoryService.getLatestSnapshot() } returnsMany listOf(
                 snapshot,
@@ -632,7 +632,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
             updatedConfig.captured.allocations.single().color shouldBe null
         }
 
-        "settings POST treats a whitespace deployment threshold as zero" {
+        "settings POST preserves stored deployment settings when legacy fields are submitted" {
             every { configService.getConfig() } returns TestFixtures.config(
                 settings = TestFixtures.settings().copy(fiatDeploymentThresholdPercent = 12.5),
             )
@@ -666,11 +666,13 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 response.headers["HX-Redirect"] shouldBe "/"
             }
 
-            updatedConfig.captured.settings.fiatDeploymentThresholdPercent shouldBe 0.0
+            updatedConfig.captured.settings.fiatDeploymentThresholdPercent shouldBe 12.5
         }
 
-        "settings POST accepts the threshold boundary and rejects invalid optional dates and thresholds" {
-            every { configService.getConfig() } returns TestFixtures.config()
+        "settings POST preserves deployment settings and rejects invalid optional dates" {
+            every { configService.getConfig() } returns TestFixtures.config(
+                settings = TestFixtures.settings().copy(fiatDeploymentThresholdPercent = 12.5),
+            )
             val updatedConfig = slot<AppConfig>()
             coEvery { configService.updateConfig(capture(updatedConfig)) } returns Unit
 
@@ -705,14 +707,11 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                         FormFields.COMPARISON_START_DATE to listOf("  "),
                     ),
                 ) shouldBe HttpStatusCode.OK
-                updatedConfig.captured.settings.fiatDeploymentThresholdPercent shouldBe 100.0
+                updatedConfig.captured.settings.fiatDeploymentThresholdPercent shouldBe 12.5
                 updatedConfig.captured.settings.inceptionDate shouldBe null
                 updatedConfig.captured.settings.comparisonStartDate shouldBe null
 
                 val invalidOptionalFields = listOf(
-                    listOf(FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("Infinity")),
-                    listOf(FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("-0.1")),
-                    listOf(FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("100.1")),
                     listOf(FormFields.INCEPTION_DATE to listOf("not-a-date")),
                     listOf(FormFields.COMPARISON_START_DATE to listOf("not-a-date")),
                     listOf(FormFields.COMPARISON_START_DATE to listOf("2026-08-20")),
@@ -805,7 +804,6 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.MINIMUM_ORDER_SIZE_USD to listOf("12.5"),
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("24"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.7"),
-                            // Omission follows the settings parser's zero default.
                             FormFields.INCEPTION_DATE to listOf("2026-08-20"),
                             FormFields.COMPARISON_START_DATE to listOf("2026-08-25"),
                             FormFields.SIMULATION to listOf("on"),
@@ -828,8 +826,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 html shouldContain "value=\"17\""
                 html shouldContain "name=\"deviationTriggerPercent\""
                 html shouldContain "value=\"3.4\""
-                html shouldContain "name=\"fiatDeploymentThresholdPercent\""
-                html shouldContain "value=\"0.0\""
+                html shouldNotContain "fiatDeploymentThresholdPercent"
                 html shouldContain "name=\"inceptionDate\""
                 html shouldContain "value=\"2026-08-20\""
                 html shouldContain "name=\"scoreEmphasis\" value=\"6\""
@@ -907,13 +904,12 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                         FormFields.MINIMUM_ORDER_SIZE_USD to listOf("12.5"),
                         FormFields.FIAT_MAX_DRAWDOWN to listOf("24"),
                         FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.7"),
-                        FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("   "),
                         FormFields.DRY_RUN to listOf("on"),
                     ) + completeRows.copy(symbols = listOf("BTC")).toFormFields(),
                 )
                 inputValues(incompleteSave, FormFields.LOOP_DELAY_SECONDS) shouldBe listOf("")
                 inputValues(incompleteSave, FormFields.DEVIATION_TRIGGER_PERCENT) shouldBe listOf("")
-                inputValues(incompleteSave, FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT) shouldBe listOf("0.0")
+                inputValues(incompleteSave, FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT) shouldBe emptyList()
                 inputValues(incompleteSave, FormFields.SCORE_EMPHASIS) shouldBe
                     listOf(QualityAllocation.DEFAULT_EMPHASIS.toString())
                 inputValues(incompleteSave, FormFields.SYMBOLS) shouldBe listOf("BTC", "")
@@ -934,13 +930,12 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                     setBody(
                         parametersOf(
                             FormFields.CSRF_TOKEN to listOf(staleToken),
-                            FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf(" 8.25 "),
                         ).formUrlEncode(),
                     )
                 }
                 preview.status shouldBe HttpStatusCode.Forbidden
                 val previewHtml = preview.bodyAsText()
-                inputValues(previewHtml, FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT) shouldBe listOf("8.25")
+                inputValues(previewHtml, FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT) shouldBe emptyList()
                 inputValues(previewHtml, FormFields.SCORE_EMPHASIS) shouldBe
                     listOf(QualityAllocation.FALLBACK_EMPHASIS.toString())
             }

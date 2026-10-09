@@ -5,6 +5,8 @@ import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 
 interface OrderIntentService {
+    suspend fun ensureReadyForSubmission()
+
     suspend fun savePending(intent: OrderIntent): Int
 
     /** Returns false when a prior operator resolution already won the race. */

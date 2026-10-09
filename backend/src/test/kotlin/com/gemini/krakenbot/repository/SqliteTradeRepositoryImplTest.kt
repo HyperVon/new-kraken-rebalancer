@@ -1338,5 +1338,137 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 reloaded.candidates.first().assetSymbols shouldBe listOf("ASSET1", "ASSET2")
             }
         }
+
+        "execution projection cursor validates journal identity and stored values" {
+            runTest {
+                repository.getExecutionProjectionCursor("journal-1") shouldBe 0L
+                shouldThrow<IllegalArgumentException> { repository.getExecutionProjectionCursor(" ") }
+                shouldThrow<IllegalArgumentException> {
+                    repository.getExecutionProjectionCursor("j".repeat(50))
+                }
+
+                repository.setSyncMetadata("execution-projection:journal-valid", "12")
+                repository.getExecutionProjectionCursor("journal-valid") shouldBe 12L
+                repository.setSyncMetadata("execution-projection:journal-invalid", "twelve")
+                shouldThrow<IllegalArgumentException> {
+                    repository.getExecutionProjectionCursor("journal-invalid")
+                }
+                repository.setSyncMetadata("execution-projection:journal-negative", "-1")
+                shouldThrow<IllegalArgumentException> {
+                    repository.getExecutionProjectionCursor("journal-negative")
+                }
+            }
+        }
+
+        "execution projection inserts, updates and ignores events behind the reporting cursor" {
+            runTest {
+                val timestamp = Instant.parse("2026-10-08T12:00:00Z")
+                val initial = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.025"),
+                    usdAmount = BigDecimal("25.00"),
+                    clientOrderId = "client-projection",
+                )
+
+                shouldThrow<java.io.IOException> {
+                    repository.upsertExecutionProjection("journal-projection", 0, 10, null, initial)
+                }
+                repository.upsertExecutionProjection("journal-projection", 1, 10, null, initial) shouldBe true
+                repository.upsertExecutionProjection(
+                    journalId = "journal-projection",
+                    eventId = 2,
+                    intentId = 10,
+                    legacyTradeId = null,
+                    trade = initial.copy(volume = BigDecimal("0.02"), usdAmount = BigDecimal("20.00")),
+                ) shouldBe true
+                repository.upsertExecutionProjection("journal-projection", 2, 10, null, initial) shouldBe false
+
+                val saved = repository.getTradesInRange(timestamp.minusSeconds(1), timestamp.plusSeconds(1))
+                saved.size shouldBe 1
+                saved.single().volume.shouldBeEqualComparingTo(BigDecimal("0.02"))
+                saved.single().usdAmount.shouldBeEqualComparingTo(BigDecimal("20.00"))
+                repository.getExecutionProjectionCursor("journal-projection") shouldBe 2L
+            }
+        }
+
+        "execution projection reuses a matching local estimate and keeps mismatched rows separate" {
+            runTest {
+                val timestamp = Instant.parse("2026-10-08T12:00:00Z")
+                val projection = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.025"),
+                    usdAmount = BigDecimal("25.00"),
+                    clientOrderId = "client-projection",
+                )
+                val legacy = projection.copy(source = TradeSource.LOCAL_ESTIMATE)
+                val legacyId = repository.saveTrade(legacy)
+
+                repository.upsertExecutionProjection(
+                    journalId = "journal-reuse",
+                    eventId = 1,
+                    intentId = 11,
+                    legacyTradeId = legacyId,
+                    trade = projection,
+                ) shouldBe true
+
+                val saved = repository.getTradesInRange(timestamp.minusSeconds(1), timestamp.plusSeconds(1))
+                saved.size shouldBe 1
+                saved.single().id shouldBe legacyId
+                saved.single().executionJournalId shouldBe "journal-reuse"
+                saved.single().executionIntentId shouldBe 11
+                repository.getExecutionProjectionCursor("journal-reuse") shouldBe 1L
+                repository.upsertExecutionProjection("journal-reuse", 1, 11, null, projection) shouldBe false
+                repository.getTradesInRange(timestamp.minusSeconds(1), timestamp.plusSeconds(1)).size shouldBe 1
+            }
+        }
+
+        "execution projection does not merge legacy candidates with different economics or identity" {
+            runTest {
+                val timestamp = Instant.parse("2026-10-08T12:00:00Z")
+                val base = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.025"),
+                    usdAmount = BigDecimal("25.00"),
+                    clientOrderId = "client-match",
+                )
+                val mismatches = listOf(
+                    base.copy(timestamp = timestamp.plusSeconds(1)),
+                    base.copy(pair = TestFixtures.ETHUSD),
+                    base.copy(symbol = Asset.ETH),
+                    base.copy(side = TestFixtures.SELL),
+                    base.copy(volume = BigDecimal("0.024")),
+                    base.copy(usdAmount = BigDecimal("24.00")),
+                    base.copy(dryRun = true),
+                    base.copy(source = TradeSource.API_FILL),
+                    base.copy(clientOrderId = "another-client"),
+                )
+
+                mismatches.forEachIndexed { index, candidate ->
+                    val legacyId = repository.saveTrade(candidate)
+                    repository.upsertExecutionProjection(
+                        journalId = "journal-mismatch-$index",
+                        eventId = 1,
+                        intentId = index + 1,
+                        legacyTradeId = legacyId,
+                        trade = base,
+                    ) shouldBe true
+                }
+
+                val rows = repository.getTradesInRange(timestamp.minusSeconds(1), timestamp.plusSeconds(2))
+                rows.size shouldBe mismatches.size * 2
+                mismatches.indices.forEach { index ->
+                    rows.count { it.executionJournalId == "journal-mismatch-$index" } shouldBe 1
+                }
+            }
+        }
     }
 }

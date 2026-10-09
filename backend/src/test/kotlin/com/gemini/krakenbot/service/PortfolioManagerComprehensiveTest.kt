@@ -324,22 +324,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                     )
                 }
 
-                val snapshots = mutableListOf<PortfolioSnapshot>()
-                coEvery {
-                    tradeHistoryService.addSnapshot(any<PortfolioSnapshot>())
-                } answers {
-                    snapshots.add(
-                        firstArg(),
-                    )
-                }
-
-                portfolioManager.performRebalanceCycle()
+                val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
 
                 val order = krakenService.executedOrders.first()
                 order.pair shouldBe TestFixtures.AUSD
                 order.side shouldBe TestFixtures.BUY
 
-                snapshots.single().actions.any {
+                snapshot.actions.any {
                     it.startsWith("FAILED BUY A")
                 }.shouldBeTrue()
             }

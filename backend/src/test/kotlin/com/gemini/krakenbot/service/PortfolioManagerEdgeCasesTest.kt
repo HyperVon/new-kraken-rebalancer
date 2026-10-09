@@ -47,12 +47,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     portfolioManager.runLoop()
                 }
                 delay(10.milliseconds)
-                // Startup observation + one cycle; the 60s delay parks the second cycle.
-                krakenService.getBalancesCallCount shouldBe 2
+                // One account observation per cycle; the 60s delay parks the second cycle.
+                krakenService.getBalancesCallCount shouldBe 1
 
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
-                krakenService.getBalancesCallCount shouldBe 2
+                krakenService.getBalancesCallCount shouldBe 1
             }
         }
 
@@ -106,7 +106,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             }
         }
 
-        "testFiatDeploymentRatioExceedsOne" {
+        "fixed USD target ignores legacy fiat deployment settings" {
             runTest {
                 coEvery {
                     portfolioStatsRepository.load()
@@ -129,11 +129,11 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
 
                 portfolioManager.startRebalancingLoop()
-                portfolioManager.performRebalanceCycle()
+                val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
 
-                val captor = slot<PortfolioSnapshot>()
-                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
-                captor.captured.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
+                snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("50.0"))
             }
         }
 
@@ -325,22 +325,17 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             }
         }
 
-        "testPerformRebalanceCycle_TradeHistorySaveIOException" {
+        "reporting persistence is not part of the rebalance cycle" {
             runTest {
                 krakenService.balanceSupplier =
                     { mapOf(Asset.USD to 1000.0) }
                 every { configService.getConfig() } returns singleAllocConfig()
 
-                coEvery {
-                    tradeHistoryService.addSnapshot(any())
-                } throws IOException(
-                    "Disk full",
-                )
-
                 portfolioManager.startRebalancingLoop()
-                portfolioManager.performRebalanceCycle()
+                requireNotNull(portfolioManager.performRebalanceCycle())
 
                 krakenService.getBalancesCallCount shouldBe 1
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
 
@@ -548,97 +543,6 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 shouldThrow<CancellationException> {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
                 }
-            }
-        }
-
-        "runLoop_resolvesInceptionOnStartup" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                coEvery { inceptionDiscoveryService.resolveInception() } returns InceptionResolution(
-                    inceptionTime = Instant.now(),
-                    inceptionSnapshot = null,
-                    isAutoDetected = false,
-                )
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch {
-                    portfolioManager.runLoop()
-                }
-                delay(10.milliseconds)
-
-                coVerify(exactly = 1) { inceptionDiscoveryService.resolveInception() }
-
-                portfolioManager.stopRebalancingLoop()
-                job.cancel()
-            }
-        }
-
-        "runLoop_inceptionResolutionFailureDoesNotHaltLoop" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-                coEvery { inceptionDiscoveryService.resolveInception() } throws RuntimeException("DB discovery failed")
-
-                portfolioManager.startRebalancingLoop()
-                val job = launch {
-                    portfolioManager.runLoop()
-                }
-                delay(10.milliseconds)
-
-                // Startup observation + one cycle.
-                krakenService.getBalancesCallCount shouldBe 2
-
-                portfolioManager.stopRebalancingLoop()
-                job.cancel()
-            }
-        }
-
-        "runLoop_inceptionResolutionCancellationPropagates" {
-            runTest {
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                coEvery { inceptionDiscoveryService.resolveInception() } throws CancellationException("cancelled")
-
-                portfolioManager.startRebalancingLoop()
-                shouldThrow<CancellationException> {
-                    portfolioManager.runLoop()
-                }
-            }
-        }
-
-        "runLoop_handlesNullInceptionDiscoveryService" {
-            runTest {
-                val managerWithoutInception = PortfolioManagerImpl(
-                    configService = configService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor,
-                    krakenService = krakenService,
-                    inceptionDiscoveryService = null,
-                )
-                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = TestFixtures.config(settings = settings)
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { emptyMap() }
-
-                managerWithoutInception.startRebalancingLoop()
-                val job = launch {
-                    managerWithoutInception.runLoop()
-                }
-                delay(10.milliseconds)
-
-                // Startup observation + one cycle; this manager is wired to krakenService, so the
-                // cycle observation at performCycleWithStableSession supplies the rebalance fetch.
-                krakenService.getBalancesCallCount shouldBe 2
-
-                managerWithoutInception.stopRebalancingLoop()
-                job.cancel()
             }
         }
     }

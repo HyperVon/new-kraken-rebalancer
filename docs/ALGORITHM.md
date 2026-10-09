@@ -4,6 +4,12 @@ This document details the operational logic of the Kraken Rebalancer. The system
 is designed to autonomously maintain a specific portfolio allocation across a
 set of assets (cryptocurrencies & fiat).
 
+Current rebalance cycles use the configured allocation as written, including a
+fixed USD weight. They do not use ATH, drawdown-based cash deployment, recent
+OHLC highs, historical capital-flow adjustments, or the Buy & Hold calculation
+to choose orders. Retained history and comparison sections below describe
+reporting calculations; they are outside the current order path.
+
 ## Overview
 
 ```mermaid
@@ -16,18 +22,7 @@ flowchart TD
         S3 --> S4["Sum → Total Portfolio Value"]
     end
 
-    SNAP --> ATH{"New ATH?"}
-    ATH -- Yes --> SAVE_ATH["Update ATH in SQLite database"]
-    ATH -- No --> DD
-    SAVE_ATH --> DD
-
-    subgraph DD["Drawdown Assessment"]
-        DD1["Drawdown % = (ATH - Current) / ATH × 100"]
-        DD1 --> DD2["Deploy % = (Drawdown / MaxDrawdown) ^ Exponent"]
-        DD2 --> DD3["Reduce USD Target by Deploy %\nRedistribute to Crypto"]
-    end
-
-    DD --> ANALYSIS
+    SNAP --> ANALYSIS
 
     subgraph ANALYSIS["Phase 2: Analysis"]
         A1["Calculate Deviation per Asset\n(Current Value vs Target Value)"]
@@ -49,7 +44,7 @@ flowchart TD
         E1F --> E2
         E1A --> E4
         E2["Settle USD if any sell succeeded\n(fill-confirm by txid, else balance poll;\n3x backoff; abort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cash budget; stop batch if uncertain)"]
-        E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
+        E3 --> E4["Queue Snapshot and Trade Report\nfor Asynchronous Persistence"]
     end
 
     EXEC --> SLEEP["Sleep (configurable delay)"]
@@ -77,11 +72,11 @@ and **Execution**.
 
 To maintain the Single Responsibility Principle (SRP) and keep domain logic highly testable, the pure domain rebalancing math and typed planning models are encapsulated in the standalone `:engine` module, while the service and execution orchestrators live in the backend:
 
-- **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates domain logic to the analyzer and executor, and coordinates snapshot persistence. It reactively restarts the loop upon configuration changes via `watchConfigChanges()`.
-- **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), assembles end-of-cycle `PortfolioSnapshot`s, and delegates valuation / drawdown / deviation / fiat-correction math to **`RebalancerEngine`** in `:engine`. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
-- **`RebalancerEngine` (Domain calculator — `:engine`)**: Side-effect-light math (no network/DB) for portfolio values, drawdown, fiat deployment, targets, deviation analysis, and fiat correction. It emits a typed `RebalancePlan` with `RebalanceEvent` values; a presentation adapter keeps the existing snapshot action-log strings stable. Logging is retained for diagnostics.
+- **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop, pins settings and the exchange backend for each cycle, delegates planning and execution, and queues snapshots without waiting for reporting persistence. It reactively restarts the loop upon configuration changes via `watchConfigChanges()`.
+- **`PortfolioAnalyzer` (The Brain)**: Resolves current balances and prices, calculates portfolio values and fixed allocation targets, and assembles end-of-cycle `PortfolioSnapshot`s. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
+- **`RebalancerEngine` (Domain calculator — `:engine`)**: Side-effect-light math (no network/DB) for portfolio values, targets, deviation analysis, and fiat correction. Legacy drawdown and deployment helpers remain for retained historical calculations; the current cycle does not use them to make orders. The engine emits a typed `RebalancePlan` with `RebalanceEvent` values.
 - **`PortfolioCalculations` (Shared Math — `:engine`)**: Consolidated percentage, target, and deviation calculations shared by the analyzer (including end-of-cycle snapshot assembly) — eliminates duplicate math across the codebase.
-- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`. Before a real live placement, it persists a `PENDING` intent with a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`). AddOrder is attempted only once; an ambiguous transport/response failure becomes `UNCERTAIN`, aborts the remaining batch, and blocks later live orders until operator reconciliation (`userref` is not a uniqueness key among open orders).
+- **`OrderExecutor` (The Brawn)**: Executes the calculated plan through the Kraken API. It keeps the sell-before-buy sequence, projected versus observed cash handling, dust checks, and safe fill settlement. Before a real live placement, it persists a `PENDING` intent in the separate execution database with a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`). AddOrder is attempted only once; an ambiguous transport or response becomes `UNCERTAIN`, aborts the remaining batch, and blocks later live orders until operator resolution (`userref` is not a uniqueness key among open orders).
 - **`KrakenServiceImpl` + transport limiters (The Gateway)**: Handles
   HMAC-SHA512 authenticated API calls with Kraken's separate public and private
   controls. The private account counter defaults to the standard account
@@ -94,9 +89,11 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
   temporary lockout, and relevant 5xx responses with capped backoff; AddOrder
   remains one-shot because an ambiguous response may follow an accepted order.
   See [Kraken's current rate-limit guidance](https://support.kraken.com/articles/206548367-what-are-the-api-rate-limits-?mobile_site=false).
-- **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqliteOrderIntentRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs, live-order intents, and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM); schema versions are recorded and file-backed migrations receive a pre-migration backup.
-- **`TradeHistoryServiceImpl`**: Thin façade over Sync / SnapshotStore / Query /
-  Reconstruction. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on
+- **Persistence**: `ExecutionOrderIntentRepository` stores live intent state in a dedicated SQLite database. `ReportingDispatcher` asynchronously projects completed live outcomes and persists snapshots to the reporting database. Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`.
+- **`TradeHistoryServiceImpl`**: Reporting façade over Sync / SnapshotStore / Query /
+  Reconstruction. `ReportingDispatcher` persists cycle snapshots and completed
+  live trades asynchronously. Kraken history sync and reconstruction run only
+  when reporting workflows request them. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on
   `TradeHistorySnapshotStore` and is exposed via `getHistoryFlow()` for the Ktor
   SSE stream. Trade history sync uses a flow-based paginated fetch from the
   Kraken API (`TradeHistorySyncService`). Ledger synchronization is a separate
@@ -122,11 +119,8 @@ In this phase, the system builds a complete view of the current portfolio state.
    the resolved price is zero, the cycle **aborts** before orders are generated
    (`Result.Failure`) to avoid erroneous trades.
 
-The reconstruction path follows the same consistency boundary: it captures one
-execution-session configuration and pins one exchange backend for balances,
-ticker prices, OHLC history, and snapshot calculations. A settings change or
-simulation flip cannot make one reconstruction pass mix configurations or
-backends.
+Historical reconstruction has its own configuration and backend boundary. It
+does not run inside or gate the periodic rebalance cycle.
 
 ---
 
@@ -135,11 +129,14 @@ backends.
 The system determines what trades are necessary to restore the portfolio to its
 target state.
 
-### 1. Target Calculation & Dynamic Adjustment
+### 1. Fixed Target Calculation
 
-Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
+The live plan uses `Total Portfolio Value * configured USD Target %` for cash and
+the configured weights for the other assets. ATH and drawdown do not change that
+target. The following ATH and owner-flow behavior describes retained historical
+snapshot calculations only.
 
-1. **ATH Tracking & Cash-Flow Adjustment**: The bot tracks the portfolio's All-Time High (ATH) value in
+1. **Historical ATH Tracking & Cash-Flow Adjustment**: Historical calculations track the portfolio's All-Time High (ATH) value in
    the SQLite database. ATH is set on first run or updated whenever a new high
    is reached.
    - **Cash-Flow Neutrality**: Monotonic ATH tracking without flow adjustment would cause external deposits
@@ -250,8 +247,8 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
      `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
      flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
-     fail closed by deferring the entire ATH update (`AthUpdateResult.Deferred`), preserving the last trusted
-     drawdown and forcing fiat deployment to zero. Every deferred result carries a structured
+     fail closed by deferring the historical ATH calculation (`AthUpdateResult.Deferred`), preserving the last trusted
+     historical drawdown and setting historical fiat deployment to zero. Every deferred result carries a structured
      `AthTrustFailureReason`: `LEDGER_COVERAGE_STALE`, `LEDGER_COVERAGE_UNKNOWN`,
      `FUNDING_PROVENANCE_UNAVAILABLE`, `AMBIGUOUS_FUNDING`, `UNSUPPORTED_LEDGER_EVENT`,
      `HISTORICAL_PRICE_UNAVAILABLE`, `PRE_FLOW_BASIS_UNCERTAIN`, `BALANCE_OBSERVATION_UNCERTAIN`,
@@ -262,10 +259,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      apply exactly once.
    - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
      confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
-      cannot be skipped if a rebalance cycle runs before ledger polling catches up. Within a cycle, ATH captures
-      balances before attempting ledger sync. If that sync is throttled after a recent run, its coverage watermark
-      can predate the new observation; the whole ATH update then defers, preserving the last trusted drawdown and
-      forcing deployment to zero until a successful sync advances coverage. When coverage does reach beyond the
+      cannot be skipped during historical replay before ledger coverage catches up. For a historical ATH
+      calculation, the captured coverage watermark may predate an observation; that calculation then defers,
+      preserving its last trusted drawdown and setting historical deployment to zero until coverage advances. When coverage does reach beyond the
       observation, the reconciliation horizon is the earlier of the two; rows beyond the observation wait for the
       next cycle because they are not in the observed total yet. Unknown or missing ledger coverage with a dated
       observation defers the same way
@@ -345,13 +341,11 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      (`SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED`): rows below the legacy watermark whose journal entries were
      pruned under earlier versions are presumed decided, so historical flows are not double-counted. Forcing a
      genuine re-scan requires restoring a pre-scaling database backup.
-   - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
-     state. A database read or legacy-file migration failure aborts the analysis
-     before ATH persistence or order planning, rather than treating the ATH as
-     zero. Any non-cancellation ATH persistence failure logs an error and aborts
-     the cycle (fail-closed) so the bot never plans orders against an unpersisted
-     All-Time High. Cancellation still propagates so a cancelled cycle cannot
-     continue.
+   - **Historical Safety & Persistence**: Missing or explicitly null stats represent an empty initial
+     state. A database read or legacy-file migration failure aborts this historical
+     ATH calculation rather than treating the ATH as zero. Current rebalance
+     planning does not call this calculation, so its reporting failure does not
+     block an otherwise safe order plan. Cancellation still propagates normally.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
    The numerator is multiplied by 100 before division so the result retains all
@@ -477,7 +471,9 @@ Dust therefore filters **order generation**, not only execution.
       are furthest from their targets, effectively clearing dust
       thresholds.*
 
-### 4. Trend-Aware Sell Suppression
+### 4. Historical Trend-Aware Sell Suppression (Not Used by Current Cycles)
+
+This retained helper is not called by the current rebalance cycle.
 
 An overweight leg is **not** trimmed while the asset is trading at its highest
 completed daily close over the trailing lookback window (20 days). That regime —
@@ -574,7 +570,8 @@ failure.
 4. **Order Placement**:
     - Orders are placed as **Market Orders** for immediate execution.
     - Before a real live AddOrder call, a durable `PENDING` row is written to
-      `order_intents` with `clientOrderId`. A definite exchange response
+      `execution_order_intents` in the separate execution database, with
+      `clientOrderId`. A definite exchange response
       resolves that row. A transport failure, response failure, or response
       without a txid is ambiguous and marks it `UNCERTAIN`; the executor stops
       the batch.
@@ -608,7 +605,15 @@ failure.
     - With `simulation = true` and `dryRun = false`, the offline emulator charges
       a `0.26%` fee on each order and updates balances net of that fee. Emulator
       dry-run returns before changing balances.
-5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
+5. **Reporting**: The cycle snapshot is placed on the bounded reporting queue.
+   Completed live-order outcomes are projected from the execution journal's
+   durable outbox, whose event is committed atomically with the outcome. A
+   projection retries while the reporting database is unavailable. Its initial
+   trade economics use the planning quote and local fee estimate; an explicit
+   Kraken History sync can replace them with exchange fills and fees. Snapshot
+   and non-live trade queues are best-effort reporting and can omit records when
+   full or when a write fails. None of these reporting writes blocks or changes
+   order execution.
 
 ### Ledger history and external rewards
 
@@ -1348,9 +1353,9 @@ The behavior is controlled by `rebalancer-config.json`:
 | `minimumOrderSizeUSD` | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution. **Minimum `2` (enforced in `ConfigService` + UI `min="2"`).** |
 | `dryRun` | Suppresses order placement on the **active** backend. Server logs: `[DRY RUN]` live / `[EMULATOR DRY RUN]` simulation; activity log always `[DRY RUN]`. Orthogonal to `simulation`. |
 | `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Ledger entries are retained indefinitely; snapshots/trades prune only before `min(90-day cutoff, inception − 5s)` and never while inception is unresolved. |
-| `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
-| `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
-| `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
+| `fiatMaxDrawdown` | Retained for historical reporting; does not change the current rebalance target. |
+| `fiatDeploymentExponent` | Retained for historical reporting; does not change the current rebalance target. |
+| `fiatDeploymentThresholdPercent` | Retained for historical reporting; does not change the current rebalance target. |
 | `inceptionDate` | Optional manual strategy start (ISO-8601 string or `YYYY-MM-DD`). When blank, bounded recovery seeks complete Kraken coverage plus positive local bot-ownership evidence and a reconstructable baseline; if lifetime recovery remains ambiguous or truncated, pure Buy & Hold may use an exact recorded snapshot on or after its separate passive evidence floor. Future-dated values are ignored. An explicit date remains a manual override and still needs a retained baseline anchor for comparison. |
 
 ## Precision

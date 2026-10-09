@@ -22,6 +22,11 @@ data class OrderIntent(
     val resolvedAt: Instant? = null,
     val resolutionEvidence: String? = null,
     val localTradeId: Int? = null,
+    val outcomeVolume: BigDecimal? = null,
+    val legacySourceId: String? = null,
+    val legacyIntentId: Int? = null,
+    val legacyTradeId: Int? = null,
+    val legacySourceState: String? = null,
 )
 
 enum class OrderIntentState {

@@ -39,6 +39,9 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
 
     private val log = LoggerFactory.getLogger(SqliteOrderIntentRepositoryImpl::class.java)
 
+    override suspend fun ensureReadyForSubmission(): Unit =
+        throw IllegalStateException("The reporting database order-intent table cannot authorize live submissions.")
+
     override suspend fun savePending(intent: OrderIntent): Int =
         database.safeTransactionIO(log, "Failed to save order intent") {
             OrderIntentTable.insert {
@@ -52,6 +55,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         orderTxid: String?,
         errorMessage: String?,
         resolvedAt: Instant?,
+        outcomeVolume: BigDecimal?,
     ): Boolean = database.safeTransactionIO(log, "Failed to record order intent outcome") {
         val intent = OrderIntentTable
             .selectAll()

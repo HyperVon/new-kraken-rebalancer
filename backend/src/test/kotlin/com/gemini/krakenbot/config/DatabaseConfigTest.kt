@@ -134,6 +134,7 @@ class DatabaseConfigTest : StringSpec() {
                         13 to "trade-economic-validity",
                         14 to "history-sync-metadata-value-text",
                         15 to "ohlc-reachability-frontier",
+                        16 to "execution-journal-projection-identity",
                     )
 
                     val expectedTables = setOf(

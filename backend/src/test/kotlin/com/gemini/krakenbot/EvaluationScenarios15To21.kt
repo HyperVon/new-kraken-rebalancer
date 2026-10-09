@@ -77,7 +77,6 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
@@ -195,7 +194,6 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockk(relaxed = true),
                     analyzer,
                     executor,
                 )
@@ -397,27 +395,20 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
             val executor =
                 OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val capturedActions = mutableListOf<String>()
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
-            }
-
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
-            pm.performRebalanceCycle()
+            val snapshot = requireNotNull(pm.performRebalanceCycle())
 
             val noTrades = fakeKraken.executedOrders.isEmpty()
 
             val evidence =
                 "Total balance: 1.0 BTC ($1000) and $1000 USD.\n" +
                     "Executed orders count: ${fakeKraken.executedOrders.size}\n" +
-                    "Snapshot actions: $capturedActions\n" +
+                    "Snapshot actions: ${snapshot.actions}\n" +
                     "No trades executed: $noTrades"
 
             noTrades.shouldBeTrue()

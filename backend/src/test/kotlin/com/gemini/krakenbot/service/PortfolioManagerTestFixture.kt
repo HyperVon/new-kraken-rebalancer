@@ -4,7 +4,6 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import io.mockk.mockk
 
 /**
@@ -19,7 +18,7 @@ data class PortfolioManagerTestFixture(
     val portfolioAnalyzer: PortfolioAnalyzer,
     val orderExecutor: OrderExecutor,
     val portfolioManager: PortfolioManagerImpl,
-    val inceptionDiscoveryService: InceptionDiscoveryService,
+    val reportingDispatcher: ReportingDispatcher,
 )
 
 fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
@@ -27,7 +26,6 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
     val configService = mockk<ConfigService>(relaxed = true)
     val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-    val inceptionDiscoveryService = mockk<InceptionDiscoveryService>(relaxed = true)
     val portfolioAnalyzer =
         PortfolioAnalyzerImpl(
             krakenService = krakenService,
@@ -35,14 +33,17 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
             portfolioStatsRepository = portfolioStatsRepository,
         )
     val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
+    val reportingDispatcher = ReportingDispatcher(
+        historyServiceProvider = { tradeHistoryService },
+        projectionServiceProvider = { mockk<TradeProjectionService>(relaxed = true) },
+    )
     val portfolioManager =
         PortfolioManagerImpl(
             configService = configService,
-            tradeHistoryService = tradeHistoryService,
             portfolioAnalyzer = portfolioAnalyzer,
             orderExecutor = orderExecutor,
             krakenService = krakenService,
-            inceptionDiscoveryService = inceptionDiscoveryService,
+            reportingDispatcher = reportingDispatcher,
         )
     return PortfolioManagerTestFixture(
         krakenService = krakenService,
@@ -52,6 +53,6 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
         portfolioAnalyzer = portfolioAnalyzer,
         orderExecutor = orderExecutor,
         portfolioManager = portfolioManager,
-        inceptionDiscoveryService = inceptionDiscoveryService,
+        reportingDispatcher = reportingDispatcher,
     )
 }

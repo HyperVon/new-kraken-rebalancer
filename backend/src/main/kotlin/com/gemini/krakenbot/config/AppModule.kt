@@ -7,6 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
 import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -14,10 +15,10 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteFundingEvidenceIdentityStoreImpl
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteRebalancerComparisonCacheRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -27,7 +28,9 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.ReportingDispatcher
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.TradeProjectionService
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
@@ -37,6 +40,7 @@ import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.TradeProjectionServiceImpl
 import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.HistoricalOhlcCache
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
@@ -72,14 +76,6 @@ import org.koin.dsl.module
 // Koin qualifier shared with the application entrypoint, which resolves the same scope by name.
 const val APPLICATION_SCOPE_QUALIFIER = "applicationScope"
 
-/**
- * One-shot operator switch for the ATH re-base. Set `REBALANCER_REBASE_ATH=true` to re-anchor ATH
- * on the witnessed portfolio peak exactly once; the repair records its own durable marker in the
- * same transaction as the ATH, so it never repeats even if the variable stays set. Leave it unset
- * in normal operation.
- */
-const val ATH_REBASE_ENV = "REBALANCER_REBASE_ATH"
-
 val coreModule =
     module {
         single<HttpClient> {
@@ -100,11 +96,26 @@ val coreModule =
         }
 
         single<Database> { DatabaseConfig.init() }
+        single { ExecutionDatabase.init() }
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
-        singleOf(::SqliteOrderIntentRepositoryImpl) { bind<OrderIntentRepository>() }
+        single<ExecutionOrderIntentRepository> { SqliteExecutionOrderIntentRepositoryImpl(database = get()) }
+        single<OrderIntentRepository> { get<ExecutionOrderIntentRepository>() }
         singleOf(::OrderIntentServiceImpl) { bind<OrderIntentService>() }
+        single<ExecutionJournalBootstrap> {
+            ExecutionJournalBootstrap(database = get(), repository = get())
+        }
+        single<TradeProjectionService> {
+            TradeProjectionServiceImpl(executionRepository = get(), tradeRepository = get())
+        }
+        single {
+            val currentScope = this
+            ReportingDispatcher(
+                historyServiceProvider = { currentScope.get() },
+                projectionServiceProvider = { currentScope.get() },
+            )
+        }
         singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
         singleOf(::SqliteHistoricalOhlcRepositoryImpl) { bind<HistoricalOhlcRepository>() }
         singleOf(::SqliteRebalancerComparisonCacheRepositoryImpl) {
@@ -233,19 +244,14 @@ val coreModule =
             PortfolioAnalyzerImpl(
                 krakenService = get(),
                 configService = get(),
-                portfolioStatsRepository = get(),
-                ledgerRepository = get(),
-                tradeRepository = get(),
-                defaultProvenanceResolver = get(),
-                // One-shot, operator-driven repair. See PortfolioAnalyzerImpl.updateAthAndCalculateDrawdown.
-                athRebaseRequested = System.getenv(ATH_REBASE_ENV).equals("true", ignoreCase = true),
             )
         }
         single<OrderExecutor> {
             OrderExecutorImpl(
                 krakenService = get(),
-                tradeHistoryService = get(),
+                tradeHistoryService = null,
                 orderIntentService = get(),
+                reportingDispatcher = get(),
             )
         }
         // Explicit ctor: nullable `krakenService` defaults to null; singleOf would skip injection
@@ -253,13 +259,10 @@ val coreModule =
         single<PortfolioManager> {
             PortfolioManagerImpl(
                 configService = get(),
-                tradeHistoryService = get(),
                 portfolioAnalyzer = get(),
                 orderExecutor = get(),
                 krakenService = get(),
-                inceptionDiscoveryService = get(),
-                inceptionRecoveryService = get(),
-                accountHistoryScopeGuard = get(),
+                reportingDispatcher = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {
@@ -279,14 +282,16 @@ val webModule =
         singleOf(::HistoryPageComponent)
         singleOf(::DashboardView)
         single {
+            val currentScope = this
             DashboardController(
-                tradeHistoryService = get(),
+                tradeHistoryService = null,
                 configService = get(),
                 objectMapper = get(),
                 dashboardView = get(),
                 portfolioManager = get(),
                 orderIntentService = get(),
                 historyEvidenceCoordinator = get(),
+                tradeHistoryServiceProvider = { currentScope.get() },
             )
         }
     }

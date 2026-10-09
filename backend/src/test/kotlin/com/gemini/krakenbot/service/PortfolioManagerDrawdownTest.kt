@@ -65,7 +65,6 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
-                tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
                 orderExecutor = orderExecutor,
             )
@@ -83,7 +82,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
         }
 
-        "testDrawdownAndFiatDeployment" {
+        "fixed USD target does not use ATH drawdown" {
             runTest {
                 coEvery {
                     portfolioStatsRepository.load()
@@ -111,153 +110,38 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 )
                 krakenService.balanceSupplier = { balances }
 
-                portfolioManager.performRebalanceCycle()
+                val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
 
-                krakenService.executedOrders.size shouldBe 1
-                val order = krakenService.executedOrders[0]
-                order.pair shouldBe "AUSD"
-                order.type shouldBe "market"
-                order.side shouldBe "buy"
-                (
-                    order.volume.subtract(BigDecimal.valueOf(3.75))
-                        .abs() < BigDecimal("0.01")
-                    ).shouldBeTrue()
-
-                val captor = slot<PortfolioSnapshot>()
-                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
-                val s = captor.captured
-
-                s.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("25.0"))
-                s.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("50.0"))
-                s.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("25.0"))
+                krakenService.executedOrders.size shouldBe 0
+                snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("50.0"))
+                coVerify(exactly = 0) { portfolioStatsRepository.load() }
             }
         }
 
-        "testNewATH" {
+        "rebalance cycle ignores all-time-high stats" {
             runTest {
-                val stats = PortfolioStats(BigDecimal("1000.0"))
-                coEvery { portfolioStatsRepository.load() } returns stats
-
-                val allocs = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0,
-                    ),
-                )
-
-                val appConfig = TestFixtures.config(
-                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
-                    allocations = allocs,
-                )
-                every { configService.getConfig() } returns appConfig
-                krakenService.pricesSupplier = { emptyMap() }
-
-                val balances = mapOf(Asset.USD to 1500.0)
-                krakenService.balanceSupplier = { balances }
-
-                portfolioManager.performRebalanceCycle()
-
-                val captor = slot<PortfolioStats>()
-                coVerify { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(capture(captor), any(), any()) }
-                captor.captured.allTimeHigh.shouldNotBeNull()
-                captor.captured.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1500.0"))
-            }
-        }
-
-        "normal PortfolioManager cycle uses the production funding resolver for ATH" {
-            runTest {
-                val now = java.time.Instant.parse("2026-08-01T12:00:00Z")
-                val observation = now.plusSeconds(80)
-                val database = DatabaseConfig.init(TestFixtures.MEMORY_)
-                val ledgerRepository = SqliteLedgerRepositoryImpl(database)
-                val tradeRepository = SqliteTradeRepositoryImpl(database)
-                val statsRepository = SqlitePortfolioStatsRepositoryImpl(database, jacksonObjectMapper())
-                val config = TestFixtures.config(
-                    settings = TestFixtures.settings(dryRun = false, simulation = false, loopDelaySeconds = 60L),
+                coEvery { portfolioStatsRepository.load() } throws IOException("ATH database unavailable")
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
                     allocations = listOf(Allocation(Asset.USD, 100.0)),
-                    kraken = KrakenCredentials("k", "s"),
                 )
-                every { configService.getConfig() } returns config
-                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("1100.00")) }
+                krakenService.pricesSupplier = { emptyMap() }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 1500.0) }
 
-                statsRepository.save(PortfolioStats(BigDecimal("1000.00")))
-                tradeRepository.saveSnapshot(
-                    PortfolioSnapshot(
-                        timestamp = now.plusSeconds(60),
-                        totalValueUSD = BigDecimal("1000.00"),
-                        assets = mapOf(
-                            Asset.USD to TestFixtures.assetSnapshot(
-                                symbol = Asset.USD,
-                                balance = BigDecimal("1000.00"),
-                                price = BigDecimal.ONE,
-                                valueUSD = BigDecimal("1000.00"),
-                                targetPercent = BigDecimal("100.0"),
-                            ),
-                        ),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal("100.0"),
-                        balancesObservedAt = now.plusSeconds(60),
-                    ),
-                )
-                val deposit = LedgerEvent(
-                    ledgerId = "live-deposit",
-                    refid = "LIVE-DEP-1",
-                    time = now.plusSeconds(70),
-                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
-                    asset = Asset.USD,
-                    amount = BigDecimal("100.00"),
-                )
-                ledgerRepository.saveLedgers(listOf(deposit))
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
-                    observation.epochSecond.toString(),
-                )
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
-                tradeRepository.setSyncMetadata(
-                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                    now.plusSeconds(60).epochSecond.toString(),
-                )
-                krakenService.depositStatusSupplier = { _, _ ->
-                    listOf(
-                        DepositStatusRecord(
-                            refid = "LIVE-DEP-1",
-                            asset = Asset.USD,
-                            amount = BigDecimal("100.00"),
-                            time = deposit.time,
-                            status = "Success",
-                            method = "Wire",
-                        ),
-                    )
+                val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
+
+                snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
+                snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify(exactly = 0) { portfolioStatsRepository.load() }
+                coVerify(exactly = 0) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
-
-                val productionResolver = KrakenFundingProvenanceResolver(krakenService)
-                val productionAnalyzer = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = statsRepository,
-                    nowProvider = { observation },
-                    ledgerRepository = ledgerRepository,
-                    tradeRepository = tradeRepository,
-                    defaultProvenanceResolver = productionResolver,
-                )
-                val productionManager = PortfolioManagerImpl(
-                    configService = configService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = productionAnalyzer,
-                    orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService),
-                    krakenService = krakenService,
-                )
-
-                productionManager.performRebalanceCycle().shouldNotBeNull()
-
-                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1100.00"))
-                krakenService.getDepositStatusCallCount shouldBe 1
             }
         }
 
-        "USD-only drawdown reports zero deployment and keeps the full USD target" {
+        "USD-only cycle reports configured target without reading ATH" {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.00"))
                 every { configService.getConfig() } returns
@@ -269,18 +153,17 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 krakenService.pricesSupplier = { emptyMap() }
                 krakenService.balanceSupplier = { mapOf(Asset.USD to 500.0) }
 
-                portfolioManager.performRebalanceCycle()
+                val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
 
-                val snapshot = slot<PortfolioSnapshot>()
-                coVerify { tradeHistoryService.addSnapshot(capture(snapshot)) }
-                snapshot.captured.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("50.0000"))
-                snapshot.captured.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                snapshot.captured.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
+                snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
+                coVerify(exactly = 0) { portfolioStatsRepository.load() }
                 krakenService.executedOrders.size shouldBe 0
             }
         }
 
-        "corrupt ATH migration aborts analysis before saving a lower ATH or planning orders" {
+        "corrupt ATH data does not block the fixed-cash rebalance" {
             runTest {
                 val statsFile = File("test-ath-fail-closed-stats.json")
                 val statsBackup = File("test-ath-fail-closed-stats.json.bak")
@@ -296,7 +179,6 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 val failClosedManager =
                     PortfolioManagerImpl(
                         configService = configService,
-                        tradeHistoryService = tradeHistoryService,
                         portfolioAnalyzer = failClosedAnalyzer,
                         orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService),
                     )
@@ -319,11 +201,11 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                     statsBackup.delete()
                     statsFile.writeText("{not-json")
 
-                    shouldThrow<IOException> {
-                        failClosedManager.performRebalanceCycle()
-                    }
+                    val snapshot = requireNotNull(failClosedManager.performRebalanceCycle())
 
-                    krakenService.executedOrders.size shouldBe 0
+                    snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("50.0"))
+                    krakenService.executedOrders.size shouldBe 1
+                    krakenService.executedOrders.single().side shouldBe "buy"
                     coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
                     transaction(isolatedDb) {
                         PortfolioStatsTable.selectAll().count() shouldBe 0

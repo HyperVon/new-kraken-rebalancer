@@ -12,7 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 15
+internal const val CURRENT_SCHEMA_VERSION = 16
 
 internal data class SchemaMigration(
     val version: Int,
@@ -89,6 +89,9 @@ internal val SCHEMA_MIGRATIONS = listOf(
     // schema pass before migrations; this marker advances existing databases without inventing
     // historical reachability evidence for old rows.
     SchemaMigration(15, "ohlc-reachability-frontier"),
+    // Stable execution-journal identity is report metadata. The columns and unique index are
+    // installed by the ordinary additive table pass before this marker is applied.
+    SchemaMigration(16, "execution-journal-projection-identity"),
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

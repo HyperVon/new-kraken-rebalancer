@@ -3,6 +3,7 @@ package com.gemini.krakenbot
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.APPLICATION_SCOPE_QUALIFIER
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
+import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.config.ServerConfig
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.config.configureCORS
@@ -10,9 +11,10 @@ import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
+import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.ReportingDispatcher
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -64,19 +66,22 @@ fun main() {
     }
 
     val koin = GlobalContext.get()
+    val executionJournalBootstrap = koin.get<ExecutionJournalBootstrap>()
+    runBlocking { executionJournalBootstrap.initialize() }
     val portfolioManager = koin.get<PortfolioManager>()
-    val tradeHistoryService = koin.get<TradeHistoryService>()
     val orderIntentService = koin.get<OrderIntentService>()
+    val configService = koin.get<ConfigService>()
+    val reportingDispatcher = koin.get<ReportingDispatcher>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
-
-    // Blocking: history cleanup/migration/simulation seeding must finish before runLoop is launched
-    // below and before the server accepts traffic, so cycle one and the dashboard see seeded state.
-    runBlocking { tradeHistoryService.init() }
 
     val applicationScope: CoroutineScope = koin.get(
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
+    if (configService.getConfig().settings.simulation) {
+        runBlocking { reportingDispatcher.initializeBeforeSimulationCycle() }
+    }
+    reportingDispatcher.start(applicationScope)
     portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
@@ -89,7 +94,6 @@ fun main() {
                 runBlocking {
                     joinRebalancingWorker(
                         workerJob = stoppedWorker,
-                        hasPendingSubmissions = { tradeHistoryService.hasPendingSubmissions() },
                         hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
                     )
                 }

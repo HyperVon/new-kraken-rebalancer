@@ -315,7 +315,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain "Global Parameters"
                 response.bodyAsText() shouldContain FormFields.LOOP_DELAY_SECONDS
                 response.bodyAsText() shouldContain FormFields.INCEPTION_DATE
-                response.bodyAsText() shouldContain FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT
+                response.bodyAsText() shouldNotContain FormFields.FIAT_MAX_DRAWDOWN
+                response.bodyAsText() shouldNotContain FormFields.FIAT_DEPLOYMENT_EXPONENT
+                response.bodyAsText() shouldNotContain FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT
             }
         }
 
@@ -841,9 +843,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain "value=\"75\""
                 body shouldContain "value=\"6.5\""
                 body shouldContain "value=\"12.5\""
-                body shouldContain "value=\"17.0\""
-                body shouldContain "value=\"1.7\""
-                body shouldContain "value=\"4.5\""
+                body shouldNotContain "fiatMaxDrawdown"
+                body shouldNotContain "fiatDeploymentExponent"
+                body shouldNotContain "fiatDeploymentThresholdPercent"
                 body shouldContain "name=\"symbols\" value=\"BTC\""
                 body shouldContain "name=\"symbols\" value=\"ETH\""
                 body shouldContain "name=\"targets\""
@@ -898,7 +900,6 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ).containsMatchIn(body)
 
                 inputHasValue("loopDelaySeconds", "") shouldBe true
-                inputHasValue("fiatDeploymentThresholdPercent", "0.0") shouldBe true
                 inputHasValue("symbols", "BTC") shouldBe true
                 inputHasValue("symbols", "ETH") shouldBe true
                 inputHasValue("symbols", "") shouldBe true
@@ -936,6 +937,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
             val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings().copy(
+                    fiatMaxDrawdown = 27.0,
+                    fiatDeploymentExponent = 1.25,
+                    fiatDeploymentThresholdPercent = 3.75,
+                ),
                 credentials = KrakenCredentials(
                     apiKey = TestFixtures.TEST_SERVER_API_KEY,
                     privateKey = TestFixtures.TEST_SERVER_API_SECRET,
@@ -989,7 +995,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             captured.captured.settings.simulation shouldBe true
             captured.captured.settings.inceptionDate shouldBe "2026-06-06"
             captured.captured.settings.comparisonStartDate shouldBe "2026-06-07"
-            captured.captured.settings.fiatDeploymentThresholdPercent shouldBe 4.5
+            captured.captured.settings.fiatMaxDrawdown shouldBe 27.0
+            captured.captured.settings.fiatDeploymentExponent shouldBe 1.25
+            captured.captured.settings.fiatDeploymentThresholdPercent shouldBe 3.75
             captured.captured.allocations.single().color shouldBe "#94a3b8"
             coVerify { configService.updateConfig(any()) }
             coVerify {
@@ -1007,15 +1015,21 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
-        "postSettings rejects out-of-range fiat deployment threshold" {
+        "postSettings ignores legacy deployment fields and preserves stored values" {
             val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings().copy(
+                    fiatMaxDrawdown = 27.0,
+                    fiatDeploymentExponent = 1.25,
+                    fiatDeploymentThresholdPercent = 3.75,
+                ),
                 credentials = KrakenCredentials(
                     apiKey = TestFixtures.TEST_SERVER_API_KEY,
                     privateKey = TestFixtures.TEST_SERVER_API_SECRET,
                 ),
             )
             every { configService.getConfig() } returns serverConfig
-            coEvery { configService.updateConfig(any()) } returns Unit
+            val captured = slot<AppConfig>()
+            coEvery { configService.updateConfig(capture(captured)) } returns Unit
 
             testApplication {
                 application {
@@ -1028,8 +1042,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.LOOP_DELAY_SECONDS to listOf("120"),
                             FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
                             FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("not-a-number"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("not-a-number"),
                             FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("150"),
                             FormFields.CSRF_TOKEN to listOf(csrf.value),
                             FormFields.SYMBOLS to listOf(Asset.USD),
@@ -1044,8 +1058,13 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     )
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
-                response.bodyAsText() shouldContain "drawdown activation threshold"
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
             }
+
+            captured.captured.settings.fiatMaxDrawdown shouldBe 27.0
+            captured.captured.settings.fiatDeploymentExponent shouldBe 1.25
+            captured.captured.settings.fiatDeploymentThresholdPercent shouldBe 3.75
         }
 
         "postSettings rejects an unverified comparison-start proposal" {
@@ -1818,8 +1837,6 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     FormFields.LOOP_DELAY_SECONDS to "60",
                     FormFields.DEVIATION_TRIGGER_PERCENT to "2.0",
                     FormFields.MINIMUM_ORDER_SIZE_USD to "1.0",
-                    FormFields.FIAT_MAX_DRAWDOWN to "5.0",
-                    FormFields.FIAT_DEPLOYMENT_EXPONENT to "1.5",
                     FormFields.TARGETS to "100.0",
                 )
             val invalidValues =
@@ -1827,8 +1844,6 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     FormFields.LOOP_DELAY_SECONDS to "not-a-long",
                     FormFields.DEVIATION_TRIGGER_PERCENT to "NaN",
                     FormFields.MINIMUM_ORDER_SIZE_USD to "Infinity",
-                    FormFields.FIAT_MAX_DRAWDOWN to "not-a-number",
-                    FormFields.FIAT_DEPLOYMENT_EXPONENT to "-Infinity",
                     FormFields.TARGETS to "not-a-target",
                 )
 
@@ -1847,10 +1862,6 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                         listOf(fields.getValue(FormFields.DEVIATION_TRIGGER_PERCENT)),
                                     FormFields.MINIMUM_ORDER_SIZE_USD to
                                         listOf(fields.getValue(FormFields.MINIMUM_ORDER_SIZE_USD)),
-                                    FormFields.FIAT_MAX_DRAWDOWN to
-                                        listOf(fields.getValue(FormFields.FIAT_MAX_DRAWDOWN)),
-                                    FormFields.FIAT_DEPLOYMENT_EXPONENT to
-                                        listOf(fields.getValue(FormFields.FIAT_DEPLOYMENT_EXPONENT)),
                                     FormFields.CSRF_TOKEN to listOf(csrf.value),
                                     FormFields.SYMBOLS to listOf(Asset.USD),
                                     FormFields.TARGETS to listOf(fields.getValue(FormFields.TARGETS)),

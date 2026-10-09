@@ -304,14 +304,13 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                // Startup sync fired and its exception was caught (not rethrown); the worker did
+                // Periodic history sync is outside the rebalance loop; the worker did
                 // not place orders and the lifecycle completed cleanly. Because the test calls
                 // `stopRebalancingLoop()` (which flips `isRunning=false`) before the launched
                 // `runLoop()` coroutine resumes from `yield()`, the `while(isRunning)` cycle body
-                // never enters, so no rebalance cycle ran: only the startup balance observation
-                // fetched balances and no snapshot/session pair was opened.
-                coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
-                krakenService.getBalancesCallCount shouldBe 1
+                // never enters, so no rebalance cycle or balance observation ran.
+                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
+                krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
                 coVerify(exactly = 0) { configService.beginExecutionSession() }
@@ -340,14 +339,13 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                // Startup sync ran (relaxed mock: no-op) and was tolerated; the cycle never
+                // Periodic history sync is outside the rebalance loop; the cycle never
                 // reached the rebalance fetch because `stopRebalancingLoop()` had already flipped
                 // `isRunning=false` by the time the launched coroutine resumed from `yield()`,
-                // so the `while(isRunning)` body never entered. Only the startup observation
-                // fetched balances, no orders were placed, no snapshot/session opened, and the
-                // worker release is clean.
-                coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
-                krakenService.getBalancesCallCount shouldBe 1
+                // so the `while(isRunning)` body never entered. No balance observation, orders,
+                // snapshot, or session were opened, and the worker release is clean.
+                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
+                krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
                 coVerify(exactly = 0) { configService.beginExecutionSession() }

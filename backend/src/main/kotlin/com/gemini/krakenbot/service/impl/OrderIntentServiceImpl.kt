@@ -13,6 +13,8 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
         const val MAX_ORDER_TXID_LENGTH = 64
     }
 
+    override suspend fun ensureReadyForSubmission() = repository.ensureReadyForSubmission()
+
     override suspend fun savePending(intent: OrderIntent): Int = repository.savePending(
         intent.copy(state = OrderIntentState.PENDING),
     )
@@ -29,6 +31,7 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
             orderTxid = result.orderTxid,
             errorMessage = result.errorMessage,
             resolvedAt = if (state == OrderIntentState.UNCERTAIN) null else Instant.now(),
+            outcomeVolume = result.volume,
         )
     }
 

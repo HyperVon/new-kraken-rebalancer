@@ -55,6 +55,21 @@ interface TradeRepository {
 
     suspend fun saveTrade(trade: TradeRecord): Int
 
+    /** Returns the last execution event committed to the reporting database for [journalId]. */
+    suspend fun getExecutionProjectionCursor(journalId: String): Long = 0L
+
+    /** Commits a projection and its reporting-side cursor together. */
+    suspend fun upsertExecutionProjection(
+        journalId: String,
+        eventId: Long,
+        intentId: Int,
+        legacyTradeId: Int?,
+        trade: TradeRecord,
+    ): Boolean {
+        saveTrade(trade.copy(executionJournalId = journalId, executionIntentId = intentId))
+        return true
+    }
+
     suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
 
     suspend fun deleteTrade(id: Int): Boolean

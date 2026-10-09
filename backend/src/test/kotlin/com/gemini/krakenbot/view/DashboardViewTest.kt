@@ -155,8 +155,6 @@ class DashboardViewTest : StringSpec() {
                 "loopDelaySeconds",
                 "deviationTriggerPercent",
                 "minimumOrderSizeUSD",
-                "fiatMaxDrawdown",
-                "fiatDeploymentExponent",
             ).forEach { field ->
                 html shouldContain "name=\"$field\""
                 html shouldContain "id=\"$field\""
@@ -173,6 +171,9 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "safety-state-on"
             html shouldContain "safety-state-off"
             html shouldContain "id=\"mode-plate\""
+            html shouldNotContain "fiatMaxDrawdown"
+            html shouldNotContain "fiatDeploymentExponent"
+            html shouldNotContain "fiatDeploymentThresholdPercent"
             html shouldNotContain "error-banner"
         }
 
@@ -197,10 +198,6 @@ class DashboardViewTest : StringSpec() {
             }
 
             namedInput("minimumOrderSizeUSD") shouldContain "min=\"2\""
-            val fiatMax = namedInput("fiatMaxDrawdown")
-            fiatMax shouldContain "min=\"0\""
-            fiatMax shouldContain "max=\"100\""
-            namedInput("fiatDeploymentExponent") shouldContain "min=\"0.1\""
         }
 
         "renderSettingsPage_withError_displaysError" {
@@ -484,7 +481,7 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "Target: 7.5%"
             html shouldContain "(Base: 10%)"
             html shouldContain "Dev: 0%"
-            html shouldContain "Drawdown: 5%"
+            html shouldNotContain "Drawdown:"
             html shouldContain "Crypto Assets"
             html shouldContain "$9,000.00"
             html shouldContain "Target: 90% | 2 Assets"

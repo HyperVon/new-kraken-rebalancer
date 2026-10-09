@@ -14,7 +14,10 @@ interface OrderIntentRepository {
         orderTxid: String?,
         errorMessage: String?,
         resolvedAt: Instant?,
+        outcomeVolume: java.math.BigDecimal? = null,
     ): Boolean
+
+    suspend fun ensureReadyForSubmission()
 
     suspend fun hasUnresolvedIntents(): Boolean
 

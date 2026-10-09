@@ -18,6 +18,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -65,28 +66,21 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
             val executor =
                 OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val capturedActions = mutableListOf<String>()
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
-            }
-
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
-            pm.performRebalanceCycle()
+            val snapshot = requireNotNull(pm.performRebalanceCycle())
 
-            val btcSkipped = capturedActions.any { it.contains("Skipping dust buy for BTC") }
-            val ethSkipped = capturedActions.any { it.contains("Skipping dust buy for ETH") }
+            val btcSkipped = snapshot.actions.any { it.contains("Skipping dust buy for BTC") }
+            val ethSkipped = snapshot.actions.any { it.contains("Skipping dust buy for ETH") }
             val zeroOrders = fakeKraken.executedOrders.isEmpty()
 
             val success = btcSkipped && ethSkipped && zeroOrders
             val evidence =
-                "Captured actions: $capturedActions\n" +
+                "Cycle actions: ${snapshot.actions}\n" +
                     "Executed orders count: ${fakeKraken.executedOrders.size}\n" +
                     "BTC buy skipped: $btcSkipped, ETH buy skipped: $ethSkipped"
 
@@ -100,14 +94,12 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
         }
     }
 
-    "Scenario 30: Exponent Curve Calibration for Fiat Deployment" {
+    "Scenario 30: Fixed USD Allocation Ignores Price Changes and ATH Failure" {
         runTest {
             val fakeKraken = FakeKrakenService()
             val mockConfig = mockk<ConfigService>(relaxed = true)
-            val f = evaluationTempPath("30-stats")
-            val testStatsFile = f.absolutePath
-            val db = DatabaseConfig.init(TestFixtures.MEMORY_)
-            val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, testStatsFile)
+            val statsRepo = mockk<PortfolioStatsRepository>()
+            coEvery { statsRepo.load() } throws IllegalStateException("ATH database unavailable")
 
             val appConfig =
                 TestFixtures.config(
@@ -130,23 +122,14 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
             val executor =
                 OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
-            coEvery { mockHistory.addSnapshot(any()) } answers {
-                capturedSnapshots.add(firstArg())
-            }
-
             val pm =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     executor,
                 )
 
-            // Cycle 1 sets the ATH at $10,000 (0.2 BTC); cycle 2 drops to $9,000, a 10% drawdown.
-            // With fiatMaxDrawdown 20 and exponent 2 that deploys (10/20)^2 = 25% of the 20% USD
-            // sleeve, leaving an effective USD target of 15% and a scaled BTC target of 85%.
+            // The configured USD weight remains fixed across observed price changes.
             fakeKraken.balanceSupplier = {
                 mapOf(
                     Asset.BTC to 0.2,
@@ -154,7 +137,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
                 )
             }
             fakeKraken.pricesSupplier = { _ -> mapOf(TestFixtures.XBTUSD to 50000.0) }
-            pm.performRebalanceCycle()
+            var lastSnapshot: PortfolioSnapshot? = pm.performRebalanceCycle()
 
             fakeKraken.balanceSupplier = {
                 mapOf(
@@ -162,25 +145,26 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
                     Asset.USD to 0.0,
                 )
             }
-            pm.performRebalanceCycle()
+            lastSnapshot = pm.performRebalanceCycle()
 
-            val lastSnapshot = requireNotNull(capturedSnapshots.lastOrNull())
-            val btcSnapshot = requireNotNull(lastSnapshot.assets[Asset.BTC])
-            lastSnapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
-            lastSnapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("25.0"))
-            lastSnapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("15.0"))
-            btcSnapshot.targetPercent.shouldBeEqualComparingTo(BigDecimal("85.0"))
+            val completedSnapshot = requireNotNull(lastSnapshot)
+            val btcSnapshot = requireNotNull(completedSnapshot.assets[Asset.BTC])
+            completedSnapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            completedSnapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            completedSnapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("20.0"))
+            btcSnapshot.targetPercent.shouldBeEqualComparingTo(BigDecimal("80.0"))
+            coVerify(exactly = 0) { statsRepo.load() }
+            coVerify(exactly = 0) { statsRepo.save(any()) }
 
             val evidence =
-                "Drawdown: ${lastSnapshot.drawdownPercent}%\n" +
-                    "Deployment Pct: ${lastSnapshot.fiatDeploymentPercent}% (Expected: 25.0%)\n" +
-                    "Effective USD Target: ${lastSnapshot.effectiveUsdTargetPercent}% (Expected: 15.0%)\n" +
-                    "Adjusted BTC Target: ${btcSnapshot.targetPercent}% (Expected: 85.0%)"
+                "Configured USD target: ${completedSnapshot.effectiveUsdTargetPercent}%\n" +
+                    "Legacy drawdown/deployment fields: ${completedSnapshot.drawdownPercent}% / " +
+                    "${completedSnapshot.fiatDeploymentPercent}%\n" +
+                    "BTC target remains ${btcSnapshot.targetPercent}% after the price drop"
 
-            f.delete()
             EvaluationScenariosTest.recordResult(
                 "Scenario 30",
-                "Exponent Curve Calibration for Fiat Deployment",
+                "Fixed USD Allocation Ignores Price Changes and ATH Failure",
                 TestFixtures.PASS,
                 evidence,
             )
@@ -352,7 +336,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
 
             val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
             val executor = OrderExecutorImpl(fakeKraken, mockHistory)
-            val manager = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+            val manager = PortfolioManagerImpl(mockConfig, analyzer, executor)
             val startingValue =
                 balances.getValue(Asset.BTC).multiply(prices.getValue(Asset.BTC))
                     .add(balances.getValue(Asset.ETH).multiply(prices.getValue(Asset.ETH)))
@@ -403,7 +387,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
         }
     }
 
-    "Scenario 33: Drawdown Deployment Changes Order Sizes" {
+    "Scenario 33: Legacy Drawdown Settings Do Not Change Fixed-Cash Order Sizes" {
         runTest {
             val prices =
                 mapOf(
@@ -424,11 +408,6 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
                 val fakeKraken = FakeKrakenService()
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-                val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
-                coEvery { mockHistory.addSnapshot(any()) } answers {
-                    capturedSnapshots.add(firstArg())
-                }
                 coEvery { statsRepo.load() } returns PortfolioStats(allTimeHigh = ath)
                 coEvery { statsRepo.save(any()) } returns Unit
 
@@ -458,10 +437,10 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
                 }
 
                 val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, mockHistory)
-                val manager = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val executor = OrderExecutorImpl(fakeKraken, null)
+                val manager = PortfolioManagerImpl(mockConfig, analyzer, executor)
                 val snapshot = manager.performRebalanceCycle()
-                return Pair(snapshot ?: capturedSnapshots.lastOrNull(), fakeKraken)
+                return Pair(snapshot, fakeKraken)
             }
 
             val (_, controlKraken) = runCycle(fiatMaxDrawdown = 0.0, ath = BigDecimal("10000.00"))
@@ -488,20 +467,20 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
 
             val expectedControlBtc = BigDecimal("0.06400000")
             val expectedControlEth = BigDecimal("1.60000000")
-            val expectedDrawdownBtc = BigDecimal("0.08000000")
-            val expectedDrawdownEth = BigDecimal("1.96000000")
+            val expectedDrawdownBtc = expectedControlBtc
+            val expectedDrawdownEth = expectedControlEth
 
             controlBtcBuy.volume.shouldBeEqualComparingTo(expectedControlBtc)
             controlEthBuy.volume.shouldBeEqualComparingTo(expectedControlEth)
             drawdownBtcBuy.volume.shouldBeEqualComparingTo(expectedDrawdownBtc)
             drawdownEthBuy.volume.shouldBeEqualComparingTo(expectedDrawdownEth)
 
-            (drawdownBtcBuy.volume > controlBtcBuy.volume).shouldBeTrue()
-            (drawdownEthBuy.volume > controlEthBuy.volume).shouldBeTrue()
+            drawdownBtcBuy.volume.shouldBeEqualComparingTo(controlBtcBuy.volume)
+            drawdownEthBuy.volume.shouldBeEqualComparingTo(controlEthBuy.volume)
 
-            drawdownSnapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("20.0"))
-            drawdownSnapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
-            drawdownSnapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("0.0"))
+            drawdownSnapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            drawdownSnapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            drawdownSnapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("20.0"))
 
             val controlCryptoNotional =
                 controlBtcBuy.volume.multiply(prices.getValue(Asset.BTC))
@@ -509,13 +488,13 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
             val drawdownCryptoNotional =
                 drawdownBtcBuy.volume.multiply(prices.getValue(Asset.BTC))
                     .add(drawdownEthBuy.volume.multiply(prices.getValue(Asset.ETH)))
-            (drawdownCryptoNotional > controlCryptoNotional).shouldBeTrue()
+            drawdownCryptoNotional.shouldBeEqualComparingTo(controlCryptoNotional)
 
             val evidence =
                 "Portfolio: all-cash USD=$8000, BTC=0, ETH=0; prices BTC=$50000, ETH=$2000; targets 40/40/20\n" +
                     "Control (fiatMaxDrawdown=0): BTC buy=${controlBtcBuy.volume}, ETH buy=${controlEthBuy.volume} " +
                     "(crypto notional=$controlCryptoNotional)\n" +
-                    "Drawdown (ATH=$10000, 20% DD, deploy 100%): BTC buy=${drawdownBtcBuy.volume}, " +
+                    "Changed legacy drawdown configuration: BTC buy=${drawdownBtcBuy.volume}, " +
                     "ETH buy=${drawdownEthBuy.volume} (crypto notional=$drawdownCryptoNotional)\n" +
                     "Snapshot: drawdown=${drawdownSnapshot.drawdownPercent}%, " +
                     "fiatDeployment=${drawdownSnapshot.fiatDeploymentPercent}%, " +
@@ -523,7 +502,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
 
             EvaluationScenariosTest.recordResult(
                 "Scenario 33",
-                "Drawdown Deployment Changes Order Sizes",
+                "Fixed-Cash Order Sizes Ignore Legacy Drawdown Settings",
                 TestFixtures.PASS,
                 evidence,
             )
@@ -565,7 +544,6 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
             val manager =
                 PortfolioManagerImpl(
                     mockConfig,
-                    mockHistory,
                     analyzer,
                     OrderExecutorImpl(fakeKraken, mockHistory),
                 )
@@ -632,7 +610,6 @@ internal fun EvaluationScenariosTest.registerScenarios29To35() {
             )
             val manager = PortfolioManagerImpl(
                 mockConfig,
-                mockHistory,
                 analyzer,
                 OrderExecutorImpl(fakeKraken, mockHistory),
             )
