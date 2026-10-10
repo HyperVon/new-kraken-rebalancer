@@ -6,8 +6,10 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -127,7 +129,20 @@ class ActualObservationDispatcher(
             val latest = observations.lastOrNull()
             val latestComplete = observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE }
             val maxAgeSeconds = maxOf(MIN_STALE_AFTER_SECONDS, config.settings.loopDelaySeconds * 3L)
-            val benchmark = benchmarkService?.evaluate(config, binding.accountIdentityDigest, observations)
+            val benchmark = try {
+                benchmarkService?.evaluate(config, binding.accountIdentityDigest, observations)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Prospective benchmark comparison evaluation failed: {}", e.message, e)
+                BenchmarkComparisonResult(
+                    status = BenchmarkStatus.UNAVAILABLE,
+                    segment = null,
+                    points = emptyList(),
+                    latestPoint = null,
+                    unavailableReason = ViewText.ACTUAL_BENCHMARK_STATUS_UNAVAILABLE,
+                )
+            }
             ActualObservationPage(
                 state = if (latest == null) ActualPageState.NO_OBSERVATIONS else ActualPageState.READY,
                 scopeSymbols = symbols,

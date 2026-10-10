@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.actual
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.ExecutionAccountBinding
 import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
@@ -13,6 +14,8 @@ import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
+import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -169,6 +172,73 @@ class ActualObservationDispatcherTest : StringSpec() {
                 }
             }
         }
+
+        "regression F: benchmark verification failure does not hide valid Actual observations" {
+            runTest {
+                withTempDirectory { directory ->
+                    val paths = Paths(
+                        actual = directory.resolve("actual.db"),
+                        reporting = directory.resolve("reporting.db"),
+                        execution = directory.resolve("execution.db"),
+                    )
+                    val store = store(paths)
+                    val accountDigest = "a".repeat(64)
+                    val credentialScope = "test-credential-generation"
+                    val binding = ExecutionAccountBinding(
+                        accountIdentityDigest = accountDigest,
+                        credentialGenerationDigest = digest(credentialScope),
+                        bindingVersion = 1,
+                        verificationMethod = "isolated-test",
+                        verifiedAtMillis = NOW.toEpochMilli(),
+                        auditVerified = true,
+                    )
+                    val bindings = mockk<ExecutionAccountBindingRepository>()
+                    coEvery { bindings.load() } returns binding
+                    val accountService = mockk<ExecutionAccountBindingService>()
+                    coEvery {
+                        accountService.verifiedAccountIdentityDigestForObservation(credentialScope)
+                    } returns accountDigest
+                    val exchange = mockk<KrakenService>(relaxed = true)
+                    val kraken = object : KrakenService by exchange {
+                        override suspend fun getFundingEvidenceScope(): String = credentialScope
+
+                        override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
+                    }
+                    val benchmarkService = mockk<ProspectiveBenchmarkService>()
+                    coEvery { benchmarkService.evaluate(any(), any(), any()) } throws
+                        IllegalStateException("Simulated benchmark evaluation error")
+
+                    val config = TestFixtures.config(
+                        settings = TestFixtures.settings(dryRun = true, simulation = false),
+                        allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+                    )
+                    val dispatcher = dispatcher(
+                        store = store,
+                        accountService = accountService,
+                        bindings = bindings,
+                        kraken = kraken,
+                        benchmarkService = benchmarkService,
+                    )
+                    val worker = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+                    try {
+                        dispatcher.start(worker)
+                        dispatcher.captureAfterCycle(
+                            "cycle-1",
+                            config,
+                            observedBalances(NOW, "1.0", "100.00"),
+                            observedPrices(NOW, "100.00"),
+                        ) shouldBe true
+                        val page = awaitHistory(dispatcher, config, expectedCount = 1)
+                        page.state shouldBe ActualPageState.READY
+                        page.observations.map { it.observationId } shouldBe listOf("cycle-1")
+                        page.benchmark?.status shouldBe BenchmarkStatus.UNAVAILABLE
+                        page.benchmark?.unavailableReason shouldBe "Buy & Hold comparison unavailable"
+                    } finally {
+                        worker.cancel()
+                    }
+                }
+            }
+        }
     }
 
     private fun dispatcher(
@@ -176,17 +246,19 @@ class ActualObservationDispatcherTest : StringSpec() {
         accountService: ExecutionAccountBindingService,
         bindings: ExecutionAccountBindingRepository,
         kraken: KrakenService,
+        benchmarkService: ProspectiveBenchmarkService? = null,
     ) = ActualObservationDispatcher(
         store = store,
         accountBindingService = accountService,
         bindingRepository = bindings,
         krakenService = kraken,
         nowProvider = { NOW.plusSeconds(20) },
+        benchmarkService = benchmarkService,
     )
 
     private suspend fun awaitHistory(
         dispatcher: ActualObservationDispatcher,
-        config: com.gemini.krakenbot.config.AppConfig,
+        config: AppConfig,
         expectedCount: Int,
     ): ActualObservationPage {
         val deadline = System.nanoTime() + 5_000_000_000L

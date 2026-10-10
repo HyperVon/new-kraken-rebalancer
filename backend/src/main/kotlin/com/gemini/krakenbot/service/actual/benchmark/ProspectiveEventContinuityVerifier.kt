@@ -1,8 +1,13 @@
 package com.gemini.krakenbot.service.actual.benchmark
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.hasValidEconomicFields
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
+import kotlinx.coroutines.CancellationException
 import java.time.Instant
 
 sealed class ContinuityVerificationResult {
@@ -21,23 +26,63 @@ class ProspectiveEventContinuityVerifier(
         }
 
         val startSec = segment.lastVerifiedEventTime.epochSecond
-        val endSec = throughTime.epochSecond
+        val endSec = throughTime.epochSecond + 1
 
-        val ledgers = try {
-            krakenService.getLedgers(startSec = startSec, endSec = endSec)
-        } catch (e: Exception) {
-            return ContinuityVerificationResult.PendingEvidence("Failed to fetch ledgers from Kraken: ${e.message}")
+        val allLedgers = mutableListOf<LedgerEvent>()
+        var ledgerOffset = 0
+        while (true) {
+            val page = try {
+                krakenService.getLedgers(startSec = startSec, offset = ledgerOffset, endSec = endSec)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return ContinuityVerificationResult.PendingEvidence("Failed to fetch ledgers from Kraken: ${e.message}")
+            }
+
+            if (!krakenService.hasLastLedgerPageShape()) {
+                return ContinuityVerificationResult.PendingEvidence("Kraken returned a malformed ledger page shape")
+            }
+            if (!krakenService.hasLastLedgerTotalCount()) {
+                return ContinuityVerificationResult.PendingEvidence(
+                    "Kraken ledger page is missing an authoritative count",
+                )
+            }
+
+            val totalCount = krakenService.getLastLedgerTotalCount()
+            val rawPageSize = krakenService.getLastLedgerRawPageSize()
+            allLedgers.addAll(page)
+
+            if (page.isEmpty() && totalCount > 0 && allLedgers.size < totalCount) {
+                return ContinuityVerificationResult.PendingEvidence(
+                    "Incomplete ledger pagination: retrieved ${allLedgers.size} entries " +
+                        "but Kraken reported total count $totalCount",
+                )
+            }
+
+            val advance = if (rawPageSize > 0) rawPageSize else page.size
+            ledgerOffset += advance
+
+            if (advance == 0 || ledgerOffset >= totalCount || page.isEmpty()) {
+                if (allLedgers.size < totalCount) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Incomplete ledger pagination: retrieved ${allLedgers.size} entries " +
+                            "but Kraken reported total count $totalCount",
+                    )
+                }
+                break
+            }
         }
 
-        if (!krakenService.hasLastLedgerPageShape()) {
-            return ContinuityVerificationResult.PendingEvidence("Kraken returned a malformed ledger page shape")
-        }
-        if (!krakenService.hasLastLedgerTotalCount()) {
-            return ContinuityVerificationResult.PendingEvidence("Kraken ledger page is missing an authoritative count")
-        }
+        val uniqueLedgers = allLedgers.distinctBy { it.ledgerId }
 
-        val relevantLedgers = ledgers.filter { event ->
-            event.time.isAfter(segment.lastVerifiedEventTime) && !event.time.isAfter(throughTime)
+        val isInitialBaseline = (segment.lastVerifiedEventTime == segment.baselineAt)
+        val relevantLedgers = uniqueLedgers.filter { event ->
+            val afterStart = if (isInitialBaseline) {
+                !event.time.isBefore(segment.baselineAt)
+            } else {
+                event.time.isAfter(segment.lastVerifiedEventTime)
+            }
+            afterStart && !event.time.isAfter(throughTime)
         }.sortedBy { it.time }
 
         for (event in relevantLedgers) {
@@ -78,19 +123,100 @@ class ProspectiveEventContinuityVerifier(
 
         val tradeLedgers = relevantLedgers.filter { it.type.equals("trade", ignoreCase = true) }
         if (tradeLedgers.isNotEmpty()) {
-            val trades = try {
-                krakenService.getTradeHistory(startSec = startSec)
-            } catch (e: Exception) {
-                return ContinuityVerificationResult.PendingEvidence(
-                    "Failed to fetch trade history from Kraken: ${e.message}",
-                )
-            }
-            if (!krakenService.hasLastTradeHistoryPageShape()) {
-                return ContinuityVerificationResult.PendingEvidence("Kraken returned a malformed trade history page")
+            val allTrades = mutableListOf<TradeRecord>()
+            var tradeOffset = 0
+            while (true) {
+                val page = try {
+                    krakenService.getRecoveryTradeHistoryUntil(
+                        startSec = startSec,
+                        offset = tradeOffset,
+                        endSec = endSec,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Failed to fetch trade history from Kraken: ${e.message}",
+                    )
+                }
+
+                if (!krakenService.hasLastTradeHistoryPageShape()) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Kraken returned a malformed trade history page",
+                    )
+                }
+                if (!krakenService.hasLastTradeHistoryTotalCount()) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Kraken trade history page is missing an authoritative count",
+                    )
+                }
+
+                val totalCount = krakenService.getLastTradeHistoryTotalCount()
+                val rawPageSize = krakenService.getLastTradeHistoryRawPageSize()
+                allTrades.addAll(page)
+
+                if (page.isEmpty() && totalCount > 0 && allTrades.size < totalCount) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Incomplete trade history pagination: retrieved ${allTrades.size} trades " +
+                            "but Kraken reported total count $totalCount",
+                    )
+                }
+
+                val advance = if (rawPageSize > 0) rawPageSize else page.size
+                tradeOffset += advance
+
+                if (advance == 0 || tradeOffset >= totalCount || page.isEmpty()) {
+                    if (allTrades.size < totalCount) {
+                        return ContinuityVerificationResult.PendingEvidence(
+                            "Incomplete trade history pagination: retrieved ${allTrades.size} trades " +
+                                "but Kraken reported total count $totalCount",
+                        )
+                    }
+                    break
+                }
             }
 
-            val relevantTrades = trades.filter { trade ->
-                trade.timestamp.isAfter(segment.lastVerifiedEventTime) && !trade.timestamp.isAfter(throughTime)
+            val uniqueTrades = allTrades.distinctBy { it.tradeId ?: "${it.orderTxid}_${it.timestamp}_${it.pair}" }
+
+            val relevantTrades = uniqueTrades.filter { trade ->
+                val afterStart = if (isInitialBaseline) {
+                    !trade.timestamp.isBefore(segment.baselineAt)
+                } else {
+                    trade.timestamp.isAfter(segment.lastVerifiedEventTime)
+                }
+                afterStart && !trade.timestamp.isAfter(throughTime)
+            }
+
+            for (trade in relevantTrades) {
+                if (!trade.hasValidEconomicFields()) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Trade ${trade.tradeId ?: trade.orderTxid} contains invalid or unparseable economic fields",
+                    )
+                }
+            }
+
+            for (ledger in tradeLedgers) {
+                val refid = ledger.refid
+                if (refid.isNullOrBlank()) {
+                    return ContinuityVerificationResult.Terminated(
+                        "${BenchmarkTerminationReason.MANUAL_TRADE}: Trade ledger entry ${ledger.ledgerId} " +
+                            "has missing or blank refid",
+                        ledger.time,
+                    )
+                }
+
+                val matchingTrade = relevantTrades.find { trade ->
+                    (trade.tradeId != null && trade.tradeId == refid) ||
+                        (trade.orderTxid != null && trade.orderTxid == refid)
+                }
+
+                if (matchingTrade == null) {
+                    return ContinuityVerificationResult.Terminated(
+                        "${BenchmarkTerminationReason.MANUAL_TRADE}: Trade ledger entry ${ledger.ledgerId} " +
+                            "(refid=$refid) has no matching trade history execution",
+                        ledger.time,
+                    )
+                }
             }
 
             val tradeOrderTxids = relevantTrades.mapNotNull { it.orderTxid }.toSet()
