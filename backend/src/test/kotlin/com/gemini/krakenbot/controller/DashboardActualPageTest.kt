@@ -23,6 +23,11 @@ import com.gemini.krakenbot.service.actual.ActualObservationPage
 import com.gemini.krakenbot.service.actual.ActualObservationStatus
 import com.gemini.krakenbot.service.actual.ActualObservationStore
 import com.gemini.krakenbot.service.actual.ActualPageState
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonPoint
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkSegment
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkSegmentStatus
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
 import com.gemini.krakenbot.view.component.renderActualObservationChartSvg
 import io.kotest.core.spec.IsolationMode
@@ -31,8 +36,15 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.formUrlEncode
+import io.ktor.http.parametersOf
 import io.ktor.server.testing.testApplication
 import io.mockk.*
 import kotlinx.coroutines.CoroutineScope
@@ -323,6 +335,157 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                         worker.cancel()
                     }
                 }
+            }
+        }
+
+        "actual chart renders hold line and hold point when benchmark points are provided" {
+            val observations = listOf(
+                observation("obs-1", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "100"),
+                observation("obs-2", "2026-10-09T12:01:00Z", ActualObservationStatus.COMPLETE, "110"),
+            )
+            val benchmarkPoints = listOf(
+                BenchmarkComparisonPoint(
+                    observationId = "obs-1",
+                    observedAt = Instant.parse("2026-10-09T12:00:00Z"),
+                    actualValueUsd = BigDecimal("100.00"),
+                    holdValueUsd = BigDecimal("100.00"),
+                    differenceUsd = BigDecimal("0.00"),
+                    differencePercent = BigDecimal("0.00"),
+                ),
+                BenchmarkComparisonPoint(
+                    observationId = "obs-2",
+                    observedAt = Instant.parse("2026-10-09T12:01:00Z"),
+                    actualValueUsd = BigDecimal("110.00"),
+                    holdValueUsd = BigDecimal("105.00"),
+                    differenceUsd = BigDecimal("5.00"),
+                    differencePercent = BigDecimal("4.76"),
+                ),
+            )
+            val svg = renderActualObservationChartSvg(
+                observations = observations,
+                loopDelaySeconds = 60,
+                benchmarkPoints = benchmarkPoints,
+            )
+            svg shouldContain "actual-hold-line"
+            svg shouldContain "actual-line"
+            svg shouldNotContain "NaN"
+        }
+
+        "actual page renders prospective Buy & Hold benchmark card, comparison metrics, legend, and hold line" {
+            val config = AppConfig(
+                kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60, simulation = false),
+                allocations = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                ),
+            )
+            val obs0 = observation("cycle-1", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "1000.00")
+            val obs1 = observation("cycle-2", "2026-10-09T12:01:00Z", ActualObservationStatus.COMPLETE, "1100.00")
+            val t0 = Instant.parse("2026-10-09T12:00:00Z")
+            val t1 = Instant.parse("2026-10-09T12:01:00Z")
+
+            val benchmarkSegment = BenchmarkSegment(
+                segmentId = "seg-1",
+                baselineObservationId = "cycle-1",
+                accountIdentityDigest = "a".repeat(64),
+                scopeFingerprint = "f".repeat(64),
+                scopeSymbols = listOf("BTC", "USD"),
+                baselineAt = t0,
+                initialHoldings = mapOf("BTC" to BigDecimal("1.0"), "USD" to BigDecimal("500.00")),
+                baselineMarks = mapOf("BTC" to BigDecimal("500.00"), "USD" to BigDecimal("1.00")),
+                baselineTotalUsd = BigDecimal("1000.00"),
+                status = BenchmarkSegmentStatus.TRACKING,
+                lastVerifiedEventTime = t1,
+                createdAt = t0,
+            )
+            val pt0 = BenchmarkComparisonPoint(
+                observationId = "cycle-1",
+                observedAt = t0,
+                actualValueUsd = BigDecimal("1000.00"),
+                holdValueUsd = BigDecimal("1000.00"),
+                differenceUsd = BigDecimal("0.00"),
+                differencePercent = BigDecimal("0.00"),
+            )
+            val pt1 = BenchmarkComparisonPoint(
+                observationId = "cycle-2",
+                observedAt = t1,
+                actualValueUsd = BigDecimal("1100.00"),
+                holdValueUsd = BigDecimal("1050.00"),
+                differenceUsd = BigDecimal("50.00"),
+                differencePercent = BigDecimal("4.76"),
+            )
+            val benchmark = BenchmarkComparisonResult(
+                status = BenchmarkStatus.READY,
+                segment = benchmarkSegment,
+                points = listOf(pt0, pt1),
+                latestPoint = pt1,
+                unavailableReason = null,
+            )
+            val page = ActualObservationPage(
+                state = ActualPageState.READY,
+                scopeSymbols = listOf("BTC", "USD"),
+                scopeFingerprint = "f".repeat(64),
+                accountReference = "ab12cd34",
+                observations = listOf(obs0, obs1),
+                stale = false,
+                lastCaptureIssue = null,
+                benchmark = benchmark,
+            )
+            every { configService.getConfig() } returns config
+            coEvery { actualObservationDispatcher.readCurrent(config, 250) } returns page
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val response = client.get("/actual")
+                val html = response.bodyAsText()
+                response.status shouldBe HttpStatusCode.OK
+                html shouldContain "Prospective Buy &amp; Hold comparison"
+                html shouldContain "Tracking verified flow-free segment"
+                html shouldContain "Static Buy &amp; Hold value"
+                html shouldContain "$1,050.00"
+                html shouldContain "Current observed value"
+                html shouldContain "$1,100.00"
+                html shouldContain "actual-chart-legend"
+                html shouldContain "actual-hold-line"
+            }
+        }
+
+        "POST /actual/benchmark/start without CSRF returns 403 Forbidden" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val response = client.post("/actual/benchmark/start") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                response.status shouldBe HttpStatusCode.Forbidden
+            }
+        }
+
+        "POST /actual/benchmark/start with valid CSRF initiates benchmark and redirects" {
+            val config = TestFixtures.config(
+                settings = TestFixtures.settings(dryRun = true, simulation = false),
+            )
+            every { configService.getConfig() } returns config
+            coEvery { actualObservationDispatcher.startBenchmark(config) } returns true
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val csrf = client.settingsCsrf()
+
+                val postResp = client.post("/actual/benchmark/start") {
+                    setBody(parametersOf("csrfToken", csrf.value).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                postResp.status shouldBe HttpStatusCode.SeeOther
+                postResp.headers[HttpHeaders.Location] shouldBe "/actual"
+                coVerify(exactly = 1) { actualObservationDispatcher.startBenchmark(config) }
             }
         }
     }

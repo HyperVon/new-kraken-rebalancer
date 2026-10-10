@@ -428,6 +428,35 @@ class ActualObservationStore(
                                 "VALUES (3, 'explicit_sources_and_valuation_v3', ${Instant.now().toEpochNanos()})",
                         )
                     }
+                    if (version < 4) {
+                        statement.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS benchmark_segments (
+                                segment_id TEXT PRIMARY KEY,
+                                baseline_observation_id TEXT NOT NULL REFERENCES actual_observations(observation_id),
+                                account_identity_digest TEXT NOT NULL,
+                                scope_fingerprint TEXT NOT NULL,
+                                scope_symbols TEXT NOT NULL,
+                                baseline_at_ns INTEGER NOT NULL,
+                                initial_holdings TEXT NOT NULL,
+                                baseline_marks TEXT NOT NULL,
+                                baseline_total_usd TEXT NOT NULL,
+                                status TEXT NOT NULL CHECK(status IN ('TRACKING', 'TERMINATED', 'INVALID')),
+                                termination_reason TEXT,
+                                last_verified_event_time_ns INTEGER NOT NULL,
+                                created_at_ns INTEGER NOT NULL
+                            )
+                            """.trimIndent(),
+                        )
+                        statement.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_benchmark_segments_scope_account " +
+                                "ON benchmark_segments(scope_fingerprint, account_identity_digest, created_at_ns)",
+                        )
+                        statement.executeUpdate(
+                            "INSERT OR IGNORE INTO actual_schema_migrations(version, name, applied_at_ns) " +
+                                "VALUES (4, 'prospective_benchmark_segments_v4', ${Instant.now().toEpochNanos()})",
+                        )
+                    }
                 }
                 connection.commit()
             } catch (e: Exception) {
@@ -435,6 +464,11 @@ class ActualObservationStore(
                 throw e
             }
         }
+    }
+
+    fun <T> withConnection(block: (Connection) -> T): T {
+        initializeSchema()
+        return connect().use(block)
     }
 
     private fun connect(): Connection {
@@ -780,7 +814,7 @@ class ActualObservationStore(
     private companion object {
         const val LEGACY_PAYLOAD_HASH_VERSION = 1
         const val CURRENT_PAYLOAD_HASH_VERSION = 2
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
         const val MAX_QUERY_LIMIT = 500
         const val BUSY_TIMEOUT_MILLIS = 1500
         const val NANOS_PER_SECOND = 1_000_000_000L

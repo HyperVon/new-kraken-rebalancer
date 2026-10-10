@@ -76,7 +76,7 @@ class ActualObservationStoreTest : StringSpec() {
                     connection.createStatement().use { statement ->
                         statement.executeQuery("SELECT MAX(version) FROM actual_schema_migrations").use { rows ->
                             rows.next() shouldBe true
-                            rows.getInt(1) shouldBe 3
+                            rows.getInt(1) shouldBe 4
                         }
                         statement.executeQuery(
                             "SELECT COUNT(*) FROM actual_observations WHERE observation_id = 'after-migration'",
