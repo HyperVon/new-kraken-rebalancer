@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
@@ -25,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -239,6 +241,77 @@ class ActualObservationDispatcherTest : StringSpec() {
                 }
             }
         }
+
+        "slow benchmark evaluation times out without indefinitely delaying Actual observation page" {
+            runTest {
+                withTempDirectory { directory ->
+                    val paths = Paths(
+                        actual = directory.resolve("actual.db"),
+                        reporting = directory.resolve("reporting.db"),
+                        execution = directory.resolve("execution.db"),
+                    )
+                    val store = store(paths)
+                    val accountDigest = "a".repeat(64)
+                    val credentialScope = "test-credential-generation"
+                    val binding = ExecutionAccountBinding(
+                        accountIdentityDigest = accountDigest,
+                        credentialGenerationDigest = digest(credentialScope),
+                        bindingVersion = 1,
+                        verificationMethod = "isolated-test",
+                        verifiedAtMillis = NOW.toEpochMilli(),
+                        auditVerified = true,
+                    )
+                    val bindings = mockk<ExecutionAccountBindingRepository>()
+                    coEvery { bindings.load() } returns binding
+                    val accountService = mockk<ExecutionAccountBindingService>()
+                    coEvery {
+                        accountService.verifiedAccountIdentityDigestForObservation(credentialScope)
+                    } returns accountDigest
+                    val exchange = mockk<KrakenService>(relaxed = true)
+                    val kraken = object : KrakenService by exchange {
+                        override suspend fun getFundingEvidenceScope(): String = credentialScope
+
+                        override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
+                    }
+                    val benchmarkService = mockk<ProspectiveBenchmarkService>()
+                    // Simulate an indefinitely hanging or slow benchmark call
+                    coEvery { benchmarkService.evaluate(any(), any(), any()) } coAnswers {
+                        delay(500)
+                        mockk<BenchmarkComparisonResult>()
+                    }
+
+                    val config = TestFixtures.config(
+                        settings = TestFixtures.settings(dryRun = true, simulation = false),
+                        allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+                    )
+                    val dispatcher = dispatcher(
+                        store = store,
+                        accountService = accountService,
+                        bindings = bindings,
+                        kraken = kraken,
+                        benchmarkService = benchmarkService,
+                        benchmarkTimeoutMs = 50L,
+                    )
+                    val worker = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+                    try {
+                        dispatcher.start(worker)
+                        dispatcher.captureAfterCycle(
+                            "cycle-1",
+                            config,
+                            observedBalances(NOW, "1.0", "100.00"),
+                            observedPrices(NOW, "100.00"),
+                        ) shouldBe true
+                        val page = awaitHistory(dispatcher, config, expectedCount = 1)
+                        page.state shouldBe ActualPageState.READY
+                        page.observations.map { it.observationId } shouldBe listOf("cycle-1")
+                        page.benchmark?.status shouldBe BenchmarkStatus.UNAVAILABLE
+                        page.benchmark?.unavailableReason shouldBe "Buy & Hold comparison unavailable"
+                    } finally {
+                        worker.cancel()
+                    }
+                }
+            }
+        }
     }
 
     private fun dispatcher(
@@ -247,6 +320,7 @@ class ActualObservationDispatcherTest : StringSpec() {
         bindings: ExecutionAccountBindingRepository,
         kraken: KrakenService,
         benchmarkService: ProspectiveBenchmarkService? = null,
+        benchmarkTimeoutMs: Long = 3_000L,
     ) = ActualObservationDispatcher(
         store = store,
         accountBindingService = accountService,
@@ -254,6 +328,7 @@ class ActualObservationDispatcherTest : StringSpec() {
         krakenService = kraken,
         nowProvider = { NOW.plusSeconds(20) },
         benchmarkService = benchmarkService,
+        benchmarkTimeoutMs = benchmarkTimeoutMs,
     )
 
     private suspend fun awaitHistory(

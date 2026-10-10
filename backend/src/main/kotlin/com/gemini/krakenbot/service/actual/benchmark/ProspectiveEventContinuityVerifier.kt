@@ -29,6 +29,8 @@ class ProspectiveEventContinuityVerifier(
         val endSec = throughTime.epochSecond + 1
 
         val allLedgers = mutableListOf<LedgerEvent>()
+        val seenLedgerIds = mutableSetOf<String>()
+        var initialLedgerTotalCount: Int? = null
         var ledgerOffset = 0
         while (true) {
             val page = try {
@@ -49,34 +51,52 @@ class ProspectiveEventContinuityVerifier(
             }
 
             val totalCount = krakenService.getLastLedgerTotalCount()
-            val rawPageSize = krakenService.getLastLedgerRawPageSize()
-            allLedgers.addAll(page)
-
-            if (page.isEmpty() && totalCount > 0 && allLedgers.size < totalCount) {
+            if (initialLedgerTotalCount == null) {
+                initialLedgerTotalCount = totalCount
+            } else if (totalCount != initialLedgerTotalCount) {
                 return ContinuityVerificationResult.PendingEvidence(
-                    "Incomplete ledger pagination: retrieved ${allLedgers.size} entries " +
-                        "but Kraken reported total count $totalCount",
+                    "Inconsistent ledger total count across pages: initial $initialLedgerTotalCount, " +
+                        "page at offset $ledgerOffset reported $totalCount",
                 )
             }
 
+            for (event in page) {
+                if (event.ledgerId.isBlank()) {
+                    return ContinuityVerificationResult.PendingEvidence("Ledger entry has blank ledgerId")
+                }
+                if (event.time <= Instant.EPOCH) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Ledger entry ${event.ledgerId} has malformed or missing timestamp (${event.time})",
+                    )
+                }
+                if (!seenLedgerIds.add(event.ledgerId)) {
+                    return ContinuityVerificationResult.PendingEvidence(
+                        "Duplicate ledger entry detected across pages (${event.ledgerId}); " +
+                            "pagination consistency uncertain",
+                    )
+                }
+                allLedgers.add(event)
+            }
+
+            val rawPageSize = krakenService.getLastLedgerRawPageSize()
             val advance = if (rawPageSize > 0) rawPageSize else page.size
             ledgerOffset += advance
 
-            if (advance == 0 || ledgerOffset >= totalCount || page.isEmpty()) {
-                if (allLedgers.size < totalCount) {
-                    return ContinuityVerificationResult.PendingEvidence(
-                        "Incomplete ledger pagination: retrieved ${allLedgers.size} entries " +
-                            "but Kraken reported total count $totalCount",
-                    )
-                }
+            if (advance == 0 || ledgerOffset >= initialLedgerTotalCount || page.isEmpty()) {
                 break
             }
         }
 
-        val uniqueLedgers = allLedgers.distinctBy { it.ledgerId }
+        val expectedLedgerTotal = initialLedgerTotalCount
+        if (seenLedgerIds.size != expectedLedgerTotal) {
+            return ContinuityVerificationResult.PendingEvidence(
+                "Incomplete ledger pagination: retrieved ${seenLedgerIds.size} distinct entries " +
+                    "but Kraken reported total count $expectedLedgerTotal",
+            )
+        }
 
         val isInitialBaseline = (segment.lastVerifiedEventTime == segment.baselineAt)
-        val relevantLedgers = uniqueLedgers.filter { event ->
+        val relevantLedgers = allLedgers.filter { event ->
             val afterStart = if (isInitialBaseline) {
                 !event.time.isBefore(segment.baselineAt)
             } else {
@@ -124,6 +144,8 @@ class ProspectiveEventContinuityVerifier(
         val tradeLedgers = relevantLedgers.filter { it.type.equals("trade", ignoreCase = true) }
         if (tradeLedgers.isNotEmpty()) {
             val allTrades = mutableListOf<TradeRecord>()
+            val seenTradeIds = mutableSetOf<String>()
+            var initialTradeTotalCount: Int? = null
             var tradeOffset = 0
             while (true) {
                 val page = try {
@@ -152,47 +174,63 @@ class ProspectiveEventContinuityVerifier(
                 }
 
                 val totalCount = krakenService.getLastTradeHistoryTotalCount()
-                val rawPageSize = krakenService.getLastTradeHistoryRawPageSize()
-                allTrades.addAll(page)
-
-                if (page.isEmpty() && totalCount > 0 && allTrades.size < totalCount) {
+                if (initialTradeTotalCount == null) {
+                    initialTradeTotalCount = totalCount
+                } else if (totalCount != initialTradeTotalCount) {
                     return ContinuityVerificationResult.PendingEvidence(
-                        "Incomplete trade history pagination: retrieved ${allTrades.size} trades " +
-                            "but Kraken reported total count $totalCount",
+                        "Inconsistent trade history total count across pages: initial $initialTradeTotalCount, " +
+                            "page at offset $tradeOffset reported $totalCount",
                     )
                 }
 
+                for (trade in page) {
+                    val tradeId = trade.tradeId?.trim()
+                    if (tradeId.isNullOrBlank()) {
+                        return ContinuityVerificationResult.PendingEvidence("Trade record has missing or blank tradeId")
+                    }
+                    if (trade.timestamp <= Instant.EPOCH) {
+                        return ContinuityVerificationResult.PendingEvidence(
+                            "Trade record $tradeId has malformed or missing timestamp (${trade.timestamp})",
+                        )
+                    }
+                    if (!trade.hasValidEconomicFields()) {
+                        return ContinuityVerificationResult.PendingEvidence(
+                            "Trade $tradeId contains invalid or unparseable economic fields",
+                        )
+                    }
+                    if (!seenTradeIds.add(tradeId)) {
+                        return ContinuityVerificationResult.PendingEvidence(
+                            "Duplicate trade entry detected across pages ($tradeId); " +
+                                "pagination consistency uncertain",
+                        )
+                    }
+                    allTrades.add(trade)
+                }
+
+                val rawPageSize = krakenService.getLastTradeHistoryRawPageSize()
                 val advance = if (rawPageSize > 0) rawPageSize else page.size
                 tradeOffset += advance
 
-                if (advance == 0 || tradeOffset >= totalCount || page.isEmpty()) {
-                    if (allTrades.size < totalCount) {
-                        return ContinuityVerificationResult.PendingEvidence(
-                            "Incomplete trade history pagination: retrieved ${allTrades.size} trades " +
-                                "but Kraken reported total count $totalCount",
-                        )
-                    }
+                if (advance == 0 || tradeOffset >= initialTradeTotalCount || page.isEmpty()) {
                     break
                 }
             }
 
-            val uniqueTrades = allTrades.distinctBy { it.tradeId ?: "${it.orderTxid}_${it.timestamp}_${it.pair}" }
+            val expectedTradeTotal = initialTradeTotalCount
+            if (seenTradeIds.size != expectedTradeTotal) {
+                return ContinuityVerificationResult.PendingEvidence(
+                    "Incomplete trade history pagination: retrieved ${seenTradeIds.size} distinct trades " +
+                        "but Kraken reported total count $expectedTradeTotal",
+                )
+            }
 
-            val relevantTrades = uniqueTrades.filter { trade ->
+            val relevantTrades = allTrades.filter { trade ->
                 val afterStart = if (isInitialBaseline) {
                     !trade.timestamp.isBefore(segment.baselineAt)
                 } else {
                     trade.timestamp.isAfter(segment.lastVerifiedEventTime)
                 }
                 afterStart && !trade.timestamp.isAfter(throughTime)
-            }
-
-            for (trade in relevantTrades) {
-                if (!trade.hasValidEconomicFields()) {
-                    return ContinuityVerificationResult.PendingEvidence(
-                        "Trade ${trade.tradeId ?: trade.orderTxid} contains invalid or unparseable economic fields",
-                    )
-                }
             }
 
             for (ledger in tradeLedgers) {

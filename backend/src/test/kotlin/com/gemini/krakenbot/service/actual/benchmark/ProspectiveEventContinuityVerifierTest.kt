@@ -430,4 +430,311 @@ class ProspectiveEventContinuityVerifierTest :
             result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
             result.message shouldBe "Failed to fetch ledgers from Kraken: Kraken rate limit exceeded"
         }
+
+        "duplicate ledger entry across pages prevents continuity with PendingEvidence" {
+            val krakenService = mockk<VerifierKrakenService>()
+            val orderIntentRepo = mockk<ExecutionOrderIntentRepository>()
+
+            val ledger1 = LedgerEvent(
+                ledgerId = "L-DUP",
+                refid = "ref-1",
+                time = t1.minusSeconds(60),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.1"),
+                balance = BigDecimal("1.0"),
+            )
+            val ledger2 = LedgerEvent(
+                ledgerId = "L-OTHER",
+                refid = "ref-2",
+                time = t1.minusSeconds(30),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.2"),
+                balance = BigDecimal("1.2"),
+            )
+
+            // Reported total count 3, Page 1: L-DUP, Page 2: L-DUP again (duplicate across pages), Page 3: L-OTHER
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns listOf(ledger1)
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = 1, endSec = any(), types = any())
+            } returns listOf(ledger1)
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = 2, endSec = any(), types = any())
+            } returns listOf(ledger2)
+            every { krakenService.hasLastLedgerPageShape() } returns true
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            every { krakenService.getLastLedgerTotalCount() } returns 3
+            every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            val verifier = ProspectiveEventContinuityVerifier(krakenService, orderIntentRepo)
+            val result = verifier.verifyContinuity(segment, t1)
+
+            result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            result.message shouldContain "Duplicate ledger entry detected across pages"
+            result.message shouldContain "L-DUP"
+        }
+
+        "duplicate trade entry across pages prevents continuity with PendingEvidence" {
+            val krakenService = mockk<VerifierKrakenService>()
+            val orderIntentRepo = mockk<ExecutionOrderIntentRepository>()
+
+            val tradeLedger = LedgerEvent(
+                ledgerId = "L-TRADE",
+                refid = "TR-DUP",
+                time = t1.minusSeconds(60),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.1"),
+                balance = BigDecimal("1.0"),
+            )
+
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = any(), endSec = any(), types = any())
+            } returns listOf(tradeLedger)
+            every { krakenService.hasLastLedgerPageShape() } returns true
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            every { krakenService.getLastLedgerTotalCount() } returns 1
+            every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            val trade1 = TradeRecord(
+                timestamp = t1.minusSeconds(60),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("10.00"),
+                success = true,
+                dryRun = false,
+                orderTxid = "ORD-1",
+                tradeId = "TR-DUP",
+            )
+            val trade2 = TradeRecord(
+                timestamp = t1.minusSeconds(30),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.2"),
+                usdAmount = BigDecimal("20.00"),
+                success = true,
+                dryRun = false,
+                orderTxid = "ORD-2",
+                tradeId = "TR-OTHER",
+            )
+
+            // Reported total count 3, Page 1: TR-DUP, Page 2: TR-DUP again (duplicate), Page 3: TR-OTHER
+            coEvery {
+                krakenService.getRecoveryTradeHistoryUntil(startSec = any(), offset = 0, endSec = any())
+            } returns listOf(trade1)
+            coEvery {
+                krakenService.getRecoveryTradeHistoryUntil(startSec = any(), offset = 1, endSec = any())
+            } returns listOf(trade1)
+            coEvery {
+                krakenService.getRecoveryTradeHistoryUntil(startSec = any(), offset = 2, endSec = any())
+            } returns listOf(trade2)
+            every { krakenService.hasLastTradeHistoryPageShape() } returns true
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 3
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 1
+
+            val verifier = ProspectiveEventContinuityVerifier(krakenService, orderIntentRepo)
+            val result = verifier.verifyContinuity(segment, t1)
+
+            result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            result.message shouldContain "Duplicate trade entry detected across pages"
+            result.message shouldContain "TR-DUP"
+        }
+
+        "inconsistent reported ledger total count across pages prevents continuity with PendingEvidence" {
+            val krakenService = mockk<VerifierKrakenService>()
+            val orderIntentRepo = mockk<ExecutionOrderIntentRepository>()
+
+            val ledger1 = LedgerEvent(
+                ledgerId = "L-1",
+                refid = "ref-1",
+                time = t1.minusSeconds(60),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.1"),
+                balance = BigDecimal("1.0"),
+            )
+            val ledger2 = LedgerEvent(
+                ledgerId = "L-2",
+                refid = "ref-2",
+                time = t1.minusSeconds(30),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.2"),
+                balance = BigDecimal("1.2"),
+            )
+
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns listOf(ledger1)
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = 1, endSec = any(), types = any())
+            } returns listOf(ledger2)
+            every { krakenService.hasLastLedgerPageShape() } returns true
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            // Page 1 reports total count 2, but Page 2 reports total count 3 (concurrent activity)
+            every { krakenService.getLastLedgerTotalCount() } returnsMany listOf(2, 3)
+            every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            val verifier = ProspectiveEventContinuityVerifier(krakenService, orderIntentRepo)
+            val result = verifier.verifyContinuity(segment, t1)
+
+            result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            result.message shouldContain "Inconsistent ledger total count across pages"
+        }
+
+        "inconsistent reported trade total count across pages prevents continuity with PendingEvidence" {
+            val krakenService = mockk<VerifierKrakenService>()
+            val orderIntentRepo = mockk<ExecutionOrderIntentRepository>()
+
+            val tradeLedger = LedgerEvent(
+                ledgerId = "L-TRADE",
+                refid = "TR-1",
+                time = t1.minusSeconds(60),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.1"),
+                balance = BigDecimal("1.0"),
+            )
+
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = any(), endSec = any(), types = any())
+            } returns listOf(tradeLedger)
+            every { krakenService.hasLastLedgerPageShape() } returns true
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            every { krakenService.getLastLedgerTotalCount() } returns 1
+            every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            val trade1 = TradeRecord(
+                timestamp = t1.minusSeconds(60),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("10.00"),
+                success = true,
+                dryRun = false,
+                orderTxid = "ORD-1",
+                tradeId = "TR-1",
+            )
+            val trade2 = TradeRecord(
+                timestamp = t1.minusSeconds(30),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.2"),
+                usdAmount = BigDecimal("20.00"),
+                success = true,
+                dryRun = false,
+                orderTxid = "ORD-2",
+                tradeId = "TR-2",
+            )
+
+            coEvery {
+                krakenService.getRecoveryTradeHistoryUntil(startSec = any(), offset = 0, endSec = any())
+            } returns listOf(trade1)
+            coEvery {
+                krakenService.getRecoveryTradeHistoryUntil(startSec = any(), offset = 1, endSec = any())
+            } returns listOf(trade2)
+            every { krakenService.hasLastTradeHistoryPageShape() } returns true
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            // Page 1 reports total count 2, but Page 2 reports total count 3
+            every { krakenService.getLastTradeHistoryTotalCount() } returnsMany listOf(2, 3)
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 1
+
+            val verifier = ProspectiveEventContinuityVerifier(krakenService, orderIntentRepo)
+            val result = verifier.verifyContinuity(segment, t1)
+
+            result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            result.message shouldContain "Inconsistent trade history total count across pages"
+        }
+
+        "malformed or missing ledger timestamp is rejected before date filtering" {
+            val krakenService = mockk<VerifierKrakenService>()
+            val orderIntentRepo = mockk<ExecutionOrderIntentRepository>()
+
+            // Ledger with Instant.EPOCH timestamp (which would otherwise be silently filtered out if checked against baselineAt)
+            val malformedLedger = LedgerEvent(
+                ledgerId = "L-BAD-TIME",
+                refid = "ref-1",
+                time = Instant.EPOCH,
+                type = "deposit",
+                asset = "XXBT",
+                amount = BigDecimal("0.5"),
+                balance = BigDecimal("1.5"),
+            )
+
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = any(), endSec = any(), types = any())
+            } returns listOf(malformedLedger)
+            every { krakenService.hasLastLedgerPageShape() } returns true
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            every { krakenService.getLastLedgerTotalCount() } returns 1
+            every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            val verifier = ProspectiveEventContinuityVerifier(krakenService, orderIntentRepo)
+            val result = verifier.verifyContinuity(segment, t1)
+
+            result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            result.message shouldContain "malformed or missing timestamp"
+            result.message shouldContain "L-BAD-TIME"
+        }
+
+        "malformed or missing trade timestamp is rejected before date filtering" {
+            val krakenService = mockk<VerifierKrakenService>()
+            val orderIntentRepo = mockk<ExecutionOrderIntentRepository>()
+
+            val tradeLedger = LedgerEvent(
+                ledgerId = "L-TRADE",
+                refid = "TR-BAD-TIME",
+                time = t1.minusSeconds(60),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.1"),
+                balance = BigDecimal("1.0"),
+            )
+
+            coEvery {
+                krakenService.getLedgers(startSec = any(), offset = any(), endSec = any(), types = any())
+            } returns listOf(tradeLedger)
+            every { krakenService.hasLastLedgerPageShape() } returns true
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            every { krakenService.getLastLedgerTotalCount() } returns 1
+            every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            // Trade with Instant.EPOCH timestamp
+            val malformedTrade = TradeRecord(
+                timestamp = Instant.EPOCH,
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("10.00"),
+                success = true,
+                dryRun = false,
+                orderTxid = "ORD-1",
+                tradeId = "TR-BAD-TIME",
+            )
+
+            coEvery {
+                krakenService.getRecoveryTradeHistoryUntil(startSec = any(), offset = any(), endSec = any())
+            } returns listOf(malformedTrade)
+            every { krakenService.hasLastTradeHistoryPageShape() } returns true
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 1
+
+            val verifier = ProspectiveEventContinuityVerifier(krakenService, orderIntentRepo)
+            val result = verifier.verifyContinuity(segment, t1)
+
+            result.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            result.message shouldContain "malformed or missing timestamp"
+            result.message shouldContain "TR-BAD-TIME"
+        }
     })

@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.time.Duration
@@ -30,6 +31,7 @@ class ActualObservationDispatcher(
     private val krakenService: KrakenService,
     private val nowProvider: () -> Instant = Instant::now,
     private val benchmarkService: ProspectiveBenchmarkService? = null,
+    private val benchmarkTimeoutMs: Long = BENCHMARK_EVALUATION_TIMEOUT_MS,
 ) {
     private val log = LoggerFactory.getLogger(ActualObservationDispatcher::class.java)
     private val queue = Channel<PendingObservation>(capacity = QUEUE_CAPACITY)
@@ -130,7 +132,20 @@ class ActualObservationDispatcher(
             val latestComplete = observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE }
             val maxAgeSeconds = maxOf(MIN_STALE_AFTER_SECONDS, config.settings.loopDelaySeconds * 3L)
             val benchmark = try {
-                benchmarkService?.evaluate(config, binding.accountIdentityDigest, observations)
+                withTimeoutOrNull(benchmarkTimeoutMs) {
+                    benchmarkService?.evaluate(config, binding.accountIdentityDigest, observations)
+                } ?: if (benchmarkService != null) {
+                    log.warn("Prospective benchmark comparison timed out after {}ms", benchmarkTimeoutMs)
+                    BenchmarkComparisonResult(
+                        status = BenchmarkStatus.UNAVAILABLE,
+                        segment = null,
+                        points = emptyList(),
+                        latestPoint = null,
+                        unavailableReason = ViewText.ACTUAL_BENCHMARK_STATUS_UNAVAILABLE,
+                    )
+                } else {
+                    null
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -229,6 +244,7 @@ class ActualObservationDispatcher(
         const val QUEUE_CAPACITY = 2
         const val DEFAULT_QUERY_LIMIT = 250
         const val MIN_STALE_AFTER_SECONDS = 300L
+        const val BENCHMARK_EVALUATION_TIMEOUT_MS = 3_000L
         val ACCOUNT_DIGEST = Regex("[0-9a-f]{64}")
     }
 }
