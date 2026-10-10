@@ -5,6 +5,8 @@ import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
+import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +27,7 @@ class ActualObservationDispatcher(
     private val bindingRepository: ExecutionAccountBindingRepository,
     private val krakenService: KrakenService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val benchmarkService: ProspectiveBenchmarkService? = null,
 ) {
     private val log = LoggerFactory.getLogger(ActualObservationDispatcher::class.java)
     private val queue = Channel<PendingObservation>(capacity = QUEUE_CAPACITY)
@@ -124,6 +127,7 @@ class ActualObservationDispatcher(
             val latest = observations.lastOrNull()
             val latestComplete = observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE }
             val maxAgeSeconds = maxOf(MIN_STALE_AFTER_SECONDS, config.settings.loopDelaySeconds * 3L)
+            val benchmark = benchmarkService?.evaluate(config, binding.accountIdentityDigest, observations)
             ActualObservationPage(
                 state = if (latest == null) ActualPageState.NO_OBSERVATIONS else ActualPageState.READY,
                 scopeSymbols = symbols,
@@ -134,6 +138,7 @@ class ActualObservationDispatcher(
                     Duration.between(it.observedAt, nowProvider()).seconds > maxAgeSeconds
                 } ?: false,
                 lastCaptureIssue = lastCaptureIssue.get(),
+                benchmark = benchmark,
             )
         } catch (e: CancellationException) {
             throw e
@@ -192,6 +197,19 @@ class ActualObservationDispatcher(
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
 
+    suspend fun startBenchmark(config: AppConfig): Boolean {
+        if (config.settings.simulation) return false
+        val svc = benchmarkService ?: return false
+        val binding = bindingRepository.load() ?: return false
+        if (!binding.auditVerified) return false
+        val symbols = ActualObservationValuator.scopeSymbols(config)
+        val scopeFingerprint = ActualObservationValuator.scopeFingerprint(symbols)
+        val observations = store.querySegment(scopeFingerprint, binding.accountIdentityDigest, 50)
+        val latestComplete = observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE } ?: return false
+        svc.startBenchmark(latestComplete)
+        return true
+    }
+
     private companion object {
         const val QUEUE_CAPACITY = 2
         const val DEFAULT_QUERY_LIMIT = 250
@@ -210,4 +228,5 @@ data class ActualObservationPage(
     val observations: List<ActualObservation>,
     val stale: Boolean,
     val lastCaptureIssue: String?,
+    val benchmark: BenchmarkComparisonResult? = null,
 )

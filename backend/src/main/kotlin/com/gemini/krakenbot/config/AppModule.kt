@@ -36,6 +36,9 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.TradeProjectionService
 import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
 import com.gemini.krakenbot.service.actual.ActualObservationStore
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStore
+import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
+import com.gemini.krakenbot.service.actual.benchmark.ProspectiveEventContinuityVerifier
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
@@ -130,12 +133,26 @@ val coreModule =
             ExecutionJournalBootstrap(database = get(), repository = get())
         }
         single { ActualObservationStore() }
+        single { BenchmarkStore(observationStore = get()) }
+        single {
+            ProspectiveEventContinuityVerifier(
+                krakenService = get(),
+                orderIntentRepository = getOrNull(),
+            )
+        }
+        single {
+            ProspectiveBenchmarkService(
+                benchmarkStore = get(),
+                continuityVerifier = get(),
+            )
+        }
         single {
             ActualObservationDispatcher(
                 store = get(),
                 accountBindingService = get(),
                 bindingRepository = get(),
                 krakenService = get(),
+                benchmarkService = get(),
             )
         }
         single<TradeProjectionService> {

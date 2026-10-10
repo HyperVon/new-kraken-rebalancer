@@ -6,23 +6,36 @@ import com.gemini.krakenbot.service.actual.ActualObservation
 import com.gemini.krakenbot.service.actual.ActualObservationPage
 import com.gemini.krakenbot.service.actual.ActualObservationStatus
 import com.gemini.krakenbot.service.actual.ActualPageState
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonPoint
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
+import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmxAttrs
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.brandWithMode
+import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.loopControl
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
+import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.th
+import kotlinx.html.ButtonType
 import kotlinx.html.DIV
+import kotlinx.html.FormMethod
 import kotlinx.html.HTML
+import kotlinx.html.InputType
 import kotlinx.html.body
+import kotlinx.html.form
 import kotlinx.html.head
 import kotlinx.html.header
+import kotlinx.html.input
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.thead
@@ -50,7 +63,8 @@ class ActualObservationsPageComponent {
                 }
                 p(CssClass.Actual.Intro) { +ViewText.ACTUAL_INTRO }
                 renderLatest(page)
-                renderChart(page.observations, settings.loopDelaySeconds)
+                renderBenchmark(page, csrfToken)
+                renderChart(page.observations, settings.loopDelaySeconds, page.benchmark)
                 renderAssets(page.observations.lastOrNull())
             }
         }
@@ -129,7 +143,97 @@ class ActualObservationsPageComponent {
         }
     }
 
-    private fun DIV.renderChart(observations: List<ActualObservation>, loopDelaySeconds: Long) {
+    private fun DIV.renderBenchmark(page: ActualObservationPage, csrfToken: String?) {
+        div(CssClass.Layout.GlassPanel + CssClass.Actual.BenchmarkCard) {
+            h2(CssClass.Utility.GlassPanelTitle) { +ViewText.ACTUAL_BENCHMARK_HEADING }
+            val benchmark = page.benchmark
+            if (benchmark == null || benchmark.status == BenchmarkStatus.NO_ACTIVE_SEGMENT) {
+                p(CssClass.Actual.Muted) { +ViewText.ACTUAL_BENCHMARK_STATUS_NOT_STARTED }
+                if (
+                    page.state == ActualPageState.READY &&
+                    page.observations.any { it.status == ActualObservationStatus.COMPLETE }
+                ) {
+                    renderBenchmarkActionButton(ViewText.ACTUAL_BENCHMARK_START_BUTTON, csrfToken)
+                }
+            } else {
+                div(CssClass.Actual.SummaryGrid) {
+                    val statusText = when (benchmark.status) {
+                        BenchmarkStatus.READY -> ViewText.ACTUAL_BENCHMARK_STATUS_TRACKING
+                        BenchmarkStatus.TERMINATED -> ViewText.ACTUAL_BENCHMARK_STATUS_TERMINATED
+                        BenchmarkStatus.PENDING_EVIDENCE -> ViewText.ACTUAL_BENCHMARK_STATUS_PENDING
+                        BenchmarkStatus.UNAVAILABLE -> ViewText.ACTUAL_BENCHMARK_STATUS_UNAVAILABLE
+                        BenchmarkStatus.NO_ACTIVE_SEGMENT -> ViewText.ACTUAL_BENCHMARK_STATUS_NOT_STARTED
+                    }
+                    val statusClass = when (benchmark.status) {
+                        BenchmarkStatus.READY -> CssClass.Actual.Fresh
+                        BenchmarkStatus.PENDING_EVIDENCE -> CssClass.Actual.Stale
+                        BenchmarkStatus.TERMINATED, BenchmarkStatus.UNAVAILABLE -> CssClass.Actual.Incomplete
+                        BenchmarkStatus.NO_ACTIVE_SEGMENT -> CssClass.Actual.Muted
+                    }
+                    summaryCard(ViewText.ACTUAL_BENCHMARK_STATUS_LABEL, statusText, statusClass)
+                    summaryCard(
+                        ViewText.ACTUAL_BENCHMARK_BASELINE_AT_LABEL,
+                        benchmark.segment?.baselineAt?.let(::formatInstant) ?: ViewText.EM_DASH,
+                    )
+                    summaryCard(
+                        ViewText.ACTUAL_BENCHMARK_BASELINE_VALUE_LABEL,
+                        benchmark.segment?.baselineTotalUsd?.let(::formatUsdExact) ?: ViewText.EM_DASH,
+                    )
+                    val latestPoint = benchmark.latestPoint
+                    summaryCard(
+                        ViewText.ACTUAL_BENCHMARK_HOLD_VALUE_LABEL,
+                        latestPoint?.holdValueUsd?.let(::formatUsdExact) ?: ViewText.EM_DASH,
+                    )
+                    summaryCard(
+                        ViewText.ACTUAL_BENCHMARK_ACTUAL_VALUE_LABEL,
+                        latestPoint?.actualValueUsd?.let(::formatUsdExact) ?: ViewText.EM_DASH,
+                    )
+                    val diffText = latestPoint?.let {
+                        val sign = if (it.differenceUsd >= BigDecimal.ZERO) "+" else ""
+                        "${formatUsdExact(it.differenceUsd)} ($sign${it.differencePercent.toPlainString()}%)"
+                    } ?: ViewText.EM_DASH
+                    val diffClass = when {
+                        latestPoint == null -> null
+                        latestPoint.differenceUsd > BigDecimal.ZERO -> CssClass.Actual.Fresh
+                        latestPoint.differenceUsd < BigDecimal.ZERO -> CssClass.Actual.Incomplete
+                        else -> null
+                    }
+                    summaryCard(ViewText.ACTUAL_BENCHMARK_DIFFERENCE_LABEL, diffText, diffClass)
+                }
+                benchmark.unavailableReason?.let { reason ->
+                    p(CssClass.Actual.Incomplete) { +reason }
+                }
+                benchmark.segment?.terminationReason?.let { reason ->
+                    p(CssClass.Actual.Incomplete) { +"${ViewText.ACTUAL_BENCHMARK_STATUS_TERMINATED}: $reason" }
+                }
+                if (benchmark.status == BenchmarkStatus.TERMINATED || benchmark.status == BenchmarkStatus.UNAVAILABLE) {
+                    renderBenchmarkActionButton(ViewText.ACTUAL_BENCHMARK_RESTART_BUTTON, csrfToken)
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderBenchmarkActionButton(label: String, csrfToken: String?) {
+        div(CssClass.Actual.BenchmarkActions) {
+            form(action = Routes.ACTUAL_BENCHMARK_START, method = FormMethod.post) {
+                attributes[HtmxAttrs.HX_POST] = Routes.ACTUAL_BENCHMARK_START
+                if (csrfToken != null) {
+                    input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
+                        value = csrfToken
+                    }
+                }
+                button(CssClass.Button.Secondary, type = ButtonType.submit) {
+                    +label
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderChart(
+        observations: List<ActualObservation>,
+        loopDelaySeconds: Long,
+        benchmark: BenchmarkComparisonResult? = null,
+    ) {
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) { +ViewText.ACTUAL_CHART_HEADING }
             val ordered = observations.sortedBy { it.observedAt }
@@ -142,8 +246,28 @@ class ActualObservationsPageComponent {
                     +(if (observations.isEmpty()) ViewText.ACTUAL_CHART_EMPTY else ViewText.ACTUAL_CHART_NO_COMPLETE)
                 }
             } else {
+                if (benchmark?.points?.isNotEmpty() == true) {
+                    div(CssClass.Actual.ChartLegend) {
+                        div(CssClass.Actual.ChartLegendItem) {
+                            span(CssClass.Actual.ChartLegendSwatchActual) {}
+                            +ViewText.ACTUAL_BENCHMARK_LEGEND_ACTUAL
+                        }
+                        div(CssClass.Actual.ChartLegendItem) {
+                            span(CssClass.Actual.ChartLegendSwatchHold) {}
+                            +ViewText.ACTUAL_BENCHMARK_LEGEND_HOLD
+                        }
+                    }
+                }
                 div(CssClass.Actual.Chart) {
-                    unsafe { raw(renderActualObservationChartSvg(ordered, loopDelaySeconds)) }
+                    unsafe {
+                        raw(
+                            renderActualObservationChartSvg(
+                                observations = ordered,
+                                loopDelaySeconds = loopDelaySeconds,
+                                benchmarkPoints = benchmark?.points.orEmpty(),
+                            ),
+                        )
+                    }
                 }
                 val first = ordered.firstOrNull()?.observedAt
                 val last = ordered.lastOrNull()?.observedAt
@@ -237,7 +361,11 @@ class ActualObservationsPageComponent {
  * Uses elapsed time for horizontal position and breaks the line when observations are more than two
  * configured loop delays apart. Incomplete persisted samples keep their own visible gap marker.
  */
-internal fun renderActualObservationChartSvg(observations: List<ActualObservation>, loopDelaySeconds: Long): String {
+internal fun renderActualObservationChartSvg(
+    observations: List<ActualObservation>,
+    loopDelaySeconds: Long,
+    benchmarkPoints: List<BenchmarkComparisonPoint> = emptyList(),
+): String {
     val ordered = observations.sortedBy { it.observedAt }
     val values = ordered.mapNotNull { observation ->
         observation.totalUsd?.takeIf { observation.status == ActualObservationStatus.COMPLETE }
@@ -248,8 +376,9 @@ internal fun renderActualObservationChartSvg(observations: List<ActualObservatio
     val height = 260.0
     val horizontalPadding = 14.0
     val verticalPadding = 12.0
-    val min = values.minOrNull() ?: return ""
-    val max = values.maxOrNull() ?: return ""
+    val allValues = values + benchmarkPoints.map { it.holdValueUsd }
+    val min = allValues.minOrNull() ?: return ""
+    val max = allValues.maxOrNull() ?: return ""
     val range = max.subtract(min)
     val first = ordered.first().observedAt
     val last = ordered.last().observedAt
@@ -293,6 +422,37 @@ internal fun renderActualObservationChartSvg(observations: List<ActualObservatio
     }
     if (segment.isNotEmpty()) segments += segment
 
+    val holdPoints = benchmarkPoints.sortedBy { it.observedAt }.map { point ->
+        val x = if (timeSpan.isZero) {
+            width / 2
+        } else {
+            val elapsed = Duration.between(first, point.observedAt).toDoubleSeconds()
+            horizontalPadding + (width - horizontalPadding * 2) * elapsed / timeSpanSeconds
+        }
+        val y = if (range.signum() == 0) {
+            height / 2
+        } else {
+            height - verticalPadding -
+                point.holdValueUsd.subtract(min).divide(range, 12, RoundingMode.HALF_UP).toDouble() *
+                (height - verticalPadding * 2)
+        }
+        ChartPoint(point.observedAt, x, y, true)
+    }
+    val holdSegments = mutableListOf<List<ChartPoint>>()
+    var holdSegment = mutableListOf<ChartPoint>()
+    holdPoints.forEach { point ->
+        val previous = holdSegment.lastOrNull()
+        if (
+            previous != null &&
+            Duration.between(previous.observedAt, point.observedAt).toDoubleSeconds() > maxConnectedGapSeconds
+        ) {
+            holdSegments += holdSegment
+            holdSegment = mutableListOf()
+        }
+        holdSegment += point
+    }
+    if (holdSegment.isNotEmpty()) holdSegments += holdSegment
+
     fun fmt(value: Double): String = String.format(Locale.US, "%.2f", value)
     return buildString {
         append(
@@ -311,6 +471,19 @@ internal fun renderActualObservationChartSvg(observations: List<ActualObservatio
                         "x2=\"${fmt(point.x)}\" y2=\"${fmt(height - verticalPadding)}\" " +
                         "class=\"${CssClass.Actual.GapMarker.value}\"/>",
                 )
+            }
+        }
+        holdSegments.forEach { pointsInSegment ->
+            if (pointsInSegment.size == 1) {
+                val point = pointsInSegment.single()
+                append(
+                    "<circle cx=\"${fmt(point.x)}\" cy=\"${fmt(point.y)}\" r=\"4\" " +
+                        "class=\"${CssClass.Actual.HoldPoint.value}\"/>",
+                )
+            } else {
+                append("<polyline points=\"")
+                append(pointsInSegment.joinToString(" ") { "${fmt(it.x)},${fmt(it.y)}" })
+                append("\" class=\"${CssClass.Actual.HoldLine.value}\"/>")
             }
         }
         segments.forEach { pointsInSegment ->

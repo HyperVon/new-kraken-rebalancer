@@ -207,6 +207,20 @@ class DashboardController(
                 }
             }
 
+            post(Routes.ACTUAL_BENCHMARK_START) {
+                if (!requireCsrf()) return@post
+                val config = configService.getConfig()
+                actualObservationDispatcher?.startBenchmark(config)
+                val isHtmxRequest = call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)
+                if (isHtmxRequest) {
+                    call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
+                    call.respond(HttpStatusCode.OK)
+                } else {
+                    call.response.header("Location", Routes.ACTUAL)
+                    call.respond(HttpStatusCode.SeeOther)
+                }
+            }
+
             get(Routes.API_HISTORY_SNAPSHOTS) {
                 handleGetHistorySnapshots()
             }

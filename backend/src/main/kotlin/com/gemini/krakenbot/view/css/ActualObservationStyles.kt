@@ -130,6 +130,55 @@ object ActualObservationStyles {
             fillRaw(CssTheme.colorBlueAccent.value)
         }
 
+        ".${CssClass.Actual.HoldLine.value}" {
+            fillRaw("none")
+            strokeRaw(CssTheme.colorGreenAccent.value)
+            strokeDasharrayRaw("6 4")
+            strokeLinecapRaw("round")
+            strokeLinejoinRaw("round")
+            strokeWidthRaw("2.5")
+        }
+
+        ".${CssClass.Actual.HoldPoint.value}" {
+            fillRaw(CssTheme.colorGreenAccent.value)
+        }
+
+        ".${CssClass.Actual.ChartLegend.value}" {
+            display = Display.flex
+            gap = 1.rem
+            alignItems = Align.center
+            fontSize = 0.85.rem
+            marginTop = 0.5.rem
+            marginBottom = 0.5.rem
+        }
+
+        ".${CssClass.Actual.ChartLegendItem.value}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.4.rem
+            color = CssTheme.colorTextSecondary
+        }
+
+        ".${CssClass.Actual.ChartLegendSwatchActual.value}" {
+            display = Display.inlineBlock
+            width = 12.px
+            height = 12.px
+            borderRadius = 2.px
+            background = CssTheme.colorBlueAccent.value
+        }
+
+        ".${CssClass.Actual.ChartLegendSwatchHold.value}" {
+            display = Display.inlineBlock
+            width = 12.px
+            height = 12.px
+            borderRadius = 2.px
+            background = CssTheme.colorGreenAccent.value
+        }
+
+        ".${CssClass.Actual.BenchmarkActions.value}" {
+            marginTop = 0.75.rem
+        }
+
         ".${CssClass.Actual.ChartCaption.value}" {
             color = CssTheme.colorTextMuted
             fontSize = 0.8.rem
