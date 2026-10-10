@@ -23,6 +23,10 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
+import com.gemini.krakenbot.service.actual.ActualObservationPage
+import com.gemini.krakenbot.service.actual.ActualObservationValuator
+import com.gemini.krakenbot.service.actual.ActualPageState
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -99,6 +103,7 @@ class DashboardController(
     private val nowProvider: () -> Instant = Instant::now,
     private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
     private val tradeHistoryServiceProvider: (() -> TradeHistoryService)? = null,
+    private val actualObservationDispatcher: ActualObservationDispatcher? = null,
 ) {
     private val tradeHistoryService: TradeHistoryService by lazy {
         tradeHistoryServiceProvider?.invoke()
@@ -171,6 +176,31 @@ class DashboardController(
                     dashboardView.renderHistoryPage(
                         settings = settings,
                         symbolColorMap = symbolColorMap,
+                        csrfToken = csrfToken,
+                        paused = portfolioManager.isLoopPaused(),
+                    )
+                }
+            }
+
+            get(Routes.ACTUAL) {
+                val config = configService.getConfig()
+                val page = actualObservationDispatcher?.readCurrent(config)
+                    ?: ActualObservationValuator.scopeSymbols(config).let { scope ->
+                        ActualObservationPage(
+                            state = ActualPageState.STORAGE_UNAVAILABLE,
+                            scopeSymbols = scope,
+                            scopeFingerprint = ActualObservationValuator.scopeFingerprint(scope),
+                            accountReference = null,
+                            observations = emptyList(),
+                            stale = false,
+                            lastCaptureIssue = null,
+                        )
+                    }
+                val csrfToken = CsrfProtection.issueToken(call)
+                call.respondHtml(HttpStatusCode.OK) {
+                    dashboardView.renderActualObservationsPage(
+                        settings = config.settings,
+                        page = page,
                         csrfToken = csrfToken,
                         paused = portfolioManager.isLoopPaused(),
                     )

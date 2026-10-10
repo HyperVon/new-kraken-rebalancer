@@ -26,6 +26,7 @@ flowchart TB
     subgraph UI["🖥️  Browser / Dashboard"]
         SSE["SSE Client\n(HTMX sse-connect)"]
         Settings["Settings UI\n(Save Config)"]
+        ActualPage["Actual observations page"]
         History["History actions\n(sync / recovery)"]
     end
 
@@ -40,6 +41,7 @@ flowchart TB
         OE["OrderExecutorImpl\n(delegates to OrderSettleHelper)"]
         OSH["OrderSettleHelper\nsettleUsdAfterSells()"]
         RD["ReportingDispatcher\n(bounded asynchronous queues)"]
+        ActualD["ActualObservationDispatcher\n(bounded async queue)"]
     end
 
     subgraph Services["📦 Services"]
@@ -51,6 +53,7 @@ flowchart TB
         Sync["TradeHistorySyncService\n(60s throttle + pagination)"]
         LedgerSync["LedgersSyncService\n(60s throttle + pagination)"]
         Recovery["InceptionRecoveryService\n(4 pages/run + durable resume)"]
+        ActualStore["ActualObservationStore\n(append-only SQLite)"]
     end
 
     subgraph External["🌐 External"]
@@ -65,6 +68,10 @@ flowchart TB
         IntentRows["Live order intents\n+ projection outbox"]
     end
 
+    subgraph ActualDB["🗄️ Separate Actual SQLite"]
+        ActualRows["Immutable observations\n+ asset evidence"]
+    end
+
     %% Config flow path
     Settings -->|"HTTP POST /settings"| SettingsPost
     SettingsPost -->|"updateConfig()"| CS
@@ -75,10 +82,15 @@ flowchart TB
     PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
     PM -->|"normal iteration"| Cycle
     Cycle -->|"performRebalanceCycle()"| OE
+    Cycle -->|"enqueue direct balance + ticker evidence\nafter order execution returns"| ActualD
     OE -->|"place buy/sell orders"| Kraken
     OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
     OE -->|"PENDING / outcome transaction"| EJ
     EJ --> IntentRows
+    ActualD -->|"verify bound identity; value sample"| ActualStore
+    ActualStore --> ActualRows
+    ActualPage -->|"GET /actual\ncurrent account + scope, max 250"| DashCtrl
+    DashCtrl -->|"read current segment"| ActualStore
 
     %% Snapshot and trade reporting remains outside the live order path
     Cycle -->|"trySend(snapshot)"| RD
@@ -123,7 +135,7 @@ flowchart TB
     class Sync cold
     class Recovery cold
     class Kraken external
-    class Repo,DB,IntentRows,ExecutionDB infra
+    class Repo,DB,IntentRows,ExecutionDB,ActualRows,ActualDB,ActualStore infra
 ```
 
 ---
@@ -630,7 +642,7 @@ sequenceDiagram
             Recovery->>DB: retain resumable progress, no inception confirmation
         end
     else scope unavailable, mismatched, or unbound
-        Scope-->>History: unavailable/scope-mismatch; no private writes
+        Scope-->>History: unavailable/scope-mismatch, no private writes
     end
     History->>DB: GET /api/history/sync-progress
     DB-->>History: ordinary sync + recovery status/progress/reason
@@ -677,3 +689,62 @@ The choice between hot and cold flows in this application is deliberate and maps
 | Automatic B&H baseline proof | **Durable state** | The successful inception-is-baseline verification persists its identity and evidence digest; Settings evaluations re-validate the record (re-hashing local evidence up to the verified horizon) and serve the proven baseline identity without reconciliation replay, historical pricing, or funding preparation until a bounded invalidation reason fails it closed. |
 | USD settle (fill / balance) | **Cold** | One-shot after sells. Fill-confirm or balance poll only makes sense in that context; the caller only needs the final settled cash. |
 | Live-order journal | **Durable state** | A database row survives process failure and blocks ambiguous live retries until an operator verifies the exchange outcome. |
+| Actual observation capture | **Bounded asynchronous queue + durable state** | Reuses one cycle's direct balance and ticker responses after order execution returns. A dropped or failed sample is not counted as persisted Actual history. |
+
+## Flow 8 — Forward-Only Actual Observations
+
+`PortfolioAnalyzerImpl` retains the raw Kraken Balance and Ticker responses and
+their local request boundaries alongside the ordinary planning values. After
+`OrderExecutor` returns, `PortfolioManagerImpl` offers that evidence to the
+bounded `ActualObservationDispatcher` queue. It does not make a new balance or
+price request, and it does not wait for Actual SQLite persistence before
+continuing the live cycle. Simulation and backends without authenticated direct
+evidence do not enqueue Actual samples.
+
+The background writer verifies the captured credential generation against the
+established execution-account binding, calculates only the configured asset
+scope, and appends the observation and asset evidence in one transaction to a
+separate SQLite file. The stored scope fingerprint represents configured
+asset membership: changing only allocation percentages keeps the same measured
+boundary; changing membership selects a different history segment. The store
+rejects updates and deletes. A queue overflow, account mismatch, valuation
+failure, or storage error leaves the sample absent or incomplete and is
+reported without entering the order-safety path. The in-memory queue is not a
+durable capture claim; a sample becomes Actual history only after append
+commits.
+
+The `/actual` page reads at most 250 stored observations matching the current
+account binding and scope. It does not invoke trade/ledger reconstruction,
+OHLC pricing, or the legacy History services. Incomplete observations are
+retained as visible gaps; the chart does not connect a line across them. A
+different scope or account is not silently joined to the current series.
+
+```mermaid
+sequenceDiagram
+    participant PM as PortfolioManagerImpl
+    participant PA as PortfolioAnalyzerImpl
+    participant OE as OrderExecutor
+    participant Kraken as Kraken API
+    participant Queue as ActualObservationDispatcher
+    participant Binding as ExecutionAccountBindingService
+    participant ActualDB as Separate Actual SQLite
+    participant Browser as Actual page
+
+    PM->>PA: fetch cycle balances + prices
+    PA->>Kraken: private Balance + public Ticker
+    Kraken-->>PA: direct response evidence + local request windows
+    PA-->>PM: planning values and retained evidence
+    PM->>OE: execute or complete dry-run plan
+    OE-->>PM: order execution returns
+    PM->>Queue: trySend(cycle evidence)
+    note over PM,Queue: bounded, non-blocking, queue admission is not persistence
+    Queue->>Binding: verify account identity and captured credential generation
+    alt bound identity available
+        Queue->>ActualDB: append observation + asset rows atomically
+        ActualDB-->>Queue: commit complete or incomplete direct sample
+    else incomplete evidence, mismatch, or store failure
+        Queue->>Queue: skip or retain incomplete sample, expose capture issue
+    end
+    Browser->>ActualDB: bounded query for current account + scope
+    ActualDB-->>Browser: immutable forward-only observations
+```

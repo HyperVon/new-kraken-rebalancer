@@ -2,6 +2,7 @@ Routes:
   ROOT: "/"
   SETTINGS: "/settings"
   HISTORY: "/history"
+  ACTUAL: "/actual"
   FRAGMENT_DASHBOARD: "/fragments/dashboard"
   FRAGMENT_SETTINGS_PROPOSAL: "/fragments/settings-proposal"
   FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW: "/fragments/settings-allocations-preview"

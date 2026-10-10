@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.css.ActivityFeedStyles.applyActivityFeedStyles
+import com.gemini.krakenbot.view.css.ActualObservationStyles.applyActualObservationStyles
 import com.gemini.krakenbot.view.css.ComponentStyles.applyComponentStyles
 import com.gemini.krakenbot.view.css.CssTheme.applyRootVariables
 import com.gemini.krakenbot.view.css.FeedbackStyles.applyFeedbackStyles
@@ -37,6 +38,7 @@ object CssStyles {
         applyHeroStyles()
         applyFeedbackStyles()
         applyActivityFeedStyles()
+        applyActualObservationStyles()
         applyTableStyles()
         applyFormStyles()
         applyNavigationStyles()

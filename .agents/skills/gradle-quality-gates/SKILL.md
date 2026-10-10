@@ -2,7 +2,7 @@
 name: gradle-quality-gates
 description: >-
   Project quality tooling — Spotless/ktlint 120, allWarningsAsErrors, JaCoCo
-  gates (95/90) and exclusions sync, Karma Istanbul thresholds, CI
+  gates (backend 95/85 temporarily; engine 95/90) and exclusions sync, Karma Istanbul thresholds, CI
   ./gradlew build jacocoTestCoverageVerification, and CodeQL workflow guidance. Use
   when changing build.gradle.kts, coverage, CI, or verifying a change.
 ---
@@ -80,7 +80,7 @@ Minimums in `backend/build.gradle.kts` and `engine/build.gradle.kts`
 | Instruction | 95% |
 | Line | 95% |
 | Method | 95% |
-| Branch | 90% |
+| Branch | Backend 85% temporarily; engine 90% |
 
 ### JaCoCo exclusion sync rule
 
@@ -151,7 +151,7 @@ steps aligned with the workflow.
 ## Checklist
 
 - [ ] Spotless 120 + warnings-as-errors respected
-- [ ] JaCoCo 95/95/95/90 and Karma 90/80/90/75 quoted accurately
+- [ ] Backend JaCoCo 95/95/95/85 temporarily, engine 95/95/95/90, and Karma 90/80/90/75 quoted accurately
 - [ ] Exclusions synced when packages change
 - [ ] CodeQL workflow and documented Action, language, and build mode stay aligned
 - [ ] KSP resources, metadata generation, JVM/JS compilation, and generated

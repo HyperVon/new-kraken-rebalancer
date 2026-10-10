@@ -47,6 +47,7 @@ readiness waits, and scroll position. Current set:
 | `dashboard-performance.png` | `/` — Asset Performance table and deviation legend |
 | `dashboard-bottom.png` | `/` — recent activity feed |
 | `settings.png` | `/settings` — full settings form |
+| `actual.png` | `/actual` — forward-only observed value, account/scope status, and asset evidence |
 | `history.png` | `/history` (30d) — summary cards, comparison, rewards, and first charts |
 | `history-portfolio-charts.png` | `/history` (30d) — portfolio value + asset holdings |
 | `history-charts.png` | `/history` (30d) — allocation deviation + cumulative net cash flow |
@@ -214,6 +215,7 @@ Then confirm the current UI semantics survived the capture:
 | Where | Expect |
 | :--- | :--- |
 | Every page header | Mode plate reads **SIMULATION** (the capture run is simulated) |
+| `actual.png` | States that authenticated Actual observations are unavailable in simulation; emulator balances must not appear as Actual |
 | Dashboard header | Stream chip reads **STREAM** / **STALE** (never `LIVE` / `DELAYED`) plus relative age/time |
 | `dashboard.png` | Hero total with 24h delta chip + sparkline; Cash / Crypto tiles show bars, target, deviation |
 | `dashboard-bottom.png` | Activity feed grouped per cycle with relative times, quiet-cycle summary, and the "View all history" link |

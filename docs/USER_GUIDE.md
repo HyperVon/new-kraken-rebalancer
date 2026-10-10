@@ -54,7 +54,7 @@ safety on unless you intend to trade live.
 
 ## Navigation
 
-Dashboard, History, and Settings share the same top nav tabs (active page is
+Dashboard, Actual, History, and Settings share the same top nav tabs (active page is
 highlighted and centered below the header identity on wider screens). The header
 brand reads **Kraken** + **Rebalancer**, and the Stream/loop status cluster sits
 to its right on wider screens. A **persistent mode plate** shows the current
@@ -76,6 +76,7 @@ Live Trading settings.
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Live portfolio snapshot, allocation bars, performance table, recent activity |
+| **Actual** | `/actual` | Forward-only observed managed value, evidence status, and asset balances |
 | **History** | `/history` | Time-range charts, summary cards, full trade log |
 | **Settings** | `/settings` | Loop timing, triggers, fixed USD target, safety modes, allocations |
 
@@ -323,6 +324,67 @@ which one:
 
 The fixed USD target, sell-then-buy sequence, and dust handling are documented in
 [ALGORITHM.md](ALGORITHM.md).
+
+---
+
+## Actual observations
+
+The **Actual** page shows a forward-only sequence of directly observed managed
+values. It starts when eligible observations begin; it does not reconstruct
+earlier balances or prices.
+
+<p><a href="images/actual.png"><img src="images/actual.png" alt="Actual observations page showing that simulation data is not presented as authenticated Actual history" width="720"></a></p>
+
+This capture was made in simulation mode. The page correctly reports that
+authenticated Actual observations are unavailable there instead of showing
+emulator balances as a real account history.
+
+The page uses the configured allocation symbols, including configured USD,
+from Kraken's authenticated [Get Account Balance](https://docs.kraken.com/api-reference/account-data/get-account-balance)
+response for the authenticated user's default wallet. That endpoint describes
+its results as cash balances net of pending withdrawals and notes that
+staking/Earn asset extensions may appear. The Actual page is deliberately
+narrower than a full-wallet view: it lists the configured assets only, excludes
+other wallet balances, and does not merge unconfigured or extended balance keys
+into a configured base asset. An absent configured balance is unresolved, not
+assumed to be zero.
+
+For non-USD assets, the mark comes directly from the public
+[Get Ticker Information](https://docs.kraken.com/api-reference/market-data/get-ticker-information)
+response's `c[0]` last-trade field. Kraken's Balance and Ticker requests are
+separate, so the page shows both request windows. The sample is incomplete when
+either interval is out of order, their combined window from the earliest
+request start to the latest response completion exceeds two minutes, or the gap
+between the intervals exceeds 60 seconds. A required balance or price that is
+missing or invalid also makes the sample incomplete. Source evidence and request
+timestamps remain available, but an incomplete sample has no total. The ticker
+field has no separate exchange event timestamp in this record; the displayed
+price window is the local request interval, not an asserted market-event time.
+No historical OHLC price is substituted.
+
+The chart orders samples by observation time and spaces them by elapsed time.
+Lines break across intervals longer than twice the configured loop delay.
+Persisted incomplete observations have a separate marker; a line break without
+that marker indicates missing observation coverage, not an inferred exchange
+event. The chart does not interpolate missing values.
+
+Each complete sample is committed to a separate append-only observation store.
+The page reports observed managed values, not investment returns, profit,
+trading alpha, or Buy & Hold performance. Deposits, withdrawals, manual trades,
+staking/Earn movements, and other account events can change observed value;
+this series does not identify those cash flows. A change in configured asset
+membership starts a separate scope series, while changing allocation weights
+alone does not change the measured asset boundary. Account or credential
+identity must also match the established execution binding before stored
+observations are shown.
+
+Observations are queued after the cycle's order execution returns and persisted
+asynchronously. If collection, account verification, or storage fails, the
+sample is skipped or shown incomplete; it does not block an otherwise safe
+order. Opening the Actual page reads bounded stored observations and does not
+run historical reconstruction. Simulation never contributes authenticated
+Actual observations. A real-account Dry Run can use Actual only when the
+account evidence is verified; Dry Run does not itself disable verified reads.
 
 ---
 

@@ -13,7 +13,13 @@ import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
 import java.time.Instant
 
-data class ObservedBalances(val balances: RawBalances, val observedAt: Instant = Instant.now())
+data class ObservedBalances(
+    val balances: RawBalances,
+    val observedAt: Instant = Instant.now(),
+    val directCapture: DirectBalanceCapture? = null,
+)
+
+data class ObservedPrices(val prices: AssetPrices, val directCapture: DirectTickerCapture? = null)
 
 /** Why an ATH update could not establish a trustworthy drawdown. */
 enum class AthTrustFailureReason {
@@ -55,6 +61,9 @@ interface PortfolioAnalyzer {
     suspend fun fetchObservedBalances(): ObservedBalances
 
     suspend fun fetchPrices(): AssetPrices
+
+    /** Direct exchange marks, when the selected backend supports authenticated/live evidence. */
+    suspend fun fetchObservedPrices(): ObservedPrices = ObservedPrices(fetchPrices())
 
     fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal
 
