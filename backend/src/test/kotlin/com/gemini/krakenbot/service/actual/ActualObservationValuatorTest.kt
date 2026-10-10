@@ -148,6 +148,104 @@ class ActualObservationValuatorTest : StringSpec() {
             observation.assets.all { it.status == ActualAssetStatus.INVALID_TIME_WINDOW } shouldBe true
         }
 
+        "a long balance request makes the observation incomplete while retaining its evidence" {
+            val slowBalances = balances("1.0", "0.5", "100.00").copy(
+                responseEndedAt = NOW.plusSeconds(3_600),
+            )
+            val followingPrices = prices("100", "200").copy(
+                requestStartedAt = NOW.plusSeconds(3_601),
+                responseEndedAt = NOW.plusSeconds(3_602),
+            )
+            val observation = ActualObservationValuator.build(
+                observationId = "slow-balance",
+                scopeSymbols = SYMBOLS,
+                accountIdentityDigest = ACCOUNT_DIGEST,
+                balances = slowBalances,
+                prices = followingPrices,
+                now = NOW.plusSeconds(3_603),
+            )
+
+            observation.status shouldBe ActualObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.all { it.status == ActualAssetStatus.INVALID_TIME_WINDOW } shouldBe true
+            observation.assets.single { it.symbol == "BTC" }.rawBalanceValues["XXBT"] shouldBe "1.0"
+            observation.balanceRequestStartedAt shouldBe NOW
+            observation.balanceResponseEndedAt shouldBe NOW.plusSeconds(3_600)
+            observation.incompleteReasons.all { it.contains("120 seconds") } shouldBe true
+        }
+
+        "a long ticker request makes the observation incomplete while retaining its timestamps" {
+            val slowPrices = prices("100", "200").copy(
+                responseEndedAt = NOW.plusSeconds(3_602),
+            )
+            val observation = ActualObservationValuator.build(
+                observationId = "slow-ticker",
+                scopeSymbols = SYMBOLS,
+                accountIdentityDigest = ACCOUNT_DIGEST,
+                balances = balances("1.0", "0.5", "100.00"),
+                prices = slowPrices,
+                now = NOW.plusSeconds(3_603),
+            )
+
+            observation.status shouldBe ActualObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.all { it.status == ActualAssetStatus.INVALID_TIME_WINDOW } shouldBe true
+            observation.assets.single { it.symbol == "BTC" }.rawPrice shouldBe "100"
+            observation.priceRequestStartedAt shouldBe NOW.plusSeconds(2)
+            observation.priceResponseEndedAt shouldBe NOW.plusSeconds(3_602)
+            observation.incompleteReasons.all { it.contains("120 seconds") } shouldBe true
+        }
+
+        "the exact total-window and inter-request-gap boundaries remain complete" {
+            val observation = ActualObservationValuator.build(
+                observationId = "window-boundary",
+                scopeSymbols = SYMBOLS,
+                accountIdentityDigest = ACCOUNT_DIGEST,
+                balances = balances("1.0", "0.5", "100.00").copy(
+                    responseEndedAt = NOW.plusSeconds(30),
+                ),
+                prices = prices("100", "200").copy(
+                    requestStartedAt = NOW.plusSeconds(90),
+                    responseEndedAt = NOW.plusSeconds(120),
+                ),
+                now = NOW.plusSeconds(121),
+            )
+
+            observation.status shouldBe ActualObservationStatus.COMPLETE
+            observation.totalUsd?.compareTo(BigDecimal("300.00")) shouldBe 0
+            observation.incompleteReasons shouldBe emptyList()
+        }
+
+        "reversed request timestamp pairs are retained as incomplete observations" {
+            val invalidBalance = ActualObservationValuator.build(
+                observationId = "reversed-balance-time",
+                scopeSymbols = SYMBOLS,
+                accountIdentityDigest = ACCOUNT_DIGEST,
+                balances = balances("1.0", "0.5", "100.00").copy(
+                    responseEndedAt = NOW.minusSeconds(1),
+                ),
+                prices = prices("100", "200"),
+                now = NOW.plusSeconds(10),
+            )
+            val invalidTicker = ActualObservationValuator.build(
+                observationId = "reversed-ticker-time",
+                scopeSymbols = SYMBOLS,
+                accountIdentityDigest = ACCOUNT_DIGEST,
+                balances = balances("1.0", "0.5", "100.00"),
+                prices = prices("100", "200").copy(
+                    responseEndedAt = NOW.plusSeconds(1),
+                ),
+                now = NOW.plusSeconds(10),
+            )
+
+            listOf(invalidBalance, invalidTicker).forEach { observation ->
+                observation.status shouldBe ActualObservationStatus.INCOMPLETE
+                observation.totalUsd shouldBe null
+                observation.assets.all { it.status == ActualAssetStatus.INVALID_TIME_WINDOW } shouldBe true
+                observation.incompleteReasons.all { it.contains("timestamps are invalid") } shouldBe true
+            }
+        }
+
         "invalid balance price and future capture timestamps fail closed" {
             val badBalances = balances("-1", "0.5", "100.00")
             val badPrices = prices("0", "200")

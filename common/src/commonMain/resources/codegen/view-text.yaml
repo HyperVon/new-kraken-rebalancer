@@ -183,7 +183,7 @@ ViewText:
   ACTUAL_MARKED_VALUE: "Marked value"
   ACTUAL_ASSET_STATUS: "Evidence status"
   ACTUAL_CHART_HEADING: "Forward-only observed value sequence"
-  ACTUAL_CHART_CAPTION: "Each gap marks an incomplete direct observation. Lines are not connected across gaps; samples are shown in capture order."
+  ACTUAL_CHART_CAPTION: "Spacing reflects elapsed time. Lines break after gaps longer than two loop delays; incomplete observations are marked. No values are inferred."
   ACTUAL_CHART_NO_COMPLETE: "No complete values are available to plot yet. Incomplete observations are retained as gaps, not zero values."
   ACTUAL_CHART_EMPTY: "The chart will appear after direct observations are captured."
   ACTUAL_INCOMPLETE_REASON_LABEL: "Incomplete evidence"

@@ -24,6 +24,7 @@ import com.gemini.krakenbot.service.actual.ActualObservationStatus
 import com.gemini.krakenbot.service.actual.ActualObservationStore
 import com.gemini.krakenbot.service.actual.ActualPageState
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
+import com.gemini.krakenbot.view.component.renderActualObservationChartSvg
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -52,7 +53,7 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
         "actual page shows latest direct evidence and breaks the value line at incomplete samples" {
             val config = AppConfig(
                 kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
-                settings = TestFixtures.settings(dryRun = false, simulation = false),
+                settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60, simulation = false),
                 allocations = listOf(
                     Allocation(Asset.BTC, 60.0),
                     Allocation(Asset.ETH, 30.0),
@@ -100,8 +101,75 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 html shouldContain "2026-10-09T12:04:00Z"
                 html shouldContain "actual-gap-marker"
                 html.countOccurrences("<polyline") shouldBe 2
+                Regex("<polyline points=\"([^\"]+)\"")
+                    .findAll(html)
+                    .map { match ->
+                        match.groupValues[1].split(' ').map { point -> point.substringBefore(',') }
+                    }
+                    .toList() shouldBe listOf(listOf("14.00", "247.00"), listOf("713.00", "946.00"))
                 coVerify(exactly = 1) { actualObservationDispatcher.readCurrent(config, 250) }
             }
+        }
+
+        "actual chart uses elapsed time and restores chronological order" {
+            val svg = renderActualObservationChartSvg(
+                listOf(
+                    observation("late", "2026-10-09T12:02:00Z", ActualObservationStatus.COMPLETE, "300"),
+                    observation("middle", "2026-10-09T12:00:30Z", ActualObservationStatus.COMPLETE, "200"),
+                    observation("early", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "100"),
+                ),
+                loopDelaySeconds = 60,
+            )
+
+            svg shouldContain "points=\"14.00,248.00 247.00,130.00 946.00,12.00\""
+            svg shouldNotContain "NaN"
+            svg shouldNotContain "Infinity"
+        }
+
+        "actual chart breaks long unobserved intervals and marks persisted incomplete samples" {
+            val missingInterval = renderActualObservationChartSvg(
+                listOf(
+                    observation("before-gap", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "100"),
+                    observation("near-gap", "2026-10-09T12:01:00Z", ActualObservationStatus.COMPLETE, "110"),
+                    observation("after-gap", "2026-10-09T16:00:00Z", ActualObservationStatus.COMPLETE, "120"),
+                ),
+                loopDelaySeconds = 60,
+            )
+            val incompleteSample = renderActualObservationChartSvg(
+                listOf(
+                    observation("before-incomplete", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "100"),
+                    observation("incomplete", "2026-10-09T12:01:00Z", ActualObservationStatus.INCOMPLETE, null),
+                    observation("after-incomplete", "2026-10-09T12:02:00Z", ActualObservationStatus.COMPLETE, "120"),
+                ),
+                loopDelaySeconds = 60,
+            )
+
+            missingInterval.countOccurrences("<polyline") shouldBe 1
+            missingInterval shouldContain "points=\"14.00,248.00 17.88,130.00\""
+            missingInterval.countOccurrences("actual-gap-marker") shouldBe 0
+            incompleteSample.countOccurrences("<polyline") shouldBe 0
+            incompleteSample.countOccurrences("actual-gap-marker") shouldBe 1
+            incompleteSample.countOccurrences("<circle") shouldBe 2
+        }
+
+        "actual chart centers one point and renders equal timestamps without invalid coordinates" {
+            val single = renderActualObservationChartSvg(
+                listOf(observation("single", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "100")),
+                loopDelaySeconds = 60,
+            )
+            val zeroSpan = renderActualObservationChartSvg(
+                listOf(
+                    observation("same-time-low", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "100"),
+                    observation("same-time-high", "2026-10-09T12:00:00Z", ActualObservationStatus.COMPLETE, "200"),
+                ),
+                loopDelaySeconds = 60,
+            )
+
+            single shouldContain "<circle cx=\"480.00\" cy=\"130.00\""
+            single.countOccurrences("<polyline") shouldBe 0
+            zeroSpan shouldContain "points=\"480.00,248.00 480.00,12.00\""
+            zeroSpan shouldNotContain "NaN"
+            zeroSpan shouldNotContain "Infinity"
         }
 
         "incomplete latest sample has no managed total and remains visibly incomplete" {

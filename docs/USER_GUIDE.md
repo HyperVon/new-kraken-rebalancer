@@ -353,10 +353,20 @@ For non-USD assets, the mark comes directly from the public
 [Get Ticker Information](https://docs.kraken.com/api-reference/market-data/get-ticker-information)
 response's `c[0]` last-trade field. Kraken's Balance and Ticker requests are
 separate, so the page shows both request windows. The sample is incomplete when
-the requests are more than 60 seconds apart or a required balance or price is
-missing or invalid. The ticker field has no separate exchange event timestamp
-in this record; the displayed price window is the local request interval, not
-an asserted market-event time. No historical OHLC price is substituted.
+either interval is out of order, their combined window from the earliest
+request start to the latest response completion exceeds two minutes, or the gap
+between the intervals exceeds 60 seconds. A required balance or price that is
+missing or invalid also makes the sample incomplete. Source evidence and request
+timestamps remain available, but an incomplete sample has no total. The ticker
+field has no separate exchange event timestamp in this record; the displayed
+price window is the local request interval, not an asserted market-event time.
+No historical OHLC price is substituted.
+
+The chart orders samples by observation time and spaces them by elapsed time.
+Lines break across intervals longer than twice the configured loop delay.
+Persisted incomplete observations have a separate marker; a line break without
+that marker indicates missing observation coverage, not an inferred exchange
+event. The chart does not interpolate missing values.
 
 Each complete sample is committed to a separate append-only observation store.
 The page reports observed managed values, not investment returns, profit,

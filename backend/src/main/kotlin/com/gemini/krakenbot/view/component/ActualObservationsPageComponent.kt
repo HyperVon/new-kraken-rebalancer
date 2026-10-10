@@ -31,6 +31,7 @@ import kotlinx.html.tr
 import kotlinx.html.unsafe
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration
 import java.time.Instant
 import java.util.Locale
 
@@ -49,7 +50,7 @@ class ActualObservationsPageComponent {
                 }
                 p(CssClass.Actual.Intro) { +ViewText.ACTUAL_INTRO }
                 renderLatest(page)
-                renderChart(page.observations)
+                renderChart(page.observations, settings.loopDelaySeconds)
                 renderAssets(page.observations.lastOrNull())
             }
         }
@@ -128,10 +129,11 @@ class ActualObservationsPageComponent {
         }
     }
 
-    private fun DIV.renderChart(observations: List<ActualObservation>) {
+    private fun DIV.renderChart(observations: List<ActualObservation>, loopDelaySeconds: Long) {
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) { +ViewText.ACTUAL_CHART_HEADING }
-            val values = observations.mapNotNull { observation ->
+            val ordered = observations.sortedBy { it.observedAt }
+            val values = ordered.mapNotNull { observation ->
                 observation.totalUsd?.takeIf { observation.status == ActualObservationStatus.COMPLETE }
                     ?.let { observation.observedAt to it }
             }
@@ -141,10 +143,10 @@ class ActualObservationsPageComponent {
                 }
             } else {
                 div(CssClass.Actual.Chart) {
-                    unsafe { raw(renderChartSvg(observations, values)) }
+                    unsafe { raw(renderActualObservationChartSvg(ordered, loopDelaySeconds)) }
                 }
-                val first = observations.firstOrNull()?.observedAt
-                val last = observations.lastOrNull()?.observedAt
+                val first = ordered.firstOrNull()?.observedAt
+                val last = ordered.lastOrNull()?.observedAt
                 if (first != null && last != null) {
                     p(CssClass.Actual.ChartCaption) {
                         +"${formatInstant(first)} — ${formatInstant(last)}. ${ViewText.ACTUAL_CHART_CAPTION}"
@@ -215,78 +217,6 @@ class ActualObservationsPageComponent {
         p(CssClass.Actual.StateBanner) { +message }
     }
 
-    private fun renderChartSvg(
-        observations: List<ActualObservation>,
-        values: List<Pair<Instant, BigDecimal>>,
-    ): String {
-        val width = 960.0
-        val height = 260.0
-        val horizontalPadding = 14.0
-        val verticalPadding = 12.0
-        val min = values.minOf { it.second }
-        val max = values.maxOf { it.second }
-        val range = max.subtract(min)
-        val points = observations.mapIndexed { index, observation ->
-            val value = if (observation.status == ActualObservationStatus.COMPLETE) observation.totalUsd else null
-            val x =
-                horizontalPadding + (width - horizontalPadding * 2) * index / (observations.size - 1).coerceAtLeast(1)
-            val y = if (value == null || range.signum() == 0) {
-                height / 2
-            } else {
-                height - verticalPadding -
-                    value.subtract(min).divide(range, 12, RoundingMode.HALF_UP).toDouble() *
-                    (height - verticalPadding * 2)
-            }
-            ChartPoint(x, y, value != null)
-        }
-        val segments = mutableListOf<MutableList<ChartPoint>>()
-        points.forEach { point ->
-            if (point.complete) {
-                if (segments.isEmpty() || segments.last().isEmpty() || !segments.last().last().complete) {
-                    segments.add(mutableListOf())
-                }
-                segments.last() += point
-            } else if (segments.isNotEmpty() && segments.last().lastOrNull()?.complete == true) {
-                segments.add(mutableListOf())
-            }
-        }
-        return buildString {
-            append(
-                "<svg class=\"${CssClass.Actual.ChartSvg.value}\" viewBox=\"0 0 960 260\" preserveAspectRatio=\"none\">",
-            )
-            listOf(0.0, height / 2, height).forEach { y ->
-                append(
-                    "<line x1=\"0\" y1=\"${fmt(y)}\" x2=\"$width\" y2=\"${fmt(y)}\" " +
-                        "class=\"${CssClass.Actual.GridLine.value}\"/>",
-                )
-            }
-            points.forEachIndexed { index, point ->
-                if (!point.complete) {
-                    append(
-                        "<line x1=\"${fmt(point.x)}\" y1=\"$verticalPadding\" " +
-                            "x2=\"${fmt(point.x)}\" y2=\"${fmt(height - verticalPadding)}\" " +
-                            "class=\"${CssClass.Actual.GapMarker.value}\"/>",
-                    )
-                } else if (segments.none { segment -> segment.size > 1 && point in segment }) {
-                    append(
-                        "<circle cx=\"${fmt(point.x)}\" cy=\"${fmt(point.y)}\" r=\"4\" " +
-                            "class=\"${CssClass.Actual.Point.value}\"/>",
-                    )
-                }
-            }
-            segments.filter { it.size > 1 }.forEach { segment ->
-                append("<polyline points=\"")
-                append(segment.joinToString(" ") { "${fmt(it.x)},${fmt(it.y)}" })
-                append("\" class=\"${CssClass.Actual.Line.value}\"/>")
-            }
-            append("</svg>")
-        }
-    }
-
-    private data class ChartPoint(val x: Double, val y: Double, val complete: Boolean)
-
-    private fun fmt(value: Double): String = String.format(Locale.US, "%.2f", value)
-
     private fun formatInstant(value: Instant): String = value.toString()
 
     private fun formatUsdExact(value: BigDecimal): String {
@@ -302,3 +232,104 @@ class ActualObservationsPageComponent {
 
     private fun String?.orDash(): String = this ?: ViewText.EM_DASH
 }
+
+/**
+ * Uses elapsed time for horizontal position and breaks the line when observations are more than two
+ * configured loop delays apart. Incomplete persisted samples keep their own visible gap marker.
+ */
+internal fun renderActualObservationChartSvg(observations: List<ActualObservation>, loopDelaySeconds: Long): String {
+    val ordered = observations.sortedBy { it.observedAt }
+    val values = ordered.mapNotNull { observation ->
+        observation.totalUsd?.takeIf { observation.status == ActualObservationStatus.COMPLETE }
+    }
+    if (values.isEmpty()) return ""
+
+    val width = 960.0
+    val height = 260.0
+    val horizontalPadding = 14.0
+    val verticalPadding = 12.0
+    val min = values.minOrNull() ?: return ""
+    val max = values.maxOrNull() ?: return ""
+    val range = max.subtract(min)
+    val first = ordered.first().observedAt
+    val last = ordered.last().observedAt
+    val timeSpan = Duration.between(first, last)
+    val timeSpanSeconds = timeSpan.toDoubleSeconds()
+    val maxConnectedGapSeconds = loopDelaySeconds.toDouble() * 2
+    val points = ordered.map { observation ->
+        val value = observation.totalUsd.takeIf { observation.status == ActualObservationStatus.COMPLETE }
+        val x = if (timeSpan.isZero) {
+            width / 2
+        } else {
+            val elapsed = Duration.between(first, observation.observedAt).toDoubleSeconds()
+            horizontalPadding + (width - horizontalPadding * 2) * elapsed / timeSpanSeconds
+        }
+        val y = if (value == null || range.signum() == 0) {
+            height / 2
+        } else {
+            height - verticalPadding -
+                value.subtract(min).divide(range, 12, RoundingMode.HALF_UP).toDouble() *
+                (height - verticalPadding * 2)
+        }
+        ChartPoint(observation.observedAt, x, y, value != null)
+    }
+    val segments = mutableListOf<List<ChartPoint>>()
+    var segment = mutableListOf<ChartPoint>()
+    points.forEach { point ->
+        if (!point.complete) {
+            if (segment.isNotEmpty()) segments += segment
+            segment = mutableListOf()
+        } else {
+            val previous = segment.lastOrNull()
+            if (
+                previous != null &&
+                Duration.between(previous.observedAt, point.observedAt).toDoubleSeconds() > maxConnectedGapSeconds
+            ) {
+                segments += segment
+                segment = mutableListOf()
+            }
+            segment += point
+        }
+    }
+    if (segment.isNotEmpty()) segments += segment
+
+    fun fmt(value: Double): String = String.format(Locale.US, "%.2f", value)
+    return buildString {
+        append(
+            "<svg class=\"${CssClass.Actual.ChartSvg.value}\" viewBox=\"0 0 960 260\" preserveAspectRatio=\"none\">",
+        )
+        listOf(0.0, height / 2, height).forEach { y ->
+            append(
+                "<line x1=\"0\" y1=\"${fmt(y)}\" x2=\"$width\" y2=\"${fmt(y)}\" " +
+                    "class=\"${CssClass.Actual.GridLine.value}\"/>",
+            )
+        }
+        points.forEach { point ->
+            if (!point.complete) {
+                append(
+                    "<line x1=\"${fmt(point.x)}\" y1=\"$verticalPadding\" " +
+                        "x2=\"${fmt(point.x)}\" y2=\"${fmt(height - verticalPadding)}\" " +
+                        "class=\"${CssClass.Actual.GapMarker.value}\"/>",
+                )
+            }
+        }
+        segments.forEach { pointsInSegment ->
+            if (pointsInSegment.size == 1) {
+                val point = pointsInSegment.single()
+                append(
+                    "<circle cx=\"${fmt(point.x)}\" cy=\"${fmt(point.y)}\" r=\"4\" " +
+                        "class=\"${CssClass.Actual.Point.value}\"/>",
+                )
+            } else {
+                append("<polyline points=\"")
+                append(pointsInSegment.joinToString(" ") { "${fmt(it.x)},${fmt(it.y)}" })
+                append("\" class=\"${CssClass.Actual.Line.value}\"/>")
+            }
+        }
+        append("</svg>")
+    }
+}
+
+private data class ChartPoint(val observedAt: Instant, val x: Double, val y: Double, val complete: Boolean)
+
+private fun Duration.toDoubleSeconds(): Double = seconds.toDouble() + nano / 1_000_000_000.0

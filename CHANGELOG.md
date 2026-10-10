@@ -25,6 +25,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   engine, and JavaScript thresholds unchanged. Re-establishing the 90% backend
   branch target remains follow-up work after the recovery is functioning well.
 
+### Fixed
+
+- **Actual observation timing and chart gaps**: samples remain incomplete when
+  the combined Balance and Ticker request window exceeds two minutes; chart
+  spacing now reflects elapsed time and breaks across gaps longer than two
+  configured loop delays, while persisted incomplete samples remain marked.
+
 ## [6.17.110] - 2026-10-08
 
 ### Changed

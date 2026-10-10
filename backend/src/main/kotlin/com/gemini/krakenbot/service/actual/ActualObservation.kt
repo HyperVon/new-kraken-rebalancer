@@ -17,6 +17,9 @@ const val OBSERVATION_CURRENCY = "USD"
 const val ACTUAL_OBSERVATION_SCHEMA_VERSION = 1
 val MAX_BALANCE_PRICE_GAP = Duration.ofSeconds(60)
 
+/** A two-minute cap allows request latency while rejecting captures too slow to value contemporaneously. */
+val MAX_ACTUAL_OBSERVATION_WINDOW = Duration.ofMinutes(2)
+
 enum class ActualObservationStatus { COMPLETE, INCOMPLETE }
 
 enum class ActualAssetStatus {
@@ -87,10 +90,19 @@ object ActualObservationValuator {
         now: Instant = Instant.now(),
     ): ActualObservation {
         val symbols = scopeSymbols.map { Asset.normalizeLedgerAsset(it).uppercase(Locale.ROOT) }.distinct().sorted()
+        val timestampsOrdered = areRequestTimestampsOrdered(balances, prices)
+        val totalWindow = if (timestampsOrdered) totalObservationWindow(balances, prices) else null
         val windowValid = isValidTimeWindow(balances, prices) &&
+            totalWindow?.let { it <= MAX_ACTUAL_OBSERVATION_WINDOW } == true &&
             gapBetween(balances, prices) <= MAX_BALANCE_PRICE_GAP
         val windowReason = when {
-            !isValidTimeWindow(balances, prices) -> "Balance or ticker request timestamps are invalid."
+            !timestampsOrdered -> "Balance or ticker request timestamps are invalid."
+
+            !balances.resultShapeValid || !prices.resultShapeValid ->
+                "Balance or ticker response data is invalid."
+
+            totalWindow?.let { it > MAX_ACTUAL_OBSERVATION_WINDOW } == true ->
+                "The combined balance and ticker request window exceeds ${MAX_ACTUAL_OBSERVATION_WINDOW.seconds} seconds."
 
             gapBetween(balances, prices) > MAX_BALANCE_PRICE_GAP ->
                 "Balance and ticker observations are more than ${MAX_BALANCE_PRICE_GAP.seconds} seconds apart."
@@ -180,8 +192,16 @@ object ActualObservationValuator {
     }
 
     private fun isValidTimeWindow(balances: DirectBalanceCapture, prices: DirectTickerCapture): Boolean =
-        balances.requestStartedAt <= balances.responseEndedAt &&
-            prices.requestStartedAt <= prices.responseEndedAt && balances.resultShapeValid && prices.resultShapeValid
+        areRequestTimestampsOrdered(balances, prices) && balances.resultShapeValid && prices.resultShapeValid
+
+    private fun areRequestTimestampsOrdered(balances: DirectBalanceCapture, prices: DirectTickerCapture): Boolean =
+        balances.requestStartedAt <= balances.responseEndedAt && prices.requestStartedAt <= prices.responseEndedAt
+
+    private fun totalObservationWindow(balances: DirectBalanceCapture, prices: DirectTickerCapture): Duration =
+        Duration.between(
+            minOf(balances.requestStartedAt, prices.requestStartedAt),
+            maxOf(balances.responseEndedAt, prices.responseEndedAt),
+        )
 
     private fun gapBetween(balances: DirectBalanceCapture, prices: DirectTickerCapture): Duration = when {
         balances.responseEndedAt.isBefore(prices.requestStartedAt) ->
