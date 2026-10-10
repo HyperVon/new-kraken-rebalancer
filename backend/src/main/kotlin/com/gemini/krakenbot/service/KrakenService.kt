@@ -140,6 +140,26 @@ interface RecoveryTradeHistoryService {
     suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>
 }
 
+/** Optional direct-response evidence surface implemented by live Kraken adapters, not simulations. */
+interface DirectKrakenEvidenceService {
+    suspend fun readBalancesWithCapture(): BalanceRead
+
+    suspend fun readTickerPricesWithCapture(requests: List<DirectTickerRequest>): TickerRead
+}
+
+/** Simulation and test backends preserve legacy values without claiming authenticated evidence. */
+suspend fun KrakenService.readBalancesWithCapture(): BalanceRead =
+    (this as? DirectKrakenEvidenceService)?.readBalancesWithCapture() ?: BalanceRead(getBalances())
+
+/** Simulation and test backends preserve legacy values without claiming authenticated evidence. */
+suspend fun KrakenService.readTickerPricesWithCapture(requests: List<DirectTickerRequest>): TickerRead =
+    if (requests.isEmpty()) {
+        TickerRead(emptyMap())
+    } else {
+        (this as? DirectKrakenEvidenceService)?.readTickerPricesWithCapture(requests)
+            ?: TickerRead(getTickerPrices(requests.joinToString(",") { it.pair }))
+    }
+
 /** Uses the stable-bound capability when available and preserves two-argument test fakes otherwise. */
 suspend fun KrakenService.getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
     (this as? BoundedTradeHistoryService)?.getTradeHistoryUntil(startSec, offset, endSec)

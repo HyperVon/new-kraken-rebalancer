@@ -36,11 +36,16 @@ import com.gemini.krakenbot.service.AthTrustFailureException
 import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.DirectTickerCapture
+import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
+import com.gemini.krakenbot.service.ObservedPrices
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.history.CardFundingNormalizer
 import com.gemini.krakenbot.service.impl.history.HistoricalPriceResolver
+import com.gemini.krakenbot.service.readBalancesWithCapture
+import com.gemini.krakenbot.service.readTickerPricesWithCapture
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -71,31 +76,38 @@ class PortfolioAnalyzerImpl(
      */
     override suspend fun fetchObservedBalances(): ObservedBalances {
         val observedAt = nowProvider()
-        val balances = krakenService.getBalances()
+        val read = krakenService.readBalancesWithCapture()
+        val balances = read.balances
         log.debug("Available Balance Keys: {}", balances.keys)
-        return ObservedBalances(balances = balances, observedAt = observedAt)
+        return ObservedBalances(balances = balances, observedAt = observedAt, directCapture = read.capture)
     }
 
     override suspend fun fetchBalances(): RawBalances = fetchObservedBalances().balances
 
-    override suspend fun fetchPrices(): AssetPrices {
+    override suspend fun fetchPrices(): AssetPrices = fetchObservedPrices().prices
+
+    override suspend fun fetchObservedPrices(): ObservedPrices {
         val allocations = configService.getConfig().allocations
         val nonUsd = allocations.filter { !it.symbol.isUsd }
-        if (nonUsd.isEmpty()) return emptyMap()
-
-        val pairs =
-            nonUsd.joinToString(",") {
-                it.symbol.tradingPair
-            }
-        val rawPrices = krakenService.getTickerPrices(pairs)
-
-        return nonUsd.associate { (symbol, _) ->
-            symbol.value to
-                resolvePriceFromTicker(
-                    symbol.value,
-                    rawPrices,
-                )
+        if (nonUsd.isEmpty()) {
+            val observationTime = nowProvider()
+            return ObservedPrices(
+                prices = emptyMap(),
+                directCapture = DirectTickerCapture(
+                    requestStartedAt = observationTime,
+                    responseEndedAt = observationTime,
+                    resultShapeValid = true,
+                    marksBySymbol = emptyMap(),
+                ),
+            )
         }
+
+        val requests = nonUsd.map { (symbol, _) -> DirectTickerRequest(symbol.value, symbol.tradingPair) }
+        val read = krakenService.readTickerPricesWithCapture(requests)
+        val prices = nonUsd.associate { (symbol, _) ->
+            symbol.value to resolvePriceFromTicker(symbol.value, read.prices)
+        }
+        return ObservedPrices(prices = prices, directCapture = read.capture)
     }
 
     override fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal =

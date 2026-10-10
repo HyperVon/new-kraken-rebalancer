@@ -34,6 +34,8 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.ReportingDispatcher
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.TradeProjectionService
+import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
+import com.gemini.krakenbot.service.actual.ActualObservationStore
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
@@ -57,6 +59,7 @@ import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import com.gemini.krakenbot.service.impl.history.TradeHistorySnapshotStore
 import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -125,6 +128,15 @@ val coreModule =
         }
         single<ExecutionJournalBootstrap> {
             ExecutionJournalBootstrap(database = get(), repository = get())
+        }
+        single { ActualObservationStore() }
+        single {
+            ActualObservationDispatcher(
+                store = get(),
+                accountBindingService = get(),
+                bindingRepository = get(),
+                krakenService = get(),
+            )
         }
         single<TradeProjectionService> {
             TradeProjectionServiceImpl(executionRepository = get(), tradeRepository = get())
@@ -283,6 +295,7 @@ val coreModule =
                 orderExecutor = get(),
                 krakenService = get(),
                 reportingDispatcher = get(),
+                actualObservationDispatcher = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {
@@ -300,6 +313,7 @@ val webModule =
         singleOf(::RecentActivityComponent)
         singleOf(::DashboardFragmentComponent)
         singleOf(::HistoryPageComponent)
+        singleOf(::ActualObservationsPageComponent)
         singleOf(::DashboardView)
         single {
             val currentScope = this
@@ -312,6 +326,7 @@ val webModule =
                 orderIntentService = get(),
                 historyEvidenceCoordinator = get(),
                 tradeHistoryServiceProvider = { currentScope.get() },
+                actualObservationDispatcher = get(),
             )
         }
     }

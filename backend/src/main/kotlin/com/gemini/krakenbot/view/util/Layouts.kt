@@ -23,6 +23,7 @@ fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.()
 
 enum class ActiveNav {
     DASHBOARD,
+    ACTUAL,
     HISTORY,
     SETTINGS,
 }
@@ -153,6 +154,12 @@ fun FlowContent.primaryNav(active: ActiveNav) {
             href = Routes.ROOT,
         ) {
             +ViewText.NAV_DASHBOARD
+        }
+        a(
+            cssClass = if (active == ActiveNav.ACTUAL) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
+            href = Routes.ACTUAL,
+        ) {
+            +ViewText.ACTUAL_NAV
         }
         a(
             cssClass = if (active == ActiveNav.HISTORY) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,

@@ -12,6 +12,12 @@ import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.WithdrawStatusRecord
+import com.gemini.krakenbot.service.DirectBalanceCapture
+import com.gemini.krakenbot.service.DirectEvidenceStatus
+import com.gemini.krakenbot.service.DirectTickerCapture
+import com.gemini.krakenbot.service.DirectTickerMark
+import com.gemini.krakenbot.service.DirectTickerRequest
+import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.util.PrecisionConstants
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -51,6 +57,28 @@ object KrakenParsers {
             if (amount > BigDecimal.ZERO) key to amount else null
         }.toMap()
 
+    /** Parses a direct Balance response without collapsing absent, zero, or malformed values. */
+    fun parseDirectBalanceCapture(
+        result: JsonNode,
+        requestStartedAt: Instant,
+        responseEndedAt: Instant,
+    ): DirectBalanceCapture {
+        val resultShapeValid = result.isObject
+        val values = if (resultShapeValid) {
+            result.properties().associate { (assetId, value) ->
+                assetId to parseDirectNumericEvidence(value, allowZero = true)
+            }
+        } else {
+            emptyMap()
+        }
+        return DirectBalanceCapture(
+            requestStartedAt = requestStartedAt,
+            responseEndedAt = responseEndedAt,
+            resultShapeValid = resultShapeValid,
+            valuesByAssetId = values,
+        )
+    }
+
     fun parseSpendableBalances(result: JsonNode): RawBalances = result
         .properties()
         .mapNotNull { (key, value) ->
@@ -74,6 +102,130 @@ object KrakenParsers {
                 null
             }
         }.toMap()
+
+    /** Parses direct last-trade marks while preserving every requested symbol, including gaps. */
+    fun parseDirectTickerCapture(
+        resultNode: JsonNode,
+        requests: List<DirectTickerRequest>,
+        requestStartedAt: Instant,
+        responseEndedAt: Instant,
+    ): DirectTickerCapture {
+        val resultShapeValid = resultNode.isObject
+        val responsePairs = if (resultShapeValid) resultNode.properties().toList() else emptyList()
+        val groupedRequests = requests.groupBy { Asset.canonicalSymbol(it.symbol) }
+        val marks = groupedRequests.mapValues { (symbol, symbolRequests) ->
+            val requestedPairs = symbolRequests.map { it.pair }.distinct()
+            val requestedPair = requestedPairs.joinToString(",")
+            val candidates = responsePairs.filter { (responsePair, _) ->
+                Asset.matchesUsdQuotedPair(responsePair, symbol)
+            }
+            val candidateKeys = candidates.map { it.key }
+            val candidateValues = candidates.associate { (responsePair, ticker) ->
+                responsePair to parseTickerLastTradeEvidence(ticker)
+            }
+
+            when {
+                !resultShapeValid -> DirectTickerMark(
+                    symbol = symbol,
+                    requestedPair = requestedPair,
+                    responsePair = null,
+                    candidateResponsePairs = emptyList(),
+                    candidateValuesByPair = emptyMap(),
+                    rawPrice = null,
+                    price = null,
+                    status = DirectEvidenceStatus.MALFORMED,
+                )
+
+                symbolRequests.size > 1 || candidates.size > 1 -> DirectTickerMark(
+                    symbol = symbol,
+                    requestedPair = requestedPair,
+                    responsePair = null,
+                    candidateResponsePairs = candidateKeys,
+                    candidateValuesByPair = candidateValues,
+                    rawPrice = null,
+                    price = null,
+                    status = DirectEvidenceStatus.AMBIGUOUS,
+                )
+
+                candidates.isEmpty() -> DirectTickerMark(
+                    symbol = symbol,
+                    requestedPair = requestedPair,
+                    responsePair = null,
+                    candidateResponsePairs = emptyList(),
+                    candidateValuesByPair = emptyMap(),
+                    rawPrice = null,
+                    price = null,
+                    status = DirectEvidenceStatus.MISSING,
+                )
+
+                else -> {
+                    val (responsePair, ticker) = candidates.single()
+                    val lastTradePrice = candidateValues.getValue(responsePair)
+                    DirectTickerMark(
+                        symbol = symbol,
+                        requestedPair = requestedPair,
+                        responsePair = responsePair,
+                        candidateResponsePairs = candidateKeys,
+                        candidateValuesByPair = candidateValues,
+                        rawPrice = lastTradePrice.rawValue,
+                        price = lastTradePrice.value,
+                        status = lastTradePrice.status,
+                    )
+                }
+            }
+        }
+        return DirectTickerCapture(
+            requestStartedAt = requestStartedAt,
+            responseEndedAt = responseEndedAt,
+            resultShapeValid = resultShapeValid,
+            marksBySymbol = marks,
+        )
+    }
+
+    private fun parseTickerLastTradeEvidence(ticker: JsonNode): DirectValueEvidence {
+        if (!ticker.isObject) {
+            return DirectValueEvidence(
+                rawValue = ticker.toString(),
+                value = null,
+                status = DirectEvidenceStatus.MALFORMED,
+            )
+        }
+        val close = ticker.get("c")
+        return when {
+            close == null || close.isNull -> DirectValueEvidence(
+                rawValue = null,
+                value = null,
+                status = DirectEvidenceStatus.MISSING,
+            )
+
+            !close.isArray -> DirectValueEvidence(
+                rawValue = close.toString(),
+                value = null,
+                status = DirectEvidenceStatus.MALFORMED,
+            )
+
+            close.isEmpty -> DirectValueEvidence(
+                rawValue = null,
+                value = null,
+                status = DirectEvidenceStatus.MISSING,
+            )
+
+            else -> parseDirectNumericEvidence(close[0], allowZero = false)
+        }
+    }
+
+    private fun parseDirectNumericEvidence(value: JsonNode, allowZero: Boolean): DirectValueEvidence {
+        val hasNumericText = value.isTextual || value.isNumber
+        val rawValue = if (hasNumericText) value.asText() else value.toString()
+        val decimal = if (hasNumericText) runCatching { BigDecimal(rawValue) }.getOrNull() else null
+        val status = when {
+            decimal == null -> DirectEvidenceStatus.MALFORMED
+            allowZero && decimal.signum() < 0 -> DirectEvidenceStatus.NEGATIVE
+            !allowZero && decimal.signum() <= 0 -> DirectEvidenceStatus.NON_POSITIVE
+            else -> DirectEvidenceStatus.VALID
+        }
+        return DirectValueEvidence(rawValue = rawValue, value = decimal, status = status)
+    }
 
     fun parseAssetMetadata(response: JsonNode): List<KrakenAssetMetadata> {
         val assets = response.path(KrakenApiConstants.FIELD_RESULT)

@@ -21,8 +21,17 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.AthTrustFailureException
 import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.AthUpdateResult
+import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.DirectBalanceCapture
+import com.gemini.krakenbot.service.DirectEvidenceStatus
+import com.gemini.krakenbot.service.DirectKrakenEvidenceService
+import com.gemini.krakenbot.service.DirectTickerCapture
+import com.gemini.krakenbot.service.DirectTickerMark
+import com.gemini.krakenbot.service.DirectTickerRequest
+import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.TickerRead
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -411,12 +420,13 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             runTest {
                 coEvery { krakenService.getBalances() } returns mapOf("BTC" to BigDecimal("1.5"))
                 val before = Instant.now()
-                val (balances, observedAt) = analyzer.fetchObservedBalances()
+                val observed = analyzer.fetchObservedBalances()
                 val after = Instant.now()
 
-                balances["BTC"] shouldBe BigDecimal("1.5")
-                (observedAt >= before) shouldBe true
-                (observedAt <= after) shouldBe true
+                observed.balances["BTC"] shouldBe BigDecimal("1.5")
+                (observed.observedAt >= before) shouldBe true
+                (observed.observedAt <= after) shouldBe true
+                observed.directCapture shouldBe null
             }
         }
 
@@ -439,6 +449,97 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val observed = customAnalyzer.fetchObservedBalances()
                 observed.observedAt shouldBe t0
                 observed.balances["BTC"] shouldBe BigDecimal("1.5")
+            }
+        }
+
+        "fetchObservedBalances uses one direct read and exposes raw capture metadata" {
+            runTest {
+                val start = Instant.parse("2026-10-09T12:30:00Z")
+                val end = start.plusMillis(200)
+                val capture = DirectBalanceCapture(
+                    requestStartedAt = start,
+                    responseEndedAt = end,
+                    resultShapeValid = true,
+                    valuesByAssetId = mapOf(
+                        "XXBT" to DirectValueEvidence("1.5", BigDecimal("1.5"), DirectEvidenceStatus.VALID),
+                    ),
+                )
+                var directReads = 0
+                val directService = object : KrakenService by krakenService, DirectKrakenEvidenceService {
+                    override suspend fun readBalancesWithCapture(): BalanceRead {
+                        directReads++
+                        return BalanceRead(mapOf("XXBT" to BigDecimal("1.5")), capture)
+                    }
+
+                    override suspend fun readTickerPricesWithCapture(requests: List<DirectTickerRequest>): TickerRead =
+                        error("ticker read not expected")
+                }
+                val directAnalyzer = PortfolioAnalyzerImpl(
+                    krakenService = directService,
+                    configService = configService,
+                    nowProvider = { start.minusMillis(1) },
+                )
+
+                val observed = directAnalyzer.fetchObservedBalances()
+
+                directReads shouldBe 1
+                observed.balances["XXBT"]!!.shouldBeEqualComparingTo(BigDecimal("1.5"))
+                observed.observedAt shouldBe start.minusMillis(1)
+                observed.directCapture shouldBe capture
+                coVerify(exactly = 0) { krakenService.getBalances() }
+            }
+        }
+
+        "fetchObservedPrices associates one direct ticker read with configured symbols" {
+            runTest {
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+                )
+                val start = Instant.parse("2026-10-09T12:40:00Z")
+                val end = start.plusMillis(250)
+                val capture = DirectTickerCapture(
+                    requestStartedAt = start,
+                    responseEndedAt = end,
+                    resultShapeValid = true,
+                    marksBySymbol = mapOf(
+                        "BTC" to DirectTickerMark(
+                            symbol = "BTC",
+                            requestedPair = "XBTUSD",
+                            responsePair = "XXBTZUSD",
+                            candidateResponsePairs = listOf("XXBTZUSD"),
+                            rawPrice = "50000.25",
+                            price = BigDecimal("50000.25"),
+                            status = DirectEvidenceStatus.VALID,
+                        ),
+                    ),
+                )
+                var directReads = 0
+                var receivedRequests: List<DirectTickerRequest> = emptyList()
+                val directService = object : KrakenService by krakenService, DirectKrakenEvidenceService {
+                    override suspend fun readBalancesWithCapture(): BalanceRead = error("balance read not expected")
+
+                    override suspend fun readTickerPricesWithCapture(requests: List<DirectTickerRequest>): TickerRead {
+                        directReads++
+                        receivedRequests = requests
+                        return TickerRead(
+                            prices = mapOf("XXBTZUSD" to BigDecimal("50000.25")),
+                            capture = capture,
+                        )
+                    }
+                }
+                val directAnalyzer = PortfolioAnalyzerImpl(
+                    krakenService = directService,
+                    configService = configService,
+                )
+
+                val observed = directAnalyzer.fetchObservedPrices()
+
+                directReads shouldBe 1
+                receivedRequests shouldBe listOf(DirectTickerRequest("BTC", "XBTUSD"))
+                observed.prices["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("50000.25"))
+                observed.directCapture shouldBe capture
+                coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
             }
         }
 

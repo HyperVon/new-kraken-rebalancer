@@ -5,6 +5,8 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.service.DirectEvidenceStatus
+import com.gemini.krakenbot.service.DirectTickerRequest
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -40,22 +42,52 @@ class KrakenParsersTest : StringSpec() {
         }
 
         "parses balance and ticker golden responses without changing positive values" {
+            val balanceResult = objectMapper.readTree(
+                """
+                {
+                  "XXBT": "2.50000000",
+                  "USD": "100.00",
+                  "ZERO": "0",
+                  "NEGATIVE": "-1",
+                  "BAD": "not-a-number"
+                }
+                """.trimIndent(),
+            )
             val balances = KrakenParsers.parseBalances(
-                objectMapper.readTree(
-                    """
-                    {
-                      "XXBT": "2.50000000",
-                      "USD": "100.00",
-                      "ZERO": "0",
-                      "NEGATIVE": "-1",
-                      "BAD": "not-a-number"
-                    }
-                    """.trimIndent(),
-                ),
+                balanceResult,
             )
             balances.keys shouldBe setOf("XXBT", "USD")
             balances["XXBT"]!!.shouldBeEqualComparingTo(BigDecimal("2.5"))
             balances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
+
+            val balanceStart = Instant.parse("2026-10-09T12:00:00Z")
+            val balanceEnd = balanceStart.plusSeconds(1)
+            val balanceCapture = KrakenParsers.parseDirectBalanceCapture(
+                balanceResult,
+                balanceStart,
+                balanceEnd,
+            )
+            balanceCapture.requestStartedAt shouldBe balanceStart
+            balanceCapture.responseEndedAt shouldBe balanceEnd
+            balanceCapture.valuesByAssetId.keys shouldBe setOf("XXBT", "USD", "ZERO", "NEGATIVE", "BAD")
+            balanceCapture.valuesByAssetId.getValue("ZERO").status shouldBe DirectEvidenceStatus.VALID
+            balanceCapture.valuesByAssetId.getValue("ZERO").value!!.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            balanceCapture.valuesByAssetId.getValue("NEGATIVE").status shouldBe DirectEvidenceStatus.NEGATIVE
+            balanceCapture.valuesByAssetId.getValue("NEGATIVE").rawValue shouldBe "-1"
+            balanceCapture.valuesByAssetId.getValue("BAD").status shouldBe DirectEvidenceStatus.MALFORMED
+            balanceCapture.valuesByAssetId.getValue("BAD").rawValue shouldBe "not-a-number"
+            balanceCapture.forConfiguredAsset("BTC").status shouldBe DirectEvidenceStatus.VALID
+            balanceCapture.forConfiguredAsset("BTC").rawKeys shouldBe listOf("XXBT")
+            balanceCapture.forConfiguredAsset("DOGE").status shouldBe DirectEvidenceStatus.MISSING
+
+            val aliasedCapture = KrakenParsers.parseDirectBalanceCapture(
+                objectMapper.readTree("""{"BTC":"1.0","XXBT":"2.0"}"""),
+                balanceStart,
+                balanceEnd,
+            ).forConfiguredAsset("XBT")
+            aliasedCapture.status shouldBe DirectEvidenceStatus.AMBIGUOUS
+            aliasedCapture.rawKeys shouldBe listOf("BTC", "XXBT")
+            aliasedCapture.rawValuesByKey shouldBe mapOf("BTC" to "1.0", "XXBT" to "2.0")
 
             val prices = KrakenParsers.parseTickerPrices(
                 objectMapper.readTree(
@@ -71,6 +103,66 @@ class KrakenParsersTest : StringSpec() {
             )
             prices.keys shouldBe setOf("XXBTZUSD")
             prices["XXBTZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("65000.12345678"))
+        }
+
+        "captures every requested ticker mark with raw last-trade value and typed gaps" {
+            val result = objectMapper.readTree(
+                """
+                {
+                  "XXBTZUSD": { "c": ["65000.12345678", "0.01"] },
+                  "XETHZUSD": { "c": [] },
+                  "SOLUSD": { "c": ["not-a-number"] },
+                  "ADAUSD": { "c": ["0"] }
+                }
+                """.trimIndent(),
+            )
+            val startedAt = Instant.parse("2026-10-09T12:10:00Z")
+            val endedAt = startedAt.plusMillis(250)
+            val capture = KrakenParsers.parseDirectTickerCapture(
+                result,
+                listOf(
+                    DirectTickerRequest("BTC", "XBTUSD"),
+                    DirectTickerRequest("ETH", "ETHUSD"),
+                    DirectTickerRequest("SOL", "SOLUSD"),
+                    DirectTickerRequest("ADA", "ADAUSD"),
+                    DirectTickerRequest("DOGE", "XDGUSD"),
+                ),
+                startedAt,
+                endedAt,
+            )
+
+            capture.requestStartedAt shouldBe startedAt
+            capture.responseEndedAt shouldBe endedAt
+            capture.marksBySymbol.keys shouldBe setOf("BTC", "ETH", "SOL", "ADA", "DOGE")
+            capture.marksBySymbol.getValue("BTC").requestedPair shouldBe "XBTUSD"
+            capture.marksBySymbol.getValue("BTC").responsePair shouldBe "XXBTZUSD"
+            capture.marksBySymbol.getValue("BTC").rawPrice shouldBe "65000.12345678"
+            capture.marksBySymbol.getValue("BTC").price!!.shouldBeEqualComparingTo(BigDecimal("65000.12345678"))
+            capture.marksBySymbol.getValue("BTC").status shouldBe DirectEvidenceStatus.VALID
+            capture.marksBySymbol.getValue("ETH").status shouldBe DirectEvidenceStatus.MISSING
+            capture.marksBySymbol.getValue("SOL").rawPrice shouldBe "not-a-number"
+            capture.marksBySymbol.getValue("SOL").status shouldBe DirectEvidenceStatus.MALFORMED
+            capture.marksBySymbol.getValue("ADA").rawPrice shouldBe "0"
+            capture.marksBySymbol.getValue("ADA").status shouldBe DirectEvidenceStatus.NON_POSITIVE
+            capture.marksBySymbol.getValue("DOGE").status shouldBe DirectEvidenceStatus.MISSING
+        }
+
+        "marks multiple ticker response aliases as ambiguous and preserves their keys" {
+            val capture = KrakenParsers.parseDirectTickerCapture(
+                objectMapper.readTree(
+                    """{"XBTUSD":{"c":["10"]},"XXBTZUSD":{"c":["11"]}}""",
+                ),
+                listOf(DirectTickerRequest("BTC", "XBTUSD")),
+                Instant.parse("2026-10-09T12:20:00Z"),
+                Instant.parse("2026-10-09T12:20:01Z"),
+            )
+
+            val mark = capture.marksBySymbol.getValue("BTC")
+            mark.status shouldBe DirectEvidenceStatus.AMBIGUOUS
+            mark.candidateResponsePairs shouldBe listOf("XBTUSD", "XXBTZUSD")
+            mark.candidateValuesByPair.mapValues { it.value.rawValue } shouldBe
+                mapOf("XBTUSD" to "10", "XXBTZUSD" to "11")
+            mark.rawPrice shouldBe null
         }
 
         "parses extended balances as spendable amounts" {

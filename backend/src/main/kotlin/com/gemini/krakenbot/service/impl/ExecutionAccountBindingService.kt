@@ -62,6 +62,45 @@ class ExecutionAccountBindingService(
         }
     }
 
+    /**
+     * Returns the already-bound account digest for Actual observations. It only reads an existing,
+     * verified binding whose credential generation matches the captured evidence scope. Live mode
+     * may establish the same binding required by a future order, but that safety procedure runs in
+     * the background worker. Once bound, observation capture performs no extra authenticated call.
+     */
+    suspend fun verifiedAccountIdentityDigestForObservation(expectedFundingEvidenceScope: String): String? {
+        val initialConfig = configService.getConfig()
+        if (initialConfig.settings.simulation || !initialConfig.kraken.hasValidCredentials()) return null
+        try {
+            if (!initialConfig.settings.dryRun) ensureVerifiedForSubmission()
+            return configService.withExecutionSession {
+                val config = configService.getConfig()
+                if (config.settings.simulation || !config.kraken.hasValidCredentials()) return@withExecutionSession null
+                krakenService.withStableBackend { backend ->
+                    val currentScope = backend.getFundingEvidenceScope().trim()
+                    if (currentScope.isBlank() || currentScope != expectedFundingEvidenceScope) {
+                        return@withStableBackend null
+                    }
+                    val binding = bindingRepository.load() ?: return@withStableBackend null
+                    verifyExistingBinding(binding)
+                    if (binding.credentialGenerationDigest != digest(currentScope)) {
+                        log.warn(
+                            "Skipping Actual observation because credentials do not match the verified journal binding",
+                        )
+                        null
+                    } else {
+                        binding.accountIdentityDigest
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Skipping Actual observation because account identity could not be verified: {}", e.message)
+            return null
+        }
+    }
+
     private suspend fun bindInitialAccount(backend: KrakenService, credentialGenerationDigest: String) {
         failedInitialProofs[credentialGenerationDigest]?.let { reason ->
             fail(

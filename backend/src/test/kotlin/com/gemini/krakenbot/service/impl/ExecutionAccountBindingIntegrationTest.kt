@@ -5,12 +5,15 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.ExecutionDatabase
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.repository.ExecutionAccountBinding
+import com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult
 import com.gemini.krakenbot.repository.impl.SqliteExecutionAccountBindingRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
@@ -111,6 +114,62 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 rotated.accountIdentityDigest shouldBe originalBinding.accountIdentityDigest
                 rotated.credentialGenerationDigest shouldBe digest(GENERATION_B)
                 scalar(environment.executionPath, "SELECT COUNT(*) FROM execution_account_binding_audit") shouldBe 2
+            }
+        }
+
+        "Actual observation identity requires a matching verified account and credential scope" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_A }
+                }
+                val environment = openEnvironment(directory, exchange)
+                val binding = ExecutionAccountBinding(
+                    accountIdentityDigest = identityDigest(ACCOUNT_A),
+                    credentialGenerationDigest = digest(GENERATION_A),
+                    bindingVersion = 1,
+                    verificationMethod = "legacy-scope-guard-plus-kraken-iiban",
+                    verifiedAtMillis = 1L,
+                    auditVerified = true,
+                )
+                environment.bindingRepository.createIfPristine(binding) shouldBe
+                    ExecutionAccountBindingWriteResult.CREATED
+                val identityCallsBeforeObservation = exchange.getAuthenticatedAccountIdentityCallCount
+
+                environment.bindingService.verifiedAccountIdentityDigestForObservation(GENERATION_A) shouldBe
+                    identityDigest(ACCOUNT_A)
+                environment.bindingService.verifiedAccountIdentityDigestForObservation(GENERATION_B) shouldBe null
+                exchange.getAuthenticatedAccountIdentityCallCount shouldBe identityCallsBeforeObservation
+            }
+        }
+
+        "Actual observation identity remains unavailable for simulation and unbound dry run" {
+            withTempDirectory { directory ->
+                val simulationExchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_A }
+                }
+                val simulationEnvironment = openEnvironment(
+                    directory,
+                    simulationExchange,
+                    settings = TestFixtures.settings(simulation = true),
+                )
+
+                simulationEnvironment.bindingService.verifiedAccountIdentityDigestForObservation(GENERATION_A) shouldBe
+                    null
+                simulationExchange.getAuthenticatedAccountIdentityCallCount shouldBe 0
+            }
+            withTempDirectory { directory ->
+                val dryRunExchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_A }
+                }
+                val dryRunEnvironment = openEnvironment(
+                    directory,
+                    dryRunExchange,
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
+                )
+
+                dryRunEnvironment.bindingService.verifiedAccountIdentityDigestForObservation(GENERATION_A) shouldBe
+                    null
+                dryRunExchange.getAuthenticatedAccountIdentityCallCount shouldBe 0
             }
         }
 
@@ -317,7 +376,15 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         return legacyTrade
     }
 
-    private suspend fun openEnvironment(directory: Path, exchange: FakeKrakenService): Environment {
+    private suspend fun openEnvironment(
+        directory: Path,
+        exchange: FakeKrakenService,
+        settings: Settings = liveSettings(),
+        credentials: KrakenCredentials = KrakenCredentials(
+            TestFixtures.TRADE_HISTORY_API_KEY,
+            TestFixtures.TRADE_HISTORY_API_SECRET,
+        ),
+    ): Environment {
         val reportingPath = directory.resolve("reporting.db")
         val executionPath = directory.resolve("execution.db")
         val reportingDatabase = DatabaseConfig.init(reportingPath.toString())
@@ -329,8 +396,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         val bindingRepository = SqliteExecutionAccountBindingRepositoryImpl(executionDatabase)
         val configService = mockk<ConfigService>()
         every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
-            kraken = KrakenCredentials(TestFixtures.TRADE_HISTORY_API_KEY, TestFixtures.TRADE_HISTORY_API_SECRET),
-            settings = liveSettings(),
+            kraken = credentials,
+            settings = settings,
         )
         coEvery { configService.beginExecutionSession() } returns Unit
         coEvery { configService.endExecutionSession() } returns Unit

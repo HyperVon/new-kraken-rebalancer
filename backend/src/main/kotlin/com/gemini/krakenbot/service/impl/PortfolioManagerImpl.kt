@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.ReportingDispatcher
+import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
@@ -42,6 +43,7 @@ class PortfolioManagerImpl(
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
     private val reportingDispatcher: ReportingDispatcher? = null,
+    private val actualObservationDispatcher: ActualObservationDispatcher? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -373,7 +375,8 @@ class PortfolioManagerImpl(
         val observedBalances = portfolioAnalyzer.fetchObservedBalances()
         val balances = observedBalances.balances
         val preObservedAt = observedBalances.observedAt
-        val prices = portfolioAnalyzer.fetchPrices()
+        val observedPrices = portfolioAnalyzer.fetchObservedPrices()
+        val prices = observedPrices.prices
         val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
 
         val (totalPortfolioValueUSD, currentValuesUSD) =
@@ -381,6 +384,7 @@ class PortfolioManagerImpl(
                 onSuccess = { it },
                 onFailure = {
                     log.error("Failed to calculate portfolio values: {}", it.message)
+                    enqueueActualObservation(cycleId, config, observedBalances, observedPrices)
                     return null
                 },
             )
@@ -427,6 +431,8 @@ class PortfolioManagerImpl(
             markCycleError("Order execution failed")
             actionLog.add(ViewText.ERROR_ORDER_EXECUTION_FAILED_PREFIX + (e.message ?: e.javaClass.simpleName))
         }
+
+        enqueueActualObservation(cycleId, config, observedBalances, observedPrices)
 
         val finalState =
             if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
@@ -482,6 +488,21 @@ class PortfolioManagerImpl(
 
     private fun markCycleError(error: String) {
         operationalStatus = operationalStatus.copy(lastCycleError = error)
+    }
+
+    private suspend fun enqueueActualObservation(
+        cycleId: String,
+        config: com.gemini.krakenbot.config.AppConfig,
+        balances: com.gemini.krakenbot.service.ObservedBalances,
+        prices: com.gemini.krakenbot.service.ObservedPrices,
+    ) {
+        try {
+            actualObservationDispatcher?.captureAfterCycle(cycleId, config, balances, prices)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Actual observation was skipped without affecting the rebalance cycle: {}", e.message)
+        }
     }
 }
 

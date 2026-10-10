@@ -431,6 +431,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coEvery { analyzer.fetchBalances() } returns balances
                 coEvery { analyzer.fetchObservedBalances() } returns ObservedBalances(balances, Instant.now())
                 coEvery { analyzer.fetchPrices() } returns prices
+                coEvery { analyzer.fetchObservedPrices() } returns ObservedPrices(prices)
                 every { analyzer.calculatePortfolioValues(any(), any()) } returns Result.Success(
                     PortfolioValues(
                         totalValueUSD = BigDecimal("100.00"),

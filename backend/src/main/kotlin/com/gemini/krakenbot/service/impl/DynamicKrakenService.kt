@@ -9,13 +9,19 @@ import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.WithdrawStatusRecord
+import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.DirectKrakenEvidenceService
+import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.service.SpendableBalanceService
+import com.gemini.krakenbot.service.TickerRead
 import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
 import com.gemini.krakenbot.service.getTradeHistoryUntil
+import com.gemini.krakenbot.service.readBalancesWithCapture
+import com.gemini.krakenbot.service.readTickerPricesWithCapture
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -29,6 +35,7 @@ class DynamicKrakenService(
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
 ) : KrakenService,
+    DirectKrakenEvidenceService,
     BoundedTradeHistoryService,
     RecoveryTradeHistoryService,
     SpendableBalanceService {
@@ -81,12 +88,17 @@ class DynamicKrakenService(
 
     override suspend fun getBalances(): RawBalances = currentBackend().getBalances()
 
+    override suspend fun readBalancesWithCapture(): BalanceRead = currentBackend().readBalancesWithCapture()
+
     override suspend fun getSpendableBalances(): RawBalances {
         val backend = currentBackend()
         return (backend as? SpendableBalanceService)?.getSpendableBalances() ?: backend.getBalances()
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices = currentBackend().getTickerPrices(pairs)
+
+    override suspend fun readTickerPricesWithCapture(requests: List<DirectTickerRequest>): TickerRead =
+        currentBackend().readTickerPricesWithCapture(requests)
 
     override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = currentBackend().getAssetMetadata()
 

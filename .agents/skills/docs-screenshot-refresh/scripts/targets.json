@@ -70,6 +70,18 @@
       "anchor": "Target Allocations"
     },
     {
+      "file": "actual.png",
+      "path": "/actual",
+      "await_text": [
+        "Latest direct observation",
+        "Observed managed portfolio value",
+        "Actual observations are not captured in simulation mode.",
+        "Forward-only observed value sequence"
+      ],
+      "viewport": { "height": 1200 },
+      "position": "top"
+    },
+    {
       "file": "history.png",
       "path": "/history",
       "click_button": "30d",

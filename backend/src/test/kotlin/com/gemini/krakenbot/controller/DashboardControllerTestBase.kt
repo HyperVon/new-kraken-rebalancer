@@ -9,8 +9,10 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
 import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -56,6 +58,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
     protected val configService = mockk<ConfigService>(relaxed = true)
     protected val portfolioManager = mockk<PortfolioManager>(relaxed = true)
     protected val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+    protected val actualObservationDispatcher = mockk<ActualObservationDispatcher>(relaxed = true)
     protected val objectMapper: ObjectMapper =
         jacksonObjectMapper().registerModule(JavaTimeModule())
 
@@ -100,6 +103,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
                 single { configService }
                 single { portfolioManager }
                 single { orderIntentService }
+                single { actualObservationDispatcher }
                 single { historyEvidenceCoordinator }
                 single { objectMapper }
                 single { DashboardShellComponent() }
@@ -117,12 +121,14 @@ abstract class DashboardControllerTestBase : StringSpec() {
                     )
                 }
                 single { HistoryPageComponent(get()) }
+                single { ActualObservationsPageComponent() }
                 single {
                     DashboardView(
                         shellComponent = get(),
                         settingsFormComponent = get(),
                         fragmentComponent = get(),
                         historyPageComponent = get(),
+                        actualObservationsPageComponent = get(),
                     )
                 }
                 single {
@@ -134,6 +140,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
                         get(),
                         get(),
                         historyEvidenceCoordinator = get(),
+                        actualObservationDispatcher = get(),
                     )
                 }
             }

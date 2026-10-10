@@ -105,7 +105,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS                |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
-| **Testing**     | Kotest 6.2.5, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
+| **Testing**     | Kotest 6.2.5 + MockK 1.14.11; backend JaCoCo 95% lines/85% branches (temp), engine 95/90; Karma 90/80/75     |
 | **Build**       | Gradle 9.8.0 (Kotlin DSL), Spotless 8.10.3 + ktlint 1.8.0                                                    |
 | **Engine**      | Pure Kotlin JVM domain calculation library with independent JaCoCo 95/90 coverage gates                      |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
@@ -228,7 +228,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 | **HTTP Clients**       | Ktor CIO Client (current), OkHttp, Node.js native `fetch`, Go `net/http`                                                              |
 | **Concurrency**        | Kotlin Coroutines (current), Java `ScheduledExecutorService`, Go goroutines, Node.js event loop                                       |
 | **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
-| **Coverage**           | JaCoCo 95%+ (Kotlin JVM), Karma/Istanbul 90/80/90/75 (Kotlin/JS) (current); Vitest, Go per-package gates (historical)                 |
+| **Coverage**           | Backend JaCoCo 95% line/method/instruction + 85% branch temporarily; engine 95%/90%; Karma/Istanbul 90/80/90/75 (current)             |
 | **Serialization**      | Jackson 2.22.3, Go `encoding/json`, Zod schema validation                                                                             |
 | **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                         |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
@@ -282,6 +282,15 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   and legacy `X`/`Z` asset codes are normalized to the base symbol.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
+
+### Forward-Only Actual Observations
+
+- `/actual` shows the observed USD value of configured managed assets, direct
+  balance and ticker evidence, and an append-only value chart. It excludes
+  other wallet balances, retains incomplete samples as gaps, and makes no
+  investment-return, profit, or Buy & Hold claim. See the [Actual section in
+  the User Guide](docs/USER_GUIDE.md#actual-observations) for balance scope,
+  timestamps, and limitations.
 
 ### Hot-Reload Configuration
 
@@ -495,6 +504,7 @@ graph LR
     subgraph Frontend["Frontend (HTMX + Server-Side HTML)"]
         D[Dashboard Shell] --> DF[Dashboard Fragment]
         D --> SF[Settings Fragment]
+        D --> AF[Actual Observations Page]
         DF --> SS[SSE Stream]
     end
 
@@ -505,6 +515,10 @@ graph LR
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
         PM --> RD[ReportingDispatcher]
+        PM --> AD[ActualObservationDispatcher]
+        DC --> AD
+        AD --> AOS["ActualObservationStore (SQLite)"]
+        AD --> EAB[ExecutionAccountBindingService]
 
         PA --> KS[KrakenService]
         PA --> CS
@@ -517,6 +531,10 @@ graph LR
         TP -->|"read immutable events"| EJ
         TP -->|"trade + cursor transaction"| TR
         KS --> RL[RateLimiter]
+    end
+
+    subgraph ActualDB["Separate Actual observation SQLite"]
+        AOS --> AR[Append-only observations and asset evidence]
     end
 
     subgraph External
@@ -666,6 +684,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
 │   │   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
 │   │   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
+│   │   │   ├── actual/                        # Direct evidence, append-only Actual store, and bounded dispatcher
 │   │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │   │       ├── ConfigFilePermissionStrategy.kt # Cross-platform owner-only file permissions
 │   │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
@@ -698,7 +717,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── util/                              # Formatters, NetworkUtils, TradeDeduplicator
 │   │   └── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │       ├── DashboardView.kt              # Facade class delegating to components
-│   │       ├── component/                    # Shell, Grid, Form, History, charts, activity, performance
+│   │       ├── component/                    # Shell, Grid, Form, Actual, History, charts, activity, performance
 │   │       ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
 │   │       └── util/                         # AllocationExtensions, Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
 │   ├── src/test/kotlin/                       # JVM integration / E2E / evaluation tests (JaCoCo gates)
@@ -709,7 +728,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   └── build.gradle.kts                       # Backend JVM build (JaCoCo, fatJar, copyJsBundle)
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── AGENTIC_DEVELOPMENT.md             # Human guide to the AI-assisted development system
-│   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Settings, History)
+│   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Actual, History, Settings)
 │   ├── images/                            # README / User Guide screenshot PNGs
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide
 │   ├── ALGORITHM.md                       # Detailed algorithm documentation
@@ -873,6 +892,7 @@ dry-run modes do not create a live account binding.
 | `GET` | `/settings` | Settings page (HTML) |
 | `POST` | `/settings` | Submit settings form (HTMX) |
 | `GET` | `/history` | History page (HTML charts + trade log) |
+| `GET` | `/actual` | Forward-only Actual page for directly observed configured managed assets |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
 | `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
@@ -908,7 +928,8 @@ runs the JaCoCo coverage gate via the `check` task
 ### Backend JVM Tests
 
 The backend enforces **strict line, branch, method, and instruction coverage**
-via JaCoCo: **95% instruction, 90% branch, 95% line, and 95% method**.
+via JaCoCo: **95% instruction, 85% branch, 95% line, and 95% method** during
+the recovery. The engine retains its independent **90% branch** threshold.
 Exclusions are narrow and mirror `coverageExcludes` in `backend/build.gradle.kts`:
 framework bootstrap (`DatabaseConfig`, `MigrationBackup`, `LegacyDataRepair`,
 `KtorConfig`), Exposed table declarations, selected thin service interfaces

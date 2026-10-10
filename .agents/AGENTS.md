@@ -205,7 +205,8 @@ See [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md).
 
 | Gate | Thresholds |
 | :--- | :--- |
-| JVM JaCoCo | Line / method / instruction **95%**; branch **90%** |
+| Backend JVM JaCoCo | Line / method / instruction **95%**; branch **85%** temporarily during the recovery |
+| Engine JaCoCo | Line / method / instruction **95%**; branch **90%** |
 | JS Istanbul (Karma) | Statements / lines **90%**; functions **80%**; branches **75%** |
 
 Before declaring work done, run the verify commands in

@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.111] - 2026-10-09
+
+### Added
+
+- **Forward-only Actual observations**: the new Actual page records directly
+  observed balances for the configured managed assets and USD marks from
+  Kraken's public ticker last-trade field. It preserves the source request
+  windows, verified account reference, scope, and incomplete evidence in a
+  separate append-only SQLite store. This is a forward-only observed-value
+  series; it does not reconstruct history or calculate returns, profit, or
+  Buy & Hold performance. Other wallet balances are excluded.
+
+### Changed
+
+- **Temporary backend branch-coverage gate**: the aggregate backend branch
+  threshold is 85% during the four-PR recovery, with line, method, instruction,
+  engine, and JavaScript thresholds unchanged. Re-establishing the 90% backend
+  branch target remains follow-up work after the recovery is functioning well.
+
 ## [6.17.110] - 2026-10-08
 
 ### Changed

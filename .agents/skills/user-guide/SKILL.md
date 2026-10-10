@@ -62,8 +62,9 @@ Suggested section order (match the live nav):
 3. Dashboard (overview + scrolled detail images)
 4. Settings (global params + allocations)
 5. History (summary/charts, mid charts, trade log)
-6. Suggested workflows
-7. Links to README / ALGORITHM / FLOWS / SECURITY
+6. Actual observations
+7. Suggested workflows
+8. Links to README / ALGORITHM / FLOWS / SECURITY
 
 ---
 
@@ -75,6 +76,7 @@ Suggested section order (match the live nav):
 | `docs/images/dashboard-performance.png` | Dashboard Asset Performance table and deviation legend |
 | `docs/images/dashboard-bottom.png` | Cycle-grouped activity feed |
 | `docs/images/settings.png` | Global parameters + allocations + safety cards |
+| `docs/images/actual.png` | Forward-only Actual page and explicit simulation-unavailable state |
 | `docs/images/history.png` | Range pills, six summary cards, value/holdings charts |
 | `docs/images/history-portfolio-charts.png` | Portfolio value + holdings charts (History charts region) |
 | `docs/images/history-charts.png` | Allocation drift + cumulative net cash flow (+ caption) |

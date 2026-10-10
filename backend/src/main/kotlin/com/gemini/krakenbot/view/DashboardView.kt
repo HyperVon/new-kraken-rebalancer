@@ -8,6 +8,8 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.SettingsComparisonStatus
+import com.gemini.krakenbot.service.actual.ActualObservationPage
+import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
@@ -32,6 +34,7 @@ class DashboardView(
     private val settingsFormComponent: SettingsFormComponent,
     private val fragmentComponent: DashboardFragmentComponent,
     private val historyPageComponent: HistoryPageComponent,
+    private val actualObservationsPageComponent: ActualObservationsPageComponent = ActualObservationsPageComponent(),
 ) {
 
     context(html: HTML)
@@ -108,6 +111,16 @@ class DashboardView(
         paused: Boolean = false,
     ) {
         historyPageComponent.render(settings, symbolColorMap, csrfToken, paused)
+    }
+
+    context(html: HTML)
+    fun renderActualObservationsPage(
+        settings: Settings,
+        page: ActualObservationPage,
+        csrfToken: String? = null,
+        paused: Boolean = false,
+    ) {
+        actualObservationsPageComponent.render(settings, page, paused, csrfToken)
     }
 
     context(div: DIV)

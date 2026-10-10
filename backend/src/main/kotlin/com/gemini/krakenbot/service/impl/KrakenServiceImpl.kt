@@ -12,12 +12,16 @@ import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.WithdrawStatusRecord
+import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.DirectKrakenEvidenceService
+import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenCredentialsUnavailableException
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.service.SpendableBalanceService
+import com.gemini.krakenbot.service.TickerRead
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ResponseException
@@ -44,6 +48,7 @@ class KrakenServiceImpl(
     private val rateLimiter: RateLimiter = RateLimiter(),
     private val publicRateLimiter: PublicRateLimiter = PublicRateLimiter(),
 ) : KrakenService,
+    DirectKrakenEvidenceService,
     SpendableBalanceService,
     BoundedTradeHistoryService,
     RecoveryTradeHistoryService {
@@ -197,10 +202,17 @@ class KrakenServiceImpl(
         }
     }.first()
 
-    override suspend fun getBalances(): RawBalances {
+    override suspend fun getBalances(): RawBalances = readBalancesWithCapture().balances
+
+    override suspend fun readBalancesWithCapture(): BalanceRead {
         val path = KrakenApiConstants.PATH_BALANCE
+        val requestStartedAt = Instant.now()
         val response = queryPrivate(path, emptyMap())
-        return KrakenParsers.parseBalances(response)
+        val responseEndedAt = Instant.now()
+        return BalanceRead(
+            balances = KrakenParsers.parseBalances(response),
+            capture = KrakenParsers.parseDirectBalanceCapture(response, requestStartedAt, responseEndedAt),
+        )
     }
 
     override suspend fun getSpendableBalances(): RawBalances {
@@ -209,10 +221,32 @@ class KrakenServiceImpl(
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
-        val path = "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
+        val path = tickerPath(pairs)
         val result = queryPublic(path).path(KrakenApiConstants.FIELD_RESULT)
         return KrakenParsers.parseTickerPrices(result)
     }
+
+    override suspend fun readTickerPricesWithCapture(requests: List<DirectTickerRequest>): TickerRead {
+        if (requests.isEmpty()) return TickerRead(emptyMap())
+
+        val pairs = requests.joinToString(",") { it.pair }
+        val requestStartedAt = Instant.now()
+        val response = queryPublic(tickerPath(pairs))
+        val result = response.path(KrakenApiConstants.FIELD_RESULT)
+        val responseEndedAt = Instant.now()
+        return TickerRead(
+            prices = KrakenParsers.parseTickerPrices(result),
+            capture = KrakenParsers.parseDirectTickerCapture(
+                result,
+                requests,
+                requestStartedAt,
+                responseEndedAt,
+            ),
+        )
+    }
+
+    private fun tickerPath(pairs: String): String =
+        "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
 
     override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = listOf(
         KrakenApiConstants.ASSET_CLASS_CURRENCY,
