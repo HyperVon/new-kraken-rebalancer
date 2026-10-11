@@ -2,19 +2,14 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
-import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
-import com.gemini.krakenbot.service.impl.history.AuthoritativeLedgerBalanceValidator
-import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -69,7 +64,7 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             inRange.map { it.ledgerId } shouldBe listOf("ref-1", "ref-0")
         }
 
-        "projects exact retained SOL and SOL03 mirror rows as one validated staking event" {
+        "collapses exact SOL and SOL03 mirror rows for retained ledger evidence" {
             val sol = LedgerEvent(
                 ledgerId = "SOL-STAKING-MIRROR",
                 refid = "SOL-STAKING-REF",
@@ -90,14 +85,9 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
 
             inRange.single().asset shouldBe "SOL"
             byRefId.single().asset shouldBe "SOL"
-            val validation = AuthoritativeLedgerBalanceValidator.validate(inRange)
-            validation.isValid shouldBe true
-            validation.resolvedScopes[sol.ledgerId] shouldBe
-                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
-            LedgerFlowClassifier.classifyAll(inRange)[sol.ledgerId] shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "keeps conflicting SOL and SOL03 rows visible for duplicate identity rejection" {
+        "keeps conflicting SOL and SOL03 mirror rows distinguishable" {
             val sol = LedgerEvent(
                 ledgerId = "SOL-CONFLICTING-MIRROR",
                 refid = "SOL-CONFLICTING-REF",
@@ -112,11 +102,8 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.saveLedgers(listOf(sol, sol.copy(asset = "SOL03", amount = BigDecimal("2.0"))))
 
             val retained = repository.getLedgersInRange(t0, t2)
-            val validation = AuthoritativeLedgerBalanceValidator.validate(retained)
-
             retained.size shouldBe 2
-            validation.isValid shouldBe false
-            requireNotNull(validation.failure).diagnostic shouldContain "duplicate ledger identity"
+            retained.map { it.asset }.toSet() shouldBe setOf("SOL", "SOL03")
         }
 
         "getLedgersByRefIds returns no rows for an empty collection" {
@@ -221,23 +208,16 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL
         }
 
-        "coverage metadata revisions roundtrip as one batch" {
+        "account continuity metadata roundtrips as one batch" {
             repository.setSyncMetadataAtomically(
                 mapOf(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION to LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                    SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC to t0.epochSecond.toString(),
-                    SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC to t2.epochSecond.toString(),
-                    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "scope-a",
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST to "scope-a",
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION to "1",
                 ),
             )
 
-            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
-            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
-                t0.epochSecond.toString()
-            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
-                t2.epochSecond.toString()
-            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) shouldBe "scope-a"
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe "scope-a"
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION) shouldBe "1"
         }
 
         "seeded flag persists via the LEDGERS_SEEDED metadata key" {

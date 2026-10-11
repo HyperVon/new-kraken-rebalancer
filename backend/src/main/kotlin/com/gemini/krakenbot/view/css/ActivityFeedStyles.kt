@@ -117,22 +117,5 @@ object ActivityFeedStyles {
             justifyContentRaw("center")
             marginTop = 0.75.rem
         }
-
-        ".${CssClass.Activity.ViewAll.value}" {
-            display = Display.inlineFlex
-            alignItems = Align.center
-            gap = 0.375.rem
-            fontSize = 0.8125.rem
-            fontWeight = FontWeight.w600
-            color = CssTheme.colorBlueAccent
-            textDecoration = TextDecoration.none
-            padding = Padding(0.375.rem, 0.875.rem)
-            borderRadius = CssTheme.radiusMd
-            transitionRaw("all 0.2s ease")
-        }
-
-        ".${CssClass.Activity.ViewAll.value}:hover" {
-            background = CssTheme.colorBlueGlassBg.value
-        }
     }
 }

@@ -150,12 +150,12 @@ harnesses.
 | [`coroutines-flows-sse`](../.agents/skills/coroutines-flows-sse/SKILL.md) | `Flow`, `SharedFlow`, config restarts, snapshots, and SSE architecture |
 | [`dry-run-and-simulation`](../.agents/skills/dry-run-and-simulation/SKILL.md) | The distinct meanings and safety implications of `dryRun` and `simulation` |
 | [`exposed-repository`](../.agents/skills/exposed-repository/SKILL.md) | Exposed tables, SQLite repositories, transactions, cascades, and upserts |
-| [`frontend-js-development`](../.agents/skills/frontend-js-development/SKILL.md) | Kotlin/JS DOM behavior, HTMX hooks, charts, History controls, and client coverage |
+| [`frontend-js-development`](../.agents/skills/frontend-js-development/SKILL.md) | Dashboard freshness/sorting, active Settings controls, HTMX hooks, and client coverage |
 | [`koin-di-and-config`](../.agents/skills/koin-di-and-config/SKILL.md) | Koin bindings, settings validation, atomic persistence, and config flows |
 | [`kraken-api-integration`](../.agents/skills/kraken-api-integration/SKILL.md) | Kraken signing, symbols, rate limits, retries, order IDs, and credentials |
 | [`ktor-html-views`](../.agents/skills/ktor-html-views/SKILL.md) | Server-rendered HTML, CSS DSL, HTMX, routes, and UI safety indicators |
-| [`portfolio-rebalancing-math`](../.agents/skills/portfolio-rebalancing-math/SKILL.md) | BigDecimal portfolio math, drawdown deployment, dust, and order sequencing |
-| [`trade-history-sync`](../.agents/skills/trade-history-sync/SKILL.md) | History pagination, deduplication, reconciliation, metadata, and simulation seeds |
+| [`portfolio-rebalancing-math`](../.agents/skills/portfolio-rebalancing-math/SKILL.md) | Fixed-USD target math, fiat correction, dust, and order sequencing |
+| [`trade-history-sync`](../.agents/skills/trade-history-sync/SKILL.md) | Retired reporting scope plus preserved migration/account-continuity and prospective evidence boundaries |
 
 ### Engineering quality
 

@@ -1,0 +1,180 @@
+package com.gemini.krakenbot.controller
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.CurrentPortfolioState
+import com.gemini.krakenbot.service.OrderIntentService
+import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.RebalanceOperationalStatus
+import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.component.AllocationChartComponent
+import com.gemini.krakenbot.view.component.DashboardFragmentComponent
+import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.OverviewGridComponent
+import com.gemini.krakenbot.view.component.PerformanceTableComponent
+import com.gemini.krakenbot.view.component.RecentActivityComponent
+import com.gemini.krakenbot.view.component.SettingsFormComponent
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import io.ktor.client.plugins.sse.sse
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.routing.routing
+import io.ktor.server.testing.testApplication
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import java.math.BigDecimal
+import java.time.Instant
+import io.ktor.client.plugins.sse.SSE as ClientSSE
+import io.ktor.server.sse.SSE as ServerSSE
+
+class DashboardCutoverApiTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    private data class Server(
+        val configService: ConfigService,
+        val portfolioManager: PortfolioManager,
+        val orderIntentService: OrderIntentService,
+        val currentPortfolioState: CurrentPortfolioState,
+        val objectMapper: ObjectMapper,
+        val controller: DashboardController,
+    ) {
+        val config: AppConfig = TestFixtures.DEFAULT_TEST_CONFIG
+    }
+
+    private fun Application.installRoutes(server: Server) {
+        install(ServerSSE)
+        routing { server.controller.registerRoutes(this) }
+    }
+
+    private fun server(snapshot: PortfolioSnapshot? = null): Server {
+        val configService = mockk<ConfigService>()
+        val portfolioManager = mockk<PortfolioManager>()
+        val orderIntentService = mockk<OrderIntentService>()
+        val currentPortfolioState = CurrentPortfolioState()
+        val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
+        every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+        every { portfolioManager.isLoopPaused() } returns false
+        every { portfolioManager.isLoopRunning() } returns true
+        every { portfolioManager.getOperationalStatus() } returns RebalanceOperationalStatus()
+        coEvery { orderIntentService.countUnresolvedIntents() } returns 0L
+        coEvery { orderIntentService.getUnresolvedIntents() } returns emptyList()
+        snapshot?.let(currentPortfolioState::publish)
+        val view = DashboardView(
+            shellComponent = DashboardShellComponent(),
+            settingsFormComponent = SettingsFormComponent(),
+            fragmentComponent = DashboardFragmentComponent(
+                overviewGridComponent = OverviewGridComponent(),
+                allocationChartComponent = AllocationChartComponent(),
+                performanceTableComponent = PerformanceTableComponent(),
+                recentActivityComponent = RecentActivityComponent(),
+            ),
+        )
+        val controller = DashboardController(
+            configService = configService,
+            objectMapper = objectMapper,
+            dashboardView = view,
+            portfolioManager = portfolioManager,
+            currentPortfolioState = currentPortfolioState,
+            orderIntentService = orderIntentService,
+        )
+        return Server(
+            configService,
+            portfolioManager,
+            orderIntentService,
+            currentPortfolioState,
+            objectMapper,
+            controller,
+        )
+    }
+
+    init {
+        "history route redirects to forward-only Actual and retired API paths return 410" {
+            val server = server()
+            testApplication {
+                application { installRoutes(server) }
+
+                val noRedirectClient = createClient { followRedirects = false }
+                val redirect = noRedirectClient.get("/history")
+                redirect.status shouldBe HttpStatusCode.MovedPermanently
+                redirect.headers[HttpHeaders.Location] shouldBe "/actual"
+
+                listOf(
+                    "/api/history/snapshots",
+                    "/api/history/trades",
+                    "/api/history/stats",
+                    "/api/history/sync-progress",
+                    "/api/history/comparison",
+                    "/api/history/rewards",
+                ).forEach { path -> client.get(path).status shouldBe HttpStatusCode.Gone }
+
+                val actual = client.get("/actual").bodyAsText()
+                actual shouldContain "Actual"
+                actual.lowercase() shouldNotContain "historical comparison"
+            }
+        }
+
+        "dashboard serves only the latest in-memory cycle and omits retired trend metrics" {
+            val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("1234.50"))
+            val server = server(snapshot)
+            testApplication {
+                application { installRoutes(server) }
+                val response = client.get("/fragments/dashboard")
+                response.status shouldBe HttpStatusCode.OK
+                val html = response.bodyAsText()
+                html shouldContain "$1,234.50"
+                html shouldContain "Total Portfolio"
+                html.lowercase() shouldNotContain "24h"
+                html.lowercase() shouldNotContain "drawdown"
+                html.lowercase() shouldNotContain "recent high"
+                html.lowercase() shouldNotContain "view all history"
+            }
+        }
+
+        "health and readiness expose current runtime state without history or sync totals" {
+            val server = server()
+            testApplication {
+                application { installRoutes(server) }
+                val health = client.get("/api/health").bodyAsText()
+                health shouldContain "activeMode"
+                health shouldContain "loopRunning"
+                health shouldContain "lastSnapshotTime"
+                health shouldContain "unresolvedOrderIntents"
+                health.lowercase() shouldNotContain "history"
+                health.lowercase() shouldNotContain "sync"
+
+                val readiness = client.get("/api/readiness")
+                readiness.status shouldBe HttpStatusCode.ServiceUnavailable
+                readiness.bodyAsText().lowercase() shouldNotContain "history"
+            }
+        }
+
+        "SSE emits the latest cycle snapshot without querying persisted history" {
+            val snapshot = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:00:00Z"), BigDecimal("42.00"))
+            val server = server(snapshot)
+            testApplication {
+                val client = createClient { install(ClientSSE) }
+                application { installRoutes(server) }
+                client.sse("/api/status/stream") {
+                    val events = incoming.take(1).toList()
+                    events.single().data shouldBe server.objectMapper.writeValueAsString(snapshot)
+                }
+            }
+        }
+    }
+}

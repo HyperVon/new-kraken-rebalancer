@@ -5,7 +5,6 @@ Routes:
   ACTUAL: "/actual"
   ACTUAL_BENCHMARK_START: "/actual/benchmark/start"
   FRAGMENT_DASHBOARD: "/fragments/dashboard"
-  FRAGMENT_SETTINGS_PROPOSAL: "/fragments/settings-proposal"
   FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW: "/fragments/settings-allocations-preview"
   API_ROUTE_PREFIX: "/api"
   API_STATUS_STREAM: "/api/status/stream"
@@ -25,8 +24,6 @@ Routes:
   STATIC_REBALANCER_JS: "/static/rebalancer.js"
   STATIC_PREFIX: "/static"
   STATIC_RESOURCES_DIR: "static"
-QueryParamKeys:
-  RANGE: "range"
 HtmxHeaders:
   HX_REDIRECT: "HX-Redirect"
   HX_REFRESH: "HX-Refresh"
@@ -39,11 +36,6 @@ FormFields:
   MINIMUM_ORDER_SIZE_USD: "minimumOrderSizeUSD"
   DRY_RUN: "dryRun"
   SIMULATION: "simulation"
-  FIAT_MAX_DRAWDOWN: "fiatMaxDrawdown"
-  FIAT_DEPLOYMENT_EXPONENT: "fiatDeploymentExponent"
-  FIAT_DEPLOYMENT_THRESHOLD_PERCENT: "fiatDeploymentThresholdPercent"
-  INCEPTION_DATE: "inceptionDate"
-  COMPARISON_START_DATE: "comparisonStartDate"
   SYMBOLS: "symbols"
   TARGETS: "targets"
   COLORS: "colors"

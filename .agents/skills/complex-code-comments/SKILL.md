@@ -89,9 +89,10 @@ counter = applyDecay(counter)
 
 - `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl`
 - `RateLimiter`, `KrakenServiceImpl` (signing, retry/lockout)
-- `TradeDeduplicator`, `TradeHistoryServiceImpl`, `SnapshotHistoryCalculator`
+- `OrderSettleHelper`, `ActualObservationDispatcher`,
+  `ProspectiveBenchmarkService` (forward continuity verification)
 - Config validation / atomic write paths
-- `:frontend-js` chart zoom/scrubber, SSE / STREAM·STALE
+- `:frontend-js` Dashboard freshness/sorting, Settings allocation checks, SSE
 
 ---
 

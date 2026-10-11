@@ -49,9 +49,7 @@ class DashboardFragmentComponent(
     fun render(
         settings: Settings,
         latest: PortfolioSnapshot,
-        history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
-        delta24h: BigDecimal? = null,
         unresolvedIntents: List<OrderIntent> = emptyList(),
         csrfToken: String? = null,
         qualityScores: Map<String, BigDecimal> = emptyMap(),
@@ -74,14 +72,14 @@ class DashboardFragmentComponent(
             renderUnresolvedIntentsBanner(unresolvedIntents, csrfToken)
         }
 
-        overviewGridComponent.render(latest, history, delta24h)
+        overviewGridComponent.render(latest)
 
         div.div(CssClass.Layout.DetailGrid) {
             allocationChartComponent.render(latest, allocations, qualityScores)
             performanceTableComponent.render(latest)
         }
 
-        recentActivityComponent.render(history)
+        recentActivityComponent.render(latest)
     }
 
     context(div: DIV)

@@ -198,8 +198,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 val totalVal = BigDecimal("1000.0")
                 val effUsdTarget = BigDecimal("50.0")
                 val cryptoScale = BigDecimal.ONE
-                val drawdown = BigDecimal.ZERO
-                val deployment = BigDecimal.ZERO
                 val actionLog = listOf("Cycle completed")
 
                 val allocs = listOf(
@@ -219,8 +217,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                         totalPortfolioValueUSD = totalVal,
                         effectiveUsdTarget = effUsdTarget,
                         cryptoScaleFactor = cryptoScale,
-                        drawdownPct = drawdown,
-                        fiatDeploymentPct = deployment,
                         actionLog = actionLog,
                     )
 
@@ -253,8 +249,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                         totalPortfolioValueUSD = BigDecimal("1500.0"),
                         effectiveUsdTarget = BigDecimal("50.0"),
                         cryptoScaleFactor = BigDecimal.ONE,
-                        drawdownPct = BigDecimal.ZERO,
-                        fiatDeploymentPct = BigDecimal.ZERO,
                         actionLog = listOf("Cycle completed"),
                     )
                 }
@@ -294,8 +288,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 every { configService.getConfig() } returns config
 
-                coEvery { tradeHistoryService.syncTradesFromKraken() } throws RuntimeException("Sync exception")
-
                 portfolioManager.startRebalancingLoop()
                 val job = launch {
                     portfolioManager.runLoop()
@@ -304,15 +296,9 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                // Periodic history sync is outside the rebalance loop; the worker did
-                // not place orders and the lifecycle completed cleanly. Because the test calls
-                // `stopRebalancingLoop()` (which flips `isRunning=false`) before the launched
-                // `runLoop()` coroutine resumes from `yield()`, the `while(isRunning)` cycle body
-                // never enters, so no rebalance cycle or balance observation ran.
-                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
+                // Stopping before the launched loop resumes keeps the cycle body from running.
                 krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
                 coVerify(exactly = 0) { configService.beginExecutionSession() }
                 coVerify(exactly = 0) { configService.endExecutionSession() }
                 // The `finally` cleared `workerJob`; the manager is restartable.
@@ -339,15 +325,9 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                // Periodic history sync is outside the rebalance loop; the cycle never
-                // reached the rebalance fetch because `stopRebalancingLoop()` had already flipped
-                // `isRunning=false` by the time the launched coroutine resumed from `yield()`,
-                // so the `while(isRunning)` body never entered. No balance observation, orders,
-                // snapshot, or session were opened, and the worker release is clean.
-                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
+                // Stopping before the launched loop resumes keeps the cycle body from running.
                 krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
                 coVerify(exactly = 0) { configService.beginExecutionSession() }
                 coVerify(exactly = 0) { configService.endExecutionSession() }
                 readWorkerJob() shouldBe null
@@ -371,13 +351,8 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 job.cancel()
                 job.join()
 
-                // `stopRebalancingLoop()` is NOT called here — only `job.cancel()`. The cycle
-                // admission checkpoint observes cancellation before entering the loop body, so no
-                // snapshot or order work is performed and the manager remains restartable. The
-                // worker can still enter the loop body and open/close an execution session around
-                // the cycle before cancellation lands; only order/snapshot work must be absent.
+                // Cancellation before the cycle body must leave the manager restartable.
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
                 coVerify(atMost = 1) { configService.beginExecutionSession() }
                 coVerify(atMost = 1) { configService.endExecutionSession() }
                 readWorkerJob() shouldBe null
@@ -447,48 +422,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
 
                 krakenService.executedOrders.isNotEmpty() shouldBe true
                 snapshot!!.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("10000.00"))
-            }
-        }
-
-        "executeOrders propagates cancellation during failure-state persistence" {
-            runTest {
-                val buyOrders = emptyMap<String, BigDecimal>()
-                val sellOrders =
-                    mapOf(Asset.BTC to BigDecimal.valueOf(100.0))
-                val currentValuesUSD =
-                    mapOf(Asset.USD to BigDecimal.valueOf(1000.0))
-                val prices = mapOf(Asset.BTC to BigDecimal.TEN)
-                val settings = TestFixtures.settings(dryRun = false)
-                val actionLog = mutableListOf<String>()
-
-                krakenService.executeOrderAction = { _, _, _, _ ->
-                    throw RuntimeException("Exchange failure")
-                }
-                // updateTrade (failure-state persistence) suspends until the worker is cancelled.
-                coEvery { tradeHistoryService.updateTrade(any(), any()) } coAnswers {
-                    awaitCancellation()
-                }
-
-                var propagated: Throwable? = null
-                val job = launch {
-                    try {
-                        orderExecutor.executeOrders(
-                            buyOrders = buyOrders,
-                            sellOrders = sellOrders,
-                            currentValuesUSD = currentValuesUSD,
-                            prices = prices,
-                            settings = settings,
-                            actionLog = actionLog,
-                        )
-                    } catch (e: Throwable) {
-                        propagated = e
-                    }
-                }
-                yield()
-                job.cancel()
-                job.join()
-
-                propagated.shouldBeInstanceOf<CancellationException>()
             }
         }
 

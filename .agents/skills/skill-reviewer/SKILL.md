@@ -152,7 +152,8 @@ Mine ideas from:
   - Gap: Agents still put Kraken I/O inside `RebalancerEngine`.
   - Draft add:
     - `RebalancerEngine` / `PortfolioCalculations`: no network, DB, or Koin.
-    - `PortfolioAnalyzerImpl`: REST/ATH I/O + calls engine; does not place orders.
+    - `PortfolioAnalyzerImpl`: current balance/price reads + delegates the
+      fixed configured-target plan; does not place orders or reconstruct reports.
     - `OrderExecutorImpl`: placement + settle only; no target math.
 ```
 

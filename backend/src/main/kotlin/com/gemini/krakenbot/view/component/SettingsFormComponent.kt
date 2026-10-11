@@ -2,13 +2,6 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.QualityAllocation
-import com.gemini.krakenbot.model.ComparisonAvailability
-import com.gemini.krakenbot.model.ComparisonProposalStatus
-import com.gemini.krakenbot.service.AutomaticBaselineStatus
-import com.gemini.krakenbot.service.ComparisonStartProposal
-import com.gemini.krakenbot.service.InceptionDisplayInfo
-import com.gemini.krakenbot.service.InceptionDisplayStatus
-import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
@@ -42,23 +35,17 @@ import kotlinx.html.ButtonType.submit
 import kotlinx.html.DIV
 import kotlinx.html.FlowContent
 import kotlinx.html.InputType.*
-import kotlinx.html.details
 import kotlinx.html.form
 import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.script
-import kotlinx.html.summary
 import kotlinx.html.unsafe
-import java.time.Instant
-import java.time.ZoneOffset
 
 /** Raw, display-only form values used when a rejected request needs to recover the open form. */
 data class SettingsFormValues(
     val loopDelaySeconds: String,
     val deviationTriggerPercent: String,
     val minimumOrderSizeUsd: String,
-    val inceptionDate: String,
-    val comparisonStartDate: String,
     val simulation: Boolean,
     val dryRun: Boolean,
     val allocations: List<SettingsAllocationFormValue>,
@@ -112,9 +99,6 @@ class SettingsFormComponent {
         errorMessage: String?,
         csrfToken: String,
         paused: Boolean = false,
-        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: ComparisonStartProposal? = null,
-        laterStartProposalAsync: Boolean = false,
         formValues: SettingsFormValues? = null,
     ) {
         renderForm(
@@ -123,9 +107,6 @@ class SettingsFormComponent {
             errorMessage,
             csrfToken,
             paused,
-            inceptionDisplay,
-            laterStartProposal,
-            laterStartProposalAsync,
             formValues,
         )
         renderSettingsScript()
@@ -137,9 +118,6 @@ class SettingsFormComponent {
         errorMessage: String?,
         csrfToken: String,
         paused: Boolean = false,
-        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: ComparisonStartProposal? = null,
-        laterStartProposalAsync: Boolean = false,
         formValues: SettingsFormValues? = null,
     ) {
         parent.div(CssClass.Layout.Container) {
@@ -178,9 +156,6 @@ class SettingsFormComponent {
                 div(CssClass.Layout.GlassPanel) {
                     renderGlobalParametersSection(
                         config,
-                        inceptionDisplay,
-                        laterStartProposal,
-                        laterStartProposalAsync,
                         formValues,
                     )
                     renderSafetyModesSection(config, formValues)
@@ -190,13 +165,7 @@ class SettingsFormComponent {
         }
     }
 
-    private fun DIV.renderGlobalParametersSection(
-        config: AppConfig,
-        inceptionDisplay: InceptionDisplayInfo,
-        laterStartProposal: ComparisonStartProposal?,
-        laterStartProposalAsync: Boolean,
-        formValues: SettingsFormValues?,
-    ) {
+    private fun DIV.renderGlobalParametersSection(config: AppConfig, formValues: SettingsFormValues?) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
                 numericFieldSpecs(config, formValues).forEach { field ->
@@ -210,312 +179,7 @@ class SettingsFormComponent {
                         }
                     }
                 }
-                formGroup(ViewText.INCEPTION_DATE, HtmlIds.INCEPTION_DATE_PICKER) {
-                    input(type = hidden, name = FormFields.INCEPTION_DATE) {
-                        id = FormFields.INCEPTION_DATE
-                        value = formValues?.inceptionDate ?: config.settings.inceptionDate.orEmpty()
-                    }
-                    input(CssClass.Form.InputGlass, type = date) {
-                        id = HtmlIds.INCEPTION_DATE_PICKER
-                        value = utcDate(formValues?.inceptionDate ?: config.settings.inceptionDate).orEmpty()
-                        attributes[HtmlAttrs.ONCHANGE] =
-                            "document.getElementById('${FormFields.INCEPTION_DATE}').value=this.value"
-                    }
-                    p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_DATE_HINT }
-                    renderDetectedInception(inceptionDisplay)
-                }
-                formGroup(ViewText.INCEPTION_COMPARISON_START, HtmlIds.COMPARISON_START_DATE_PICKER) {
-                    input(type = hidden, name = FormFields.COMPARISON_START_DATE) {
-                        id = FormFields.COMPARISON_START_DATE
-                        value = formValues?.comparisonStartDate ?: config.settings.comparisonStartDate.orEmpty()
-                    }
-                    input(CssClass.Form.InputGlass, type = date) {
-                        id = HtmlIds.COMPARISON_START_DATE_PICKER
-                        value = utcDate(
-                            formValues?.comparisonStartDate ?: config.settings.comparisonStartDate,
-                        ).orEmpty()
-                        attributes[HtmlAttrs.ONCHANGE] =
-                            "document.getElementById('${FormFields.COMPARISON_START_DATE}').value=this.value"
-                    }
-                    p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_COMPARISON_START_HINT }
-                    renderApprovedBaseline(config, inceptionDisplay, laterStartProposal, laterStartProposalAsync)
-                }
             }
-        }
-    }
-
-    private fun FlowContent.renderDetectedInception(display: InceptionDisplayInfo) {
-        p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-        if (display.inferredStartText != null) {
-            val inferredStart = display.inferredStartText
-            val inferredInstant = runCatching { Instant.parse(inferredStart) }.getOrNull()
-            div(CssClass.Form.InceptionRecommendation) {
-                div(CssClass.Form.InceptionRecommendationHeader) {
-                    div(CssClass.Form.InceptionRecommendationCopy) {
-                        p(CssClass.Form.InceptionRecommendationLabel) {
-                            +ViewText.INCEPTION_RECOMMENDATION_LABEL
-                        }
-                        p(CssClass.Form.InceptionRecommendationDate) { +inferredStart }
-                    }
-                    if (inferredInstant != null) {
-                        button(CssClass.Button.Secondary, type = button) {
-                            attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_ESTIMATED_START_TITLE
-                            attributes[HtmlAttrs.ONCLICK] =
-                                "document.getElementById('${FormFields.INCEPTION_DATE}').value='$inferredInstant';" +
-                                "document.getElementById('${HtmlIds.INCEPTION_DATE_PICKER}').value='" +
-                                "${inferredInstant.atZone(ZoneOffset.UTC).toLocalDate()}';this.form.requestSubmit()"
-                            +ViewText.INCEPTION_USE_ESTIMATED_START
-                        }
-                    }
-                }
-                renderInceptionEvidenceDisclosure(display)
-            }
-        } else if (display.hasEvidenceDetails()) {
-            renderInceptionEvidenceDisclosure(display)
-        }
-    }
-
-    /**
-     * Renders the later-start proposal slot. When [async] the slot becomes an HTMX lazy-load
-     * placeholder so Settings HTML never blocks on proposal discovery sync; the fragment
-     * route resolves the comparison status out-of-band and swaps this element out. The explicit
-     * hx-target keeps any enclosing form's body swap from being inherited. A pending fragment
-     * response keeps this slot polling until evaluation completes.
-     */
-    private fun FlowContent.renderProposalSlot(laterStartProposal: ComparisonStartProposal?, async: Boolean) {
-        if (async) {
-            div {
-                id = HtmlIds.COMPARISON_PROPOSAL_SLOT
-                attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_SETTINGS_PROPOSAL
-                attributes[HtmxAttrs.HX_TRIGGER] = HtmxValues.TRIGGER_LOAD
-                attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.COMPARISON_PROPOSAL_SLOT}"
-                attributes[HtmxAttrs.HX_SWAP] = HtmxValues.SWAP_OUTER_HTML
-                p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_DETERMINING }
-            }
-            return
-        }
-        if (laterStartProposal != null) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_APPROVED_BASELINE_COMPARISON_BLOCKED }
-            renderLaterStartProposal(laterStartProposal)
-        }
-    }
-
-    /**
-     * Fragment response body for the async slot: the effective baseline status plus any
-     * later-start proposal. Pending responses keep polling; terminal responses omit the
-     * polling attributes so the completed swap stops the request loop.
-     */
-    fun renderProposalSlotFragment(
-        parent: FlowContent,
-        status: SettingsComparisonStatus?,
-        configuredComparisonStart: String?,
-    ) {
-        parent.renderComparisonStatus(status, configuredComparisonStart)
-    }
-
-    private fun FlowContent.renderComparisonStatus(
-        status: SettingsComparisonStatus?,
-        configuredComparisonStart: String?,
-    ) {
-        if (status?.evaluationInProgress == true) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_DETERMINING }
-            return
-        }
-        if (status?.evaluationFailed == true) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_ERROR }
-            return
-        }
-        val overrideActive = !configuredComparisonStart.isNullOrBlank()
-        if (overrideActive) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_OVERRIDE_ACTIVE }
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.COMPARISON_STATUS_REQUESTED_START_LABEL}: $configuredComparisonStart"
-            }
-        } else if (status?.baselineStatus == AutomaticBaselineStatus.VERIFIED ||
-            status?.comparisonAvailability == ComparisonAvailability.AVAILABLE
-        ) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_AUTOMATIC }
-        }
-        if (status?.baselineStatus == AutomaticBaselineStatus.VERIFIED ||
-            status?.comparisonAvailability == ComparisonAvailability.AVAILABLE
-        ) {
-            status.baselineTimestamp?.let { baseline ->
-                p(CssClass.Form.SectionSubtitle) {
-                    +"${ViewText.COMPARISON_STATUS_EFFECTIVE_BASELINE_LABEL}: $baseline"
-                }
-            }
-        }
-        when (status?.comparisonAvailability) {
-            ComparisonAvailability.UNAVAILABLE -> p(CssClass.Form.SectionSubtitle) {
-                +ViewText.COMPARISON_STATUS_UNAVAILABLE
-                status.unavailableReason?.let { reason ->
-                    +" ${reason.displayText}"
-                    status.unavailableAt?.let { at -> +" (${ViewText.COMPARISON_STATUS_FAILED_AT}: $at)" }
-                }
-            }
-
-            else -> Unit
-        }
-        if (status?.proposal != null && status.comparisonAvailability != ComparisonAvailability.AVAILABLE) {
-            renderLaterStartProposal(status.proposal)
-        }
-        if (status == null) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_ERROR }
-        }
-    }
-
-    private fun FlowContent.renderApprovedBaseline(
-        config: AppConfig,
-        display: InceptionDisplayInfo,
-        laterStartProposal: ComparisonStartProposal?,
-        laterStartProposalAsync: Boolean,
-    ) {
-        when (display.status) {
-            InceptionDisplayStatus.APPROVED_PENDING ->
-                p(CssClass.Form.SectionSubtitle) {
-                    id = HtmlIds.INCEPTION_BASELINE_PENDING
-                    +display.toDisplayText()
-                }
-
-            InceptionDisplayStatus.APPROVED_READY -> {
-                p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-                renderProposalSlot(laterStartProposal, laterStartProposalAsync)
-            }
-
-            InceptionDisplayStatus.APPROVED_UNAVAILABLE -> {
-                p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-                renderProposalSlot(laterStartProposal, laterStartProposalAsync)
-            }
-
-            else -> Unit
-        }
-    }
-
-    private fun FlowContent.renderLaterStartProposal(proposal: ComparisonStartProposal?) {
-        when (proposal?.status) {
-            null -> Unit
-
-            ComparisonProposalStatus.VERIFIED -> {
-                // Acceptance persists the exact retained snapshot identity. A legacy or
-                // partially-written cache without that identity is not actionable, so do not
-                // render a button that the POST endpoint must reject.
-                if (proposal.snapshotId == null) return
-                // ComparisonStartProposal enforces this invariant for VERIFIED values.
-                val timestamp = proposal.timestamp!!
-                div(CssClass.Form.InceptionRecommendation) {
-                    div(CssClass.Form.InceptionRecommendationHeader) {
-                        div(CssClass.Form.InceptionRecommendationCopy) {
-                            p(CssClass.Form.InceptionRecommendationLabel) {
-                                +ViewText.INCEPTION_PROPOSED_LATER_START_LABEL
-                            }
-                            p(CssClass.Form.InceptionRecommendationDate) { +timestamp.toString() }
-                        }
-                        button(CssClass.Button.Secondary, type = button) {
-                            attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_PROPOSED_START_TITLE
-                            attributes[HtmlAttrs.ONCLICK] =
-                                "document.getElementById('${FormFields.COMPARISON_START_DATE}')" +
-                                ".value='$timestamp';this.form.requestSubmit()"
-                            +ViewText.INCEPTION_USE_PROPOSED_START
-                        }
-                    }
-                }
-            }
-
-            ComparisonProposalStatus.INCOMPLETE ->
-                p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_PROPOSAL_SEARCH_INCOMPLETE }
-
-            ComparisonProposalStatus.EXHAUSTED ->
-                p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_PROPOSAL_SEARCH_EXHAUSTED }
-        }
-    }
-
-    private fun FlowContent.renderInceptionEvidenceDisclosure(display: InceptionDisplayInfo) {
-        details(classes = CssClass.Form.InceptionEvidence.value) {
-            summary(classes = CssClass.Form.InceptionEvidenceSummary.value) {
-                +ViewText.INCEPTION_SHOW_EVIDENCE
-            }
-            div(CssClass.Form.InceptionEvidenceBody) {
-                display.inferredStartText?.let {
-                    p { +ViewText.INCEPTION_INFERRED_MESSAGE }
-                }
-                if (display.inferredWindowStartText != null && display.inferredWindowEndText != null) {
-                    p {
-                        +"${ViewText.INCEPTION_INFERRED_WINDOW_LABEL}: ${display.inferredWindowStartText} "
-                        +"to ${display.inferredWindowEndText}."
-                    }
-                }
-                display.firstPositiveText?.let { firstPositive ->
-                    p { +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive." }
-                }
-                display.inferredStartStrengthText?.let { strength ->
-                    p { +"${ViewText.INCEPTION_INFERRED_START_STRENGTH_LABEL}: $strength" }
-                }
-                display.inferredStartReasonsText?.let { reasons ->
-                    p { +"${ViewText.INCEPTION_INFERRED_START_REASONS_LABEL}: $reasons." }
-                }
-                display.inferredStartContradictionsText?.let { contradictions ->
-                    p { +"${ViewText.INCEPTION_INFERRED_START_CONTRADICTIONS_LABEL}: $contradictions." }
-                }
-                display.strongestEpisodeText?.let { strongest ->
-                    p { +"${ViewText.INCEPTION_STRONGEST_EPISODE_LABEL}: $strongest." }
-                }
-                display.strongestEpisodeStrengthText?.let { strength ->
-                    p { +"${ViewText.INCEPTION_STRONGEST_EPISODE_STRENGTH_LABEL}: $strength" }
-                }
-                display.strongestEpisodeReasonsText?.let { reasons ->
-                    p { +"${ViewText.INCEPTION_STRONGEST_EPISODE_REASONS_LABEL}: $reasons." }
-                }
-                display.earliestAmbiguousText?.let { ambiguous ->
-                    p { +"${ViewText.INCEPTION_EARLIEST_AMBIGUOUS_LABEL}: $ambiguous." }
-                }
-                display.earlierAmbiguousCountText?.let { count ->
-                    val note = buildString {
-                        append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL)
-                        append(": ")
-                        append(count)
-                        append('.')
-                        // The before-the-start note only makes sense once a start is displayed.
-                        if (display.inferredStartText != null) {
-                            append(' ')
-                            append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE)
-                        }
-                    }
-                    p { +note }
-                }
-                display.competingCandidatesText?.let { count ->
-                    p { +"${ViewText.INCEPTION_COMPETING_CANDIDATES_LABEL}: $count." }
-                }
-                display.unsupportedMarketsText?.let { unsupported ->
-                    p { +"${ViewText.INCEPTION_UNSUPPORTED_MARKETS_LABEL}: $unsupported." }
-                }
-                display.coverageText?.let { coverage ->
-                    p { +"${ViewText.INCEPTION_COVERAGE_LABEL}: $coverage." }
-                }
-            }
-        }
-    }
-
-    private fun InceptionDisplayInfo.hasEvidenceDetails(): Boolean = inferredStartText != null ||
-        inferredWindowStartText != null ||
-        inferredWindowEndText != null ||
-        firstPositiveText != null ||
-        inferredStartStrengthText != null ||
-        inferredStartReasonsText != null ||
-        inferredStartContradictionsText != null ||
-        strongestEpisodeText != null ||
-        strongestEpisodeStrengthText != null ||
-        strongestEpisodeReasonsText != null ||
-        earliestAmbiguousText != null ||
-        earlierAmbiguousCountText != null ||
-        competingCandidatesText != null ||
-        unsupportedMarketsText != null ||
-        coverageText != null
-
-    private fun utcDate(value: String?): String? = value?.takeIf(String::isNotBlank)?.let { raw ->
-        runCatching {
-            Instant.parse(raw.trim()).atZone(ZoneOffset.UTC).toLocalDate().toString()
-        }.getOrElse {
-            raw.trim().takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
         }
     }
 

@@ -58,41 +58,33 @@ class AccountHistoryScopeGuard(
         tradeRepository,
         ledgerRepository,
     ),
-    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(AccountHistoryScopeGuard::class.java)
     private val validationMutex = Mutex()
 
-    suspend fun validateAccountScope(): AccountScopeValidationResult =
-        historyEvidenceCoordinator.withLock(operation = "account-scope-validation") {
-            validateAccountScopeUnderEvidenceLock()
-        }
-
-    /** Called by writers that already hold [HistoryEvidenceCoordinator]. */
-    internal suspend fun validateAccountScopeUnderEvidenceLock(): AccountScopeValidationResult =
-        validationMutex.withLock {
-            // Lock ordering: validationMutex -> execution session (configLock, held
-            // only briefly for depth/staging bookkeeping) -> backend pin.
-            // updateConfig takes configLock but never validationMutex, so no lock
-            // cycle is possible. The session freezes getConfig() for everything
-            // below — starting with the simulation/credential preflight, so no
-            // update can slip in between the first trust-relevant read and the
-            // session start: initial scope derivation, credential probes, every
-            // TradesHistory/Ledgers window, the pre-write recheck, and persistence
-            // all observe exactly one credential generation — which also closes
-            // A -> B -> A flips mid-proof. readLocalTrustState stays session-free
-            // and try-locked so History rendering never blocks on this path.
-            return@withLock configService.withExecutionSession {
-                val pinnedConfig = configService.getConfig()
-                if (pinnedConfig.settings.simulation) {
-                    return@withExecutionSession AccountScopeValidationResult.SIMULATION
-                }
-                if (!pinnedConfig.kraken.hasValidCredentials()) {
-                    return@withExecutionSession AccountScopeValidationResult.scopeUnavailable("credentials unavailable")
-                }
-                krakenService.withStableBackend { validatePinned() }
+    suspend fun validateAccountScope(): AccountScopeValidationResult = validationMutex.withLock {
+        // Lock ordering: validationMutex -> execution session (configLock, held
+        // only briefly for depth/staging bookkeeping) -> backend pin.
+        // updateConfig takes configLock but never validationMutex, so no lock
+        // cycle is possible. The session freezes getConfig() for everything
+        // below — starting with the simulation/credential preflight, so no
+        // update can slip in between the first trust-relevant read and the
+        // session start: initial scope derivation, credential probes, every
+        // TradesHistory/Ledgers window, the pre-write recheck, and persistence
+        // all observe exactly one credential generation — which also closes
+        // A -> B -> A flips mid-proof. readLocalTrustState stays session-free
+        // and try-locked so History rendering never blocks on this path.
+        return@withLock configService.withExecutionSession {
+            val pinnedConfig = configService.getConfig()
+            if (pinnedConfig.settings.simulation) {
+                return@withExecutionSession AccountScopeValidationResult.SIMULATION
             }
+            if (!pinnedConfig.kraken.hasValidCredentials()) {
+                return@withExecutionSession AccountScopeValidationResult.scopeUnavailable("credentials unavailable")
+            }
+            krakenService.withStableBackend { validatePinned() }
         }
+    }
 
     /**
      * Runs under one execution session plus one pinned backend: every

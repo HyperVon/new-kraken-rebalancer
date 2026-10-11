@@ -12,9 +12,7 @@ import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.joinRebalancingWorker
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
@@ -54,28 +52,21 @@ class PortfolioManagerLoopTest : StringSpec() {
 
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
     private lateinit var portfolioAnalyzer: PortfolioAnalyzer
     private lateinit var orderExecutor: OrderExecutor
+    private lateinit var currentPortfolioState: CurrentPortfolioState
 
     init {
         beforeTest {
-            val repo = mockk<PortfolioStatsRepository>(relaxed = true)
-            coEvery {
-                repo.load()
-            } returns PortfolioStats(BigDecimal.ZERO)
-            portfolioAnalyzer =
-                PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = repo,
-                )
-            orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
+            currentPortfolioState = CurrentPortfolioState()
+            portfolioAnalyzer = PortfolioAnalyzerImpl(krakenService, configService)
+            orderExecutor = OrderExecutorImpl(krakenService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 portfolioAnalyzer = portfolioAnalyzer,
                 orderExecutor = orderExecutor,
+                currentPortfolioState = currentPortfolioState,
             )
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)
@@ -103,7 +94,7 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
-        "normal rebalance cycles do not call retrospective history services" {
+        "normal rebalance cycles publish only the latest current snapshot in memory" {
             runTest {
                 val config = TestFixtures.config(
                     settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L),
@@ -119,10 +110,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 job.join()
 
                 krakenService.getBalancesCallCount shouldBe 1
-                coVerify(exactly = 0) { tradeHistoryService.syncLedgersFromKraken() }
-                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
-                coVerify(exactly = 0) { tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded(any()) }
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                currentPortfolioState.snapshot.value?.assets?.get(Asset.USD)?.valueUSD
+                    ?.shouldBeEqualComparingTo(BigDecimal("100.00"))
             }
         }
 
@@ -301,7 +290,6 @@ class PortfolioManagerLoopTest : StringSpec() {
                 manager.isLoopRunning() shouldBe false
                 coVerify(exactly = 1) { configService.beginExecutionSession() }
                 coVerify(exactly = 1) { configService.endExecutionSession() }
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
 
@@ -352,11 +340,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                     successfulOrder
                 }
 
-                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzerImpl(
                     krakenService = dynamicKrakenService,
                     configService = realConfigService,
-                    portfolioStatsRepository = statsRepository,
                 )
                 val manager = PortfolioManagerImpl(
                     configService = realConfigService,
@@ -438,12 +424,6 @@ class PortfolioManagerLoopTest : StringSpec() {
                         currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("100.00")),
                     ),
                 )
-                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns
-                    com.gemini.krakenbot.service.AthUpdateResult.Trusted(BigDecimal.ZERO)
-                every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal.ZERO
-                every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
-                every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE
-
                 lateinit var cycleJob: Job
                 every { analyzer.analyzeDeviations(any(), any(), any(), any()) } answers {
                     cycleJob.cancel()

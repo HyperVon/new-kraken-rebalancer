@@ -3,12 +3,9 @@ package com.gemini.krakenbot
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.impl.*
-import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -41,7 +38,7 @@ class KrakenE2ETest : StringSpec() {
                             privateKey = validSecret,
                         ),
                         settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
                         allocations =
                         listOf(
                             Allocation(Asset.BTC, 50.0),
@@ -109,11 +106,6 @@ class KrakenE2ETest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
 
-                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
-                val tradesRepo = SqliteTradeRepositoryImpl(db)
-                val ledgerRepo = SqliteLedgerRepositoryImpl(db)
-
                 val krakenService =
                     KrakenServiceImpl(
                         configService = mockConfigService,
@@ -124,20 +116,9 @@ class KrakenE2ETest : StringSpec() {
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = statsRepo,
                     )
-                val tradeHistoryService =
-                    TradeHistoryServiceImpl(
-                        repository = tradesRepo,
-                        portfolioStatsRepository = statsRepo,
-                        ledgerRepository = ledgerRepo,
-                        krakenService = krakenService,
-                        configService = mockConfigService,
-                        objectMapper = objectMapper,
-                    )
-
                 val orderExecutor =
-                    OrderExecutorImpl(krakenService, tradeHistoryService)
+                    OrderExecutorImpl(krakenService, orderIntentService = mockk<OrderIntentService>(relaxed = true))
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
@@ -165,7 +146,7 @@ class KrakenE2ETest : StringSpec() {
                             privateKey = validSecret,
                         ),
                         settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
                         allocations =
                         listOf(
                             Allocation(Asset.BTC, 50.0),
@@ -232,11 +213,6 @@ class KrakenE2ETest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
 
-                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
-                val tradesRepo = SqliteTradeRepositoryImpl(db)
-                val ledgerRepo = SqliteLedgerRepositoryImpl(db)
-
                 val krakenService =
                     KrakenServiceImpl(
                         configService = mockConfigService,
@@ -247,20 +223,9 @@ class KrakenE2ETest : StringSpec() {
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = statsRepo,
                     )
-                val tradeHistoryService =
-                    TradeHistoryServiceImpl(
-                        repository = tradesRepo,
-                        portfolioStatsRepository = statsRepo,
-                        ledgerRepository = ledgerRepo,
-                        krakenService = krakenService,
-                        configService = mockConfigService,
-                        objectMapper = objectMapper,
-                    )
-
                 val orderExecutor =
-                    OrderExecutorImpl(krakenService, tradeHistoryService)
+                    OrderExecutorImpl(krakenService, orderIntentService = mockk<OrderIntentService>(relaxed = true))
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,

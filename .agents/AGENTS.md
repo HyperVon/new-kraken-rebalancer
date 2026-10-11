@@ -30,19 +30,20 @@ Canonical deep docs:
 
 | Task | Skill |
 | :--- | :--- |
-| Portfolio math, ATH/drawdown, orders | [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) |
+| Fixed allocation math and orders | [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) |
 | Kraken REST, signing, rate limits, `cl_ord_id` | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) |
 | dryRun vs simulation flags | [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md) |
 | Koin DI & `rebalancer-config.json` | [koin-di-and-config](skills/koin-di-and-config/SKILL.md) |
 | `:common` KMP shared module | [common-kmp-module](skills/common-kmp-module/SKILL.md) |
 | Coroutines, Flows, SSE | [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md) |
-| Trade history sync & dedupe | [trade-history-sync](skills/trade-history-sync/SKILL.md) |
+| Kraken fill-confirmed sell settlement | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) + [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) |
 | Exposed ORM repositories | [exposed-repository](skills/exposed-repository/SKILL.md) |
 | Ktor HTML / CSS / HTMX views | [ktor-html-views](skills/ktor-html-views/SKILL.md) |
 | Kotlin/JS client (`:frontend-js`) | [frontend-js-development](skills/frontend-js-development/SKILL.md) |
 | Kotest / FakeKraken / evaluation | [write-kotest](skills/write-kotest/SKILL.md) |
 | Spotless, JaCoCo, Karma, CI | [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) |
 | CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
+| Retired history scope and preserved continuity paths | [trade-history-sync](skills/trade-history-sync/SKILL.md) |
 | Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
 | Complex-code comments (audit / hygiene) | [complex-code-comments](skills/complex-code-comments/SKILL.md) |
 | Resolve actionable source-code TODO comments | [todo-resolution](skills/todo-resolution/SKILL.md) |
@@ -112,7 +113,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | :--- | :--- |
 | Entry / DI / lifecycle | `KrakenRebalancerApplication`, `AppModule` (`coreModule` + `webModule`) |
 | Orchestrator | `PortfolioManagerImpl` |
-| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (REST + ATH I/O) |
+| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (current balance / price reads and fixed-target analysis) |
 | Domain rebalance math | `RebalancerEngine` (`:engine`, no network/DB) |
 | Typed planning events | `domain/RebalancePlan` (`:engine`) + presentation action-log adapter |
 | Shared math | `PortfolioCalculations` (`:engine`) |
@@ -120,8 +121,8 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **20**, decay **0.5**) + `PublicRateLimiter` |
-| History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
-| Live history / SSE source | `TradeHistoryServiceImpl` façade → Sync / Ledger Sync (`LedgersSyncService`) / SnapshotStore / Query / Reconstruction |
+| Dashboard snapshot state | `CurrentPortfolioState` (`StateFlow` of the latest completed cycle only) |
+| Actual observations | `ActualObservationDispatcher` → append-only `ActualObservationStore`; optional prospective comparison requires verified event continuity |
 | HTTP | `DashboardRoutes` / `DashboardController` |
 | Views | `view/component/*`, `DashboardView`, `view/css/*` |
 | Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `HtmlQueries`, `ViewText` and generated pure-string catalogs |
@@ -132,7 +133,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
-- **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
+- **Fixed USD target**: current plans use the configured USD allocation as written; no ATH, drawdown, or history-based deployment changes the target. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
   **and** `|DeviationUSD| ≥ minimumOrderSizeUSD` (`isSignificant`).
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
@@ -151,7 +152,7 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
-- **Operational readiness**: `/api/health` is liveness/diagnostic; `/api/readiness` is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while new or legacy unresolved live-order state remains. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
+- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries only current-cycle snapshots. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
 - **Schema safety**: `DatabaseConfig` records schema versions, backs up file-backed databases before migration, and idempotently imports legacy `TradeRecord.submissionState` guards into `order_intents` while retaining the legacy blocking column until resolution.
 
 ---
@@ -170,14 +171,17 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   paths. Live trading moves real money — treat credential + live mode changes
   as high risk.
 - `PortfolioManagerImpl.performCycleWithStableSession()` owns the normal
-  cycle-wide execution session/backend pin across in-cycle sync,
-  reconstruction, and rebalance work. Startup syncs and standalone/top-level
-  sync entry points establish independent nested-safe sessions/pins.
+  cycle-wide execution session/backend pin across current balance and price
+  reads, planning, order execution, and order-specific fill settlement. Startup
+  does not run retrospective report reconstruction or history synchronization.
 - `ConfigServiceImpl` defers runtime publication of saved/reloaded config while
   any such execution session is active. Disk persistence may complete during
   the session, but `appConfig` and `_configFlow` publication wait for the
-  outermost session exit. Do not remove that boundary or let one cycle/sync
-  mix settings or credentials.
+  outermost session exit. Do not remove that boundary or let one cycle or
+  its order-settlement work mix settings or credentials.
+- The config parser drops retired history-only drawdown, deployment, inception,
+  and comparison-start keys before deserialization. A later Settings save
+  writes the active config shape without those keys; do not reintroduce them.
 
 ---
 
@@ -185,7 +189,7 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 See [common-kmp-module](skills/common-kmp-module/SKILL.md).
 
-Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and wire DTOs under `api/` (`PortfolioSnapshot`, `TradeRecord`, `RebalancerComparison`, `HistoryStats`, `SyncProgressResponse`).
+Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and pure shared configuration, utility, and view models. Current-cycle snapshot state is backend-local; Actual observations and prospective comparison data are backend-owned contracts.
 
 `commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
 
@@ -243,10 +247,13 @@ with the workflow.
   Prefer minimal structured fields to raw private Kraken responses. Runtime logs
   can contain order identifiers, balance amounts, and asset keys; treat them as
   sensitive and redact them before sharing.
-- Kraken credentials for normal application operation use least privilege:
-  Query Funds, Query Closed Orders & Trades, Query Ledgers, and Create & Modify
-  Orders. Do not claim Query Open Orders is required for normal operation unless
-  the API surface changes and the claim is verified.
+- Kraken credentials use least privilege. Dry-run cycles against Kraken need
+  Query Funds; live trading also needs Query Closed Orders & Trades for
+  fill-confirmed sell settlement and Create & Modify Orders. Query Ledgers is
+  used only by preserved legacy account-history continuity checks during safe
+  migration or binding, not by retrospective report synchronization. Do not
+  claim Query Open Orders is required for normal operation unless the API
+  surface changes and the claim is verified.
 - Preserve the durable live-order journal: write `PENDING` before AddOrder;
   ambiguous outcomes become blocking `UNCERTAIN`; never retry or heuristically
   clear them. Operator reconciliation requires a database backup and follows
@@ -257,7 +264,7 @@ with the workflow.
   persistence, or live-order safety as high impact and require explicit user
   direction plus focused security tests.
 
-Public reporting and operator guidance belongs in [`SECURITY.md`](../SECURITY.md);
+Public security and operator-runbook guidance belongs in [`SECURITY.md`](../SECURITY.md);
 development-facing security invariants remain canonical here and in the owning
 domain skills.
 
@@ -306,10 +313,12 @@ See [write-kotest](skills/write-kotest/SKILL.md).
   Add suppressions only for demonstrated warnings, not by default.
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
-- Evaluation/E2E/chaos: `EvaluationScenariosTest` covers deterministic
-  `FakeKrakenService` scenarios, while `SimulationEvaluationScenariosTest`
-  covers production `SimulatedKrakenService` invariants; both are documented in
-  `docs/EVALUATION.md`. Flow tests use `advanceUntilIdle()`.
+- Evaluation/E2E/chaos: focused tests for current planning, order safety,
+  Dashboard cutover, Actual observations, and prospective benchmark continuity
+  are mapped in `docs/EVALUATION.md`. `FakeKrakenService` remains useful for
+  deterministic cases and `SimulatedKrakenService` is the production emulator;
+  there is no retrospective-history scenario suite. Flow tests use
+  `advanceUntilIdle()`.
 - Each test kills a distinct defect class; no impossible-case, cosmetic-duplicate, or coverage-padding tests (see [ai-slop-detector](skills/ai-slop-detector/SKILL.md) § Test necessity).
 
 ---

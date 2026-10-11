@@ -1,210 +1,57 @@
 ---
 name: trade-history-sync
 description: >-
-  Trade and ledger history sync — TradeHistorySyncService and LedgersSyncService
-  (via TradeHistoryService façade), TradeDeduplicator (pair aliases,
-  local-estimate vs API, fee diffs; 5min scan / 10s reconcile / 300s sync
-  overlap), ledger identity dedupe, sync metadata offsets, dry-run vs live
-  reconcile, and simulation seed ~15 days. Use when changing history sync,
-  ledger/rewards queries, dedupe, or snapshot seeding.
+  Retired account-wide history synchronization and retrospective reporting
+  scope. For the preserved legacy account-continuity checks, prospective Actual
+  benchmark evidence, and sell-order fill confirmation, follow the active
+  skills linked below. Do not implement the removed reporting pipeline.
 ---
 
-# Trade History Sync
+# Retired Trade History Sync Scope
 
-Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
-`LedgersSyncService` / `TradeHistorySnapshotStore` /
-`TradeHistoryQueryService` / `TradeHistoryReconstructionService` under
-`service/impl/history/`; also `TradeDeduplicator`, `SnapshotHistoryCalculator`,
-`SqliteTradeRepositoryImpl`, and `SqliteLedgerRepositoryImpl`.
+The former account-wide trade/ledger import, simulation history seeding,
+retrospective snapshot reconstruction, report APIs, and reporting writes are
+retired. No startup or rebalance path should restore them. `/history` redirects
+to `/actual`; former `/api/history/*` reporting endpoints return 410 Gone.
 
-## Sync behavior
+This skill remains as a migration note for work touching the preserved account
+continuity boundary. The legacy `kraken-rebalancer.db` path is retained for safe
+execution-journal migration and account-history continuity during binding. It
+is not an active reporting destination. Existing legacy files and tables are
+left untouched by the retired reporting paths. `execution.db` and
+`kraken-actual.db` remain the active execution-journal and Actual stores.
 
-- Throttle: minimum **300s** between Kraken sync runs. A coroutine `Mutex`
-  serializes the throttle check through pagination, so concurrent callers wait
-  and recheck instead of duplicating a sync. Negative wall-clock elapsed time
-  allows the next sync to rebase instead of suppressing it indefinitely.
-- Full vs incremental is driven by the **effective watermark** (not
-  `isHistorySeeded`):
-  - `effectiveLatest = latestTradeTime ?: watermarkInstant` — **only**
-    null-coalesce, never `max()` the two.
-  - `latestTradeTime` includes only `success = true` and `dryRun = false` rows;
-    failed attempts and dry-run estimates never advance the exchange cursor.
-  - `sync_watermark_epoch_sec` is written after every successful sync so
-    dry-run-only accounts still advance.
-  - Both null → bounded initial seed from the last **96 days** (`SEED_HISTORY_LOOKBACK_DAYS`), not a full-history query.
-  - otherwise → incremental from effective latest minus **300s** overlap so
-    fills near the previous watermark are re-fetched and reconciled.
-  - Anti-pattern: `max(latestTradeTime, watermark)` — shrinks overlap below the
-    latest fill and skips unreconciled local estimates.
-- Within one sync pass, dedupe API rows with `apiFillIdentityKey`:
-  `timestamp|pair|side|volume|usdAmount|fee|orderTxid`.
-  Include economics **and** timestamp — one AddOrder can produce multiple fill
-  legs sharing an `orderTxid`.
-  Skip rows whose key is already in `seenApiFillKeys` (newest-first pagination
-  overlap).
-- `isHistorySeeded` / `history_seeded` only gates progress metadata writes
-  (`sync_offset` / `sync_total`) and first-sync completion marking.
-- Paginated cold Flow, page size **50**.
-- Skip live Kraken sync when `!simulation && !hasValidCredentials()`.
-- A real sync brackets pagination with a `ConfigService` execution session in
-  addition to `withStableBackend`; settings and credentials captured at entry
-  remain published until all pages finish. Throttled and invalid-credential
-  no-ops do not open a session, and cancellation/failure closes it in `finally`.
-- Reconciliation candidates must be effective local estimates (explicit
-  `LOCAL_ESTIMATE` or legacy inferred estimate shape). Persisted `API_FILL`
-  rows are never overwritten; an exact persisted API-fill identity is treated
-  as already synchronized. Pair aliases require a shared authoritative
-  trade/order identity; local/API economics matching uses only the tight
-  10-second window plus compatible pair, side, correlation identity, volume,
-  and USD. Fees are diagnostic, not primary proof, and conflicting nonblank
-  IDs never merge.
-- Dry-run rows are excluded before both exact-ID and heuristic reconciliation.
-  When the API fill and a non-dry-run local estimate both have nonblank `orderTxid`, an
-  exact ID match wins before newest-first economics heuristics. ID-less and
-  legacy rows retain the tolerance fallback, but conflicting nonblank IDs never
-  reconcile.
-- Rows with `submissionState` (`PENDING` / `UNCERTAIN`) are legacy unresolved
-  live guards, not reconciliation candidates. Schema migration imports them
-  into the durable `order_intents` journal while retaining the legacy column
-  until the intent is resolved;
-  new live attempts use `order_intents` directly. Both forms are excluded from
-  duplicate cleanup and age-based trade pruning. Never infer rejection from an
-  empty history response or clear them automatically.
-- Kraken's response-entry trade ID is persisted separately from `ordertxid` and
-  is the primary identity for a fill. Only legacy rows without that ID use the
-  complete economics fingerprint (timestamp, pair, side, volume, USD, price,
-  fee, and order transaction ID).
-- Ambiguous source-less historical rows (`success`, live, no error, no
-  slippage) migrate to `LEGACY_UNKNOWN`, not `API_FILL`. They are preserved;
-  only an exact conservative fingerprint prevents re-importing the same fill.
-- Progress keys (`SyncMetadataKeys`): `sync_offset`, `sync_total`,
-  `history_seeded`, `sync_watermark_epoch_sec` — stored in
-  `history_sync_metadata`.
+## Still-active boundaries
 
-## Ledger synchronization
+- **Legacy account continuity:** `ExecutionJournalBootstrap` migrates prior
+  unresolved intents before the live loop. Account binding can verify legacy
+  account history as migration/binding evidence. Preserve the existing schema
+  migrations, scope checks, source backup, and fail-closed handling; do not
+  turn them into account-wide report synchronization.
+- **Actual observations:** the Actual store retains directly observed raw
+  evidence and gaps for its account/configured-asset scope. The optional
+  prospective Buy & Hold segment begins at an eligible complete observation.
+  It advances only after event continuity is verified and uses evidence after
+  that baseline; it does not reconstruct an earlier period.
+- **Prospective continuity reads:** the verifier may read Kraken ledger and
+  trade events only for the interval from the benchmark's last verified time
+  through the observation being evaluated. It needs complete pagination to
+  verify that segment. These checks are forward comparison evidence, not a
+  general retrospective report or synchronization service.
+- **Sell settlement:** after successful sells, execution can query
+  `TradesHistory` using the transaction IDs returned for those orders. This is
+  order-specific fill confirmation for the current cycle; see
+  [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md) and
+  [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md).
 
-- `LedgersSyncService` is a separate insert-only sync for Kraken
-  `/0/private/Ledgers`; it requests `staking`, `dividend`, `earn`, `reward`, `deposit`,
-  `withdrawal`, `transfer`, `adjustment`, `conversion`, `spend`, `receive`, `margin`,
-  `rollover`, `settled`, and `credit` response types. The live adapter sends
-  `type=sale` for `spend`/`receive` because `sale` is the API query filter, sends
-  `type=all` for `earn`, `reward`, and `conversion`, then filters returned rows
-  locally. Preserve each row's ledger ID and `refid`; do not collapse the two
-  economic legs.
-- It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
-  stable-backend selection, and execution-session boundary as trade sync.
-- The first and recovered initial passes use the configured inception date when it
-  is older than the default **96-day** bound, otherwise they use that bound. A
-  seeded database whose coverage migration predates version `8` follows the same
-  rule and records the covered lower bound for later configuration changes.
-  Numeric `ledger_offset` and `ledger_total` progress markers are durable until
-  completion; recovery restarts from offset zero because newest-first pages can shift.
-- A version-`8` migration may reuse completed inception recovery only with a matching validated
-  account-scope binding, complete trade and ledger streams, complete offsets/version, and durable
-  total plus oldest-row evidence reaching the required lower bound. It fetches only an unproven
-  tail after that horizon; insufficient, later-starting, mismatched, failed, or partial proof
-  falls back to Kraken and cannot promote coverage from an old row alone.
-- Incremental passes use `latestLedgerTime ?: ledger_watermark_epoch_sec` minus
-  **300s**, and persist `ledger_watermark_epoch_sec` after successful completion.
-- `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
-  `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
-  cannot inflate counts.
-- Reads project an older exact `SOL`/`SOL03` alias mirror pair sharing one ledger ID
-  to a single canonical `SOL` event only when every other evidence field matches.
-  Conflicting duplicates and distinct ledger IDs are never collapsed; validator and
-  classifier rules still require complete evidence for Spot-facing transfer legs.
-- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking`, `dividend`,
-  top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward`
-  entries for tracked assets, accumulates amounts by asset at each portfolio
-  snapshot, and values them with that snapshot's prices. Earn allocation
-  mechanics remain internal and are excluded from the rewards series.
-- `TradeHistoryQueryService.getRebalancerComparison()` passes all retained balance-affecting
-  ledgers (`EXTERNAL_BALANCE_TYPES`, including complete conversion groups) to
-  `RebalancerComparisonCalculator` so strategy-neutral flows (rewards, deposits, withdrawals,
-  transfers, adjustments, consumer spend/receive legs, USD cash dividends, and complete
-  cross-asset conversions) are handled without silently dropping observed rows. Kraken documents
-  Buy Crypto Widget and Kraken app activity as Ledger-only, so it is not deduplicated against
-  `TradesHistory`.
-- The comparison validates each tracked interval after applying successful authoritative trades,
-  supported ledger events, and fees. A rounded mismatch at USD scale 2 or crypto scale 8 returns
-  `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE` at the first bad snapshot; it never degrades
-  an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
-  this validation boundary.
-- `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (current reconstruction
-  version `19`) query
-  `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
-  from current balances.
-- Reconstruction writes the ledger-coverage version alongside its version marker only after
-  snapshot persistence succeeds; a coverage migration therefore cannot be hidden by an older
-  marker.
-- The comparison extracts exact candidate `orderTxid` and `clientOrderId` values from the
-  successful live fills in the selected range before querying `OrderIntentRepository`. The
-  repository returns only matched durable `orderTxid` values; there is no all-intents time
-  window or timestamp/value heuristic at this ownership boundary.
-
-## TradeDeduplicator
-
-Window: **300_000 ms** (5 minutes).
-
-| Rule | Behavior |
-| :--- | :--- |
-| Pair alias | Same symbol+side+volume, **different** pair strings (e.g. `XBTUSD` vs `XXBTZUSD`), only with a shared authoritative trade/order identity |
-| Local estimate vs API | Same symbol+side+pair within **10_000 ms**; compatible correlation identity; volume/USD within **1%**. Fees are not primary identity proof. Prefer deleting the local estimate when paired with `API_FILL`. |
-| Cleanup | Later record IDs deleted via `cleanupDuplicateTrades()`; a row already selected for deletion cannot anchor another comparison |
-
-## Reconcile dry-run vs live
-
-- `isMatchingApiTrade` returns **false** when the local row is `dryRun=true`
-  — dry-run estimates never hit the exchange, so sync must not rewrite them
-  into live `API_FILL` rows (API fill is inserted as a new trade instead).
-- Non-dry-run local estimates may still reconcile with later API fills —
-  dedupe prefers API records when alias/estimate rules match.
-- Do not invent aggressive deletes outside `TradeDeduplicator` tolerances.
-
-## Simulation seeding
-
-When DB empty and `settings.simulation`:
-
-- `seedHistoricalSnapshots()` — ~**15 days** back, step every **6 hours**.
-- `SimulatedKrakenService.seedSimulatedTrades()` — ~**15** trades over ~**5** days.
-
-`SnapshotHistoryCalculator` reconstructs timelines (trades + daily closes).
-For unconfigured or recent starts, pruning / daily-close span uses
-`HISTORICAL_DAYS_BACK` (**90**) and the OHLC fetch in
-`TradeHistoryReconstructionService.reconstructHistoricalSnapshots` uses **95**
-days. An older configured inception extends both spans to cover that start.
-
-## Auto snapshot reconstruction
-
-- After sync, when `!simulation && totalTrades > 0 && snapshots.size <= 1`, call
-  `TradeHistoryReconstructionService.reconstructHistoricalSnapshots()`
-  (OHLC ~95 days and prune span 90 days by default; older configured inception
-  dates extend the reconstruction range).
-- Reconstruction captures one `AppConfig` and one `KrakenService` backend for
-  the full pass inside a nested-safe execution session; sync callers pass their
-  already-pinned values so one sync cannot mix settings or live/simulation data.
-- Simulation seeding is separate (~15 days of snapshots / ~15 fills) and only
-  when the DB is empty with `simulation = true`.
-- Reconcile updates preserve local `cycleId`, prefer API `orderTxid`, and retain
-  `expectedPrice` for slippage recompute.
-- Sync writes `sync_watermark_epoch_sec` / `ledger_watermark_epoch_sec` from the
-  successful request horizon captured before pagination completes, not from a
-  later completion clock. Missing credentials are typed unavailable conditions,
-  not empty-history success. Reconstruction refuses to save or version-stamp
-  when a tracked asset lacks a trustworthy OHLC, trade, or current price.
-
-## Live stream
-
-After sync/rebalance, snapshots emit on `TradeHistorySnapshotStore.snapshotFlow`
-for SSE
-`/api/status/stream`.
+For active runtime ownership, see [`docs/FLOWS.md`](../../../docs/FLOWS.md),
+the [Ktor view skill](../ktor-html-views/SKILL.md), and the
+[execution-journal recovery notes](../../../SECURITY.md#execution-journal-storage-and-recovery).
 
 ## Checklist
 
-- [ ] Dedupe window/tolerances unchanged unless intentional + tested
-- [ ] Sync metadata keys consistent with `:common` `SyncMetadataKeys`
-- [ ] Simulation seed durations documented if changed
-- [ ] dryRun/live reconcile does not drop legitimate distinct fills
-- [ ] Reconcile preserves local `cycleId` and prefers API `orderTxid` when present
-- [ ] Unresolved submission rows are not reconciled, deduplicated, or pruned
-- [ ] Ledger sync preserves 300s overlap, durable seed progress, and identity dedupe
+- [ ] Do not add account-wide trade/ledger synchronization or historical report writes
+- [ ] Do not restore snapshot reconstruction, simulation history seeding, or retired report APIs
+- [ ] Keep existing schema migrations and safe legacy account-continuity checks intact
+- [ ] Keep prospective benchmark verification scoped to its baseline and forward interval
+- [ ] Keep sell fill checks scoped to transaction IDs from the current cycle's orders

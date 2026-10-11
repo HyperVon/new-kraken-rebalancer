@@ -5,7 +5,7 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.FakeKrakenService
-import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.OrderIntentService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -21,8 +21,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
+    private val orderExecutor = OrderExecutorImpl(krakenService, mockk<OrderIntentService>(relaxed = true))
 
     init {
         "sizes live buys from fill-confirmed net proceeds matched by order txid" {

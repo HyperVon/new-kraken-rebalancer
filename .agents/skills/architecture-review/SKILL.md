@@ -99,7 +99,7 @@ The decisions Canvas and recommend-only boundary in Step 6 remain mandatory.
 ### Step 0: Scope
 
 Default = **full system**. Narrow only if the user names a subsystem (e.g.
-history sync, frontend, persistence, rebalance loop).
+Dashboard/Actual UI, account continuity, persistence, rebalance loop).
 
 Ask once if unclear: full redesign brainstorm vs evolutionary options only.
 Default to **both**, ranked.
@@ -122,8 +122,9 @@ Answer before proposing changes:
 2. **Hard constraints** — Live money movement? Offline simulation? Single
    operator on a private network? Persistence durability? Latency of the
    rebalance loop?
-3. **Risk surface** — Wrong order size, double trade, lost history, leaked
-   keys, accidental LIVE mode, public exposure of the dashboard.
+3. **Risk surface** — Wrong order size, double trade, lost execution or
+   continuity evidence, leaked keys, accidental LIVE mode, public exposure of
+   the dashboard.
 4. **Scale reality** — Solo/local tool vs multi-user SaaS. Do not recommend
    enterprise multi-tenant architecture for a single-operator desktop/server
    unless evidence shows that need.
@@ -157,9 +158,9 @@ whether the split earns its keep.
 | Flow | Type | Owner | Invariant |
 | :--- | :--- | :--- | :--- |
 | `watchConfigChanges()` | Hot SharedFlow | ConfigServiceImpl | Settings change restarts the loop |
-| `snapshotFlow` | Hot SharedFlow | TradeHistorySnapshotStore | `tryEmit`; replay 1, buffer 16 |
-| Paginated Kraken fetch | Cold Flow | TradeHistorySyncService | Suspending emit; 300s throttle |
-| USD settle poll | Cold Flow | OrderExecutorImpl | Never broadcast to UI |
+| Latest Dashboard snapshot | Hot StateFlow | CurrentPortfolioState | Retain only the latest completed cycle |
+| Actual sample write | Bounded channel | ActualObservationDispatcher | Best-effort; never block the order path |
+| Exchange retry / USD settle poll | Cold Flow | Kraken adapters / OrderSettleHelper | Collect for current cycle work; never broadcast to UI |
 
 **Redesign smell:** adding an EventSource/WebSocket client when HTMX SSE +
 fragment swap already delivers snapshots.
@@ -181,8 +182,9 @@ Cover each dimension. Skip empty sections in the report; do not invent issues.
    modes when Kraken is wrong/slow. Treat exchange-doc claims as hypotheses
    until verified against current official Kraken docs (canonical links in
    [kraken-api-integration](../kraken-api-integration/SKILL.md)).
-5. **Persistence & history** — SQLite/Exposed fit; reconstruction vs ledger;
-   migration story; corruption/recovery.
+5. **Persistence & continuity** — SQLite/Exposed fit; active execution and
+   Actual stores; legacy migration and account-binding continuity; corruption
+   and recovery.
 6. **API & UI architecture** — SSR + HTMX + Kotlin/JS vs SPA vs thinner
    server; chart/SSE coupling; operational clarity of LIVE/DRY/SIM.
 7. **Security & trust model** — No-auth local trust: is it documented and
@@ -211,9 +213,9 @@ Trace in code, then answer:
    threshold; best positive below 95% still proceeds.)
 5. **Cycle cash cap** — multi-buy batch respects 99% of settled USD?
 6. **Submission ambiguity** — real live intent persists before AddOrder,
-   AddOrder runs once, ambiguous outcomes block later batches, and unresolved
-   rows survive reconciliation/dedupe/pruning? Deterministic `cl_ord_id` is
-   open-order uniqueness, **not** full idempotency; `userref` is not uniqueness.
+   AddOrder runs once, and ambiguous outcomes block later batches until
+   evidence-based resolution. Deterministic `cl_ord_id` is open-order
+   uniqueness, **not** full idempotency; `userref` is not uniqueness.
 7. **Audit trail** — trades persist `cycleId`, `clientOrderId`, `orderTxid`, and
    unresolved submission state?
 8. **Mode clarity** — operator distinguishes SIMULATION / DRY RUN / LIVE
@@ -224,8 +226,8 @@ compensating control is explicit.
 
 #### Evaluate `withStableBackend` on every exchange redesign
 
-**Current contract:** a CoroutineContext pin is set at cycle/sync entry; nested
-calls reuse it; unpinned calls re-read `settings.simulation`.
+**Current contract:** a CoroutineContext pin is set at cycle entry; nested
+order-path calls reuse it; unpinned calls re-read `settings.simulation`.
 
 Ask:
 
@@ -233,7 +235,7 @@ Ask:
   sell/settle/buy sequence?
 - Can a settings save mid-cycle change which Kraken implementation serves an
   in-flight order?
-- If services are split, where does the pin live (manager vs executor vs sync)?
+- If services are split, where does the pin live (manager vs executor)?
   Exactly one owner.
 
 **Keep current** when the pin prevents sim/live flapping. **Replace** only with
@@ -256,10 +258,11 @@ bind-to-localhost — not "add JWT later".
 
 #### Evaluation suite as an architectural asset
 
-Any proposal replacing manager / executor / analyzer must either port
-`EvaluationScenariosTest` + `SimulationEvaluationScenariosTest`, or document
-kill criteria plus a new proof harness. "Unit tests are sufficient" fails the
-filter.
+Any proposal replacing manager / executor / analyzer must preserve the focused
+current contracts in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md): fixed
+USD planning, execution safety, Dashboard cutover, Settings compatibility,
+Actual evidence, and prospective continuity. Do not restore a retired
+retrospective-history scenario suite.
 
 ### Step 4: Brainstorm alternatives
 

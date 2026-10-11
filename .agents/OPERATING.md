@@ -125,8 +125,8 @@ Launch parallel agents when **all** of these hold:
 ### When to keep one stream
 
 Stay single-threaded when streams **share** the same hot files or one depends
-on the other’s output (same `History*.kt` file, API contract + consumer in one
-change, cross-cutting refactors).
+on the other’s output (same controller/view module, API contract + consumer in
+one change, cross-cutting refactors).
 
 ### How to split
 
@@ -237,17 +237,13 @@ After a deploy or LAN UI check, run
 
 - Missing/misleading mode plate, or a stream-health chip labeled as live trading
 - Squished STREAM/STALE + relative age/time header cluster on laptop widths
-- Dashboard hero delta/sparkline or Cash/Crypto progress tiles clipped/empty
-- Activity cycles flattened into an unreadable list or missing the History link
+- Dashboard latest snapshot or Cash/Crypto summary tiles clipped/empty
+- Current-cycle actions flattened into a long list or detached from the snapshot
 - Safety cards whose ON/OFF state is unclear
 - Concatenated deviation legend (“Over targetUnder target”)
-- History Views/Zoom unstyled native buttons
-- History chart title/legend/zoom header wrapping or caption/table semantics lost
-- View presets that don’t hide series (Day · Total only)
-- Chart drag that both zooms and pans without a separate pan control
-- Scrubber stays **disabled** after drag/wheel zoom (only Zoom buttons synced it)
-- Scrubber thumb moves but **chart does not pan** (wrote `options.scales`
-  instead of `chart.zoomScale`)
+- Settings form exposing retired drawdown, deployment, inception, or comparison-start controls
+- Actual chart presenting incomplete evidence or missing coverage as a continuous line
+- Prospective Buy & Hold presented without verified event continuity or as a retrospective backtest
 
 ### No unsolicited accessibility metadata
 

@@ -5,9 +5,8 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
@@ -46,7 +45,7 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                             privateKey = validSecret,
                         ),
                         settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
                         allocations =
                         listOf(
                             Allocation(Asset.BTC, 50.0),
@@ -124,11 +123,9 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                     )
-                val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutorImpl(krakenService, tradeHistoryService)
+                    OrderExecutorImpl(krakenService, mockk<OrderIntentService>(relaxed = true))
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,

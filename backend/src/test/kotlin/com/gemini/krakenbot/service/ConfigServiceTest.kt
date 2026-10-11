@@ -72,8 +72,6 @@ class ConfigServiceTest : StringSpec() {
         listOf<Pair<String, (Settings, Double) -> Settings>>(
             "deviationTriggerPercent" to { settings, value -> settings.copy(deviationTriggerPercent = value) },
             "minimumOrderSizeUSD" to { settings, value -> settings.copy(minimumOrderSizeUSD = value) },
-            "fiatMaxDrawdown" to { settings, value -> settings.copy(fiatMaxDrawdown = value) },
-            "fiatDeploymentExponent" to { settings, value -> settings.copy(fiatDeploymentExponent = value) },
         )
 
     private fun createValidConfig(file: File) {
@@ -831,33 +829,41 @@ class ConfigServiceTest : StringSpec() {
                     "minimumOrderSizeUSD" to settings.copy(minimumOrderSizeUSD = -1.0),
                     "minimumOrderSizeUSD below floor" to settings.copy(minimumOrderSizeUSD = 1.0),
                     "minimumOrderSizeUSD below floor 1.9" to settings.copy(minimumOrderSizeUSD = 1.9),
-                    "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
-                    "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
-                    "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),
-                    "fiatDeploymentExponent ceiling" to settings.copy(fiatDeploymentExponent = 101.0),
                     "deviationTriggerPercent ceiling" to settings.copy(deviationTriggerPercent = 101.0),
-                    "invalid inceptionDate" to settings.copy(inceptionDate = "not-a-valid-date"),
-                    "negative fiatDeploymentThresholdPercent" to settings.copy(fiatDeploymentThresholdPercent = -0.1),
-                    "fiatDeploymentThresholdPercent over 100" to settings.copy(fiatDeploymentThresholdPercent = 100.1),
                 )
             }
         }
 
-        "validateConfig_AcceptsValidInceptionDateAndThreshold" {
+        "loadConfig ignores retired settings while preserving the configured allocation" {
             runTest {
-                val currentConfig = configService.getConfig()
-                val validSettings = currentConfig.settings.copy(
-                    inceptionDate = "2026-06-06",
-                    fiatDeploymentThresholdPercent = 5.0,
+                tempFile.writeText(
+                    """
+                    {
+                      "kraken": { "apiKey": "k", "privateKey": "s" },
+                      "settings": {
+                        "loopDelaySeconds": 60,
+                        "deviationTriggerPercent": 2.0,
+                        "minimumOrderSizeUSD": 5.0,
+                        "dryRun": true,
+                        "simulation": true,
+                        "fiatMaxDrawdown": 70.0,
+                        "fiatDeploymentExponent": 3.0,
+                        "fiatDeploymentThresholdPercent": 5.0,
+                        "inceptionDate": "not-a-date",
+                        "comparisonStartDate": "also-retired"
+                      },
+                      "allocations": [
+                        { "symbol": "BTC", "targetPercent": 60.0 },
+                        { "symbol": "USD", "targetPercent": 40.0 }
+                      ]
+                    }
+                    """.trimIndent(),
                 )
-                configService.updateConfig(currentConfig.copy(settings = validSettings))
-                configService.getConfig().settings.inceptionDate shouldBe "2026-06-06"
-                configService.getConfig().settings.fiatDeploymentThresholdPercent shouldBe 5.0
-
-                // Also accepts null or blank
-                val clearedSettings = validSettings.copy(inceptionDate = "   ")
-                configService.updateConfig(currentConfig.copy(settings = clearedSettings))
-                configService.getConfig().settings.inceptionDate shouldBe "   "
+                configService.loadConfig()
+                configService.getConfig().settings.loopDelaySeconds shouldBe 60L
+                configService.getConfig().allocations.map { it.symbol.value to it.targetPercent } shouldBe
+                    listOf("BTC" to 60.0, "USD" to 40.0)
+                tempFile.readText() shouldContain "fiatMaxDrawdown"
             }
         }
 
@@ -1070,7 +1076,7 @@ class ConfigServiceTest : StringSpec() {
                     tempFile,
                     originalConfig.copy(
                         kraken = KrakenCredentials("rejected-key", "rejected-secret"),
-                        settings = originalConfig.settings.copy(fiatDeploymentExponent = Double.POSITIVE_INFINITY),
+                        settings = originalConfig.settings.copy(deviationTriggerPercent = Double.POSITIVE_INFINITY),
                     ),
                 )
 

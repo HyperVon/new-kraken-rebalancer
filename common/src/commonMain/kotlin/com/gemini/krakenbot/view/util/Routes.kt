@@ -1,10 +1,5 @@
 package com.gemini.krakenbot.view.util
 
-import com.gemini.krakenbot.model.TimeRange
-
-fun String.withRange(range: TimeRange): String = withRange(range.key)
-fun String.withRange(rangeKey: String): String = withQuery(QueryParamKeys.RANGE, rangeKey)
-
 /** Appends one RFC 3986 query parameter without allowing user values to change URL structure. */
 fun String.withQuery(key: String, value: Any): String {
     val fragmentIndex = indexOf('#')

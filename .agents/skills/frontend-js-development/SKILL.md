@@ -1,10 +1,9 @@
 ---
 name: frontend-js-development
 description: >-
-  Client Kotlin/JS — HTMX hook lifecycle, stream-chip STREAM/STALE timing,
-  Chart.js deep-clone, History timeframe updating all 6 summary cards,
-  trade-table formatting, zoom/scrubber via chart.zoomScale, and Karma
-  coverage thresholds. Use when editing frontend-js/src.
+  Client Kotlin/JS for Dashboard freshness and sorting, active Settings
+  allocation controls, and HTMX swap/error handling. Use when editing
+  frontend-js/src.
 ---
 
 # Kotlin/JS Client Development (`:frontend-js`)
@@ -13,159 +12,91 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 
 ## Responsibilities
 
-1. **SSE timing (not transport)** — HTMX SSE extension owns
-   `/api/status/stream`; `:frontend-js` updates stream-chip age after fragment
-   swaps, not EventSource parsing.
-2. **HTMX hooks** — `htmx:afterSwap` / `htmx:configRequest` to rebind charts after
-   fragment swaps.
-3. **Chart.js** — deep-clone options before each render; re-attach functions after
-   clone.
-4. **History timeframe** — when user selects 24h / 7d / 30d / 90d / All, update
-   **all six** summary cards (**All-Time High** / **Period High**, **Total
-   Trades**, **Total Volume Traded**, **Total Fees Paid**, **Avg Fee Rate**,
-   **Avg Slippage**) plus charts and trade table.
-5. **History JSON parsing** — `HistoryJsonParsing.kt` maps `/api/history/*`
-   payloads onto typed `:common` `api/` DTOs (`PortfolioSnapshot`, `TradeRecord`,
-   `HistoryStats`, `SyncProgressResponse`). Do not reintroduce removed
-   `JsModels.kt` external interfaces.
+1. Update the Dashboard snapshot age and STREAM/STALE freshness chip.
+2. Preserve Dashboard asset-table sorting after current-cycle fragments swap.
+3. Keep Settings allocation totals, USD requirement, symbol validation, and
+   dynamically added rows in sync with the server-rendered form.
+4. Handle HTMX lifecycle events for Settings and order-intent error fragments,
+   including current CSRF token updates.
 
-## SSE (correct ownership)
+The retained browser pages are Dashboard (`/`), Settings (`/settings`), and
+Actual (`/actual`). Dashboard reports the latest current cycle only. Actual
+renders raw observations and an optional prospective Buy & Hold comparison;
+the client does not reconstruct past performance.
 
-**Server → browser:** the HTMX SSE extension connects to `/api/status/stream`
-and triggers a dashboard fragment refresh on `sse:message`
-(`DashboardShellComponent`: `hx-ext="sse"`, `sse-connect`, `hx-trigger="load, sse:message"`).
+## SSE ownership and status semantics
 
-**`:frontend-js` does not use `EventSource`.** Client responsibilities after a swap:
+The HTMX SSE extension connects to `/api/status/stream` and asks the Dashboard
+fragment to refresh when a current-cycle snapshot arrives. `:frontend-js` does
+not open `EventSource` or parse SSE payloads.
 
-- `htmx:afterSwap` → `updateAge()` + `reapplySort()`
-- `setInterval(updateAge, 1000)` so STREAM → STALE flips without new SSE events
-- Chart re-init via HTMX hooks / page detectors in `initOnLoad()` — not SSE parsing
+`updateAge()` reads the server-rendered observation timestamp and updates the
+header chip once per second and after fragment swaps. It toggles the shared
+freshness classes and writes `STREAM` or `STALE`, based on the shared
+`PrecisionConstants.STALE_THRESHOLD_SECONDS` value. This chip describes stream
+freshness; the server-rendered mode plate separately shows SIMULATION, DRY RUN,
+or LIVE TRADING.
 
-## Status chip = stream health, not trading mode
+## HTMX and DOM lifecycle
 
-`updateAge()` owns the dashboard header chip. It toggles
-`CssClass.Utility.Live` / `CssClass.Utility.Delayed` (styling only) and writes
-**`ViewText.STREAM`** when fresh, **`ViewText.STREAM_STALE`** when past
-`PrecisionConstants.STALE_THRESHOLD_SECONDS` from `:common` — never duplicate
-magic seconds in frontend-only constants.
+`main.kt` registers Dashboard and Settings globals once, then handles swaps:
 
-Settings allocation total uses **`CssClass.Form.AllocationTotalOk`** /
-**`AllocationTotalBad`** (not the stream Live/Delayed utilities).
+- Recompute the snapshot age and reapply the current table sort.
+- Reinitialize Settings totals when the Settings form is present.
+- Reveal a rendered Settings or order-intent error after its targeted swap.
+- Update hidden CSRF fields from a refreshed response token and preserve form
+  fields when a session-expired response is received.
+- Swap only server-marked HTML error fragments with an allowed response status
+  and HTML content type; do not convert JSON API errors into HTML swaps.
 
-- The chip reports **SSE freshness**. It must never read `LIVE` / `DELAYED` or
-  otherwise imply that real orders are executing.
-- Trading mode is server-rendered in the settings-backed mode plate
-  (`SIMULATION` / `DRY RUN` / `LIVE TRADING`) — see
-  [ktor-html-views](../ktor-html-views/SKILL.md). Do not infer or re-render mode
-  from client state.
+Use generated `:common` catalogs for IDs, attributes, events, selectors, CSS
+classes, routes, and user-visible text. Keep null guards around optional DOM
+elements. When a test asserts emitted DOM, use an independent raw expected
+literal for the contract instead of the catalog value used by production code.
 
-## Trade table rendering (History)
+## Dashboard table sorting
 
-- Trade **Price** formats at crypto precision (**4–8** decimal places);
-  **Fee** formats at **2–4** dp. Both render `ViewText.EM_DASH` for
-  zero/absent values (never `0.00000000`).
-- A plain success row (`success && !dryRun`) renders a quiet
-  `CssClass.Table.StatusDot` span with a `SUCCESS` tooltip; **dry-run and failed
-  rows keep their labelled badge** so risky rows stay scannable.
-- Keep the estimated-value tooltip on price / fee / slippage cells.
+Dashboard sorting preserves the selected column and direction when current
+cycle rows are replaced. Asset symbols sort as strings; numeric columns prefer
+the server-rendered `data-sort-value`, then parse visible text after removing
+currency, percent, and whitespace decoration. Do not reintroduce client-side
+History tables, trade formatting, chart setup, or retrospective timeframe
+controls.
 
-## Chart.js integrity
+## Settings allocation controls
 
-```kotlin
-val chartOptions = JSON.parse<dynamic>(JSON.stringify(DEFAULT_CHART_OPTIONS))
-```
+The allocation total is valid only when it is within the shared tolerance of
+100% and includes USD. Invalid totals disable Save. Newly added allocation
+symbols are normalized and canonicalized before duplicate checking, so aliases
+such as BTC/XBT cannot create duplicate rows. The new row starts with a zero
+target and a free palette color when one is available.
 
-Never pass a shared options object by reference.
+Keep the calculation in step with server validation and the active Settings
+contract. Retired inception, drawdown, and retrospective comparison controls
+must not be added back to the form.
 
-**Functions are stripped by `JSON.stringify`.** Re-attach callbacks after clone
-(e.g. `plugins.zoom.zoom.onZoomComplete` to re-sync the History pan scrubber).
+## Current JS tests
 
-### Zoom / pan (History)
+Relevant specs are `DashboardTest`, `SettingsTest`, and `MainTest` under
+`frontend-js/src/jsTest/kotlin`. Add focused coverage for changes to freshness,
+sorting, allocation checks, or HTMX error handling. Coverage thresholds are
+configured in `frontend-js/karma.config.d/coverage.js`.
 
-- **Drag / wheel / pinch** → zoom only (`pan.enabled = false`).
-- **Pan** → bottom range scrubber when zoomed.
-- After **any** zoom gesture, scrubber must be re-enabled via `onZoomComplete`
-  (not only after toolbar Zoom + / − / Reset).
-- To set absolute x bounds, call **`chart.zoomScale('x', {min, max}, 'none')`**.
-  Writing `options.scales.x.min/max` + `update()` is **ignored** once
-  chartjs-plugin-zoom owns the axis — that bug looks like “scrubber moves but
-  chart doesn’t.”
-- Cover both paths in Karma: `zoomScale` present + fallback without it.
-- Manual QA: `HIST-ZOOM-5` / `HIST-ZOOM-6` / `HIST-ZOOM-7` in
-  [ui-manual-qa/checklist.md](../ui-manual-qa/checklist.md).
+## Documentation visuals
 
-## DOM lifecycle
-
-### Lifecycle (main.kt contract)
-
-1. `main()` registers globals once (dashboard, settings, history).
-2. A single `htmx:afterSwap` listener rebinds age display + table sort.
-3. `initOnLoad()` gates page-specific init on `HtmlIds` presence.
-4. On History chart rebuild: deep-clone Chart.js options, re-attach
-   `onZoomComplete`, enable the scrubber after any zoom path.
-5. Clear intervals/listeners when adding History-only timers.
-
-- Clear intervals/timeouts and `removeEventListener` on detach.
-- Null-guard: `document.getElementById(...) ?: return`.
-
-## Shared `:common` constants
-
-```kotlin
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlIds
-```
-
-Production JS consumes the generated shared catalogs for IDs, attributes, HTML
-tags, CSS classes, routes, and `HtmlQueries` selectors. Do not redefine those
-contracts in production JS. Keep `CssClass` focused on classes and
-`HtmlQueries` focused on selectors.
-
-When a JS test verifies an emitted DOM/HTML contract, use an independent raw
-expected literal for the ID, class, tag, attribute, event, or selector. Typed
-catalog values are still fine for internal setup that is not itself the
-contract assertion; see [write-kotest](../write-kotest/SKILL.md).
-
-Do not introduce ARIA attributes, ARIA roles, or accessibility-only DOM text
-unless the user explicitly requests accessibility work. Preserve unrelated
-existing metadata rather than broadening a frontend task into remediation.
-
-## Coverage (Karma / Istanbul)
-
-Thresholds in `frontend-js/karma.config.d/coverage.js`:
-
-| Metric | Minimum |
-| :--- | ---: |
-| Statements | 90% |
-| Functions | 80% |
-| Lines | 90% |
-| Branches | 75% |
-
-```bash
-./gradlew :frontend-js:jsBrowserTest
-```
-
-## Docs screenshots
-
-Chart / History / SSE-driven UI changes that alter README visuals should refresh
-`docs/images/*.png` via
-[docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) and keep
-[docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) aligned
-([user-guide](../user-guide/SKILL.md)).
-
-Visual redesign / polish passes:
-[ui-visual-review](../ui-visual-review/SKILL.md) →
-[ui-visual-implement](../ui-visual-implement/SKILL.md). After chart/DOM
-behavior changes, run [ui-manual-qa](../ui-manual-qa/SKILL.md) (History
-views, zoom, scrubber pan, dry-run filter, legend toggles).
+When a retained page changes visually, follow
+[docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md). Its targets
+cover Dashboard, Settings, and Actual only. Use
+[ui-manual-qa](../ui-manual-qa/SKILL.md) for interaction checks and the visual
+review/implementation skills for design changes.
 
 ## Checklist
 
-- [ ] HTMX owns SSE transport; client only runs `updateAge` / chart re-init after swap
-- [ ] Status chip reads `STREAM` / `STALE` and never implies live trading
-- [ ] Timeframe change updates **all 6** summary cards
-- [ ] Trade rows: 2dp USD, em-dash for zero, dot for plain success, badge for
-      dry-run/failed
-- [ ] Chart options deep-cloned; zoom callbacks re-attached after clone
-- [ ] Zoomed History charts pan via `zoomScale` + scrubber (not options.scales only)
-- [ ] `:common` IDs/classes used; Karma thresholds still met
-- [ ] Visual changes → run docs-screenshot-refresh when shipping docs
+- [ ] HTMX owns SSE transport; JS updates freshness after swaps and on its timer
+- [ ] STREAM/STALE freshness remains separate from the trading mode plate
+- [ ] Dashboard current-cycle sorting survives fragment replacement
+- [ ] Settings requires valid 100% allocation within tolerance and includes USD
+- [ ] New symbols are canonicalized before duplicate checking
+- [ ] HTMX error swaps remain limited to marked HTML fragments
+- [ ] Shared `:common` contracts are used and asserted independently in tests
+- [ ] Visual changes refresh retained-page documentation screenshots

@@ -1,216 +1,174 @@
 ---
 name: portfolio-rebalancing-math
 description: >-
-  Portfolio rebalancing engine math — BigDecimal scales, ATH/drawdown fiat
-  deployment, deviation triggers, fiat correction, dust thresholds, sell-first
-  execution, durable live-order intents, and 99% cash caps. Use when changing PortfolioCalculations,
-  PortfolioAnalyzerImpl, RebalancerEngine, OrderExecutorImpl, or docs/ALGORITHM.md.
+  Current portfolio rebalancing math — fixed configured USD target, deviation
+  triggers, fiat correction, precision, safe sell/settle/buy execution, and live
+  order intents. Use when changing PortfolioCalculations, PortfolioAnalyzerImpl,
+  RebalancerEngine, OrderExecutorImpl, or docs/ALGORITHM.md.
 ---
 
-# Portfolio Rebalancing Engine Math
+# Portfolio Rebalancing Math
 
-Canonical deep doc: [`docs/ALGORITHM.md`](../../../docs/ALGORITHM.md).
+Canonical algorithm contract: [`docs/ALGORITHM.md`](../../../docs/ALGORITHM.md).
 
 Primary code:
 
-- `RebalancerEngine` — domain calculator (valuation, drawdown, targets, deviations,
-  fiat correction); no network/DB
-- `PortfolioCalculations` — shared % / target / deviation math
-- `PortfolioAnalyzerImpl` — snapshot/ATH I/O; delegates math to `RebalancerEngine`
-- `OrderExecutorImpl` — sell-first execution, USD settle, buy cap, and durable
-  live AddOrder intents
+- `RebalancerEngine` — current valuation, fixed targets, deviations, and fiat
+  correction; domain math has no network or database access.
+- `PortfolioCalculations` — shared target, percentage, and deviation math.
+- `PortfolioAnalyzerImpl` — current balance/price inputs and cycle snapshot.
+- `OrderExecutorImpl` — sell-first execution, USD settlement, cash reserve,
+  and durable live AddOrder intents.
 
-## Financial precision (CRITICAL)
+## Financial precision
 
-- **Never** use `Double`/`Float` for balances, volumes, prices, or USD amounts.
-- Crypto quantities: scale **8**, `RoundingMode.HALF_UP`.
-- USD valuations: scale **2**, `RoundingMode.HALF_UP`.
-- Tests: `shouldBeEqualComparingTo` or `compareTo() == 0` — never `.equals()` /
-  `shouldBeEqualByComparingTo`.
-- Defaults: `BigDecimal.ZERO` for nullable stats (e.g. ATH).
+- Never use `Double` / `Float` for balances, volumes, prices, or USD amounts.
+- Crypto quantities use scale 8; USD values use scale 2, both
+  `RoundingMode.HALF_UP` unless an order volume or spend cap requires rounding
+  down.
+- Analysis deviations use 4 decimal places; display snapshot percentages use
+  2 decimal places. Do not use display values as trigger inputs.
+- Sum raw asset USD values and round the portfolio total once. Per-asset values
+  used for order sizing are rounded to cents.
+- Compare `BigDecimal` in tests with `shouldBeEqualComparingTo` or
+  `compareTo() == 0`, never `.equals()` / `shouldBeEqualByComparingTo`.
 
-Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
-`SCALE_USD=2`, `CASH_RESERVE_FACTOR_DOUBLE=0.99`).
+Shared scales live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
+`SCALE_USD=2`, `SCALE_PERCENT=4`, and the 0.99 cash reserve).
 
-### Analysis vs snapshot percent scales
+## Current cycle math
 
-- Percentage numerators are multiplied by 100 **before** division at
-  `SCALE_PERCENT = 4`; dividing the ratio first would collapse precision to
-  0.01 percentage points. USD values use `SCALE_USD = 2`.
-- `createAssetSnapshot` rounds displayed percents to 2dp — do not reuse snapshot
-  percents as trigger inputs.
-- Accumulate raw per-asset USD and round the portfolio total once.
+For each cycle, use current account balances and direct USD ticker prices for
+configured assets. USD is valued at one dollar. A missing or zero non-USD mark
+fails valuation before order generation.
 
----
-
-## Phase overview
-
-1. **Snapshot** — balances × prices → total portfolio value.
-2. **Analysis** — ATH/drawdown → effective targets → deviations → orders.
-3. **Execution** — sell → settle cash → buy → persist snapshot.
-
----
-
-## ATH → drawdown → fiat deployment
-
-1. Track portfolio **ATH** in SQLite (`PortfolioStatsRepository`). Update on new highs.
-   Missing/null stats are an initial zero state, but database read or legacy
-   migration failures propagate and abort analysis before any order planning or
-   lower ATH write. Any non-cancellation ATH persistence failure is logged as an
-   error and aborts the cycle (fail-closed) so the bot never plans orders
-   against an unpersisted All-Time High. Cancellation still propagates.
-2. `Drawdown% = (ATH - Current) / ATH × 100`.
-3. `Deploy% = (Drawdown% / fiatMaxDrawdown)^fiatDeploymentExponent`, capped at 100%.
-   - Exponent `< 1` = aggressive early deployment; `> 1` = conservative; `1` = linear.
-   - `fiatMaxDrawdown = 0` disables deployment.
-4. `EffectiveUsdTarget = BaseUsdTarget × (1 - Deploy%)`.
-5. Freed allocation redistributed **proportionally to crypto** so totals remain 100%.
-   When there is no positive non-USD target, deployment is an applied no-op:
-   the configured USD target remains 100% and the cycle reports 0% deployed.
-
----
-
-## Deviations & triggers
+For configured weights totaling 100%:
 
 ```text
-DeviationUSD = CurrentValue - TargetValue
-Deviation%   = DeviationUSD / TargetValue × 100   (signed relative)
+usdTarget       = sum(configured USD weights)
+cryptoScale     = (100% - usdTarget) / sum(configured non-USD weights)
+targetWeight[i] = configured weight[i] × cryptoScale       (non-USD assets)
+targetWeight[USD] = usdTarget
+rawValue[i]     = balance[i] × priceUSD[i]
+currentValue[i] = round_to_cents(rawValue[i])
+portfolioValue  = round_to_cents(sum(rawValue[i]))
+targetValue[i]  = round_to_cents(portfolioValue × targetWeight[i] / 100)
+deviationUSD[i] = currentValue[i] - targetValue[i]
+deviationPct[i] = deviationUSD[i] / targetValue[i] × 100
 ```
 
-When `TargetValue` is `$0` but `CurrentValue > 0`, `Deviation%` is **100%**
-so a zero-target holding can still clear the percent trigger (paired with the
-dust gate).
+The configured USD weight remains fixed each cycle. Remaining allocation is
+split among configured non-USD assets in their existing relative proportions.
+No ATH, drawdown, historical capital flow, OHLC high, retrospective report, or
+Buy & Hold value changes the plan.
 
-- Negative → underweight → **BUY**.
-- Positive → overweight → **SELL**.
-- Order generation requires **both**:
-  - `|Deviation%| ≥ deviationTriggerPercent`, and
-  - `|DeviationUSD| ≥ minimumOrderSizeUSD` (`AssetMetrics.isSignificant`).
-- Missing or zero non-USD ticker price aborts the cycle before orders
-  (`calculatePortfolioValues` → `Result.Failure`).
+A zero target with a positive holding uses a 100% relative deviation so it can
+still clear the percent gate and be liquidated; zero holding at zero target has
+zero deviation.
 
-### Price lookup (`RebalancerEngine.resolvePriceFromTicker`)
+An asset triggers only when both conditions hold:
 
-- Try the exact ticker key `Asset.tradingPair(symbol)` first.
-- Fallback: iterate `rawPrices` using `Asset.matchesUsdQuotedPair(key, symbol)`
-  only — **never** `key.contains(symbol)`.
-- Zero/missing non-USD price → `Result.Failure` with
-  `ViewText.PRICE_NOT_FOUND_PREFIX` before any orders.
-- Preserve this invariant when extracting helpers.
+- `abs(deviationPct) >= deviationTriggerPercent`
+- `abs(deviationUSD) >= minimumOrderSizeUSD`
 
-### Fiat correction (USD-only trigger)
+Positive deviation means overweight / sell; negative means underweight / buy.
+Missing or zero non-USD ticker prices fail closed before any order is planned.
+Keep exact symbol/pair matching rules in `RebalancerEngine`; never accept a
+price by loose substring matching.
 
-When **only** USD passes both gates (`|Deviation%| ≥ deviationTriggerPercent`
-and `|DeviationUSD| ≥ minimumOrderSizeUSD`; deposit/withdrawal):
+### USD-only correction
 
-- **Surplus**: buy underweight crypto proportional to USD deficits.
-- **Shortage**: sell overweight crypto proportional to USD surpluses.
+USD is not an order row. If USD is the only triggered asset:
 
-This concentrates trades on assets furthest from target and clears dust more
-effectively than spreading across all pairs.
+- Cash surplus is distributed among underweight non-USD assets in proportion
+  to their USD deficits.
+- Cash shortfall is funded by selling overweight non-USD assets in proportion
+  to their USD surpluses.
+- Skip corrections when there are no counter-balancing positions.
 
-- In `distributeFiatCorrection`:
-  `remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)`; each
-  `share = min(remaining, computedShare)`.
-- Skip symbols whose proportional share rounds to `$0.00`.
-- Fiat correction runs only when USD alone triggered **and** crypto order maps
-  are empty.
+If crypto assets already triggered, their plan is used without a second USD
+correction. Recheck minimum order size and positive volume after allocation and
+rounding. Sell volume cannot exceed the cycle-entry holding.
 
----
+## Execution safety
 
-## Execution safety (`OrderExecutorImpl`)
+1. **Sells first.** Only successful sells contribute projected proceeds; use
+   submitted notional after volume/holding caps, not the original intent.
+2. **Settle available USD.** After at least one successful sell in a non-dry-run
+   cycle, prefer Kraken fills matched to the sell order transaction IDs. Cap
+   proceeds to spendable USD (or projected cash if the peek fails). If fill
+   evidence is missing or materially short, use bounded USD balance polling.
+   Stop buys when no positive spendable USD is confirmed. Fill history here is
+   order-specific settlement evidence, not retrospective reporting.
+3. **Buy second.** Limit the cycle's buys to 99% of post-sell USD, rounded down
+   to cents, and reduce the remaining budget after each successful buy.
+4. **Recheck dust and volume.** Enforce the minimum notional after cash-budget
+   adjustment. Do not submit a zero or negative amount or asset volume.
+5. **Live order journal.** Only when simulation and dry run are both off, persist
+   a `PENDING` intent with deterministic Kraken `cl_ord_id` before AddOrder.
+   Attempt AddOrder once. Ambiguous outcomes become `UNCERTAIN`, stop the batch,
+   and block later live submissions until an operator verifies Kraken and
+   resolves the intent with evidence. Do not retry or auto-resolve ambiguity.
+6. **Keep modes distinct.** Simulation selects the offline emulator; dry run
+   suppresses placement on the selected backend. A live order is possible only
+   when both are off.
 
-1. **Sell first** — only successful sells update projected cash.
-   - Each sell volume is capped to the cycle-entry asset balance rounded down
-     to crypto scale, so cent-rounded zero-target liquidation intent cannot
-     request more units than the account holds.
-   - After each successful sell, add the effective submitted notional
-     (`result.volume × pinned price`) to `projectedCash` (pre-fee). Never add
-     the original intent after holdings capping or volume rounding.
-   - Live settle replaces this with fill-confirmed proceeds: sum
-     `(usdAmount − fee)` for matching sell `orderTxid`s, capped by balance peek /
-     projected cash.
-   - Dry-run or no sells: skip settle; buys budget off projected cash only.
-2. **USD settle** (`OrderSettleHelper.settleUsdAfterSells`) — only when **≥1 sell succeeded** and **not** dry-run:
-   prefer **fill-confirmed** sell proceeds (trade history matched by order
-   txid, net of fee); fall back to USD **balance poll** when no txids, fill
-   confirmation is empty, or its spendable/projected-cash-capped result is below
-   95% of projected cash. Both cold polls: up to **3** attempts from **250ms**
-   doubling backoff; track best positive; accept early at **≥95%** of
-   projected; **abort buys** (fail-closed) if none. Skip settle (use projected
-   cash) when dry-run or no sell succeeded. Poll/Flow mechanics:
-   [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
-   Repeated nonblank Kraken trade IDs across shifting pages count once; id-less
-   rows remain distinct because equal-economics partial fills can be legitimate.
-3. **Buy second** — wrap the sell→buy sequence in `withStableBackend` using `RebalanceSessionContext`; apply a
-   **cycle-level 99%** budget of settled USD
-   (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
-   cap each buy by remaining budget.
-4. **Dust** — skip orders with USD notional `< minimumOrderSizeUSD`.
-   - **Pre-flight order guards** (`OrderExecutorImpl.executeSingleOrder` via `RebalanceSessionContext`): after
-     the dust check, abort when `usdAmount.signum() <= 0` or the computed
-     `volume.signum() <= 0` — return `null`; do not call `executeOrder`.
-   - Applies in test doubles where `minimumOrderSizeUSD` is configured to 0, or in
-     production when a buy is trimmed to $0 by the 99% cycle budget.
-   - Anti-pattern: relying on Kraken to reject zero volume — the app would still
-     persist a `TradeRecord`.
-5. **Live submission journal** — when `!dryRun && !simulation`, persist a
-   `PENDING` row in `order_intents` with deterministic `cl_ord_id`
-   (`cycleId|symbol|side` → UUID) before AddOrder. AddOrder has one attempt. A
-   transport/response ambiguity or missing txid becomes `UNCERTAIN`, aborts the
-   batch, and blocks future live orders while any unresolved row remains. Such
-   rows are excluded from sync reconciliation, duplicate cleanup, and pruning;
-   only an operator may resolve them through the operator API after checking
-   Kraken open orders, closed orders, and fills. Legacy trade `PENDING`/
-   `UNCERTAIN` guards are imported into this journal during schema migration.
-   `cl_ord_id` is open-order uniqueness, not full idempotency; `userref` is not
-   uniqueness.
-   Backend exceptions and cancellation persist `UNCERTAIN` before propagating;
-   cancellation uses `NonCancellable` only for that durability update. A
-   persistence failure never masks the original placement exception; attach it
-   as suppressed diagnostic context. Non-live backend exceptions instead update
-   the estimate with the actual failure.
-6. Market orders; volumes at crypto scale 8. Convert USD intents with
-   `RoundingMode.DOWN` so `volume × price` never exceeds the intended notional;
-   sell volumes are additionally capped to cycle-entry holdings.
-7. **dryRun**: suppress placement on the active backend — SLF4J uses
-   `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity
-   always uses `[DRY RUN]` (see dry-run-and-simulation skill).
+## Current portfolio surfaces and persistence
 
----
+`CurrentPortfolioState` is an in-memory `StateFlow` containing only the latest
+completed cycle snapshot. Dashboard and SSE expose that current snapshot and its
+cycle actions; they do not retain a retrospective timeline. `/history`
+permanently redirects to `/actual`, and former `/api/history/*` endpoints
+return `410 Gone`.
 
-## Key settings (`rebalancer-config.json`)
+Actual observation capture is separate from order execution. It stores direct
+balance/ticker evidence asynchronously, preserves incomplete samples as gaps,
+and does not substitute historical prices. Simulation does not create
+authenticated Actual data. An optional prospective Buy & Hold comparison starts
+only from an eligible complete observation after continuity verification and
+uses forward observations from that baseline.
+
+The legacy `kraken-rebalancer.db` file remains available for safe execution
+journal migration and account-history continuity during binding; it is not an
+active reporting destination. Retired sync, reconstruction, and report writes
+remain stopped, and existing files/tables are left untouched. Execution intents
+and Actual observations use their separate active stores.
+
+## Active settings and config compatibility
 
 | Setting | Role |
 | :--- | :--- |
-| `deviationTriggerPercent` | Absolute relative deviation gate |
-| `minimumOrderSizeUSD` | Significance gate (`isSignificant`) **and** min order notional |
-| `fiatMaxDrawdown` / `fiatDeploymentExponent` | Deployment curve |
-| `dryRun` / `simulation` | Distinct safety / emulator flags |
-| `loopDelaySeconds` | Cycle sleep |
+| `allocations` | Configured asset symbols, weights, and colors; weights include USD and sum to 100%. |
+| `deviationTriggerPercent` | Relative deviation gate. |
+| `minimumOrderSizeUSD` | Dollar significance gate and execution minimum. |
+| `loopDelaySeconds` | Delay between cycles. |
+| `dryRun` | Suppresses order placement on the selected backend. |
+| `simulation` | Selects the offline emulator. |
+| `qualityScores` | Optional allocation preview inputs; do not affect orders until suggested targets are applied and saved. |
 
----
+Older JSON may contain retired keys such as `fiatMaxDrawdown`,
+`fiatDeploymentExponent`, `fiatDeploymentThresholdPercent`, `inceptionDate`, and
+`comparisonStartDate`. The parser discards them on load; the next Settings save
+writes active settings without those keys. Schema migration and account-history
+continuity compatibility must remain intact.
 
-## Domain Engine Refactoring Invariants
+## Test ownership
 
-- **Comment Preservation**: Retain deep inline why-comments (pair-alias matching, `fiatDeploymentExponent` Double.pow scaling, USD reserve truncation) when extracting or moving calculation methods into helper objects like `RebalancerEngine`.
-- **Error Constants**: Missing ticker price abort paths must return `Result.Failure` matching `ViewText.PRICE_NOT_FOUND_PREFIX`.
-
----
+Use focused current-contract tests listed in
+[`docs/EVALUATION.md`](../../../docs/EVALUATION.md), including the engine math,
+portfolio manager, order-settlement, execution-journal, Dashboard cutover,
+Actual observation, prospective benchmark continuity, and Settings/config tests.
+Do not add retrospective ATH/reconstruction/comparison scenarios.
 
 ## Checklist
 
-- [ ] BigDecimal only; scales 8/2; matcher `shouldBeEqualComparingTo`
-- [ ] ATH/drawdown deployment and crypto redistribution correct
-- [ ] Signed deviations retained; trigger uses absolute value **and** dust USD significance
-- [ ] Missing/zero non-USD price aborts cycle before orders
-- [ ] Fiat correction only when USD alone passes both gates (≥ trigger and ≥ dust)
-- [ ] Sell → (if sell succeeded and not dry-run) fill-confirm then poll fallback
-      (3× / 250ms doubling backoff, keep best positive, early-accept at **≥95%**
-      of projected) → abort buys only when confirmed USD **≤ 0** → cycle 99% buy
-      budget → dust skip
-- [ ] Real live AddOrder persists `PENDING` first, runs once, and ambiguous
-      outcomes become blocking `UNCERTAIN` without automatic reconciliation
-- [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
-- [ ] If ALGORITHM Mermaid changed → run
-      [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)
+- [ ] Fixed configured USD target and relative crypto scaling preserved
+- [ ] Both deviation-percent and minimum-USD gates apply
+- [ ] USD correction runs only when USD alone triggers
+- [ ] Sells precede settled-cash-limited buys; 99% reserve remains
+- [ ] No zero/negative amount or volume reaches an exchange backend
+- [ ] Ambiguous live AddOrder stays unresolved and blocks later live orders
+- [ ] Dashboard state stays latest-cycle-only; Actual evidence stays raw and forward-only
+- [ ] Prospective Buy & Hold requires eligible baseline and verified continuity
+- [ ] Retired config fields are dropped while schema/migration compatibility remains
+- [ ] Update `docs/ALGORITHM.md` and focused tests when contracts change

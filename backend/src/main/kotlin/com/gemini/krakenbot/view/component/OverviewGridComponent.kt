@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.domain.ALLOCATION_TOLERANCE
-import com.gemini.krakenbot.domain.HUNDRED // extension import for PrecisionConstants.HUNDRED
+import com.gemini.krakenbot.domain.HUNDRED
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -21,7 +21,7 @@ import java.math.RoundingMode
 
 class OverviewGridComponent {
     context(div: DIV)
-    fun render(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>, delta24h: BigDecimal?) {
+    fun render(latest: PortfolioSnapshot) {
         val totalValue = latest.totalValueUSD
         val usdAsset = latest.assets[Asset.USD]
         val usdValue = usdAsset?.valueUSD ?: BigDecimal.ZERO
@@ -35,7 +35,7 @@ class OverviewGridComponent {
         val cryptoCount = assetsList.size
 
         div.div(CssClass.Layout.HeroGrid) {
-            renderHeroCard(latest, history, delta24h)
+            renderHeroCard(latest)
             div(CssClass.Layout.HeroSide) {
                 renderCashTile(latest, usdAsset, usdValue)
                 renderCryptoTile(cryptoValue, cryptoPercent, cryptoTargetPercent, cryptoCount)
@@ -43,7 +43,7 @@ class OverviewGridComponent {
         }
     }
 
-    private fun DIV.renderHeroCard(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>, delta24h: BigDecimal?) {
+    private fun DIV.renderHeroCard(latest: PortfolioSnapshot) {
         div(CssClass.Hero.Card) {
             div(CssClass.Hero.CardText) {
                 div(CssClass.Hero.Label) {
@@ -51,32 +51,7 @@ class OverviewGridComponent {
                     +ViewText.TOTAL_PORTFOLIO
                 }
                 div(CssClass.Hero.Value) { +"$${Formatter.formatCurrency(latest.totalValueUSD)}" }
-                renderDeltaRow(delta24h)
             }
-            val spark = sparklineSvg(history)
-            if (spark.isNotEmpty()) {
-                div(CssClass.Hero.Spark) { unsafe { +spark } }
-            }
-        }
-    }
-
-    private fun DIV.renderDeltaRow(delta24h: BigDecimal?) {
-        div(CssClass.Hero.DeltaRow) {
-            val delta = delta24h
-            if (delta == null) {
-                span(CssClass.Hero.DeltaWindow) { +ViewText.DELTA_UNAVAILABLE_24H }
-                return@div
-            }
-            val signum = delta.signum()
-            val cls =
-                when {
-                    signum > 0 -> CssClass.Hero.DeltaUp
-                    signum < 0 -> CssClass.Hero.DeltaDown
-                    else -> CssClass.Hero.DeltaFlat
-                }
-            val sign = if (signum > 0) "+" else ""
-            span(cls) { +"$sign${Formatter.formatPercent(delta)}%" }
-            span(CssClass.Hero.DeltaWindow) { +ViewText.DELTA_WINDOW_24H }
         }
     }
 
@@ -143,57 +118,5 @@ class OverviewGridComponent {
             }
             span(CssClass.Hero.TileMeta) { +"${Formatter.formatPercent(percent)}%" }
         }
-    }
-
-    companion object {
-        private const val SPARK_WIDTH = 300.0
-        private const val SPARK_HEIGHT = 80.0
-        private const val SPARK_PAD = 4.0
-
-        /** Inline SVG sparkline of total portfolio value; empty when too few points. */
-        internal fun sparklineSvg(history: List<PortfolioSnapshot>): String {
-            if (history.size < 2) return ""
-            val values = history.asReversed().map { it.totalValueUSD }
-            val min = values.minOrNull() ?: BigDecimal.ZERO
-            val max = values.maxOrNull() ?: BigDecimal.ZERO
-            val range = max.subtract(min)
-            val lastIndex = values.size - 1
-            val usableHeight = SPARK_HEIGHT - SPARK_PAD * 2
-            val coords =
-                values.mapIndexed { i, v ->
-                    val x = i.toDouble() / lastIndex * SPARK_WIDTH
-                    val y =
-                        if (range.compareTo(BigDecimal.ZERO) == 0) {
-                            SPARK_HEIGHT / 2
-                        } else {
-                            val offset = v.subtract(min).divide(range, 10, RoundingMode.HALF_UP).toDouble()
-                            SPARK_HEIGHT - SPARK_PAD - offset * usableHeight
-                        }
-                    "${fmt(x)},${fmt(y)}"
-                }
-            val line = coords.joinToString(" ")
-            val area = "M0,$SPARK_HEIGHT L${coords.joinToString(" L")} L$SPARK_WIDTH,$SPARK_HEIGHT Z"
-            // Unique gradient id per sparkline so HTMX swaps / future reuse cannot collide.
-            val gradId = "hero-spark-grad-${history.first().timestamp.toEpochMilli()}"
-            return buildString {
-                append(
-                    "<svg viewBox=\"0 0 ${fmt(
-                        SPARK_WIDTH,
-                    )} ${fmt(SPARK_HEIGHT)}\" preserveAspectRatio=\"none\">",
-                )
-                append("<defs><linearGradient id=\"$gradId\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">")
-                append("<stop offset=\"0%\" stop-color=\"${ChartProps.COLOR_BLUE}\" stop-opacity=\"0.55\"/>")
-                append("<stop offset=\"100%\" stop-color=\"${ChartProps.COLOR_BLUE}\" stop-opacity=\"0\"/>")
-                append("</linearGradient></defs>")
-                append("<path d=\"$area\" fill=\"url(#$gradId)\"/>")
-                append(
-                    "<polyline points=\"$line\" fill=\"none\" stroke=\"${ChartProps.COLOR_BLUE}\" " +
-                        "stroke-width=\"2.5\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>",
-                )
-                append("</svg>")
-            }
-        }
-
-        private fun fmt(v: Double): String = ((v * 100).toLong() / 100.0).toString()
     }
 }

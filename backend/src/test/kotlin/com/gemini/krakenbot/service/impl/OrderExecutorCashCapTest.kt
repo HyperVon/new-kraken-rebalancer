@@ -5,14 +5,10 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.FakeKrakenService
-import com.gemini.krakenbot.service.TradeHistoryService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -21,8 +17,7 @@ class OrderExecutorCashCapTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
+    private val orderExecutor = OrderExecutorImpl(krakenService)
 
     init {
         "should always cap buys to 99% of available cash even when cost equals cash" {
@@ -222,13 +217,11 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 // $1.00 intent floors to 0.00002060 BTC, worth $0.999593782 below the $1 dust floor.
                 krakenService.executedOrders shouldBe emptyList()
-                coVerify(exactly = 0) { tradeHistoryService.saveTrade(any()) }
             }
         }
 
         "CQ-12-L3: caps a rounded zero-target liquidation to the available crypto balance" {
             runTest {
-                coEvery { tradeHistoryService.saveTrade(any()) } returns 71
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("0.01")),
                     sellOrders = mapOf(Asset.BTC to BigDecimal("0.01")),
@@ -250,12 +243,6 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 // $0.01 / $500,000 rounds HALF_UP to 0.00000002, but only one satoshi is held.
                 krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.00000001"))
-                coVerify {
-                    tradeHistoryService.updateTrade(
-                        any(),
-                        match { it.id == 71 && it.usdAmount.compareTo(BigDecimal("0.0050000000")) == 0 },
-                    )
-                }
                 // The capped half-cent proceeds round to a $0.00 99% budget, so no buy is invented.
                 krakenService.executedOrders.none { it.side == OrderSide.BUY.apiValue } shouldBe true
             }

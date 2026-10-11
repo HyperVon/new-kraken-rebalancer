@@ -25,14 +25,20 @@ class SettingsAllocationResponsiveStylesTest : StringSpec() {
                 ruleDeclarations(mobileRules, """.allocation-edit-input-wrapper:has(input[name="scores"])""")
             val targetRule =
                 ruleDeclarations(mobileRules, """.allocation-edit-input-wrapper:has(input[name="targets"])""")
+            val allocationListRule = ruleDeclarations(
+                mobileRules,
+                ".container .allocation-list-container",
+            )
+            val allocationRowRule = ruleDeclarations(
+                mobileRules,
+                ".container .allocation-edit-row",
+            )
             val removeRule = ruleDeclarations(mobileRules, ".allocation-edit-row > .btn.btn-danger-ghost")
             val allocationControlsRule = ruleDeclarations(mobileRules, ".allocation-control-inputs")
             val allocationControlButtonRule = ruleDeclarations(mobileRules, ".allocation-control-inputs > button")
 
-            mobileRules shouldContain ".allocation-list-container"
-            mobileRules shouldContain "grid-template-columns: minmax(0, 1fr)"
-            mobileRules shouldContain ".allocation-edit-row"
-            mobileRules shouldContain "grid-template-columns: 2rem minmax(0, 1fr) minmax(0, 1fr)"
+            allocationListRule shouldContain "grid-template-columns: minmax(0, 1fr)"
+            allocationRowRule shouldContain "grid-template-columns: 2rem minmax(0, 1fr) minmax(0, 1fr)"
             selectors shouldContain ".allocation-edit-row > label {"
             selectors shouldContain ".allocation-edit-input-wrapper:has(input[name=\"scores\"]) {"
             selectors shouldContain ".allocation-edit-input-wrapper:has(input[name=\"targets\"]) {"

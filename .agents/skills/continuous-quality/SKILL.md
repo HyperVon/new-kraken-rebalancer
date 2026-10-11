@@ -237,11 +237,11 @@ disjoint. Suggested discovery tracks (pick what fits timebox):
 | Track | Child skill / focus |
 | :--- | :--- |
 | Bug review | [code-review](../code-review/SKILL.md) — CRITICAL/MAJOR only for this skill; size each finding |
-| Algorithm edges | [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) + `docs/ALGORITHM.md` vs existing tests / `EvaluationScenariosTest` |
+| Algorithm edges | [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) + `docs/ALGORITHM.md` vs focused engine and execution tests |
 | Modes / safety | [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md) — confusion, dry-run stats, sim vs live paths |
 | Coverage gaps | [gradle-quality-gates](../gradle-quality-gates/SKILL.md) — JaCoCo/Karma reports; packages near thresholds; missed branches |
-| Evaluation gaps | `docs/EVALUATION.md` + [write-kotest](../write-kotest/SKILL.md) — scenarios ALGORITHM mentions that have no case |
-| History / sync | [trade-history-sync](../trade-history-sync/SKILL.md) — dedupe windows, pair aliases, dry-run vs API |
+| Current-contract coverage | `docs/EVALUATION.md` + [write-kotest](../write-kotest/SKILL.md) — Dashboard, Settings, Actual, execution, and prospective-continuity contracts |
+| Account continuity / Actual | [trade-history-sync](../trade-history-sync/SKILL.md) — preserve safe legacy binding and forward prospective evidence; no account-wide sync |
 | Kraken / limits | [kraken-api-integration](../kraken-api-integration/SKILL.md) — lockout backoff, mutex, public vs private |
 | Flows / SSE | [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md) — restart, multi-subscriber, cancellation |
 | UI interactions | [ui-manual-qa](../ui-manual-qa/SKILL.md) — full checklist when time allows; failures → backlog (`REGRESSION-*` / `STYLE-*`) |
@@ -306,7 +306,7 @@ If the only items are L → do **not** invent busywork tests; stop at the propos
 
 Follow the **child skill** for each approved item. Default order:
 
-1. **Red** — add failing Kotest / evaluation / JS test that names the gap or bug
+1. **Red** — add a failing focused JVM/JS test that names the gap or bug
    ([write-kotest](../write-kotest/SKILL.md))
 2. **Green** — minimal production fix for S/M bugs (or approved L)
 3. **Refactor** only if needed for clarity inside the touched tests
@@ -314,9 +314,9 @@ Follow the **child skill** for each approved item. Default order:
    [ui-manual-qa](../ui-manual-qa/SKILL.md) to re-verify interactions
 5. Update `docs/EVALUATION.md` when adding/changing evaluation scenarios
 
-Use the bounded delegation rules above when ownership is disjoint (e.g. history
-dedupe tests vs frontend zoom tests). Keep a single owner for
-`EvaluationScenariosTest.kt` and for any shared production file under fix.
+Use the bounded delegation rules above when ownership is disjoint (e.g. engine
+math vs Actual continuity vs Dashboard/Settings tests). Keep a single owner for
+each shared test file and any shared production file under fix.
 
 **Do not** weaken coverage thresholds or delete tests to go green. **Do not**
 “fix” by matching buggy behavior in assertions.
@@ -343,15 +343,13 @@ Confirm the count actually moved (JUnit XML under `build/test-results/test/`) �
 Also when UI changed or UI findings were in the backlog:
 
 - Prefer [ui-manual-qa](../ui-manual-qa/SKILL.md) scoped or full (include
-  `STYLE-*`, `REGRESSION-*`, `HIST-ZOOM-*` if History touched)
+  `STYLE-*`, current Dashboard/Settings/Actual cases, and legacy-route checks)
 - Or at least [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md) against
   local sim after hard-refresh / `?v=`
 
-Trading / algorithm touches → re-run evaluation awareness:
-
-```bash
-./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest"
-```
+Trading / algorithm touches → run the focused tests listed in
+[`docs/EVALUATION.md`](../../../docs/EVALUATION.md). Do not target a retired
+retrospective-history scenario suite.
 
 Fix failures before commit. Do not open a red PR.
 
@@ -419,8 +417,8 @@ gate results, test plan.
 - Giant unfocused “add coverage” PRs with no named risk
 - Skipping `pre_commit_check.sh` because “it’s just tests”
 - Silent live-trading or production-config use
-- Parallel edits to the same hot file (`EvaluationScenariosTest.kt`,
-  `PortfolioCalculations`, one CSS module)
+- Parallel edits to the same hot file (a shared contract spec,
+  `PortfolioCalculations`, or one CSS module)
 - Filing a GitHub issue for every trivial S test that ships same-day (noise)
 - Leaving discoveries only in chat — always persist to `quality-backlog.md`
 - Rediscovering and re-adding items already marked `done` or `deferred`

@@ -29,8 +29,6 @@ class AllocationChartComponentTest : StringSpec() {
             )
         },
         actions = emptyList(),
-        drawdownPercent = BigDecimal.ZERO,
-        fiatDeploymentPercent = BigDecimal.ZERO,
         effectiveUsdTargetPercent = BigDecimal("5.00"),
     )
 

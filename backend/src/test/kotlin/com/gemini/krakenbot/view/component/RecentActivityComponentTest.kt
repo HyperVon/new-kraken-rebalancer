@@ -18,13 +18,11 @@ class RecentActivityComponentTest : StringSpec() {
         totalValueUSD = BigDecimal("1000.00"),
         assets = emptyMap(),
         actions = actions.toList(),
-        drawdownPercent = BigDecimal.ZERO,
-        fiatDeploymentPercent = BigDecimal.ZERO,
         effectiveUsdTargetPercent = BigDecimal("100.00"),
     )
 
     private fun renderActions(vararg actions: String): String = createHTML().div {
-        RecentActivityComponent().render(listOf(snapshot(*actions)))
+        RecentActivityComponent().render(snapshot(*actions))
     }
 
     init {
@@ -49,21 +47,21 @@ class RecentActivityComponentTest : StringSpec() {
             htmlString shouldContain "Volume: abc"
         }
 
-        "historical deviation row humanizes to drift text" {
+        "current cycle deviation action humanizes to drift text" {
             val htmlString = renderActions("Deviation: BTC -5%")
 
             htmlString shouldContain "BTC -5% drift detected"
             htmlString shouldNotContain "Deviation:"
         }
 
-        "historical fiat-correction row humanizes to cash-drift text" {
+        "current cycle fiat-correction action humanizes to cash-drift text" {
             val htmlString = renderActions("USD Deviation Triggered. Enforcing fiat correction.")
 
             htmlString shouldContain "Cash drift detected; applying correction"
             htmlString shouldNotContain "Enforcing fiat correction"
         }
 
-        "historical distributing row humanizes to correction-distributed text" {
+        "current cycle cash distribution action humanizes to correction-distributed text" {
             val htmlString = renderActions($$"Distributing Fiat Correction ($100.00) among 2 candidates.")
 
             htmlString shouldContain "Cash correction distributed across underweight assets"

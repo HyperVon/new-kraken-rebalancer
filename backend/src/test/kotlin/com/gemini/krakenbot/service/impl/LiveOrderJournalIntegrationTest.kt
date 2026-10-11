@@ -100,7 +100,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                         )
                     }
                 }
-                val executor = OrderExecutorImpl(fakeExchange, tradeHistoryService = null, journal.intentService)
+                val executor = OrderExecutorImpl(fakeExchange, journal.intentService)
 
                 executor.executeOrders(
                     buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
@@ -163,7 +163,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                         }
                     }
                 }
-                val executor = OrderExecutorImpl(fakeExchange, tradeHistoryService = null, journal.intentService)
+                val executor = OrderExecutorImpl(fakeExchange, journal.intentService)
 
                 executor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("25.00")),
@@ -247,7 +247,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                         }
                     }
                 }
-                val executor = OrderExecutorImpl(fakeExchange, tradeHistoryService = null, journal.intentService)
+                val executor = OrderExecutorImpl(fakeExchange, journal.intentService)
 
                 shouldThrow<IOException> {
                     runTest {
@@ -403,7 +403,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
         buys: Map<String, BigDecimal>,
         cycleId: String,
     ) {
-        OrderExecutorImpl(fakeExchange, tradeHistoryService = null, intentService).executeOrders(
+        OrderExecutorImpl(fakeExchange, intentService).executeOrders(
             buyOrders = buys,
             sellOrders = emptyMap(),
             currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),

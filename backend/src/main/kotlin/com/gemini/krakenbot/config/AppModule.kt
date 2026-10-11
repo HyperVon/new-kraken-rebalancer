@@ -6,34 +6,23 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
-import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
 import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
-import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
-import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqliteExecutionAccountBindingRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqliteFundingEvidenceIdentityStoreImpl
-import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqliteRebalancerComparisonCacheRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.ReportingDispatcher
-import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.service.TradeProjectionService
 import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
 import com.gemini.krakenbot.service.actual.ActualObservationStore
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStore
@@ -42,31 +31,18 @@ import com.gemini.krakenbot.service.actual.benchmark.ProspectiveEventContinuityV
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
-import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.service.impl.TradeProjectionServiceImpl
 import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
-import com.gemini.krakenbot.service.impl.history.HistoricalOhlcCache
-import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
-import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
-import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
-import com.gemini.krakenbot.service.impl.history.LedgersSyncService
-import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
-import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
-import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
-import com.gemini.krakenbot.service.impl.history.TradeHistorySnapshotStore
-import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
-import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
@@ -109,6 +85,7 @@ val coreModule =
         single { ExecutionDatabase.init() }
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
+        single { CurrentPortfolioState() }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
         single<ExecutionOrderIntentRepository> { SqliteExecutionOrderIntentRepositoryImpl(database = get()) }
         single<ExecutionAccountBindingRepository> { SqliteExecutionAccountBindingRepositoryImpl(database = get()) }
@@ -155,121 +132,13 @@ val coreModule =
                 benchmarkService = get(),
             )
         }
-        single<TradeProjectionService> {
-            TradeProjectionServiceImpl(executionRepository = get(), tradeRepository = get())
-        }
-        single {
-            val currentScope = this
-            ReportingDispatcher(
-                historyServiceProvider = { currentScope.get() },
-                projectionServiceProvider = { currentScope.get() },
-            )
-        }
         singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
-        singleOf(::SqliteHistoricalOhlcRepositoryImpl) { bind<HistoricalOhlcRepository>() }
-        singleOf(::SqliteRebalancerComparisonCacheRepositoryImpl) {
-            bind<RebalancerComparisonCacheRepository>()
-        }
-        singleOf(::SqliteFundingEvidenceIdentityStoreImpl) { bind<FundingEvidenceIdentityStore>() }
-        single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
-        single { HistoryEvidenceCoordinator() }
-        single {
-            TradeHistorySnapshotStore(
-                repository = get(),
-                krakenService = get(),
-                configService = get(),
-                objectMapper = get(),
-                portfolioStatsRepository = get(),
-                ledgerRepository = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
-        single {
-            InceptionDiscoveryService(
-                tradeRepository = get(),
-                configService = get(),
-                recoveryService = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
-        single { HistoricalOhlcCache(krakenService = get(), persistentRepository = get()) }
-        single {
-            TradeHistoryQueryService(
-                repository = get(),
-                portfolioStatsRepository = get(),
-                ledgerRepository = get(),
-                orderIntentRepository = get(),
-                inceptionDiscoveryService = get(),
-                fundingProvenanceResolver = get(),
-                krakenService = get(),
-                historicalOhlcCache = get(),
-                comparisonCacheRepository = get(),
-                applicationScope = get(named(APPLICATION_SCOPE_QUALIFIER)),
-                configService = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
         single {
             AccountHistoryScopeGuard(
                 krakenService = get(),
                 tradeRepository = get(),
                 ledgerRepository = get(),
                 configService = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
-        single {
-            LedgersSyncService(
-                repository = get(),
-                krakenService = get(),
-                configService = get(),
-                tradeRepository = get(),
-                accountHistoryScopeGuard = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
-        single {
-            TradeHistoryReconstructionService(
-                repository = get(),
-                ledgerRepository = get(),
-                krakenService = get(),
-                configService = get(),
-                portfolioStatsRepository = get(),
-                accountHistoryScopeGuard = get(),
-            )
-        }
-        single {
-            TradeHistorySyncService(
-                repository = get(),
-                krakenService = get(),
-                configService = get(),
-                reconstructionService = get(),
-                accountHistoryScopeGuard = get(),
-                ledgerRepository = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
-        single {
-            InceptionRecoveryService(
-                repository = get(),
-                ledgerRepository = get(),
-                krakenService = get(),
-                configService = get(),
-                tradeHistorySyncService = get(),
-                orderIntentRepository = get(),
-                fundingProvenanceResolver = get(),
-                accountHistoryScopeGuard = get(),
-                historyEvidenceCoordinator = get(),
-            )
-        }
-        single<TradeHistoryService> {
-            TradeHistoryServiceImpl(
-                snapshotStore = get(),
-                queryService = get(),
-                syncService = get(),
-                ledgersSyncService = get(),
-                inceptionRecoveryService = get(),
-                historyEvidenceCoordinator = get(),
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
@@ -283,12 +152,6 @@ val coreModule =
                 configService = get(),
             )
         }
-        single<FundingProvenanceResolver> {
-            KrakenFundingProvenanceResolver(
-                krakenService = get(),
-                durableIdentityStore = get(),
-            )
-        }
         single<PortfolioAnalyzer> {
             PortfolioAnalyzerImpl(
                 krakenService = get(),
@@ -298,9 +161,7 @@ val coreModule =
         single<OrderExecutor> {
             OrderExecutorImpl(
                 krakenService = get(),
-                tradeHistoryService = null,
                 orderIntentService = get(),
-                reportingDispatcher = get(),
             )
         }
         // Explicit ctor: nullable `krakenService` defaults to null; singleOf would skip injection
@@ -311,7 +172,7 @@ val coreModule =
                 portfolioAnalyzer = get(),
                 orderExecutor = get(),
                 krakenService = get(),
-                reportingDispatcher = get(),
+                currentPortfolioState = get(),
                 actualObservationDispatcher = get(),
             )
         }
@@ -329,20 +190,16 @@ val webModule =
         singleOf(::PerformanceTableComponent)
         singleOf(::RecentActivityComponent)
         singleOf(::DashboardFragmentComponent)
-        singleOf(::HistoryPageComponent)
         singleOf(::ActualObservationsPageComponent)
         singleOf(::DashboardView)
         single {
-            val currentScope = this
             DashboardController(
-                tradeHistoryService = null,
                 configService = get(),
                 objectMapper = get(),
                 dashboardView = get(),
                 portfolioManager = get(),
+                currentPortfolioState = get(),
                 orderIntentService = get(),
-                historyEvidenceCoordinator = get(),
-                tradeHistoryServiceProvider = { currentScope.get() },
                 actualObservationDispatcher = get(),
             )
         }

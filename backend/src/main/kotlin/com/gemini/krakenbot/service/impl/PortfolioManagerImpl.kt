@@ -1,17 +1,17 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
-import com.gemini.krakenbot.service.ReportingDispatcher
 import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
@@ -33,7 +33,6 @@ import org.slf4j.MDC
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -42,7 +41,7 @@ class PortfolioManagerImpl(
     private val portfolioAnalyzer: PortfolioAnalyzer,
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
-    private val reportingDispatcher: ReportingDispatcher? = null,
+    private val currentPortfolioState: CurrentPortfolioState = CurrentPortfolioState(),
     private val actualObservationDispatcher: ActualObservationDispatcher? = null,
 ) : PortfolioManager {
     private val log =
@@ -50,82 +49,6 @@ class PortfolioManagerImpl(
 
     companion object {
         const val CYCLE_ID_MDC_KEY = "cycleId"
-
-        /** Days of completed daily closes that define "a recent high" for sell suppression. */
-        const val RECENT_HIGH_LOOKBACK_DAYS = 20L
-
-        /** TTL for caching completed daily recent-high closes to avoid redundant public OHLC polling. */
-        const val RECENT_HIGH_CACHE_TTL_SECONDS = 3600L
-
-        private const val SECONDS_PER_DAY = 86_400L
-    }
-
-    private val recentHighCache = ConcurrentHashMap<RecentHighCacheKey, Pair<Long, BigDecimal>>()
-
-    /**
-     * Recent-high cache scope. The trading mode selects the backend, and simulation has no OHLC
-     * history at all, so a high resolved under one mode must not suppress or fail to suppress a
-     * trade under the other for the rest of the TTL.
-     */
-    private data class RecentHighCacheKey(val pair: String, val simulation: Boolean)
-
-    /**
-     * Symbols currently trading at or above their highest completed close in the lookback
-     * window. Selling an asset in that regime is where mean-reversion has historically lost to
-     * trend continuation, so those overweight legs are held rather than trimmed.
-     *
-     * Fails open: any symbol whose history cannot be resolved is simply omitted, which leaves
-     * the cycle trading exactly as it did before this rule existed.
-     */
-    internal suspend fun resolveAtRecentHigh(
-        allocations: List<Allocation>,
-        prices: Map<String, BigDecimal>,
-        nowEpochSecond: Long,
-        candidateSymbols: Set<String>? = null,
-        simulation: Boolean,
-    ): Set<String> {
-        val backend = krakenService ?: return emptySet()
-        if (candidateSymbols != null && candidateSymbols.isEmpty()) return emptySet()
-        val currentDayStart = Math.floorDiv(nowEpochSecond, SECONDS_PER_DAY) * SECONDS_PER_DAY
-        val since = currentDayStart - RECENT_HIGH_LOOKBACK_DAYS * SECONDS_PER_DAY
-        val trending = mutableSetOf<String>()
-        for (allocation in allocations) {
-            val symbol = allocation.symbol
-            if (symbol.isUsd) continue
-            if (candidateSymbols != null && !candidateSymbols.contains(symbol.value)) continue
-            val currentPrice = prices[symbol.value] ?: continue
-            if (currentPrice.signum() <= 0) continue
-
-            val cacheKey = RecentHighCacheKey(Asset.tradingPair(symbol.value), simulation)
-            val cached = recentHighCache[cacheKey]
-            val recentHigh = if (cached != null && nowEpochSecond < cached.first) {
-                cached.second
-            } else {
-                val closes = try {
-                    backend.getOHLC(pair = cacheKey.pair, interval = 1440, since = since)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log.debug("Recent-high lookup failed for {}; trading it as before", symbol.value, e)
-                    continue
-                }
-                val completedCloses = closes.filter { it.first >= since && it.first < currentDayStart }
-                val high = completedCloses.maxOfOrNull { it.second } ?: continue
-                if (high.signum() > 0) {
-                    val expiresAt = minOf(
-                        nowEpochSecond + RECENT_HIGH_CACHE_TTL_SECONDS,
-                        currentDayStart + SECONDS_PER_DAY,
-                    )
-                    recentHighCache[cacheKey] = Pair(expiresAt, high)
-                }
-                high
-            }
-
-            if (recentHigh.signum() > 0 && currentPrice >= recentHigh) {
-                trending.add(symbol.value)
-            }
-        }
-        return trending
     }
 
     // The monitor covers synchronous start/stop Job ownership; the Mutex rejects duplicate coroutine callers.
@@ -297,7 +220,6 @@ class PortfolioManagerImpl(
     /** Pins settings and exchange session for the complete rebalance cycle. */
     private suspend fun performCycleWithStableSession() {
         val cycleId = UUID.randomUUID().toString()
-        clearCycleSyncWarning()
         configService.withExecutionSession {
             val ks = krakenService
             if (ks != null) {
@@ -316,7 +238,6 @@ class PortfolioManagerImpl(
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
         currentCoroutineContext().ensureActive()
-        clearCycleSyncWarning()
         val cycleId = UUID.randomUUID().toString()
         return withCycleMdc(cycleId) {
             performRebalanceCycleForCycle(cycleId)
@@ -328,7 +249,6 @@ class PortfolioManagerImpl(
         operationalStatus = operationalStatus.copy(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
-            lastAthDeferredReason = null,
         )
         try {
             val snapshot = performRebalanceCyclePinned(cycleId)
@@ -360,16 +280,9 @@ class PortfolioManagerImpl(
         return withContext(MDCContext(contextMap)) { block() }
     }
 
-    private fun clearCycleSyncWarning() {
-        operationalStatus = operationalStatus.copy(lastCycleSyncWarning = null)
-    }
-
     private suspend fun performRebalanceCyclePinned(cycleId: String): PortfolioSnapshot? {
         log.info("--- Starting Snapshot Phase ---")
         val config = configService.getConfig()
-        if (config.settings.simulation) {
-            reportingDispatcher?.initializeBeforeSimulationCycle()
-        }
         val actionLog = mutableListOf<String>()
 
         val observedBalances = portfolioAnalyzer.fetchObservedBalances()
@@ -395,18 +308,14 @@ class PortfolioManagerImpl(
             }",
         )
 
-        val drawdownPct = BigDecimal.ZERO
-        val fiatDeploymentPct = BigDecimal.ZERO
-        val effectiveUsdTarget = portfolioAnalyzer.calculateEffectiveUsdTarget(BigDecimal.ZERO)
-        val cryptoScaleFactor =
-            portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
+        val effectiveUsdTarget = RebalancerEngine.calculateFixedUsdTarget(config.allocations)
+        val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, config.allocations)
 
         val plan = portfolioAnalyzer.analyzeDeviations(
             totalPortfolioValueUSD = totalPortfolioValueUSD,
             currentValuesUSD = currentValuesUSD,
             effectiveUsdTarget = effectiveUsdTarget,
             cryptoScaleFactor = cryptoScaleFactor,
-            trendingAssets = emptySet(),
         )
         val buyOrders = plan.buyOrders
         val sellOrders = plan.sellOrders
@@ -470,17 +379,11 @@ class PortfolioManagerImpl(
                 totalPortfolioValueUSD = finalState.totalPortfolioValueUSD,
                 effectiveUsdTarget = effectiveUsdTarget,
                 cryptoScaleFactor = cryptoScaleFactor,
-                drawdownPct = drawdownPct,
-                fiatDeploymentPct = fiatDeploymentPct,
                 actionLog = actionLog,
                 balancesObservedAt = finalState.balancesObservedAt,
             )
 
-        if (config.settings.simulation) {
-            reportingDispatcher?.persistSimulationSnapshot(snapshot)
-        } else {
-            reportingDispatcher?.enqueueSnapshot(snapshot)
-        }
+        currentPortfolioState.publish(snapshot)
 
         log.info("--- Cycle Complete ---")
         return snapshot

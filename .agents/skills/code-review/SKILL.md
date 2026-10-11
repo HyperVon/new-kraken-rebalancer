@@ -54,10 +54,11 @@ not treat this skill’s checklist as a substitute.
 | Type | Must NOT | May call |
 | :--- | :--- | :--- |
 | `RebalancerEngine` / `PortfolioCalculations` | Network, SQLite, Koin, Ktor, kotlinx.html | Pure `BigDecimal` + `Settings` / `Allocation` inputs |
-| `PortfolioAnalyzerImpl` | Place orders; write trades | Kraken reads, ATH I/O, `RebalancerEngine`, emit analysis |
-| `OrderExecutorImpl` | Target math, allocation %, ATH | `executeOrder`, USD settle polls, `withStableBackend` |
-| `PortfolioManagerImpl` | Inline rebalance math or raw AddOrder | Orchestrate analyzer → executor → `addSnapshot` |
-| `TradeHistoryServiceImpl` façade | Reimplement sync/query in controllers | Delegate to Sync / SnapshotStore / Query / Reconstruction |
+| `PortfolioAnalyzerImpl` | Place orders; write trades | Kraken balance/price reads, `RebalancerEngine`, emit analysis |
+| `OrderExecutorImpl` | Plan construction, target percentages | `executeOrder`, order-specific USD settlement, `withStableBackend` |
+| `PortfolioManagerImpl` | Inline rebalance math or raw AddOrder | Orchestrate analyzer → executor → publish current snapshot |
+| `CurrentPortfolioState` | Persist or accumulate a cycle timeline | Retain the latest completed snapshot in memory |
+| `ActualObservationDispatcher` | Block the order path on observation persistence | Queue eligible direct evidence for off-cycle storage |
 | `view/component/*` | Business rules, Kraken calls | Render DTOs + `:common` constants; receive `Settings` |
 | `:common` `commonMain` | JVM/JS-only imports, SLF4J, `java.math.*` | Routes, IDs, CSS tokens, wire DTOs, KMP-safe models |
 
@@ -66,7 +67,8 @@ not treat this skill’s checklist as a substitute.
 - BigDecimal scales 8/2; tests use **`shouldBeEqualComparingTo`**.
 - Flag raw `setScale(2)` / `doubleValue()` in money paths; prefer
   `toUsdScale()` / `toCryptoScale()`.
-- ATH → drawdown deployment, fiat correction, dust threshold.
+- Fixed configured USD target, proportional crypto scaling, fiat correction,
+  dust threshold.
 - Sell-first; prefer fill-confirmed sell proceeds, else USD poll; 3× / 250ms
   backoff; best positive / 95% settle; abort buys if none; cycle 99% buy budget
   (`withStableBackend`).
@@ -83,7 +85,9 @@ not treat this skill’s checklist as a substitute.
   (`OrderExecutorImpl.clientOrderId`); **`userref` is not uniqueness**.
 - Real live placement persists `PENDING` before AddOrder; AddOrder is attempted
   once. Ambiguous responses become `UNCERTAIN`, abort the batch, and block
-  later live submissions. Unresolved rows must survive sync/dedupe/pruning.
+  later live submissions. Unresolved intents stay journaled and require
+  evidence-based operator resolution; do not infer an outcome from missing
+  account-history data.
 - **Exchange-claim gate:** any PR claim about exchange semantics (idempotency,
   uniqueness, retries, fee fields, order identity) must match current official
   Kraken docs — not memory, changelog prose, or skill text alone. Canonical
@@ -94,9 +98,8 @@ not treat this skill’s checklist as a substitute.
 
 #### Backend pinning & modes (money path)
 
-- [ ] Normal cycle-wide session wraps in-cycle sync plus the full rebalance in
+- [ ] Normal cycle-wide session wraps planning, orders, and sell settlement in
       `krakenService.withStableBackend { … }`
-- [ ] Trade sync during a cycle uses the same pin
 - [ ] Nested `withStableBackend` reuses the outer pin — never re-resolves
 - [ ] `simulation` selects the backend in `DynamicKrakenService`; `dryRun` is
       enforced inside the active backend's `executeOrder` — not in routing
@@ -120,24 +123,24 @@ not treat this skill’s checklist as a substitute.
 - Flag newly introduced ARIA attributes, roles, accessibility-only copy, or
   accessibility-specific scope unless the user explicitly requested it;
   preserve unrelated existing metadata.
-- Chart.js deep-clone; **re-attach function callbacks after clone** (e.g.
-  `onZoomComplete`).
-- History zoom: pan via `chart.zoomScale`, not `options.scales.x` + `update()`
-  after the zoom plugin owns the axis; scrubber must enable after drag/wheel
-  zoom as well as toolbar Zoom buttons.
-- History timeframe updates **all 6** summary cards.
-- Hot SharedFlow vs cold Flow usage matches `docs/FLOWS.md`.
+- Dashboard age and STREAM/STALE freshness describe the latest snapshot, not
+  trading mode; active table sorting survives fragment refresh.
+- Settings retains active controls and removes retired history-only keys on save.
+- Actual keeps incomplete raw evidence visible; prospective Buy & Hold requires
+  an eligible baseline and verified continuity.
+- Hot `SharedFlow`, latest-value `StateFlow`, and bounded Actual channel usage
+  match `docs/FLOWS.md`.
 
 #### Flow / SSE diff checks
 
 - [ ] Config watch uses `collectLatest`; active execution sessions defer
       publication until the cycle exits
 - [ ] `CancellationException` always rethrown in loop/SSE handlers
-- [ ] Hot SharedFlow producers use `tryEmit` with documented overflow
-      (config replay=1 DROP_OLDEST; snapshots buffer 16)
-- [ ] SSE handler sends `getLatestSnapshot()` before collecting the flow
+- [ ] Config `SharedFlow` replays the latest Settings with `DROP_OLDEST`
+- [ ] `CurrentPortfolioState` retains only the latest completed cycle snapshot
 - [ ] Non-cancellation SSE errors stay isolated per client session
-- [ ] Cold flows (paginated sync, balance poll) are not broadcast as hot flows
+- [ ] SSE consumes current snapshots; cold exchange retries and settle polls do
+      not become hot broadcasts
 
 #### UI safety chrome (SSR + JS)
 
@@ -146,7 +149,7 @@ not treat this skill’s checklist as a substitute.
 - [ ] Stream chip uses `ViewText.STREAM` / `STREAM_STALE` only — never "LIVE"
 - [ ] Dashboard fragment updates `#header-status` via `hx-swap-oob`
 - [ ] Static assets cache-busted via `commonMetadataAndStyles()` / `rebalancerJsSrc()`
-- [ ] History timeframe changes update all 6 summary cards
+- [ ] Dashboard current-cycle sorting survives a fragment replacement
 
 ### 6. Persistence & tests
 

@@ -36,8 +36,6 @@ class PortfolioSnapshotTableTest : StringSpec() {
                 totalValueUSD = BigDecimal("190000.00"),
                 assets = mapOf("BTC" to assetSnapshot),
                 actions = listOf("Action 1: rebalanced BTC", "Action 2: settled USD"),
-                drawdownPercent = BigDecimal("5.2500"),
-                fiatDeploymentPercent = BigDecimal("12.5000"),
                 effectiveUsdTargetPercent = BigDecimal("15.0000"),
                 balancesObservedAt = Instant.parse("2026-07-03T11:59:59Z"),
             )
@@ -69,8 +67,8 @@ class PortfolioSnapshotTableTest : StringSpec() {
 
                 loaded.timestamp shouldBe original.timestamp
                 loaded.totalValueUSD.shouldBeEqualComparingTo(original.totalValueUSD)
-                loaded.drawdownPercent.shouldBeEqualComparingTo(original.drawdownPercent)
-                loaded.fiatDeploymentPercent.shouldBeEqualComparingTo(original.fiatDeploymentPercent)
+                snapshotRow[PortfolioSnapshotTable.drawdownPercent].shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshotRow[PortfolioSnapshotTable.fiatDeploymentPercent].shouldBeEqualComparingTo(BigDecimal.ZERO)
                 loaded.effectiveUsdTargetPercent.shouldBeEqualComparingTo(original.effectiveUsdTargetPercent)
                 loaded.balancesObservedAt shouldBe original.balancesObservedAt
                 loaded.actions shouldBe original.actions

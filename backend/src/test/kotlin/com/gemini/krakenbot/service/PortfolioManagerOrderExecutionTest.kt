@@ -3,13 +3,11 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.PortfolioStats
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.coEvery
 import io.mockk.every
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -23,9 +21,6 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
     init {
         beforeTest {
             fixture = createPortfolioManagerTestFixture()
-            coEvery {
-                fixture.portfolioStatsRepository.load()
-            } returns PortfolioStats(BigDecimal.ZERO)
         }
 
         "testExecutionOrder_SellsBeforeBuys" {

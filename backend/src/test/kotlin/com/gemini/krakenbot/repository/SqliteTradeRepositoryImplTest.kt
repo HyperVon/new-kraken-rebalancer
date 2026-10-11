@@ -10,12 +10,14 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
+import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.upsert
 import java.math.BigDecimal
@@ -52,8 +54,6 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                                 ),
                         ),
                         actions = listOf("Action 1", "Action 2"),
-                        drawdownPercent = BigDecimal("1.25"),
-                        fiatDeploymentPercent = BigDecimal("10.0"),
                         effectiveUsdTargetPercent = BigDecimal("10.0"),
                     )
 
@@ -64,10 +64,16 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 val first = loaded.first()
                 first.timestamp shouldBe now
                 first.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.50"))
-                first.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("1.25"))
-                first.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
                 first.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
                 first.actions shouldBe listOf("Action 1", "Action 2")
+
+                transaction(db) {
+                    val persisted = PortfolioSnapshotTable.selectAll().single()
+                    persisted[PortfolioSnapshotTable.drawdownPercent]
+                        .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                    persisted[PortfolioSnapshotTable.fiatDeploymentPercent]
+                        .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                }
 
                 val btc = first.assets[Asset.BTC]!!
                 btc.symbol.value shouldBe Asset.BTC
@@ -91,6 +97,28 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 latest?.timestamp shouldBe newest.timestamp
                 latest?.totalValueUSD?.shouldBeEqualComparingTo(BigDecimal("2000.00"))
                 latest?.actions shouldBe listOf("Newest action")
+            }
+        }
+
+        "snapshot metadata is committed with its snapshot and equal peaks prefer the newest time" {
+            runTest {
+                val baseTime = Instant.parse("2033-05-01T12:00:00Z")
+                val baseline = TestFixtures.emptySnapshot(baseTime, BigDecimal("1000.00"))
+                val baselineId = repository.saveSnapshotWithMetadata(
+                    snapshot = baseline,
+                    metadata = mapOf("baseline-source" to "verified"),
+                    snapshotIdMetadataKeys = setOf("baseline-snapshot-id"),
+                )
+                val earlierPeak = TestFixtures.emptySnapshot(baseTime.plusSeconds(10), BigDecimal("2000.00"))
+                val laterPeak = TestFixtures.emptySnapshot(baseTime.plusSeconds(20), BigDecimal("2000.00"))
+                repository.saveSnapshot(earlierPeak)
+                repository.saveSnapshot(laterPeak)
+
+                repository.getSyncMetadata("baseline-source") shouldBe "verified"
+                repository.getSyncMetadata("baseline-snapshot-id") shouldBe baselineId.toString()
+                repository.getHighestValuedSnapshot()?.timestamp shouldBe laterPeak.timestamp
+                repository.getHighestValuedSnapshot()?.totalValueUSD
+                    ?.shouldBeEqualComparingTo(BigDecimal("2000.00"))
             }
         }
 

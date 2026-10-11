@@ -52,12 +52,6 @@ import kotlinx.css.width
 object MediaQueries {
     fun CssBuilder.applyMediaQueries() {
         "@media (min-width: 640px)" {
-            ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
-            }
-            ".${CssClass.History.ToolbarRow}" {
-                flexWrapRaw("nowrap")
-            }
         }
 
         "@media (min-width: 768px)" {
@@ -79,9 +73,6 @@ object MediaQueries {
             ".${CssClass.Layout.HeroGrid}" {
                 gridTemplateColumns = GridTemplateColumns("1.6fr 1fr")
             }
-            ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
-            }
             ".${CssClass.Form.Grid2Col}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
             }
@@ -95,19 +86,6 @@ object MediaQueries {
         "@media (min-width: 1024px)" {
             ".${CssClass.Layout.DetailGrid}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
-            }
-            ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(6, 1fr)")
-                gap = 0.625.rem
-            }
-            ".${CssClass.History.StatsGrid} ${CssClass.StatusCard.Default.querySelector}" {
-                padding = Padding(0.75.rem, 0.75.rem)
-            }
-            ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Value}" {
-                fontSize = 1.2.rem
-            }
-            ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Title}" {
-                fontSize = 0.75.rem
             }
         }
 
@@ -147,7 +125,7 @@ object MediaQueries {
             }
         }
 
-        // CI-11-UI6: tighten History 9-col trade log at laptop widths (~1280).
+        // Keep the operational header controls compact at laptop widths.
         "@media (max-width: 1280px)" {
             header {
                 columnGap = 0.5.rem
@@ -163,16 +141,6 @@ object MediaQueries {
             }
             ".${CssClass.Layout.LoopState}" {
                 padding = Padding(0.3125.rem, 0.5.rem)
-            }
-            ".${CssClass.History.TradeLog} table" {
-                fontSize = 0.8125.rem
-            }
-            ".${CssClass.History.TradeLog} th" {
-                padding = Padding(0.45.rem, 0.3.rem)
-                fontSize = 0.6875.rem
-            }
-            ".${CssClass.History.TradeLog} td" {
-                padding = Padding(0.45.rem, 0.3.rem)
             }
         }
 
@@ -229,47 +197,12 @@ object MediaQueries {
             ".${CssClass.Layout.GlassPanel}" {
                 padding = Padding(1.rem)
             }
-            ".${CssClass.History.ToolbarRow}" {
-                flexDirection = FlexDirection.column
-                alignItems = Align.stretch
-            }
-            ".${CssClass.History.TimeRangeSelector}" {
-                width = 100.pct
-                justifyContentRaw("center")
-            }
-            ".${CssClass.History.ViewsToolbar}" {
-                width = 100.pct
-                justifyContentRaw("center")
-            }
-            ".${CssClass.History.ViewsActions}" {
-                width = 100.pct
-                justifyContentRaw("center")
-            }
-            ".${CssClass.History.ChartHeader}" {
-                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
-                alignItems = Align.start
-            }
-            ".${CssClass.History.ChartTools}" {
-                justifyContentRaw("flex-start")
-            }
-            ".${CssClass.History.ComparisonHeader}" {
-                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
-            }
-            ".${CssClass.History.ComparisonHeader} > .${CssClass.History.ChartHeaderTitle}" {
-                put("grid-column", "1 / -1")
-            }
             ".hero-card" {
                 flexDirection = FlexDirection.column
                 gap = 0.75.rem
             }
             ".hero-card > .hero-card-text" {
                 flexShrink = 1.0
-            }
-            ".${CssClass.Hero.Spark.value}" {
-                width = 100.pct
-                minWidth = 0.px
-                minHeight = 4.rem
-                flexGrow = 0.0
             }
             ".${CssClass.Form.AddAssetBox}" {
                 flexDirection = FlexDirection.column
@@ -283,10 +216,12 @@ object MediaQueries {
         "@media (max-width: 639px)" {
             // SETT-MOBILE-1: the desktop allocation row needs a 30rem track; let the list fit the
             // viewport and stack the controls into two rows so the target and Remove stay reachable.
-            ".${CssClass.Form.AllocationListContainer}" {
+            // The layout container adds specificity because kotlinx-css emits media rules before
+            // unqualified rules, even though this block is registered after the base form styles.
+            "${CssClass.Layout.Container.querySelector} .${CssClass.Form.AllocationListContainer}" {
                 gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
             }
-            ".${CssClass.Form.AllocationEditRow}" {
+            "${CssClass.Layout.Container.querySelector} .${CssClass.Form.AllocationEditRow}" {
                 gridTemplateColumns = GridTemplateColumns("2rem minmax(0, 1fr) minmax(0, 1fr)")
                 gap = 0.5.rem
             }
@@ -329,102 +264,6 @@ object MediaQueries {
             }
 
             // HIST-MOBILE-1: turn each dense trade row into a contained detail card.
-            ".${CssClass.History.TradeLogHeader}" {
-                flexDirection = FlexDirection.column
-                alignItems = Align.stretch
-                gap = 0.75.rem
-            }
-            ".${CssClass.History.TradeLog} .${CssClass.Form.CheckboxContainer}" {
-                justifyContentRaw("flex-start")
-            }
-            ".${CssClass.History.TradeLog} .${CssClass.Table.Wrapper}" {
-                overflowX = Overflow.visible
-                marginLeft = 0.px
-                marginRight = 0.px
-                paddingLeft = 0.px
-                paddingRight = 0.px
-            }
-            ".${CssClass.History.TradeLog} table" {
-                display = Display.block
-                width = 100.pct
-            }
-            ".${CssClass.History.TradeLog} thead" {
-                display = Display.none
-            }
-            ".${CssClass.History.TradeLog} tbody" {
-                display = Display.grid
-                gap = 0.75.rem
-            }
-            ".${CssClass.History.TradeLog} tr" {
-                display = Display.grid
-                gridTemplateColumns = GridTemplateColumns("repeat(2, minmax(0, 1fr))")
-                rowGap = 0.25.rem
-                columnGap = 0.75.rem
-                padding = Padding(0.75.rem)
-                background = CssTheme.colorSurface2.value
-                borderRadius = CssTheme.radiusMd
-                solidBorder(CssTheme.colorSurface1Border)
-            }
-            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard}" {
-                rowGap = 0.125.rem
-            }
-            ".${CssClass.History.TradeLog} td" {
-                display = Display.flex
-                alignItems = Align.center
-                justifyContentRaw("space-between")
-                gap = 0.5.rem
-                minWidth = 0.px
-                padding = Padding(0.25.rem, 0.px)
-                borderBottomStyle = BorderStyle.none
-                textAlign = TextAlign.right
-                fontSize = 0.75.rem
-            }
-            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(1)" {
-                put("grid-column", "1 / -1")
-                paddingBottom = 0.5.rem
-                marginBottom = 0.125.rem
-                put("border-bottom", "1px solid ${CssTheme.colorBorderFaint.value}")
-                textAlign = TextAlign.left
-            }
-            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(2)" {
-                justifyContentRaw("flex-start")
-                textAlign = TextAlign.left
-                fontWeight = FontWeight.w700
-            }
-            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(3)" {
-                justifyContentRaw("flex-end")
-            }
-            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(9)" {
-                put("grid-column", "1 / -1")
-                marginTop = 0.25.rem
-                paddingTop = 0.5.rem
-                put("border-top", "1px solid ${CssTheme.colorBorderFaint.value}")
-                justifyContentRaw("flex-start")
-                textAlign = TextAlign.left
-            }
-            ".${CssClass.History.TradeLog} td:not(.${CssClass.History.EmptyTableCell})::before" {
-                flexShrink = 0.0
-                color = CssTheme.colorTextMuted
-                fontSize = 0.625.rem
-                fontWeight = FontWeight.w600
-                letterSpacingRaw("0.05em")
-                textTransformRaw("uppercase")
-                textAlign = TextAlign.left
-            }
-            ".${CssClass.History.TradeLog} td:nth-child(1)::before" { content = quoted(ViewText.HEADER_TIME) }
-            ".${CssClass.History.TradeLog} td:nth-child(2)::before" { content = quoted(ViewText.HEADER_PAIR) }
-            ".${CssClass.History.TradeLog} td:nth-child(3)::before" { content = quoted(ViewText.HEADER_SIDE) }
-            ".${CssClass.History.TradeLog} td:nth-child(4)::before" { content = quoted(ViewText.HEADER_VOLUME) }
-            ".${CssClass.History.TradeLog} td:nth-child(5)::before" {
-                content = quoted(ViewText.HEADER_USD_AMOUNT)
-            }
-            ".${CssClass.History.TradeLog} td:nth-child(6)::before" { content = quoted(ViewText.HEADER_PRICE) }
-            ".${CssClass.History.TradeLog} td:nth-child(7)::before" { content = quoted(ViewText.HEADER_FEE) }
-            ".${CssClass.History.TradeLog} td:nth-child(8)::before" { content = quoted(ViewText.HEADER_SLIPPAGE) }
-            ".${CssClass.History.TradeLog} td:nth-child(9)::before" { content = quoted(ViewText.HEADER_STATUS) }
-            ".${CssClass.History.TradeLog} .${CssClass.History.EmptyTableCell}" {
-                put("grid-column", "1 / -1")
-            }
         }
     }
 

@@ -28,19 +28,6 @@ class MainTest : StringSpec() {
             }
         }
 
-        "initOnLoad initializes history content" {
-            val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.chartsDom()
-            document.body!!.appendChild(container)
-
-            try {
-                initOnLoad()
-                (window.asDynamic().chartDefaults != null) shouldBe true
-            } finally {
-                document.body!!.removeChild(container)
-            }
-        }
-
         "main registers htmx event listener and interval" {
             val oldSetInterval = window.asDynamic().setInterval
             var intervalCb: (() -> Unit)? = null
@@ -350,4 +337,11 @@ class MainTest : StringSpec() {
             }
         }
     }
+}
+
+private fun defineGetter(obj: Any, prop: String, getter: () -> Any?, configurable: Boolean = true) {
+    val descriptor = js("({})")
+    descriptor.get = getter
+    descriptor.configurable = configurable
+    js("Object").defineProperty(obj, prop, descriptor)
 }

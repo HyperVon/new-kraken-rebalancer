@@ -30,8 +30,6 @@ object ActionLogFormatter {
 
     fun formatNoCounterBalancingAssets(): String = ViewText.ACTION_NO_COUNTERBALANCING_ASSETS
 
-    fun formatTrendSuppressedSell(symbol: String): String = "${ViewText.ACTION_SKIPPED_TREND_PREFIX}$symbol"
-
     fun formatOrderExecution(
         side: OrderSide,
         symbol: String,

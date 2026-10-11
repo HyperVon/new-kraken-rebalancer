@@ -9,7 +9,6 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -199,6 +198,7 @@ class ConfigServiceImpl internal constructor(
     private fun normalizeLegacyKeys(content: String): String {
         val tree = objectMapper.readTree(content)
         val settings = tree.get("settings") as? ObjectNode ?: return content
+        RETIRED_SETTINGS_KEYS.forEach(settings::remove)
         val legacy = settings.get(LEGACY_DUST_THRESHOLD_KEY)
         val current = settings.get(NEW_MINIMUM_ORDER_SIZE_KEY)
         when {
@@ -342,21 +342,6 @@ class ConfigServiceImpl internal constructor(
                 "Deviation trigger percent must not exceed $MAX_TRIGGER_PERCENT%.",
             settings.minimumOrderSizeUSD.isFinite() to "Minimum order size USD must be finite.",
             (settings.minimumOrderSizeUSD >= 2.0) to $$"Minimum order size USD must be at least $2.",
-            settings.fiatMaxDrawdown.isFinite() to "Fiat max drawdown must be finite.",
-            (settings.fiatMaxDrawdown in MIN_PERCENT..MAX_PERCENT) to
-                "Fiat max drawdown must be between 0% and 100%.",
-            settings.fiatDeploymentExponent.isFinite() to "Fiat deployment exponent must be finite.",
-            (settings.fiatDeploymentExponent > 0) to "Fiat deployment exponent must be positive.",
-            (settings.fiatDeploymentExponent <= MAX_DEPLOYMENT_EXPONENT) to
-                "Fiat deployment exponent must not exceed $MAX_DEPLOYMENT_EXPONENT.",
-            settings.fiatDeploymentThresholdPercent.isFinite() to "Fiat deployment threshold percent must be finite.",
-            (settings.fiatDeploymentThresholdPercent in MIN_PERCENT..MAX_PERCENT) to
-                "Fiat deployment threshold percent must be between 0% and 100%.",
-            (
-                settings.inceptionDate.isNullOrBlank() ||
-                    InceptionDiscoveryService.parseInceptionDate(settings.inceptionDate) != null
-                ) to
-                "Inception date must be valid ISO-8601 or YYYY-MM-DD format.",
         )
 
         // Scores are optional per symbol, but a persisted one is rendered through
@@ -413,7 +398,10 @@ class ConfigServiceImpl internal constructor(
     private fun validateTotalAllocationPercent(config: AppConfig) {
         val totalPercent = config.allocations.sumOf { it.targetPercent }
 
-        require(abs(totalPercent - MAX_PERCENT) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA) {
+        require(
+            abs(totalPercent - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <=
+                PrecisionConstants.ALLOCATION_TOLERANCE_DELTA,
+        ) {
             "Total allocation percentage must be exactly 100%. Current sum: $totalPercent"
         }
     }
@@ -429,10 +417,14 @@ class ConfigServiceImpl internal constructor(
         private const val ENV_VAR_DEFAULT_SEPARATOR = ":"
         private const val LEGACY_DUST_THRESHOLD_KEY = "dustThresholdUSD"
         private const val NEW_MINIMUM_ORDER_SIZE_KEY = "minimumOrderSizeUSD"
-        private const val MIN_PERCENT = 0.0
-        private const val MAX_PERCENT = 100.0
+        private val RETIRED_SETTINGS_KEYS = setOf(
+            "fiatMaxDrawdown",
+            "fiatDeploymentExponent",
+            "fiatDeploymentThresholdPercent",
+            "inceptionDate",
+            "comparisonStartDate",
+        )
         private const val MAX_TRIGGER_PERCENT = 100.0
-        private const val MAX_DEPLOYMENT_EXPONENT = 100.0
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
     }

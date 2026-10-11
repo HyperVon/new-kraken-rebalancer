@@ -1,101 +1,79 @@
 ---
 name: ui-manual-qa
 description: >-
-  Agent-driven manual QA of live Dashboard / Settings / History interactions in
-  simulation mode — click every control, verify charts/forms/nav/SSE behavior,
-  and report pass/fail. Use when the user asks for UI QA, manual testing,
-  interaction smoke test, click-through testing, or to verify the UI still works
-  after frontend/SSR/CSS changes. For post-deploy hard-refresh smoke only, use
-  post-deploy-ui-smoke. Run the **full** checklist (including STYLE-* and
-  REGRESSION-*) after UI work — not only mobile viewport. Report only; do not
-  redesign (ui-visual-review) or implement visual polish (ui-visual-implement)
-  unless asked to fix a found bug.
+  Agent-driven manual QA of Dashboard, Settings, and Actual interactions in an
+  isolated simulation run. Check the latest current-cycle snapshot, active
+  settings, Actual evidence states, and legacy route behavior. Use for UI QA,
+  manual testing, interaction smoke tests, or post-frontend changes. Report only;
+  do not redesign or implement unless asked.
 ---
 
-# UI Manual QA (agent click-through)
+# UI Manual QA
 
-Exercise **every interactive control** on the live app the way a human QA
-tester would: open pages, click / type / toggle, and confirm the UI responds
-correctly. Prefer evidence from the browser (snapshot + screenshot) over code
-inspection alone.
+Exercise retained UI controls the way an operator would: open pages, click or
+edit controls, and confirm visible results. Prefer browser evidence (snapshot
+and screenshot) over code inspection alone.
 
-This skill is **functional** — not a visual design critique. For a short
-post-deploy hard-refresh smoke (stale CSS, mode plate, STREAM/STALE, Day · Total
-only), use [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md).
+This is functional QA, not a visual design critique. For appearance findings,
+use [ui-visual-review](../ui-visual-review/SKILL.md); for post-deploy hard-refresh
+checks, use [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md).
 
 | Skill | Concern |
 | :--- | :--- |
-| **ui-manual-qa** (this) | Does each control work? |
+| **ui-manual-qa** (this) | Do the retained page controls work? |
 | [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md) | Did deploy + cache leave the UI broken? |
 | [ui-visual-review](../ui-visual-review/SKILL.md) | Does it look right? (recommend only) |
 | [ui-visual-implement](../ui-visual-implement/SKILL.md) | Apply approved visual findings |
-| [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) | Refresh README PNGs |
-| [write-kotest](../write-kotest/SKILL.md) | Automated unit/JS tests |
+| [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) | Refresh active-page screenshots |
+| [write-kotest](../write-kotest/SKILL.md) | Automated unit/integration tests |
 
-Related: [ktor-html-views](../ktor-html-views/SKILL.md),
-[frontend-js-development](../frontend-js-development/SKILL.md),
-[user-guide](../user-guide/SKILL.md),
-[dry-run-and-simulation](../dry-run-and-simulation/SKILL.md).
-
-Full case list → [checklist.md](checklist.md) (read it before Step 3).
-
----
+Full case list → [checklist.md](checklist.md) (read before Step 3).
 
 ## Scope
 
 | Mode | When |
 | :--- | :--- |
-| **Full suite** (default) | User says “QA the UI”, “manual test”, “smoke the app”, **after UI/CSS/frontend deploy**, or after broad UI work |
-| **Scoped** | User names a page or feature (e.g. “QA History views + zoom only”) — run that subset + Global nav + **STYLE-1/2** |
+| **Full suite** (default) | User asks to QA/smoke the UI, after UI/CSS/client deploy, or after broad UI work |
+| **Scoped** | User names Dashboard, Settings, Actual, or a specific control; run that subset plus Global and relevant style checks |
 
-After any UI/CSS/JS change or production deploy, default to the **full**
-checklist — especially `STYLE-*`, `REGRESSION-*`, `GLOBAL-5`/`GLOBAL-7` (mode
-plate + STREAM/STALE), strengthened `HIST-VIEW-2`, and `HIST-ZOOM-*` (zoom vs
-pan/scrubber). For History zoom work, **always** run HIST-ZOOM-5/6/7 and watch
-the **chart**, not only the scrubber thumb. Do not treat mobile-only checks as
-sufficient for desktop/laptop layout regressions.
+After UI changes or deploys, include the current Dashboard snapshot, Settings
+controls, Actual state, and legacy `/history` redirect/API response checks when
+relevant. Use laptop evidence for header density as well as phone evidence for
+narrow layouts.
 
-**Always in simulation** on an isolated run directory. Never point QA at the
-user’s real `rebalancer-config.json` / DB. Never flip live trading flags.
+**Always use an isolated simulation run.** Never point QA at the operator's
+real configuration or database. Never change settings to live trading or make
+live Kraken requests.
 
-**Out of scope unless asked:** fixing bugs, visual redesign, rewriting docs,
-changing trading math, live Kraken API calls.
+## Product contracts to verify
 
----
-
-## Redesign semantics (assert these)
-
-Keep these visible contracts in mind while running cases:
-
-1. **Mode plate (every page)** — Brand-adjacent plate shows **SIMULATION**,
-   **DRY RUN**, or **LIVE TRADING** with an explanatory tooltip. Precedence:
-   simulation → dry run → live trading.
-2. **Stream chip (Dashboard)** — Reads **STREAM** / **STALE**, never
-   **LIVE** / **DELAYED** (that wording meant stream health, not trading mode).
-3. **Dashboard hero** — Total Portfolio + 24H delta/sparkline; Cash/Crypto tiles
-   with bars, target, and deviation/meta.
-4. **Recent Activity** — Grouped by rebalance cycle; **View all history** →
-   `/history`.
-5. **Settings safety** — Simulation / Dry Run are rich cards with visible
-   **ON** / **OFF** state (not bare checkboxes in the numeric grid).
-6. **History** — Six summary cards; chart title + zoom in one header row; net
-   cash flow caption; successful trade rows use a subtle status dot; zero USD
-   price/fee show em dash; failed/dry-run badges remain.
-7. **Async freshness & protection** — Verify timeframe changes cleanly cancel/supersede
-   in-flight queries; Settings submit buttons indicate pending state during in-flight saves;
-   semantic HTML used without `aria-*` attributes.
-
----
+1. **Mode plate** — Every retained page shows the configured `SIMULATION`,
+   `DRY RUN`, or `LIVE TRADING` mode; simulation takes precedence over dry run.
+2. **Stream chip** — Dashboard only; reads `STREAM` or `STALE` and describes
+   snapshot feed freshness, not trading mode.
+3. **Dashboard** — Shows the latest completed in-memory cycle snapshot and
+   actions from that cycle. It is not a retrospective timeline.
+4. **Settings** — Active controls remain editable and save correctly. Retired
+   history-only inception/drawdown/deployment/comparison keys disappear from
+   the JSON on the next Settings save.
+5. **Actual** — Shows raw forward observations and evidence status. Incomplete
+   observations and missing coverage stay visible as gaps; simulation does not
+   display emulator balances as authenticated Actual data.
+6. **Prospective Buy & Hold** — Available only from an eligible complete
+   observation after account/event continuity is verified; it uses forward
+   observations and is not a retrospective backtest.
+7. **Legacy routes** — `/history` redirects permanently to `/actual`; former
+   `/api/history/*` reporting endpoints return `410 Gone`.
 
 ## Workflow
 
 ```text
-- [ ] Step 0: Confirm scope (full vs page/feature) and output dir
+- [ ] Step 0: Confirm scope and output directory
 - [ ] Step 1: Boot isolated simulation (same as docs-screenshot-refresh)
-- [ ] Step 2: Open browser → lock tab → wait for seeded data
-- [ ] Step 3: Run checklist cases; record pass / fail / blocked
+- [ ] Step 2: Open browser, lock tab, wait for a completed Dashboard snapshot
+- [ ] Step 3: Run relevant checklist cases; record pass / fail / blocked
 - [ ] Step 4: Write QA_DIR/report.md + findings.json
-- [ ] Step 5: Stop app; clean RUN_DIR; present summary + next actions
+- [ ] Step 5: Stop app, clean RUN_DIR, and present summary
 ```
 
 ### Step 1: Isolated simulation
@@ -104,12 +82,14 @@ Keep these visible contracts in mind while running cases:
 ./gradlew :backend:fatJar
 RUN_DIR=$(mktemp -d)
 cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
-# set simulation: true, loopDelaySeconds: 15
-# start jar from $RUN_DIR; wait for curl -sf http://localhost:8080/api/health
+# set simulation: true and a short loop delay
+# start jar from RUN_DIR; wait for curl -sf http://localhost:8080/api/health
 ```
 
-Prefer `dryRun: false` under simulation so trade rows and activity look realistic
-(emulator fills). Use `dryRun: true` only when testing dry-run badges / filter.
+Simulation is the required safety flag. It exercises current cycles through the
+offline emulator; it does not create authenticated Actual observations. Use
+`dryRun: false` only for emulator order/activity visibility. Keep placeholder
+credentials and never change simulation off during QA.
 
 ```bash
 QA_DIR=$(mktemp -d /tmp/ui-manual-qa.XXXXXX)
@@ -117,45 +97,29 @@ QA_DIR=$(mktemp -d /tmp/ui-manual-qa.XXXXXX)
 
 ### Step 2: Browser setup
 
-Use the **cursor-ide-browser** MCP (navigate → lock → snapshot/screenshot):
+Use the browser tool to open `http://localhost:8080/`, lock the tab, and inspect
+Dashboard, Settings, and Actual. Hard-refresh once or confirm the stylesheet
+has a versioned `/static/style.css?v=` URL before making styling judgments.
+Wait for a completed Dashboard cycle; a startup waiting state is not a failure
+until the configured short loop delay has elapsed.
 
-1. `browser_navigate` → `http://localhost:8080/`
-2. `browser_lock` `{ action: "lock" }`
-3. **Post-deploy / cache:** hard-refresh once (or confirm `/static/style.css?v=`
-   in the stylesheet link) before style assertions — stale 24h CSS makes controls
-   look like default browser buttons (`STYLE-1`).
-4. Wait until Dashboard shows portfolio hero / tiles (not empty seed flash) —
-   poll health / snapshot / screenshot until data age is recent.
-5. For header/status and `REGRESSION-*` cases, use the screenshot helper's
-   `laptop` profile (1280px) in addition to `phone` when static visual evidence
-   is needed; do not rely on mobile-only evidence.
-6. Prefer `browser_snapshot` for structure + refs. For standalone page captures,
-   use `capture_screenshots.py --profile laptop,phone --out-dir "$QA_DIR"`;
-   use `browser_take_screenshot` only when asserting a visual state immediately
-   after an interaction that the capture script cannot reproduce.
-7. Unlock only when **all** cases for this run are finished.
-
-If a control has no stable accessibility name, use DOM ids from
-`:common` `HtmlIds` / visible `ViewText` labels (see checklist).
+Use the screenshot helper's laptop profile for header/status cases and phone
+when responsive evidence matters. Prefer browser snapshots for structure and
+stable labels. Unlock the browser only after all selected cases finish.
 
 ### Step 3: Execute cases
 
-For each case in [checklist.md](checklist.md) (or the scoped subset):
+For each selected case:
 
-1. **Setup** — navigate / preconditions.
-2. **Act** — click, type, select, toggle, scroll as specified.
-3. **Assert** — expected DOM text, enabled/disabled state, chart rebuild,
-   table rows, toast/alert, URL, or localStorage side effect.
-4. **Record** — `pass` | `fail` | `blocked` with one-line evidence.
-5. **Recover** — if a fail leaves the UI dirty, reset via reload or Undo path
-   before the next case (especially Settings mutations — restore values or
-   re-copy template config and restart only if necessary).
+1. **Setup** — navigate and establish its stated precondition.
+2. **Act** — click, type, select, toggle, or wait as specified.
+3. **Assert** — inspect visible text, enabled state, resulting snapshot, URL,
+   response status, or saved value.
+4. **Record** — `pass`, `fail`, or `blocked` with one-line evidence.
+5. **Recover** — restore disposable Settings changes before continuing.
 
-**Hard stop rule:** After **4** consecutive interaction failures with no new
-evidence, stop the suite, report what blocked progress, and ask how to proceed.
-
-Do **not** skip Global nav cases even in a scoped History/Settings run — broken
-routing makes other results meaningless.
+After four consecutive interaction failures without new evidence, stop and
+report the blocker.
 
 ### Step 4: Report
 
@@ -165,14 +129,14 @@ Write `$QA_DIR/report.md` and `$QA_DIR/findings.json`. Chat summary:
 # UI manual QA
 
 ## Summary
-- Scope: full | History | …
+- Scope: full | Dashboard | Settings | Actual
 - Result: N passed / N failed / N blocked
-- Simulation seed: yes; dryRun: on/off
+- Simulation: on; dryRun: on/off
 - Artifacts: `$QA_DIR`
 
 ## Failures
 ### [P0|P1|P2] CASE-ID — Title
-- **Page**: Dashboard | Settings | History | Global
+- **Page**: Dashboard | Settings | Actual | Global
 - **Steps**: what you did
 - **Expected**: …
 - **Actual**: … (screenshot / snapshot note)
@@ -180,85 +144,43 @@ Write `$QA_DIR/report.md` and `$QA_DIR/findings.json`. Chat summary:
 
 ## Passed (compact)
 - GLOBAL-1, DASH-1, … (ids only)
-
-## Suggested next steps
-- Fix failures in chat, or open a follow-up implement pass
-- Optional: ui-visual-review if failures look like design/layout
 ```
 
-`findings.json` shape (for handoff):
-
-```json
-{
-  "qaDir": "/tmp/ui-manual-qa.XXX",
-  "generatedAt": "ISO-8601",
-  "scope": "full",
-  "results": [
-    {
-      "id": "HIST-ZOOM-1",
-      "status": "fail",
-      "severity": "P1",
-      "page": "History",
-      "title": "Zoom + expands x-axis",
-      "expected": "…",
-      "actual": "…",
-      "evidence": "screenshot or snapshot note"
-    }
-  ]
-}
-```
-
-Severity: **P0** broken navigation / data loss / unsafe mode confusion;
-**P1** control does nothing or wrong result; **P2** polish / edge / flaky timing.
+Keep results factual. Account-backed Actual capture or a prospective benchmark
+that cannot be exercised in the isolated simulation should be marked blocked,
+with the safety reason.
 
 ### Step 5: Cleanup
 
-Stop the Java process, `rm -rf "$RUN_DIR"`. Keep `$QA_DIR` until the user is
-done reviewing. Unlock the browser tab.
-
----
+Stop the Java process, remove only the isolated `$RUN_DIR`, keep `$QA_DIR` for
+review, and unlock the browser tab.
 
 ## Interaction principles
 
-1. **One assertion per case** where possible — easier triage.
-2. **Prefer labeled controls** (`ViewText`) and `HtmlIds` over brittle CSS paths.
-3. **Wait for async** — History sync banner, chart rebuild after range change,
-   HTMX/SSE dashboard refresh; snapshot again after settle.
-4. **Do not trust console silence** — assert visible outcome.
-5. **Safety modes stay obvious** — Settings Simulation / Dry Run cards must
-   remain reachable with clear ON/OFF; header mode plate must stay visible on
-   every page. Never hide them while “cleaning up” after a case.
-6. **Settings mutations are reversible** — change a disposable field, save, verify
-   hot-reload signal if observable, then restore prior values and save again
-   before leaving the page (throwaway DB, but keep later cases predictable).
-
----
+1. Prefer one observable assertion per case.
+2. Use visible labels and current `HtmlIds` where available.
+3. Wait for completed cycles, SSE updates, Settings saves, and Actual page loads
+   before asserting.
+4. Assert visible outcomes rather than relying on console silence.
+5. Keep mode plate and Simulation / Dry Run cards visible and clear.
+6. Settings mutations must be restored before leaving the isolated run.
 
 ## Anti-patterns
 
-- Judging “works” from static screenshots without clicking
-- Using the user’s real config/DB
-- Declaring pass when charts are blank / still syncing
-- Auto-implementing fixes mid-suite without user ask (finish the report first)
-- Confusing this skill with ui-visual-review (looks) or Kotest (unit coverage)
-- Skipping zoom / view-preset / allocation add-remove because they feel “extra”
-- QA only at mobile width and missing desktop header density / glass-button regressions
-- Skipping `STYLE-*` after a deploy and mis-reporting styled controls as “broken”
-- Expecting **LIVE** / **DELAYED** on the stream chip (it is **STREAM** / **STALE**)
-- Calling HIST-ZOOM-6 pass because the scrubber thumb moved while **time ticks /
-  series stayed put** (chart must pan — usually needs `chart.zoomScale`)
-- Enabling scrubber only via Zoom + buttons and skipping drag/wheel zoom
-  (HIST-ZOOM-5 / HIST-ZOOM-7)
-- Counting only four History summary cards (there are **six**)
-
----
+- Using the operator's real config or database
+- Treating simulation balances as Actual evidence
+- Treating the Dashboard snapshot as a persisted timeline
+- Presenting prospective Buy & Hold without verified continuity
+- Calling `/history` a retained page or expecting retired reporting APIs to work
+- Auto-implementing fixes during QA without a user request
+- Checking only mobile width when desktop/laptop layout is in scope
 
 ## Checklist
 
-- [ ] Isolated sim; `QA_DIR` created; real config untouched
-- [ ] Browser locked; seeded data visible
+- [ ] Isolated simulation; real config/database untouched
+- [ ] Browser locked; current Dashboard snapshot visible
 - [ ] [checklist.md](checklist.md) cases run (full or scoped)
-- [ ] Failures have expected/actual + evidence
-- [ ] `report.md` + `findings.json` written
+- [ ] Failures include expected/actual evidence
+- [ ] `report.md` and `findings.json` written
 - [ ] App stopped; browser unlocked; summary delivered
-- [ ] No unsolicited redesign or live-trading changes
+- [ ] No live-trading changes or unsolicited redesign

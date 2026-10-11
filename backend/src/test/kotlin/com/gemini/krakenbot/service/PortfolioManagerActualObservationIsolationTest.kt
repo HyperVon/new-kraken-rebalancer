@@ -29,7 +29,6 @@ class PortfolioManagerActualObservationIsolationTest : StringSpec() {
                     portfolioAnalyzer = fixture.portfolioAnalyzer,
                     orderExecutor = orderExecutor,
                     krakenService = fixture.krakenService,
-                    reportingDispatcher = fixture.reportingDispatcher,
                     actualObservationDispatcher = observationDispatcher,
                 )
                 val config = TestFixtures.config(

@@ -53,7 +53,7 @@ that session boundary.
 
 `OrderExecutor.executeOrders` also wraps sell→buy in `withStableBackend`. Nested
 calls **reuse the outer pin** (they do not re-resolve), so OrderExecutor cannot
-shadow a full cycle/sync pin. Concurrent top-level invocations each capture their
+shadow a full cycle pin. Concurrent top-level invocations each capture their
 own entry-time backend (no process-global pin). `OrderExecutor` also passes the
 cycle’s `settings.dryRun` into each `executeOrder` so a mid-cycle dry-run flip
 cannot change placement mode. Outside a stable block, each call still re-reads
@@ -64,10 +64,11 @@ decision explicitly.
 ### When the backend is (not) pinned
 
 - **Pinned:** the normal cycle-wide sequence owned by
-  `performCycleWithStableSession` (in-cycle sync, reconstruction, analysis,
-  orders, and post-trade reads); startup/top-level sync and reconstruction
-  entry points (each with its own pin); and top-level
-  `OrderExecutor.executeOrders` (nested pins reuse the outer pin).
+  `performCycleWithStableSession` (balance/price reads, planning, orders, and
+  order-specific settlement); and top-level `OrderExecutor.executeOrders`
+  (nested pins reuse the outer pin). Startup runs the execution-journal
+  migration, Actual dispatcher, and portfolio manager; it does not synchronize
+  account history or reconstruct retrospective reports.
 - **Unpinned:** dashboard balance/price reads, health checks — each call
   re-resolves from config at invocation time.
 - Anti-patterns: assuming a mid-cycle config flip affects an already-pinned

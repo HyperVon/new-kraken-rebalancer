@@ -604,8 +604,6 @@ class AccountHistoryScopeGuardTest : StringSpec() {
                         totalValueUSD = BigDecimal.ONE,
                         assets = emptyMap(),
                         actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
                         effectiveUsdTargetPercent = BigDecimal.ZERO,
                     ),
                 )

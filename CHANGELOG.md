@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.113] - 2026-10-11
+
+### Removed
+
+- **Retrospective History reporting**: retired the History page, historical
+  trade and ledger synchronization, reconstruction, and retrospective report
+  writes. `/history` permanently redirects to `/actual`; former
+  `/api/history/*` reporting endpoints return **410 Gone**. The Dashboard now
+  presents the latest completed current-cycle snapshot. Actual retains raw
+  forward-only observations and its optional continuity-verified prospective
+  Buy & Hold comparison.
+
+### Changed
+
+- **Settings compatibility**: retired drawdown, deployment, inception, and
+  comparison-start keys are discarded on load and removed from the JSON file
+  on the next Settings save; active rebalance controls remain available.
+
 ## [6.17.111] - 2026-10-09
 
 ### Added
@@ -5746,8 +5764,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added unit test to verify generated property getter of `PortfolioValues` data class in [ModelTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/model/ModelTest.kt).
   - Added unit test to verify that `ConfigServiceImpl` throws `InvalidConfigurationException` if it loads an invalid configuration file during initialization (`loadConfig`) in [ConfigServiceTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceTest.kt).
   - Added unit test for `OrderExecutor` to simulate a dust sell (selling value less than the minimum order size) in [PortfolioManagerEdgeCasesTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerEdgeCasesTest.kt).
-  - Added reflection-based test to cover the `Icons.loadIcon` fallback branch on missing resource in [DashboardViewTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
-  - Added reflection-based test to invoke `PerformanceTableComponent$Companion.getCOLUMNS()` to cover the private companion class and method in [DashboardViewTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
+  - Added reflection-based test to cover the `Icons.loadIcon` fallback branch on missing resource in the then-current `DashboardViewTest`.
+  - Added reflection-based test to invoke `PerformanceTableComponent$Companion.getCOLUMNS()` to cover the private companion class and method in the then-current `DashboardViewTest`.
 
 ---
 

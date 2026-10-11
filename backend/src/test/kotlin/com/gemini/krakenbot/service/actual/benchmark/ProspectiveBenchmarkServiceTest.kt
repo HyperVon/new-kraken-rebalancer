@@ -10,11 +10,13 @@ import com.gemini.krakenbot.service.actual.ActualObservation
 import com.gemini.krakenbot.service.actual.ActualObservationStatus
 import com.gemini.krakenbot.service.actual.ActualObservationStore
 import com.gemini.krakenbot.service.actual.ActualObservationValuator
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -94,6 +96,28 @@ class ProspectiveBenchmarkServiceTest :
                 assets = assets,
             )
         }
+
+        fun createSegment(
+            account: String = accountDigest,
+            scopeSymbols: List<String> = listOf("BTC", "USD"),
+            status: BenchmarkSegmentStatus = BenchmarkSegmentStatus.TRACKING,
+            lastVerified: Instant = t0,
+            terminationReason: String? = null,
+        ) = BenchmarkSegment(
+            segmentId = "segment-1",
+            baselineObservationId = "obs-0",
+            accountIdentityDigest = account,
+            scopeFingerprint = ActualObservationValuator.scopeFingerprint(scopeSymbols),
+            scopeSymbols = scopeSymbols,
+            baselineAt = t0,
+            initialHoldings = mapOf("BTC" to BigDecimal.ONE, "USD" to BigDecimal("10")),
+            baselineMarks = mapOf("BTC" to BigDecimal("100"), "USD" to BigDecimal.ONE),
+            baselineTotalUsd = BigDecimal("110"),
+            status = status,
+            terminationReason = terminationReason,
+            lastVerifiedEventTime = lastVerified,
+            createdAt = t0,
+        )
 
         fun withTempDirectory(block: (Path) -> Unit) {
             val directory = Files.createTempDirectory("benchmark-test")
@@ -208,6 +232,124 @@ class ProspectiveBenchmarkServiceTest :
                     // When evaluating under otherAccountDigest
                     val result = service.evaluate(config, otherAccountDigest, listOf(obs0))
                     result.status shouldBe BenchmarkStatus.NO_ACTIVE_SEGMENT
+                }
+            }
+        }
+
+        "benchmark baseline accepts only complete evidence with all required valuation fields" {
+            val store = mockk<BenchmarkStore>(relaxed = true)
+            val verifier = mockk<ProspectiveEventContinuityVerifier>()
+            val service = ProspectiveBenchmarkService(store, verifier) { t1 }
+            val observation = createObservation("obs-start", t0, accountDigest, listOf("BTC"))
+
+            runTest {
+                val segment = service.startBenchmark(observation)
+                segment.baselineObservationId shouldBe "obs-start"
+                segment.initialHoldings shouldBe mapOf("BTC" to BigDecimal("1.0"), "USD" to BigDecimal("10.00"))
+                segment.baselineMarks shouldBe mapOf("BTC" to BigDecimal("100.00"), "USD" to BigDecimal.ONE)
+                segment.baselineTotalUsd shouldBeEqualComparingTo BigDecimal("110.00")
+                segment.status shouldBe BenchmarkSegmentStatus.TRACKING
+                segment.createdAt shouldBe t1
+                coVerify(exactly = 1) { store.saveSegment(segment) }
+
+                shouldThrow<IllegalArgumentException> {
+                    service.startBenchmark(observation.copy(status = ActualObservationStatus.INCOMPLETE))
+                }
+                val missingQuantity = observation.copy(
+                    assets = observation.assets.map { asset ->
+                        if (asset.symbol == "BTC") asset.copy(quantity = null) else asset
+                    },
+                )
+                shouldThrow<IllegalStateException> { service.startBenchmark(missingQuantity) }
+                val missingPrice = observation.copy(
+                    assets = observation.assets.map { asset ->
+                        if (asset.symbol == "BTC") asset.copy(priceUsd = null) else asset
+                    },
+                )
+                shouldThrow<IllegalStateException> { service.startBenchmark(missingPrice) }
+                val missingTotal = observation.copy(totalUsd = null)
+                shouldThrow<IllegalStateException> { service.startBenchmark(missingTotal) }
+            }
+        }
+
+        "benchmark evaluation returns not-started, account-changed, and terminal results" {
+            val store = mockk<BenchmarkStore>(relaxed = true)
+            val verifier = mockk<ProspectiveEventContinuityVerifier>()
+            val config = createConfig(listOf("BTC"))
+            val observation = createObservation("obs-0", t0, accountDigest, listOf("BTC"))
+
+            runTest {
+                coEvery { store.getActiveSegment(accountDigest) } returns null
+                coEvery { store.getLatestSegment(accountDigest) } returns null
+                val service = ProspectiveBenchmarkService(store, verifier)
+                service.evaluate(config, accountDigest, emptyList()).status shouldBe BenchmarkStatus.NO_ACTIVE_SEGMENT
+
+                coEvery { store.getActiveSegment(otherAccountDigest) } returns createSegment()
+                service.evaluate(config, otherAccountDigest, listOf(observation)).let { result ->
+                    result.status shouldBe BenchmarkStatus.TERMINATED
+                    result.unavailableReason shouldBe BenchmarkTerminationReason.ACCOUNT_CHANGED
+                }
+
+                coEvery { store.getActiveSegment(accountDigest) } returns createSegment(
+                    status = BenchmarkSegmentStatus.TERMINATED,
+                    terminationReason = BenchmarkTerminationReason.MANUAL_TRADE,
+                )
+                service.evaluate(config, accountDigest, listOf(observation)).let { result ->
+                    result.status shouldBe BenchmarkStatus.TERMINATED
+                    result.segment?.terminationReason shouldBe BenchmarkTerminationReason.MANUAL_TRADE
+                    result.points.size shouldBe 1
+                }
+                coVerify(exactly = 0) { verifier.verifyContinuity(any(), any()) }
+            }
+        }
+
+        "active benchmark records pending or terminated continuity and ignores incomplete observations" {
+            val store = mockk<BenchmarkStore>(relaxed = true)
+            val verifier = mockk<ProspectiveEventContinuityVerifier>()
+            val config = createConfig(listOf("BTC"))
+            val segment = createSegment()
+            val baseline = createObservation("obs-0", t0, accountDigest, listOf("BTC"))
+            val later = createObservation("obs-1", t1, accountDigest, listOf("BTC"), btcPrice = "120.00")
+            val incomplete = later.copy(status = ActualObservationStatus.INCOMPLETE, totalUsd = null)
+            val service = ProspectiveBenchmarkService(store, verifier)
+
+            runTest {
+                coEvery { store.getActiveSegment(accountDigest) } returns segment
+                coEvery { verifier.verifyContinuity(segment, t1) } returns
+                    ContinuityVerificationResult.PendingEvidence("ledger evidence is incomplete")
+                val pending = service.evaluate(config, accountDigest, listOf(baseline, incomplete, later))
+                pending.status shouldBe BenchmarkStatus.PENDING_EVIDENCE
+                pending.unavailableReason shouldBe "ledger evidence is incomplete"
+
+                coEvery { verifier.verifyContinuity(segment, t1) } returns
+                    ContinuityVerificationResult.Terminated("external deposit", t1)
+                val terminated = service.evaluate(config, accountDigest, listOf(baseline, later))
+                terminated.status shouldBe BenchmarkStatus.TERMINATED
+                terminated.segment?.terminationReason shouldBe "external deposit"
+                coVerify {
+                    store.updateSegmentStatus(
+                        segment.segmentId,
+                        BenchmarkSegmentStatus.TERMINATED,
+                        "external deposit",
+                        t1,
+                    )
+                }
+
+                val terminalScopeMismatch = createSegment(
+                    scopeSymbols = listOf("ETH", "USD"),
+                    status = BenchmarkSegmentStatus.TERMINATED,
+                    terminationReason = "already terminated",
+                )
+                coEvery { store.getActiveSegment(accountDigest) } returns terminalScopeMismatch
+                val changedScope = service.evaluate(config, accountDigest, listOf(baseline))
+                changedScope.status shouldBe BenchmarkStatus.TERMINATED
+                coVerify(exactly = 0) {
+                    store.updateSegmentStatus(
+                        terminalScopeMismatch.segmentId,
+                        BenchmarkSegmentStatus.TERMINATED,
+                        BenchmarkTerminationReason.SCOPE_CHANGED,
+                        any(),
+                    )
                 }
             }
         }

@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
+import java.math.BigDecimal
 import java.time.Instant
 
 object PortfolioSnapshotTable : Table("portfolio_snapshots") {
@@ -37,8 +38,6 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
             totalValueUSD = row[totalValueUSD],
             assets = assets,
             actions = actions,
-            drawdownPercent = row[drawdownPercent],
-            fiatDeploymentPercent = row[fiatDeploymentPercent],
             effectiveUsdTargetPercent = row[effectiveUsdTargetPercent],
             balancesObservedAt = observedAt,
         )
@@ -47,8 +46,8 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
     fun applyTo(builder: UpdateBuilder<*>, snapshot: PortfolioSnapshot) {
         builder[timestamp] = snapshot.timestamp.toEpochMilli()
         builder[totalValueUSD] = snapshot.totalValueUSD
-        builder[drawdownPercent] = snapshot.drawdownPercent
-        builder[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
+        builder[drawdownPercent] = BigDecimal.ZERO
+        builder[fiatDeploymentPercent] = BigDecimal.ZERO
         builder[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
         builder[balancesObservedAt] = snapshot.balancesObservedAt?.toEpochMilli()
     }

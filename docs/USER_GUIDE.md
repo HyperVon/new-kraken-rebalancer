@@ -1,9 +1,8 @@
 # User Guide — Kraken Rebalancer
 
-This guide walks through the live dashboard: what each screen is for, how to
-configure the bot, and how to interpret charts and trade logs. Screenshots below
-were captured in **simulation mode** so values are illustrative, not live
-exchange balances.
+This guide walks through the Dashboard, Actual observations, and Settings. It
+explains how to read the latest rebalance cycle, configure the bot, and interpret
+directly observed account evidence.
 
 For install and first launch, see the [README Getting Started](../README.md#getting-started)
 section. For rebalancing math internals, see [ALGORITHM.md](ALGORITHM.md).
@@ -36,7 +35,7 @@ Two independent settings control how “real” trading is. Change them from
 
 | Mode | What it does | When to use |
 | :--- | :--- | :--- |
-| **Simulation Mode** | Routes all exchange calls to an offline Kraken emulator (random-walk prices, seeded history). No API keys required. | Learning the UI, demos, documentation screenshots |
+| **Simulation Mode** | Routes exchange calls to an offline Kraken emulator (random-walk prices). No API keys required. | Learning and demonstrating the UI |
 | **Dry Run Mode** | Calculates intended orders on the active backend (live Kraken or the emulator) but never places them. Server logs may show `[DRY RUN]` or `[EMULATOR DRY RUN]`; Recent Activity always prefixes `[DRY RUN]`. | Rehearsing strategies against live or simulated markets |
 
 **Live trading** is `simulation` off **and** `dryRun` off with real API keys —
@@ -48,17 +47,14 @@ then **Dry Run Mode** — each with an **ON** / **OFF** state pill and a short l
 of consequence prose (e.g. "No real funds are ever touched"). Keep at least one
 safety on unless you intend to trade live.
 
-<p><a href="images/settings.png"><img src="images/settings.png" alt="Settings - safety modes and targets" width="720"></a></p>
-
 ---
 
 ## Navigation
 
-Dashboard, Actual, History, and Settings share the same top nav tabs (active page is
+Dashboard, Actual, and Settings share the same top nav tabs (active page is
 highlighted and centered below the header identity on wider screens). The header
-brand reads **Kraken** + **Rebalancer**, and the Stream/loop status cluster sits
-to its right on wider screens. A **persistent mode plate** shows the current
-trading mode on **every** page: **SIMULATION** (blue), **DRY RUN** (amber), or
+brand reads **Kraken** + **Rebalancer**. A **persistent mode plate** shows the
+current trading mode on **every** page: **SIMULATION** (blue), **DRY RUN** (amber), or
 **LIVE TRADING** (red).
 Precedence is simulation first (even if dry run is also on), then dry run, then
 live. The plate reflects your Settings, and hovering it reveals a tooltip
@@ -75,10 +71,16 @@ Live Trading settings.
 
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
-| **Dashboard** | `/` | Live portfolio snapshot, allocation bars, performance table, recent activity |
+| **Dashboard** | `/` | Latest completed cycle snapshot, allocation bars, performance table, current-cycle actions |
 | **Actual** | `/actual` | Forward-only observed managed value, evidence status, and asset balances |
-| **History** | `/history` | Time-range charts, summary cards, full trade log |
 | **Settings** | `/settings` | Loop timing, triggers, fixed USD target, safety modes, allocations |
+
+Legacy links to `/history` permanently redirect to `/actual`. Retired
+`/api/history/*` reporting endpoints return **410 Gone**. The application no
+longer offers retrospective trade reports, reconstructed historical
+comparisons, or history backfill. Actual retains forward-only raw observations
+and its optional prospective Buy & Hold comparison. Operator recovery for
+unresolved live orders remains available through the separate safety workflow.
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 **Only the Dashboard** shows a stream-health chip in the header next to the mode
@@ -96,15 +98,17 @@ that.
 
 ## Dashboard
 
-<p><a href="images/dashboard.png"><img src="images/dashboard.png" alt="Dashboard overview" width="720"></a></p>
+<a href="images/dashboard.png"><img src="images/dashboard.png" alt="Dashboard showing the latest current-cycle snapshot" width="960"></a>
+*Dashboard overview — the latest completed cycle and its current allocation.*
 
 ### Portfolio overview
 
-The top of the Dashboard is a hero card plus two tiles:
+The Dashboard displays the latest completed rebalance cycle: a hero portfolio
+value plus two tiles:
 
 | Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta when a true ≥24h baseline exists (green up / red down / muted flat), or an explicit unavailable label when it does not; an inline **sparkline** of recent retained snapshots. |
+| **Total Portfolio** (hero) | Mark-to-market value of the tracked assets in the latest completed cycle. |
 | **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, the configured USD target, and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
@@ -119,27 +123,25 @@ Dry Run, or Live Trading mode.
 
 ### Allocation & performance
 
-<p><a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Dashboard allocation, table, and activity" width="720"></a></p>
-
-<p><a href="images/dashboard-performance.png"><img src="images/dashboard-performance.png" alt="Dashboard asset performance" width="720"></a></p>
+<a href="images/dashboard-performance.png"><img src="images/dashboard-performance.png" alt="Current asset performance and target deviation legend" width="960"></a>
+*Dashboard — current asset performance and over/under-target legend.*
 
 - **Portfolio Allocation (Top Assets)** — Horizontal bars for the largest
   holdings by USD value (and cash), showing up to the **top 15**. Bar lengths are
   relative to the largest holding (the biggest fills the track), with each bar
   labelled by its USD value and current %. Each symbol uses its configured color
   from Settings (BTC/ETH/USD start with amber/violet/slate defaults; other
-  assets get an auto-assigned color), shared with History charts.
+  assets get an auto-assigned color).
 - **Asset Performance** — Sortable table of price, value, target %, current %,
   and **Dev %** (how far each asset is from target, with dollar impact).
   Amber = over target, blue = under target (not profit/loss green/red); a small
   legend sits above the table.
-- **Recent Activity** — A **cycle-grouped feed** of the most recent rebalance
-  cycles (up to 6). Each cycle is a lightweight row with an action summary (e.g.
-  `3 actions`, or **No trades — portfolio within tolerance**) and a compact
-  relative/absolute timestamp. Cycles with trades show at most one concise note
-  followed by the individual actions:
+- **Recent Activity** — actions from the latest completed cycle, with a short
+  summary and compact timestamps:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
-  - A **View all history** link at the bottom jumps to `/history`.
+
+<a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Recent actions from the latest completed cycle" width="960"></a>
+*Dashboard — activity from the latest completed cycle.*
 
 Use this page as your “is the bot healthy right now?” view.
 
@@ -148,11 +150,11 @@ Use this page as your “is the bot healthy right now?” view.
 The JSON endpoints are intentionally unauthenticated for this application's
 single-operator/private-LAN deployment model. Treat every device that can reach
 the server as trusted. `GET /api/health` is a liveness and diagnostic check; it
-includes the active mode, loop state, last cycle timestamps/error, latest trade
-sync watermark, and unresolved live-order counts. `GET /api/readiness` returns
-`200` only when the loop is running, configuration is available, a snapshot
-exists, the latest cycle is not failed, and no ambiguous live-order intent is
-waiting for review. It returns `503` with a `readinessReason` otherwise.
+includes the active mode, loop state, last cycle timestamps/error, and unresolved
+live-order counts. `GET /api/readiness` returns `200` only when the loop is
+running, configuration is available, a current-cycle snapshot exists, the
+latest cycle is not failed, and no ambiguous live-order intent is waiting for
+review. It returns `503` with a `readinessReason` otherwise.
 
 If an ambiguous live order occurs, the application halts live trading and displays an
 **Action Required: Unresolved Live Order Intent** banner at the top of the Dashboard.
@@ -169,26 +171,7 @@ checks before resuming.
 
 The dashboard is checked at the same common viewport profiles used by the visual
 review workflow. On phones, Asset Performance keeps Asset, Value, and Dev % in
-view, while History trade rows become labeled detail cards so price, fee, and
-status remain readable.
-
-<p><strong>Phone (390px CSS viewport)</strong><br>
-<a href="images/dashboard-phone.png"><img src="images/dashboard-phone.png" alt="Phone dashboard" width="390"></a></p>
-
-<p><strong>Tablet (768px CSS viewport)</strong><br>
-<a href="images/dashboard-tablet.png"><img src="images/dashboard-tablet.png" alt="Tablet dashboard" width="512"></a></p>
-
-<p><strong>Laptop (1280px CSS viewport)</strong><br>
-<a href="images/dashboard-laptop.png"><img src="images/dashboard-laptop.png" alt="Laptop dashboard" width="720"></a></p>
-
-<p><strong>Wide (1920px CSS viewport)</strong><br>
-<a href="images/dashboard-wide.png"><img src="images/dashboard-wide.png" alt="Wide dashboard" width="720"></a></p>
-
-<p><strong>Phone asset performance</strong><br>
-<a href="images/dashboard-performance-phone.png"><img src="images/dashboard-performance-phone.png" alt="Phone asset performance" width="390"></a></p>
-
-<p><strong>Phone trade log</strong><br>
-<a href="images/history-trade-log-phone.png"><img src="images/history-trade-log-phone.png" alt="Phone trade log" width="390"></a></p>
+view.
 
 ---
 
@@ -196,11 +179,8 @@ status remain readable.
 
 Open **Settings** from the shared top nav, or go to `/settings`.
 
-If history is syncing or verifying recovery evidence, saving settings returns a
-busy message and keeps the edited values in the form. Retry after the history
-work finishes.
-
-<p><a href="images/settings.png"><img src="images/settings.png" alt="Settings page" width="720"></a></p>
+<a href="images/settings.png"><img src="images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
+*Settings — active controls, allocations, and safety mode cards.*
 
 ### Global parameters
 
@@ -209,13 +189,12 @@ work finishes.
 | **Loop Interval (Seconds)** | How often the rebalancer wakes up to snapshot and potentially trade. Minimum **1**. |
 | **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. Minimum **0**. |
 | **Minimum Order Size ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. **Minimum `2` (enforced).** |
-| **Inception Date (Optional)** | Manual strategy-start anchor. Use the UTC date picker and save, or review the compact **Recommended strategy start** row and select **Use estimated start** to approve the exact timestamp in one step. Select **Show evidence** when you want the supporting history details; they stay collapsed by default to keep the form compact. The estimate remains explicitly user-approved evidence, not automatic proof of bot ownership. If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. Stale evidence from another account or simulation scope is withheld, display reads never trigger Kraken recovery, and allocation changes do not falsely claim a new strategy start. Approving a start also rebuilds the Buy & Hold baseline from Kraken history. Once the comparison has proven the strategy start is the valid automatic baseline, that proof is remembered: reloading Settings or restarting the app reuses the verified baseline without replaying the entire comparison (the stored proof is re-checked against the retained history), and the proof is re-checked automatically whenever the underlying history or configuration changes. The Settings form shows the proven baseline on fast loads without claiming the current comparison was evaluated; a separate unavailable message appears only when a full comparison evaluation runs and fails. Verification itself uses only the latest stable, coverage-confirmed historical state: a snapshot written while its cycle's trades and ledgers are still syncing stays outside the verification horizon until history catches up, so a brief sync race defers the proof instead of reporting a deposit/withdrawal error. A confirmed baseline can still have an unavailable comparison if later balance reconciliation cannot be completed; when lifetime recovery is ambiguous or truncated, History may instead show a bounded passive report from the earliest genuinely recorded post-floor snapshot. That report does not approve or rewrite strategy inception. |
-| **Comparison Start (Optional)** | UTC anchor for the Buy & Hold comparison. Set automatically when you accept a verified start proposal. The form displays a UTC date, while an accepted proposal preserves its exact UTC timestamp. Requires an inception date at or before it. |
 
-Existing `fiatMaxDrawdown`, `fiatDeploymentExponent`, and
-`fiatDeploymentThresholdPercent` values remain in the configuration format for
-historical calculations. The Settings page does not expose these legacy fields,
-and current order targets use the configured allocations directly.
+Older configuration files may contain retired history-only values such as
+drawdown, deployment, inception, or comparison-start settings. These values are
+discarded when the file is read and do not affect the active strategy, which
+uses configured allocations directly. The next Settings save removes those
+retired keys from the JSON file.
 
 ### Safety modes
 
@@ -240,8 +219,8 @@ active and the Settings form shows the validation error.
 
 ### Target allocations
 
-<p><a href="images/settings-allocations.png"><img src="images/settings-allocations.png" alt="Settings - safety modes and the target allocation editor with quality scores" width="720"></a></p>
-<p><a href="images/settings-allocations-phone.png"><img src="images/settings-allocations-phone.png" alt="Settings - target allocations on a phone" width="390"></a></p>
+<a href="images/settings-allocations.png"><img src="images/settings-allocations.png" alt="Target allocations and quality-score preview controls" width="960"></a>
+*Settings — target allocations and optional quality-score preview.*
 
 Each allocation row carries a symbol, a color swatch, an optional **Quality
 score**, a **Target** percent, and **Remove**. On wider screens, rows sit in
@@ -329,15 +308,13 @@ The fixed USD target, sell-then-buy sequence, and dust handling are documented i
 
 ## Actual observations
 
+<a href="images/actual.png"><img src="images/actual.png" alt="Actual raw observation and evidence status" width="960"></a>
+*Actual — forward-only observations, with simulation evidence unavailable in this capture.*
+
 The **Actual** page shows a forward-only sequence of directly observed managed
 values. It starts when eligible observations begin; it does not reconstruct
-earlier balances or prices.
-
-<p><a href="images/actual.png"><img src="images/actual.png" alt="Actual observations page showing that simulation data is not presented as authenticated Actual history" width="720"></a></p>
-
-This capture was made in simulation mode. The page correctly reports that
-authenticated Actual observations are unavailable there instead of showing
-emulator balances as a real account history.
+earlier balances or prices. Authenticated Actual observations are unavailable
+in simulation mode; emulator values are not shown as an account history.
 
 The page uses the configured allocation symbols, including configured USD,
 from Kraken's authenticated [Get Account Balance](https://docs.kraken.com/api-reference/account-data/get-account-balance)
@@ -369,14 +346,17 @@ that marker indicates missing observation coverage, not an inferred exchange
 event. The chart does not interpolate missing values.
 
 Each complete sample is committed to a separate append-only observation store.
-The page reports observed managed values, not investment returns, profit,
-trading alpha, or Buy & Hold performance. Deposits, withdrawals, manual trades,
+The raw observation chart reports observed managed values, not investment
+returns, profit, or trading alpha. Deposits, withdrawals, manual trades,
 staking/Earn movements, and other account events can change observed value;
-this series does not identify those cash flows. A change in configured asset
-membership starts a separate scope series, while changing allocation weights
-alone does not change the measured asset boundary. Account or credential
-identity must also match the established execution binding before stored
-observations are shown.
+this series does not identify those cash flows. A separate optional prospective
+Buy & Hold comparison can be started from an eligible complete observation when
+event continuity is verified. It compares forward observations from that
+baseline and does not reconstruct an earlier period or report a retrospective
+backtest. A change in configured asset membership starts a separate scope
+series, while changing allocation weights alone does not change the measured
+asset boundary. Account or credential identity must also match the established
+execution binding before stored observations are shown.
 
 Observations are queued after the cycle's order execution returns and persisted
 asynchronously. If collection, account verification, or storage fails, the
@@ -388,358 +368,13 @@ account evidence is verified; Dry Run does not itself disable verified reads.
 
 ---
 
-## History
+## Legacy History URLs
 
-The History page is for longer-term review: performance charts and the full
-trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
-all six summary cards and the charts use that window. Datasets appear as their
-requests finish. If a request fails, its old data is cleared and a retry message
-appears; successful datasets remain visible for the selected window. Select the
-same range again to retry. A comparison failure has its own unavailable message.
-
-Live order outcomes are recorded in the execution journal, separate from the
-historical reporting database. Historical reporting-database writes do not delay
-order placement. The pre-order intent and final outcome/outbox commit remain
-synchronous safety steps; a failed final commit leaves the intent unresolved
-and blocks later live orders until an operator verifies and resolves it. The
-trade-log row is first projected from the order intent using its planning quote
-and estimated fee. An explicit Kraken History sync can reconcile it to exchange
-fills and fees. Dashboard snapshots
-and non-live estimates use best-effort reporting queues and may be absent after
-a queue or reporting failure. The History trade log and snapshots therefore do
-not constitute a complete or authoritative Actual performance record. A live
-trade row remains a planning-price and estimated-fee record until Kraken fill
-history replaces those estimates with exchange-reported execution economics.
-
-The selected window controls which reconciled points are displayed; it does not
-shorten the accounting evidence used to build the comparison. Buy & Hold and
-actual-history reconciliation run from the effective recorded baseline through
-the requested end, then the result is filtered to the selected window and
-down-sampled for the chart. This keeps overlapping windows economically
-consistent with **All** and preserves fail-closed behavior when an earlier
-checkpoint cannot be explained. A window with fewer than two display points is
-shown as unavailable with **Insufficient snapshots** rather than receiving an
-estimated value.
-
-### Sync progress banner
-
-Immediately below the header, a banner appears while ordinary trade/ledger history
-or strategy-inception recovery is active: a spinner with **Synchronizing Kraken
-account history…** and an inline progress indicator plus a progress bar. Recovery
-uses separate durable progress, resumes with overlap after interruption, and is
-bounded per run. If Kraken history is complete but ownership, funding provenance,
-or the baseline is ambiguous/unavailable, the banner explains that outcome while
-the rest of History remains usable. If the active account scope is unavailable,
-mismatched with the database, or an upgraded non-empty database has no stored
-scope binding, private-history synchronization and automatic inception remain
-blocked until the correct account is restored or an explicit migration/reset is
-performed. A scope mismatch caused by rotating API keys on the same account
-rebinds automatically once bounded timestamp-windowed exchange queries still
-contain an exact retained fill or ledger identity against the already-trusted
-binding, while an unbound upgraded database binds only when every sampled
-time-spread marker matches — a single overlapping row never suffices there, so
-mixed-account history reports conflict instead of binding. An empty database
-binds only after the configured credentials verify live against Kraken, and a
-bound-but-empty database may adopt authenticated replacement credentials.
-History rendering itself
-never waits on that proof: it reads the local binding state without blocking
-behind network validation, so a pending or
-incomplete verification shows as unavailable rather than stalling the page.
-A manually configured inception date fixes *when* inception was, but production
-withholds trust from the local snapshot while the account scope verdict is
-busy or unknown.
-
-### Views
-
-The **Views** control (next to the time-range pills) applies a preset across
-range, series visibility, and **Show Dry Run Trades**:
-
-| Preset | Window | Intent |
-| :--- | :--- | :--- |
-| **Overview** (default) | 30d | All series visible |
-| **Day · Total only** | 24h | Portfolio Value shows **Total Portfolio** only |
-| **Week · Allocation** | 7d | Full series for allocation review |
-| **Month · Net Cash Flow** | 30d | Cumulative net cash flow focus; dry-run trades off |
-
-**Save view…** stores the current range, legend visibility, and dry-run toggle
-under a name in browser `localStorage` (`kraken.history.views`). **Set as
-default** marks the selected view for the next visit. **Delete** removes
-user-saved views only (built-ins stay locked).
-
-### Summary cards
-
-| Card | Meaning |
-| :--- | :--- |
-| **All-Time High** / **Period High** | Label switches with the selected range (“All” → ATH; finite ranges → period high). |
-| **Total Trades** | Successful, non-dry-run executions in the selected window. |
-| **Total Volume Traded** | Sum of USD amounts for those trades. |
-| **Total Fees Paid** | Fees attributed to those trades. |
-| **Avg Fee Rate** | `(SUM(fee) / SUM(usdAmount)) × 100` (%) for successful, non-dry-run trades in the window. |
-| **Avg Slippage** | Mean signed slippage % for successful, non-dry-run trades with slippage data. |
-
-### Zoom
-
-Each chart has **Zoom − / Zoom + / Reset**. You can also wheel, pinch, or
-drag-to-zoom on the **x-axis** only. Changing the time range rebuilds charts and
-clears zoom. Reset restores the full selected window.
-
-After you zoom in (via **Zoom +**, wheel, pinch, or drag), a horizontal **pan
-scrubber** below the chart becomes enabled. Use it to slide the visible window
-across the full selected time range. Dragging on the chart zooms; it does not
-pan. **Reset** returns to the full window and disables the scrubber again.
-
-### Rebalancer vs hold benchmark
-
-<p><a href="images/history.png"><img src="images/history.png" alt="History - rebalancer vs hold benchmark comparison" width="720"></a></p>
-
-The first chart below the summary cards compares what the rebalancer actually
-achieved against a **synthetic hold** strategy. The card is titled
-**Rebalancer vs Hold Benchmark** because two benchmarks exist and the request
-chooses between them; the chart legend names the one actually plotted:
-
-| Benchmark | Behaviour |
-| :--- | :--- |
-| **Configuration-matched hold** (default) | Follows the strategy's own major allocation changes, applying one synthetic transition per inferred regime change, and otherwise holds. Isolates the value of routine rebalancing from asset selection. Its allocation history is **inferred** from persistent observed Spot ownership and trading behavior, not retained as proven configuration. |
-| **Fixed-inception hold** (forensic reference) | Freezes the approved inception portfolio and holds it forever. Requestable via `?benchmark=FIXED_INCEPTION_HOLD`. |
-
-An inferred addition starts at the earliest observed positive Spot ownership
-episode lasting at least 60 days. Authoritative zero balances separate episodes,
-so a brief initial purchase and sale cannot move a later sustained holding's
-entry date backward. The asset must separately have at least 20 successful live
-fills spanning 60 days across the account history; these fills need not all fall
-within the selected ownership episode. This evidence does not prove the exact
-historical allocation settings.
-
-Configuration-matched hold checks inferred changes against reconciled historical
-Spot balances, including assets missing from older configured-only snapshots. A
-missing asset row does not mean the wallet held zero. If a high-confidence change
-cannot be established, shown to have settled, or funded from retained evidence,
-the comparison displays a specific unavailable message instead of silently
-skipping that change. These messages describe historical comparison evidence,
-not a live order or a trading cycle waiting to finish.
-
-- **Buy & Hold** starts from the exact recorded comparison anchor across all view windows: the
-  trusted strategy baseline when one exists, or—when lifetime recovery is unresolved—the earliest
-  genuinely recorded snapshot on or after the bounded passive evidence floor. The comparison
-  includes USD and Kraken assets classified as `currency`, including crypto outside the current
-  allocation; `tokenized_asset` securities are excluded from both comparison values and do not need
-  historical price marks. A missing or conflicting classification for a material asset makes the
-  comparison unavailable. Every positive in-scope anchor holding keeps its recorded balance,
-  historical price, and normalized value weight. Current target edits, later configuration changes,
-  trade ownership labels, and internal conversions do not rewrite those lots, so the initial strategy
-  difference normally starts at zero within rounding tolerance. The full wallet is still reconciled;
-  this scope rule applies to comparison NAV, not to wallet-history validation.
-  Successful trades are still reconciled against the actual snapshots, but no trade is mirrored into
-  the passive basket. Holding-dependent rewards replay in-kind only when the basket already holds the
-  credited asset; an otherwise unheld reward remains actual-only. Explicitly classified account-level
-  promotion or airdrop credits may introduce an unheld credited asset. Held crypto rewards and
-  dividends remain performance. A USD cash dividend with explicit evidence that it came from an
-  excluded security is treated as a neutral contribution, net of its fee and invested using fixed
-  anchor weights. An unclassified material USD dividend makes the comparison unavailable rather
-  than being guessed as capital or crypto performance.
-  Complete conversions and complete linked `spend`/`receive` groups are validated and consumed as
-  plumbing, not replayed as synthetic transformations. Unlinked or singleton consumer passthrough
-  rows are excluded from the passive event stream because their missing counterpart cannot prove an
-  independent movement; incomplete linked groups remain unavailable.
-  Genuine owner contributions after the effective comparison baseline are instead
-  invested by the fixed recorded-anchor value weights, and owner withdrawals shrink the whole synthetic
-  portfolio proportionally — so the cash event itself never invents alpha for either side.
-  When a documented card purchase links an external funding row, USD spend, and purchased-asset
-  receive row with one shared refid (within a 120-second proximity window), the benchmark collapses
-  them into a single net owner contribution allocated strictly by the fixed recorded-anchor value weights; the conversion
-  legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit with
-  partial plumbing remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no ledger identity is journaled
-  until the complete group arrives. Confirmed ordinary Wire/ACH deposits without card plumbing continue
-  through the ordinary owner-capital path, and a lone cash-like (USD, ZUSD, USDC, USDT) card deposit with
-  authoritative external provenance and no spend/receive legs anywhere in retained history is treated the
-  same way at its net `amount - fee`. The normalized event keeps
-  synthetic `netOwnerCapitalUsd` separate from actual per-leg asset effects; only the synthetic amount
-  is allocated by Buy & Hold, while ATH basis reconstruction replays the actual effects and fees once.
-  Unproven or incomplete relationships remain unavailable rather than guessed.
-  Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
-  than inferred from the trade-history feed.
-- Funding rows count as owner capital only when the production resolver finds one confirmed,
-  matching Kraken funding-history record. The resolver batches and caches authenticated
-  Funding (Beta) deposit/withdrawal lookups for the history range, and reads deprecated status
-  records only to enrich method metadata when needed; asset, direction, amount/net
-  amount, known fee, time, and terminal status must agree. Direct reference matches also tolerate
-  Kraken's ledger booking delay and minor representation rounding, while fuzzy matches keep the
-  strict window. Deposit credits allow the record's amount or `amount - fee`; withdrawal debits
-  allow the record's amount or `amount + fee` in magnitude. Missing or conflicting records, and
-  Spot/Futures transfers without explicit internal evidence, keep the comparison unavailable.
-- `transfer` is not automatically internal: an exact documented internal subtype, authoritative
-  internal evidence, or same-asset zero-net paired movement can prove `INTERNAL_MOVE`; documented
-  `reward` and observed/documented `airdrop` credits are `EXTERNAL_BALANCE`. Undocumented prose descriptions
-  (`fork`, `distribution`) and bare transfers stay ambiguous without affirmative external provenance. `refid` values provide correlation
-  identity only, so strings such as `KF...`, `futures`, or `internal` do not prove wallet semantics.
-- Observed top-level `reward` rows from Kraken promotion or contest-style credits
-  are also in-kind `EXTERNAL_BALANCE` events and never count as owner capital.
-  Unknown top-level ledger types remain unavailable rather than guessed.
-- A complete two-leg, refid-linked `conversion` between distinct assets is an
-  `INTERNAL_MOVE`: actual-history reconstruction replays each leg's authoritative balance delta
-  and fee once, while pure Buy & Hold validates and consumes the group without emitting a
-  synthetic transformation, trade, or owner flow. Incomplete or contradictory conversion groups
-  keep the comparison unavailable.
-- Complete refid-linked consumer `spend`/`receive` groups are likewise validated and consumed as
-  plumbing; they are not a synthetic conversion event. Unlinked or singleton passthrough rows
-  are excluded from the passive event stream because their missing counterpart cannot prove an
-  independent movement. Incomplete multi-row groups keep the comparison unavailable.
-- Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
-  `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
-  Unknown Earn subtypes keep the comparison unavailable.
-- The comparison accounts for the balance request's duration and up to one second of
-  exchange/local clock skew, accepting events only when the complete tracked balance change
-  reconciles. API fills use precise `price × volume` first; historical rounded costs are
-  accepted per interval only when they represent the same fill and all tracked balances match.
-  Trade ownership does not affect pure Buy & Hold because no trade is mirrored; exchange identity
-  alone still does not prove who initiated a fill, and an unreconciled actual balance change fails
-  closed.
-- Historical flow pricing prefers retained USD executions before the event, admits only a small
-  bounded future execution skew when no past execution exists, then uses at-or-before snapshots and
-  completed 15-minute/60-minute/240-minute/daily OHLC candles. Future snapshots and active candles
-  are excluded; non-USD candles require a retained historical quote conversion, and a source outage
-  remains distinct from `MISSING_PRICE`. A live ticker is allowed only within 300 seconds of the
-  balance observation.
-- Same-source-timestamp USD-only funding plumbing is netted only after original classification and
-  retains its source ledger IDs. A linked mixed-asset card purchase collapses via centralized normalization
-into one owner capital contribution net of fees (with non-USD fees valued at event-time historical prices),
-  allocated strictly by the fixed recorded-anchor value weights (spend/receive legs are consumed as plumbing evidence without
-  being replayed into Buy & Hold). Legs must share a refid within a 120-second proximity window; incomplete shapes
-  or unpriceable fees keep the comparison unavailable. Mixed-sign or overdrawn groups are not reclassified
-  into an opposite owner-flow direction.
-- Historical Kraken ledger entries are reconciled using their recorded post-event balance when
-  the stored fee precision is insufficient; mixed or ambiguous balance changes remain unavailable.
-- **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
-  trade executions that create genuine divergence from Buy & Hold.
-- The **delta badge** next to the chart title shows the cumulative
-  outperformance or underperformance (e.g. `+$5,000.00 (+4.76%)`).
-
-A caption below the chart reads: *Based on stored snapshots and recorded trades.
-Starting quantities are anchored to the effective comparison baseline; the original strategy inception remains preserved separately.*
-
-The strategy inception and comparison start are separate. A confirmed strategy
-baseline can remain unavailable for comparison when later balance reconciliation
-is still uncertain. When lifetime recovery is ambiguous or truncated, History may
-instead show a clearly bounded pure Buy & Hold report from the earliest genuinely
-recorded snapshot on or after the passive evidence floor. That re-anchor does not
-approve or rewrite the strategy inception. Pending recovery and unreconciled
-post-anchor history remain unavailable; refreshing continues recovery rather than
-silently inventing an earlier baseline.
-
-The comparison cannot be computed when:
-
-| Reason | Meaning |
-| :--- | :--- |
-| Insufficient snapshots | Fewer than 2 reconciled snapshots remain in the selected display window. Accounting evidence is still evaluated from the effective baseline through the window end, using only current-version certified trade/ledger coverage. |
-| Non-positive baseline | First snapshot total value is $0 (no baseline to scale from). |
-| Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
-| Missing price | An asset lacks a price in a snapshot. |
-| Asset universe changed | An asset was added or removed during the window, or the window assets differ from the inception baseline. |
-| Configuration balance evidence missing | Retained Spot balances cannot establish a high-confidence historical configuration transition. Missing snapshot rows alone do not prove zero holdings. |
-| Configuration transition incomplete | The local retained observations do not establish that all named removals reached zero and additions became positive. |
-| Configuration transition unsettled | The named balances are still changing across the local retained observations, so no stable anchor can be chosen safely. |
-| Configuration funding evidence missing | Retained evidence cannot establish an addition funding split, historical funding marks, or value released by the named synthetic removals. No unrelated holdings are diluted to invent funding. |
-| Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
-| Ambiguous trade ownership | Trade ownership labels do not affect pure Buy & Hold; the passive basket never mirrors a trade. The overall comparison still remains unavailable when actual-history reconciliation cannot explain a tracked fill or balance change. |
-| Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, a known event does not reconcile to the next snapshot, or owner-flow source evidence has an unprovable order. |
-| Inception snapshot pruned | The strategy start is known but no trustworthy baseline snapshot survives at or near it; a bounded passive anchor may still be used only when a genuinely recorded post-floor snapshot is available. |
-| Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |
-| Ambiguous ledger type | A ledger entry cannot be classified as owner capital or an internal movement. |
-| Funding provenance unavailable | Funding-history evidence could not be retrieved; funding is not guessed. |
-| Inception recovery incomplete | Bounded Kraken history recovery is still pending or a page failed; no lifetime number is produced, and passive re-anchoring waits for an eligible resolved state. |
-| Ambiguous inception | Historical activity cannot be assigned uniquely to this strategy; a separate bounded passive anchor may still be available. |
-| No bot evidence | Recovered history contains no positively identified non-dry-run bot fill; a bounded passive report can still use a genuinely recorded post-floor anchor when one exists. |
-| Inception baseline unavailable | A retained lifetime balance anchor, historical price, authoritative balance, or complete event replay is missing; a recorded post-floor passive anchor may still be usable. |
-| Inception history truncated | Legacy retained history cannot prove the lifetime baseline; a bounded passive report can use a genuinely recorded post-floor anchor when one exists, otherwise set the strategy inception date in Settings. |
-| Historical coverage incomplete | Retention removed part of the strategy period, so the earliest trustworthy lifetime start cannot be determined; this does not by itself invalidate a complete bounded passive anchor. |
-
-When an unavailability reason applies, the chart hides and a message explains why.
-There is no estimated numeric fallback for an unexplained tracked balance change:
-the comparison is `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE`, timestamped at
-the first snapshot whose tracked balances still differ after checking compatible
-historical cost rounding.
-Late fills are accepted only when their ownership is authoritative and their
-complete tracked balance change reconciles. Rendered comparisons are fully
-reconciled.
-
-### Historical ATH calculations
-
-Legacy drawdown and cash-deployment values remain loadable from configuration
-for retained historical calculations. They do not alter the configured USD
-target used by the current rebalance cycle.
-
-### Staking, Promotion & Earn Rewards
-
-A dedicated chart below the comparison shows the cumulative USD value of
-`staking`, `dividend`, top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward` ledger entries for tracked assets in the selected
-range, with one series per asset and a total shown beside the title. Values are
-aligned to portfolio snapshots and use each snapshot's asset price; the chart is
-empty until ledger data has been synchronized. A USD cash dividend with an explicitly identified
-out-of-scope security source is neutralized in portfolio comparison and omitted from crypto staking
-asset series; an unclassified material USD dividend makes the comparison unavailable.
-Earn allocation mechanics are retained for account reconstruction but are not
-shown as rewards or treated as performance.
-A caption below the chart reads:
-*Cumulative staking, dividend, promotion, transfer-airdrop, and Earn reward value accrued during the selected range.
-Assets without a snapshot price in the range are excluded.*
-
-### Portfolio Value & Asset Holdings
-
-<p><a href="images/history-portfolio-charts.png"><img src="images/history-portfolio-charts.png" alt="History - portfolio value and asset holdings" width="720"></a></p>
-
-- **Portfolio Value Over Time** — Total portfolio (blue) plus per-asset USD
-  values using the same configured per-asset colors as Settings / Dashboard.
-- **Asset Holdings Over Time** — Relative change in holdings (percent), same
-  per-asset colors.
-
-Point markers scale with density: full size at ≤24 points, half size through 48,
-then line-only (markers hidden) while hover hit areas stay large enough for
-tooltips.
-
-### Allocation deviation & net cash flow
-
-<p><a href="images/history-charts.png"><img src="images/history-charts.png" alt="History - allocation deviation and cumulative net cash flow" width="720"></a></p>
-
-- **Allocation Deviation from Target** — Each series shows signed relative
-  deviation from that asset’s target. **0%** means on target, positive values
-  are overweight, and negative values are underweight. The Y-axis scales around
-  the observed drift so small departures and post-rebalance corrections remain
-  visible.
-- **Cumulative Net Cash Flow** — Running net cash flow from trades over the
-  window: sells add cash, buys subtract it (includes dry-run trades when that
-  filter is enabled). A dashed **Net After Fees** series subtracts fees from the
-  same signed cash-flow math (estimated fees when dry-run rows are included — not
-  accounting P&L). Negative axis ticks use `-$…` formatting. An on-screen caption
-  below the chart spells out the dry-run caveat, and the legend labels switch with
-  the **Show Dry Run Trades** toggle — e.g. "Net Cash Flow (incl. dry run)" and
-  "Net After Fees (est.)" when dry-run rows are shown, versus "Net Cash Flow
-  (realized)" and "Net After Fees" when they're hidden.
-
-### Trade log
-
-<p><a href="images/history-bottom.png"><img src="images/history-bottom.png" alt="History - trade log" width="720"></a></p>
-
-| Column | Meaning |
-| :--- | :--- |
-| **Time** | When the trade was recorded. |
-| **Pair** | Exchange pair (e.g. `BTC/USD`). |
-| **Side** | **BUY** (green) or **SELL** (red). |
-| **Volume** | Asset quantity. |
-| **USD Amount** | Notional in USD. |
-| **Price** | Executed price (USD per unit); shows an em dash (—) when zero/unknown. |
-| **Fee** | Fee in USD; shows an em dash (—) when zero. Estimated for dry-run / local-estimate rows. |
-| **Slippage** | Signed % vs expected quote at order time — favorable, adverse, or a neutral badge at exactly 0%; em dash when unknown. |
-| **Status** | A quiet success **dot** for plain fills (hover shows a **SUCCESS** tooltip); **FAILED** (hover for the error message) and **DRY RUN** keep labelled badges. |
-
-For dry-run and local-estimate rows, the Price, Fee, and Slippage cells carry an
-"estimated at order time" tooltip so estimated economics aren't mistaken for
-settled fills.
-
-Toggle **Show Dry Run Trades** to include or hide rehearsal rows.
-
-In **simulation** with dry run off, successful emulator fills show as the quiet
-success **dot** (as in the screenshot above). With dry run on, expect **DRY RUN**
-badges instead.
+The retrospective History page and its reports have been retired. `/history`
+permanently redirects to `/actual`; former `/api/history/*` reporting endpoints
+return **410 Gone**. Actual is the supported place to review forward-only raw
+observations and, when continuity is verified, an optional prospective Buy &
+Hold comparison.
 
 ---
 
@@ -748,31 +383,26 @@ badges instead.
 ### 1. Learn the UI offline
 
 1. Enable **Simulation Mode** (dry run optional).
-2. Start with an empty database so the emulator seeds ~15 days of history.
-   Snapshots and trades older than 90 days are pruned automatically.
-3. Explore Dashboard → History charts → Settings, then save a small allocation
-   change and watch the next cycle appear in the **Recent Activity** feed.
+2. Explore Dashboard and Settings, then save a small allocation change and
+   watch the next completed cycle appear in **Recent Activity**.
+3. Actual observations are unavailable in simulation because they require
+   verified account evidence from Kraken.
 
 ### 2. Rehearse against live market data (no orders)
 
-1. Provide Kraken API keys with **Query Funds**, **Query Closed Orders & Trades**,
-   **Query Ledgers**, and **Create & Modify Orders**. Funding provenance also
-   reads Kraken Funding (Beta) deposit and withdrawal history (Funds: Query,
-   covered by Query Funds) and only falls back to `DepositStatus`/`WithdrawStatus`
-   records for method metadata (Funds: Query; Funds: Withdraw or Data: Query
-   ledger entries); fallback failure never blocks the read-only comparison, and
-   no withdrawal-placement permission is needed.
+1. Provide an API key with **Query Funds** so the Dashboard can read account
+   balances. Do not grant order permissions while rehearsing in Dry Run.
 2. Leave **Simulation** off; enable **Dry Run**.
-3. Confirm Dashboard prices and History sync look right before considering live
-   mode.
+3. Review the latest Dashboard cycle and current allocation before considering
+   live mode.
 
 ### 3. Go live
 
 1. Confirm allocations sum to 100% and dust / deviation settings match your
    risk tolerance.
 2. Disable **Simulation** and **Dry Run** only when you intend to trade.
-3. Watch **Recent Activity** on the first few cycles; keep History open to audit
-   fills.
+3. Watch **Recent Activity** and the current-cycle snapshot on the first few
+   cycles.
 4. If logs report an uncertain live submission, stop changing modes or
    retrying manually. Verify Kraken open orders, closed orders, and fills before
    resolving the durable intent; the bot blocks further live orders to avoid a
@@ -789,8 +419,4 @@ badges instead.
 | Install / build / config keys | [README.md](../README.md) |
 | Rebalancing math & order sequence | [ALGORITHM.md](ALGORITHM.md) |
 | Reactive Flows / SSE architecture | [FLOWS.md](FLOWS.md) |
-| Security / CORS / reporting | [SECURITY.md](../SECURITY.md) |
-
-Screenshots in this guide are refreshed with the project’s documentation
-screenshot workflow whenever the UI changes — see the agent skill
-`docs-screenshot-refresh` if you maintain this repository.
+| Security / CORS / live-order safety | [SECURITY.md](../SECURITY.md) |

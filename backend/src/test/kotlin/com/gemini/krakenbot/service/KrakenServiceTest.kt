@@ -67,6 +67,24 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "funding evidence scope normalizes credential whitespace and Spot supplies no internal transfers" {
+            runTest {
+                val service = createService("{\"error\":[],\"result\":{}}")
+                val config = configService.getConfig()
+                every { configService.getConfig() } returns config.copy(
+                    kraken = KrakenCredentials(apiKey = " key \n", privateKey = " secret \t"),
+                )
+                val material = "key\u0000secret".toByteArray(Charsets.UTF_8)
+                val expectedScope = MessageDigest.getInstance("SHA-256")
+                    .digest(material)
+                    .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+                service.getFundingEvidenceScope() shouldBe expectedScope
+                service.getInternalTransfers(10L, 20L) shouldBe emptyList()
+                service.getApiCallCounter() shouldBe 0.0
+            }
+        }
+
         "getBalances_Success" {
             runTest {
                 val responseJson =

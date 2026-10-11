@@ -56,7 +56,8 @@ service remain for legacy/unit doubles.
 Pure KMP types under `common/.../config/`:
 
 - `AppConfig` — top-level document
-- `Settings` — loop delay, triggers, dust, `dryRun`, `simulation`, fiat params
+- `Settings` — loop delay, deviation trigger, minimum order size, `dryRun`,
+  `simulation`, and optional quality scores
 - `Allocation` — symbol + percent + optional `#rrggbb` color
 - `KrakenCredentials` — key/secret holders (never commit real values)
 
@@ -68,7 +69,6 @@ Pure KMP types under `common/.../config/`:
 - Missing or invalid allocation colors are normalized by `AssetColorAssigner`;
   persisted colors use `#rrggbb`
 - `loopDelaySeconds > 0`, `deviationTriggerPercent ≥ 0`, `minimumOrderSizeUSD ≥ 2`
-- `fiatMaxDrawdown` in `0..100`, `fiatDeploymentExponent > 0`
 - Every `Double` setting and allocation percentage must be finite; reject
   `NaN` and positive/negative infinity before publishing or persisting config.
 - The Settings controller requires every numeric trading field to parse
@@ -89,23 +89,33 @@ the settings flow publish the new values. File reload follows the same
 transactional rule: parse and validate both representations before assigning
 runtime or raw-credential state.
 
-### Active execution sessions
+### Active execution sessions and migration
 
 `PortfolioManagerImpl.performCycleWithStableSession()` owns the outer,
 cycle-wide `beginExecutionSession()` / `endExecutionSession()` boundary. It
-covers the in-cycle ledger sync, trade sync, historical reconstruction, and
-`performRebalanceCycle()` body. The same normal-cycle boundary owns the outer
-`DynamicKrakenService.withStableBackend` pin; nested sync, reconstruction, and
-order-executor pins reuse it. Startup syncs run before that method, and
-standalone/top-level sync entry points establish their own nested-safe session
-and backend pin.
+covers current balance and price reads, planning, order execution, and
+order-specific sell settlement. The same boundary owns the outer
+`DynamicKrakenService.withStableBackend` pin; nested order-executor pins reuse
+it. Startup does not synchronize account history or reconstruct reports.
 
 While the session depth is positive, `updateConfig()` still validates and
 persists atomically, and `loadConfig()` still validates disk content, but both
 stage the runtime value in `pendingConfig`; they must not replace `appConfig`
 or emit `_configFlow`. The outermost `endExecutionSession()` publishes the
-last staged config and emits its settings. This keeps one money-moving cycle or
-multi-page account sync on one coherent config and credential version.
+last staged config and emits its settings. This keeps one money-moving cycle
+on one coherent config and credential version.
+
+`ExecutionJournalBootstrap` still runs before the live loop for safe legacy
+intent migration and restart recovery. The legacy `kraken-rebalancer.db` path
+is preserved for journal migration and account-history continuity during
+binding; it is not a reporting destination. Existing legacy files and tables
+are left untouched by the retired history-sync/reconstruction paths. Startup
+then starts `ActualObservationDispatcher` and the portfolio manager; it does
+not rebuild retrospective reports.
+
+Older settings JSON may include retired history-only drawdown, deployment,
+inception, or comparison-start keys. The parser drops these keys before model
+deserialization, and a later Settings save writes only active controls.
 
 File is gitignored — never commit secrets.
 

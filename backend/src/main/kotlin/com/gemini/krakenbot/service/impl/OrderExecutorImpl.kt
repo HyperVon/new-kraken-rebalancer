@@ -7,20 +7,15 @@ import com.gemini.krakenbot.domain.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RebalanceOrders
-import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.domain.resolveBalance
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.OrderType
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
-import com.gemini.krakenbot.service.ReportingDispatcher
-import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ViewText
@@ -36,9 +31,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 class OrderExecutorImpl(
     private val krakenService: KrakenService,
-    private val tradeHistoryService: TradeHistoryService?,
     private val orderIntentService: OrderIntentService? = null,
-    private val reportingDispatcher: ReportingDispatcher? = null,
 ) : OrderExecutor {
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
@@ -82,14 +75,12 @@ class OrderExecutorImpl(
         // each placement so a mid-cycle config flip cannot change backend or dry-run mode.
         krakenService.withStableBackend { backend ->
             executionJournal?.ensureAccountBindingForSubmission()
-            val cycleTradeIds = mutableListOf<Int>()
             val context = RebalanceSessionContext(
                 cycleId = cycleId,
                 backend = backend,
                 prices = prices,
                 settings = settings,
                 actionLog = actionLog,
-                cycleTradeIds = cycleTradeIds,
             )
             val openingUsd = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
             var projectedCash = openingUsd
@@ -134,14 +125,6 @@ class OrderExecutorImpl(
                     log.error("Aborting buys because no positive USD was confirmed after sells")
                     return@withStableBackend
                 }
-            }
-
-            if (cycleId.isNotBlank() && cycleTradeIds.isNotEmpty()) {
-                log.info(
-                    "Cycle {} recorded trade ids: {}",
-                    cycleId,
-                    cycleTradeIds.joinToString(","),
-                )
             }
 
             // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
@@ -253,52 +236,8 @@ class OrderExecutorImpl(
         val pair = Asset.tradingPair(symbol)
         val clOrdId = clientOrderId(context.cycleId, symbol, side.apiValue)
         val isLiveSubmission = !context.settings.dryRun && !context.settings.simulation
-        fun createJournalRecord(
-            result: OrderResult,
-            id: Int? = null,
-            submissionState: OrderSubmissionState? = null,
-            timestamp: Instant = Instant.now(),
-        ): TradeRecord = TradeCalculator.createTradeRecord(
-            result = result,
-            symbol = symbol,
-            pair = pair,
-            side = side.uppercaseName,
-            volume = volume,
-            usdAmount = effectiveUsdAmount,
-            prices = context.prices,
-            timestamp = timestamp,
-            cycleId = context.cycleId.ifBlank { null },
-        ).copy(id = id, clientOrderId = clOrdId, submissionState = submissionState)
-
-        val pendingTimestamp = Instant.now()
-        val pending = createJournalRecord(
-            result = OrderResult(
-                false,
-                pair,
-                side.apiValue,
-                volume,
-                context.settings.dryRun,
-                ViewText.ORDER_SUBMISSION_PENDING,
-            ),
-            submissionState = if (isLiveSubmission) {
-                OrderSubmissionState.PENDING
-            } else {
-                null
-            },
-            timestamp = pendingTimestamp,
-        )
         if (isLiveSubmission && clOrdId == null) {
             throw IllegalStateException("Live order requires a non-blank cycle id")
-        }
-        val writeTradeHistoryDirectly = !isLiveSubmission && tradeHistoryService != null &&
-            (reportingDispatcher == null || context.settings.simulation)
-        val pendingId = when {
-            writeTradeHistoryDirectly -> checkNotNull(tradeHistoryService).saveTrade(pending)
-
-            context.settings.simulation && reportingDispatcher != null ->
-                reportingDispatcher.persistSimulationTrade(pending)
-
-            else -> null
         }
         val intentId = if (isLiveSubmission) {
             val intent = OrderIntent(
@@ -310,7 +249,7 @@ class OrderExecutorImpl(
                 volume = volume,
                 usdAmount = effectiveUsdAmount,
                 expectedPrice = context.prices[symbol],
-                createdAt = pending.timestamp,
+                createdAt = Instant.now(),
                 state = OrderIntentState.PENDING,
             )
             checkNotNull(orderIntentService).savePending(intent)
@@ -344,7 +283,6 @@ class OrderExecutorImpl(
                     -> Unit
                 }
             }
-            if (intentId == null) persistNonLiveFailureWithoutMasking(pending, pendingId, e)
             throw e
         } catch (e: Exception) {
             val outcomeStatus = recordIntentOutcomeWithoutMasking(
@@ -360,9 +298,6 @@ class OrderExecutorImpl(
                 IntentOutcomeStatus.APPLIED,
                 IntentOutcomeStatus.ALREADY_RESOLVED,
                 -> Unit
-            }
-            if (intentId == null) {
-                persistNonLiveFailureWithoutMasking(pending, pendingId, e)
             }
             throw e
         }
@@ -406,21 +341,6 @@ class OrderExecutorImpl(
             usdAmount = effectiveUsdAmount,
             side = side,
         )
-        val resolved = createJournalRecord(
-            result = resolvedResult,
-            id = pendingId,
-            submissionState = null,
-        )
-        if (intentId == null) {
-            if (pendingId != null && tradeHistoryService != null) {
-                tradeHistoryService.updateTrade(pending.copy(id = pendingId), resolved)
-            } else if (pendingId != null && context.settings.simulation) {
-                reportingDispatcher?.updateSimulationTrade(pending.copy(id = pendingId), resolved)
-            } else {
-                reportingDispatcher?.enqueueTrade(resolved)
-            }
-        }
-        pendingId?.let(context.cycleTradeIds::add)
         return resolvedResult
     }
 
@@ -458,28 +378,6 @@ class OrderExecutorImpl(
             cause.addSuppressed(persistenceFailure)
             log.error("Failed to persist order intent outcome", persistenceFailure)
             return IntentOutcomeStatus.FAILED
-        }
-    }
-
-    private suspend fun persistNonLiveFailureWithoutMasking(pending: TradeRecord, pendingId: Int?, cause: Exception) {
-        val failed = pending.copy(
-            id = pendingId,
-            errorMessage = cause.message ?: ViewText.ORDER_SUBMISSION_FAILED,
-            submissionState = null,
-        )
-        try {
-            if (pendingId != null && tradeHistoryService != null) {
-                tradeHistoryService.updateTrade(pending.copy(id = pendingId), failed)
-            } else if (pendingId != null) {
-                reportingDispatcher?.updateSimulationTrade(pending.copy(id = pendingId), failed)
-            } else {
-                reportingDispatcher?.enqueueTrade(failed)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (persistenceFailure: Exception) {
-            cause.addSuppressed(persistenceFailure)
-            log.error("Failed to persist non-live trade failure", persistenceFailure)
         }
     }
 

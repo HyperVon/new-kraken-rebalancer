@@ -9,23 +9,17 @@ import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.service.impl.history.InceptionResolution
 import com.gemini.krakenbot.toBigDecimalMap
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.slot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
@@ -80,7 +74,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.performRebalanceCycle()
 
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                currentPortfolioState.snapshot.value shouldBe null
             }
         }
 
@@ -106,34 +100,20 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             }
         }
 
-        "fixed USD target ignores legacy fiat deployment settings" {
+        "current snapshot reports the configured USD allocation" {
             runTest {
-                coEvery {
-                    portfolioStatsRepository.load()
-                } returns PortfolioStats(
-                    BigDecimal("2000.0"),
+                val allocs = listOf(Allocation("A", 50.0), Allocation(Asset.USD, 50.0))
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = allocs,
                 )
-
-                val allocs = listOf(
-                    Allocation("A", 50.0),
-                    Allocation(Asset.USD, 50.0),
-                )
-                every { configService.getConfig() } returns
-                    TestFixtures.config(
-                        settings = TestFixtures.settings(fiatMaxDrawdown = 50.0),
-                        allocations = allocs,
-                    )
-
-                krakenService.balanceSupplier =
-                    { mapOf("A" to 2.5, Asset.USD to 250.0) }
+                krakenService.balanceSupplier = { mapOf("A" to 2.5, Asset.USD to 250.0) }
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
 
-                portfolioManager.startRebalancingLoop()
                 val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
 
-                snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                snapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("50.0"))
+                currentPortfolioState.snapshot.value shouldBe snapshot
             }
         }
 
@@ -243,27 +223,6 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             }
         }
 
-        "testUpdateAthAndCalculateDrawdown_NewAth" {
-            runTest {
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
-                    BigDecimal("1000.0"),
-                )
-                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(
-                    BigDecimal("1500.0"),
-                )
-                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify {
-                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
-                        match {
-                            it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
-                        },
-                        any(),
-                        any(),
-                    )
-                }
-            }
-        }
-
         "testExecuteOrders_SkipDustBuys" {
             runTest {
                 val buyOrders =
@@ -325,17 +284,15 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             }
         }
 
-        "reporting persistence is not part of the rebalance cycle" {
+        "rebalance cycle publishes its current snapshot to the in-memory state" {
             runTest {
-                krakenService.balanceSupplier =
-                    { mapOf(Asset.USD to 1000.0) }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 1000.0) }
                 every { configService.getConfig() } returns singleAllocConfig()
 
-                portfolioManager.startRebalancingLoop()
-                requireNotNull(portfolioManager.performRebalanceCycle())
+                val snapshot = requireNotNull(portfolioManager.performRebalanceCycle())
 
                 krakenService.getBalancesCallCount shouldBe 1
-                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                currentPortfolioState.snapshot.value shouldBe snapshot
             }
         }
 
@@ -457,92 +414,6 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     Asset.BTC,
                     mapOf(Asset.ETH to 1.6).toBigDecimalMap(),
                 ).shouldBeEqualComparingTo(BigDecimal.ZERO)
-            }
-        }
-
-        "testUpdateAthAndCalculateDrawdown_NegativeAth" {
-            runTest {
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
-                    BigDecimal("-500.0"),
-                )
-                val drawdown =
-                    portfolioAnalyzer
-                        .updateAthAndCalculateDrawdown(
-                            BigDecimal("1000.0"),
-                        )
-                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify {
-                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
-                        match {
-                            it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
-                        },
-                        any(),
-                        any(),
-                    )
-                }
-            }
-        }
-
-        "testUpdateAthAndCalculateDrawdown_StatsSaveIOException" {
-            runTest {
-                coEvery {
-                    portfolioStatsRepository.load()
-                } returns PortfolioStats(
-                    BigDecimal("1000.0"),
-                )
-                coEvery {
-                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
-                } throws IOException(
-                    "Save failed",
-                )
-
-                shouldThrow<IOException> {
-                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
-                }
-                coVerify {
-                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
-                        match {
-                            it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
-                        },
-                        any(),
-                        any(),
-                    )
-                }
-            }
-        }
-
-        "testUpdateAthAndCalculateDrawdown_NewAthSaveFailure" {
-            runTest {
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
-                    BigDecimal("1000.0"),
-                )
-                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
-                    IOException("Save failed")
-
-                shouldThrow<IOException> {
-                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
-                }
-                coVerify {
-                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
-                        match {
-                            it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
-                        },
-                        any(),
-                        any(),
-                    )
-                }
-            }
-        }
-
-        "testUpdateAthAndCalculateDrawdown_SaveCancellationPropagates" {
-            runTest {
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.0"))
-                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
-                    CancellationException("cancelled")
-
-                shouldThrow<CancellationException> {
-                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
-                }
             }
         }
     }

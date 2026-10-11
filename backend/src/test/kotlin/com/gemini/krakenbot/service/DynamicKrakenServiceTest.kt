@@ -41,7 +41,6 @@ class DynamicKrakenServiceTest : StringSpec() {
         loopDelaySeconds = 60,
         deviationTriggerPercent = 5.0,
         minimumOrderSizeUSD = 5.0,
-        fiatMaxDrawdown = 30.0,
     )
 
     private fun appConfig(simulation: Boolean, dryRun: Boolean = false) = AppConfig(

@@ -22,8 +22,6 @@ class ConfigServiceExample(private val configFile: File) {
             loopDelaySeconds = 60L,
             deviationTriggerPercent = 5.0,
             dryRun = true,
-            fiatMaxDrawdown = 0.0,
-            fiatDeploymentExponent = 1.0,
             simulation = false,
         )
         val allocations = listOf(
