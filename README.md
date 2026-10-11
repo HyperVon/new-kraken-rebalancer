@@ -547,8 +547,11 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `dryRun`                         | `Boolean` | — (template `true`) | Required in JSON; suppresses order placement on the active backend (live or emulator) |
 | `simulation`                     | `Boolean` | `false`             | If true, routes exchange calls to the offline emulator; no Kraken key is required     |
 
-PR4 leaves the existing `kraken-rebalancer.db` file and its tables untouched.
-The legacy file remains available only for safe execution-journal migration and
+The existing `kraken-rebalancer.db` and its reporting tables remain in place,
+but the execution-journal cutover writes a one-time marker into the legacy
+database after importing its order intents and retains a backup. Older
+file-backed schemas are also migrated after a pre-migration backup. The legacy
+file remains available only for safe execution-journal migration and
 account-history continuity during binding; it is no longer an active reporting
 destination. The live execution journal defaults to the sibling
 `kraken-rebalancer-execution.db` and can be relocated with
