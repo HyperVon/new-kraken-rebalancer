@@ -5764,8 +5764,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added unit test to verify generated property getter of `PortfolioValues` data class in [ModelTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/model/ModelTest.kt).
   - Added unit test to verify that `ConfigServiceImpl` throws `InvalidConfigurationException` if it loads an invalid configuration file during initialization (`loadConfig`) in [ConfigServiceTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceTest.kt).
   - Added unit test for `OrderExecutor` to simulate a dust sell (selling value less than the minimum order size) in [PortfolioManagerEdgeCasesTest.kt](backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerEdgeCasesTest.kt).
-  - Added reflection-based test to cover the `Icons.loadIcon` fallback branch on missing resource in the then-current `DashboardViewTest`.
-  - Added reflection-based test to invoke `PerformanceTableComponent$Companion.getCOLUMNS()` to cover the private companion class and method in the then-current `DashboardViewTest`.
+  - Added reflection-based test to cover the `Icons.loadIcon` fallback branch on missing resource in [DashboardViewTest.kt](https://github.com/HyperVon/new-kraken-rebalancer/blob/821ea28367db999e1b1fa9fdee1282b4fbb13dee/backend/src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
+  - Added reflection-based test to invoke `PerformanceTableComponent$Companion.getCOLUMNS()` to cover the private companion class and method in [DashboardViewTest.kt](https://github.com/HyperVon/new-kraken-rebalancer/blob/821ea28367db999e1b1fa9fdee1282b4fbb13dee/backend/src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
 
 ---
 
