@@ -24,7 +24,6 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
     private lateinit var fixture: PortfolioManagerTestFixture
     private val krakenService get() = fixture.krakenService
     private val configService get() = fixture.configService
-    private val tradeHistoryService get() = fixture.tradeHistoryService
     private val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
 
     /**

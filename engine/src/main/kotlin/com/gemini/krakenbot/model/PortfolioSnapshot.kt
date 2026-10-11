@@ -1,23 +1,17 @@
 package com.gemini.krakenbot.model
 
-import com.gemini.krakenbot.codegen.GenerateApiMapper
 import java.math.BigDecimal
 import java.time.Instant
-import com.gemini.krakenbot.api.PortfolioSnapshot as ApiPortfolioSnapshot
 
-@GenerateApiMapper(ApiPortfolioSnapshot::class)
 data class PortfolioSnapshot(
     val timestamp: Instant,
     val totalValueUSD: BigDecimal,
     val assets: Map<String, AssetSnapshot>,
     val actions: List<String>,
-    val drawdownPercent: BigDecimal,
-    val fiatDeploymentPercent: BigDecimal,
     val effectiveUsdTargetPercent: BigDecimal,
     /** Null means this legacy row predates the balance-request observation boundary. */
     val balancesObservedAt: Instant? = timestamp,
 ) {
-    @GenerateApiMapper(ApiPortfolioSnapshot.AssetSnapshot::class)
     data class AssetSnapshot(
         val symbol: Asset,
         val balance: BigDecimal,

@@ -9,10 +9,8 @@ cash.
 **This application has been running in production managing a live portfolio for
 several months.**
 
-<p><a href="docs/images/dashboard.png"><img src="docs/images/dashboard.png" alt="Dashboard" width="720"></a></p>
-
-**New here?** Start with the [User Guide](docs/USER_GUIDE.md) — a visual
-walkthrough of Dashboard, Settings, History, and safety modes
+**New here?** Start with the [User Guide](docs/USER_GUIDE.md) — a walkthrough
+of Dashboard, Actual observations, Settings, and safety modes
 (simulation / dry run).
 
 ---
@@ -22,13 +20,11 @@ walkthrough of Dashboard, Settings, History, and safety modes
 - **Stay disciplined automatically** — define the mix you want and let the bot
   correct meaningful drift instead of reacting to headlines or price swings.
 - **Set a fixed cash allocation** — the configured USD target is part of the
-  portfolio allocation and does not change with ATH or drawdown calculations.
-- **Absorb deposits and withdrawals cleanly** — rebalance new cash after a
-  deposit, or respond to a cash withdrawal by selling overweight assets, without
-  maintaining a spreadsheet and placing every order by hand.
-- **Keep control and an order audit trail** — inspect current allocations,
-  intended orders, and trade prices, fees, and slippage labeled as local estimates
-  or exchange-reported fills in a local dashboard.
+  portfolio allocation and remains fixed across cycles.
+- **Respond to cash changes** — rebalance new cash after a deposit or sell
+  overweight assets after a withdrawal, according to the configured targets.
+- **See the current cycle clearly** — inspect the latest portfolio snapshot,
+  current allocations, and the actions taken in that cycle.
 - **Test before trusting it with funds** — learn with the offline simulator, then
   rehearse against live market data in dry-run mode before enabling real orders.
 
@@ -214,7 +210,7 @@ The experimental branches (`go-rewrite` and `feature/typescript-rewrite`) remain
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
-Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and flow-based trade history pagination directly into the `main` branch. Additionally, the remaining client-side Javascript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
+Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and paginated trade-history reporting. The retrospective reporting workflows have since been retired; order-specific fill confirmation still uses Kraken trade history for sell settlement. The remaining client-side JavaScript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
 
 ### Technologies Explored
 
@@ -230,7 +226,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 | **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
 | **Coverage**           | Backend JaCoCo 95% line/method/instruction + 85% branch temporarily; engine 95%/90%; Karma/Istanbul 90/80/90/75 (current)             |
 | **Serialization**      | Jackson 2.22.3, Go `encoding/json`, Zod schema validation                                                                             |
-| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                         |
+| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes) and `StateFlow` (latest cycle snapshot), HTMX SSE extension       |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
 | **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                             |
 
@@ -251,8 +247,6 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Treats the configured USD allocation as a fixed target during each rebalance
 - Bases orders on current account balances, market prices, configured weights,
   and the deviation threshold
-- Retains legacy drawdown and deployment settings in the configuration format
-  for historical reports; those values do not change current orders
 
 ### Intelligent Fiat Correction
 
@@ -263,33 +257,24 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ### Live Dashboard
 
-- Real-time portfolio overview with push updates (via Ktor Server-Sent Events)
+- Shows the latest completed current-cycle portfolio snapshot, with push updates
+  over Server-Sent Events
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
-- **Recent Activity** — per-cycle action feed (deviations, trades, dry-run intents) with BUY/SELL badges; not the full trade log on the `/history` page
+- **Recent Activity** — current-cycle action feed with BUY/SELL badges
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
-- Header loop control on Dashboard, History, and Settings showing RUNNING/PAUSED with neutral labeled **Pause** and **Resume** actions
-- **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
-- **Staking, Promotion & Earn Rewards History** — displays cumulative `staking`, `dividend`,
-  top-level promotion `reward`, and modern `earn/reward` returns in USD, split by asset, from synchronized
-  Kraken ledger entries. Earn allocation mechanics (`allocation`,
-  `deallocation`, `autoallocate`, and `migration`) are internal moves and do
-  not appear as rewards; unknown Earn subtypes fail closed. `dividend` entries
-  for untracked assets (e.g. DOT outside the tracked universe) remain external
-  inflows excluded from the chart, while dividends for tracked assets are
-  treated like staking. Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`)
-  and legacy `X`/`Z` asset codes are normalized to the base symbol.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
-  Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
+  Kotlin/JS (`rebalancer.js`) for browser interactions
 
 ### Forward-Only Actual Observations
 
-- `/actual` shows the observed USD value of configured managed assets, direct
-  balance and ticker evidence, and an append-only value chart. It excludes
-  other wallet balances, retains incomplete samples as gaps, and makes no
-  investment-return, profit, or Buy & Hold claim. See the [Actual section in
-  the User Guide](docs/USER_GUIDE.md#actual-observations) for balance scope,
+- `/actual` shows forward-only raw observations of configured managed assets,
+  their balance and ticker evidence, and an append-only value chart. It excludes
+  other wallet balances and retains incomplete samples as gaps. An optional
+  prospective Buy & Hold comparison is available when observation continuity is
+  verified; it does not reconstruct retrospective history. See the [Actual
+  section in the User Guide](docs/USER_GUIDE.md#actual-observations) for scope,
   timestamps, and limitations.
 
 ### Hot-Reload Configuration
@@ -302,84 +287,12 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   settings without polling. Saves made during an active cycle persist
   immediately but defer runtime publication until that execution session ends.
 
-### Offline Exchange Simulator & Pre-Seeding
+### Offline Exchange Simulator
 
-- **Offline Simulation Mode** — Run the bot completely offline without a real Kraken API key. Enable `"simulation": true` (dynamic toggling supported via the Settings UI) to execute orders and check balances against a realistic random walk price generator.
-- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates ~15 days of snapshots at 6-hour steps (~61 points), trade logs, and synthetic staking ledger entries, providing immediately interactive graphs including a populated rewards panel.
-
-### Historical Trades Synchronization
-
-- Synchronizes historical trade data when a History workflow requests it; the
-  periodic rebalancing loop does not wait for this work
-- Persists historical trades to the SQLite database
-- Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
-- Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
-
-### Ledger, Staking, Promotion & Earn Rewards Synchronization
-
-- Synchronizes fifteen balance-affecting entry types (`staking`, `dividend`, `earn`, `reward`, `deposit`,
-  `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
-  `credit`, and observed top-level `conversion` rows) from Kraken's private
-  `/0/private/Ledgers` endpoint, with a one-minute throttle and paginated cold Flow fetching.
-  The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
-  rows, and queries `all` for `earn`/top-level `reward`/`conversion` rows before filtering the
-  returned rows by their response type.
-- Persists ledger entries in SQLite using the `(ledger id, timestamp, asset, type)`
-  identity so overlapping pages and retries remain idempotent
-- Stores durable seed progress and timestamps in `history_sync_metadata`, then
-  uses a five-minute incremental overlap to avoid missing entries near a
-  watermark
-- Serves `/api/history/rewards` with cumulative staking, dividend, top-level promotion, transfer-airdrop, and Earn rewards aligned to
-  portfolio snapshots and valued using each snapshot's asset prices. Ledger
-  assets are normalized to the tracked base symbol (Earn suffixes and legacy
-  `X`/`Z` codes), and assets without a snapshot price in the range are excluded
-  from the totals.
-- In simulation mode with an empty database, synthetic staking ledger entries
-  are seeded alongside snapshots and trades so the rewards panel shows a
-  realistic cumulative history; `dividend` entries for tracked assets are now
-  mirrored in the rewards chart, comparison math, and historical reconstruction
-  (like staking), while dividends for untracked assets remain external inflows.
-- Modern `earn/reward` rows are reflected as performance in the rewards chart and
-  actual ATH reconstruction; Buy & Hold mirrors a positive credit only when the
-  synthetic basket already holds the rewarded asset, so a newly credited unheld
-  asset remains actual-only there. `earn` allocation mechanics replay only where
-  needed to reconstruct account balances and remain neutral in strategy accounting.
-  Unknown Earn subtypes remain unavailable.
-- Observed top-level `reward` rows from Kraken promotions or contests, and documented
-  `transfer/airdrop` credits, are
-  retained by ordinary synchronization and unfiltered inception recovery, then
-  replayed as in-kind actual balance changes and shown in the rewards chart; Buy & Hold mirrors
-  explicitly classified account-level credits even when the synthetic basket did not already
-  hold the credited asset. Other holding-dependent reward credits are mirrored only for held
-  assets, so an unheld asset remains actual-only. They never count as owner capital. Unknown
-  top-level ledger types remain fail-closed.
-- Observed top-level `conversion` rows are retained and require a complete two-leg,
-  non-blank-`refid` cross-asset debit/credit group with authoritative balances and fees.
-  Actual-history reconstruction replays each per-asset `amount - fee` delta once as an internal
-  transformation; pure Buy & Hold validates and consumes the group as plumbing without emitting
-  a synthetic conversion or trade. It is not owner capital, a reward, or a Buy & Hold contribution.
-  Missing, contradictory, or multi-leg shapes remain unavailable rather than being netted by raw
-  token quantity.
-- Kraken `transfer/airdrop` credits are treated as external balance changes; bare transfers and
-  unsupported transfer subtypes remain ambiguous without authoritative provenance.
-- Newly parsed ledger amount validity is preserved at the parser and SQLite boundaries; malformed
-  amounts and impossible obvious credit/debit directions fail closed rather than becoming zero
-  flows. Legacy rows retain their pre-existing interpretation because SQLite does not retain the
-  original amount text.
-- Rebalancer vs Buy & Hold validates supported external ledger events using
-  `amount - fee` under their attribution rules; successful trades and internal conversions are
-  reconciliation evidence for the actual series, not passive benchmark events. Complete consumer
-  `spend`/`receive` groups are consumed as plumbing, while unlinked or singleton passthrough rows
-  are excluded from the passive event stream because their missing counterpart cannot prove an
-  independent movement. It is not inferred from `TradesHistory`. A card-style external deposit plus
-  USD `spend` and purchased-asset `receive` is retained as a weighted owner contribution only when
-  all legs share one non-blank refid and the complete shape is present; the plumbing is not replayed
-  as a synthetic conversion. A card deposit-only or partial group stays pending, while confirmed
-  ordinary Wire/ACH deposits remain ordinary owner capital. The normalized event separates synthetic
-  `netOwnerCapitalUsd` from exact actual per-leg asset deltas: Buy & Hold uses the former, and ATH
-  basis replay uses the latter once. Otherwise comparison remains unavailable. The reconstruction
-  marker records the ledger-coverage version it replayed, so a coverage migration cannot be hidden
-  by an older marker.
+Run in Simulation Mode without Kraken keys to rehearse cycles against the offline
+exchange emulator. Simulation provides current-cycle Dashboard data; it does not
+seed retrospective charts or history. Authenticated Actual observations remain
+unavailable while simulation is enabled.
 
 ### Safety & Reliability
 
@@ -402,9 +315,8 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
 - **Rate-Limiting & Retries** — Private calls use Kraken's standard linearly
-  decaying account counter (safe limit 20.0; decay 0.5/sec):
-  `Ledgers`, `TradesHistory`, and `ClosedOrders` cost 4, other private calls
-  cost 1, and `AddOrder`/`CancelOrder` use Kraken's separate trading limits.
+  decaying account counter; `AddOrder` and `CancelOrder` use Kraken's separate
+  trading limits.
   Public calls use a separate conservative limiter of at most about one call
   per second. `retryWithFlow` retries only network I/O, 429, temporary lockout,
   and relevant 5xx responses with capped backoff; AddOrder is attempted once
@@ -417,7 +329,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   non-deprecated Exposed builders in one transaction, and creates a
   pre-migration backup for an existing file-backed database
 - **Operational Readiness** — `/api/health` is a liveness/diagnostic endpoint;
-  `/api/readiness` reports whether the loop, snapshot history, and live-order
+  `/api/readiness` reports whether the loop, latest cycle snapshot, and live-order
   journal are safe for continued operation
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
@@ -428,72 +340,14 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ## Screenshots
 
-### Dashboard
+The current UI centers on the latest Dashboard cycle, active Settings, and
+forward-only Actual observations.
 
-The main dashboard leads with a hero portfolio KPI and 24h delta, plus cash and
-crypto tiles showing configured targets, an allocation chart, and a sortable
-asset performance table.
+<a href="docs/images/dashboard.png"><img src="docs/images/dashboard.png" alt="Dashboard with the latest current-cycle portfolio snapshot" width="960"></a>
 
-The canonical dashboard above is deliberately shown once at a constrained
-display width. The full responsive capture matrix remains available through
-the [User Guide](docs/USER_GUIDE.md); this README keeps only a few representative
-views so high-DPI source PNGs do not dominate the page at 100% browser zoom.
+<a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
 
-### Phone preview
-
-<p><a href="docs/images/dashboard-phone.png"><img src="docs/images/dashboard-phone.png" alt="Phone dashboard" width="390"></a></p>
-
-### Settings
-
-All configuration is managed through the web UI — loop interval, deviation
-trigger, minimum order size, fixed USD allocation, per-asset allocation
-targets, and per-asset chart colors. Legacy drawdown and deployment settings
-are retained for historical calculations.
-
-<p><a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings" width="720"></a></p>
-
-### History
-
-The dedicated History view provides detailed analysis and charts tracking portfolio metrics over time. Users can select different time ranges (24h, 7d, 30d, 90d, All) to update the charts and trade log. It features:
-
-- Six summary stat cards including avg fee rate and avg slippage
-- Trade log columns for price, fee, slippage, and status
-- Cumulative net cash flow chart with gross and fee-adjusted (dashed) series
-- Staking, Promotion & Earn Rewards chart with cumulative USD value and per-asset series from
-  synchronized ledger entries
-
-- **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
-- **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
-- **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Hold Benchmark**: compares actual-wallet value against
-  **configuration-matched hold (inferred)** by default, or **fixed-inception hold**
-  with `?benchmark=FIXED_INCEPTION_HOLD`. Both begin at a recorded full-wallet
-  baseline, separate from today's configured targets. The default applies only
-  high-confidence inferred changes supported by reconciled historical Spot
-  balances and named funding evidence. Addition timing uses the earliest observed
-  positive ownership episode lasting at least 60 days, without bridging an
-  authoritative zero; successful-live-fill participation is checked separately.
-  This is inferred ownership history, not proof of exact past configuration.
-  Missing snapshot rows are not proof of
-  zero holdings. Unprovable completion, stability, or funding makes the comparison
-  explicitly unavailable instead of silently omitting a transition. Contributions
-  use the applicable synthetic epoch's value weights and withdrawals scale the
-  synthetic NAV proportionally, with consistent asset/time prices for both books.
-  Fixed-inception hold never rewrites its original basket for configuration
-  changes. Range pills filter the stable series only after full reconciliation
-  from the effective baseline, so overlapping windows remain consistent with All.
-  See the [comparison guide](docs/USER_GUIDE.md#rebalancer-vs-hold-benchmark) for
-  baseline recovery, wallet scope, rewards, and unavailable reasons.
-- **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
-- **Asset Holdings Over Time** (% change in asset balance)
-- **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
-- **Cumulative Net Cash Flow** (gross signed cash flow plus dashed **Net After Fees** series)
-- **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
-
-<p><a href="docs/images/history.png"><img src="docs/images/history.png" alt="History overview" width="720"></a></p>
-
-For a full walkthrough of what each control and chart means, see the
-[User Guide](docs/USER_GUIDE.md).
+<a href="docs/images/actual.png"><img src="docs/images/actual.png" alt="Actual observations and evidence status" width="960"></a>
 
 ---
 
@@ -501,240 +355,77 @@ For a full walkthrough of what each control and chart means, see the
 
 ```mermaid
 graph LR
-    subgraph Frontend["Frontend (HTMX + Server-Side HTML)"]
-        D[Dashboard Shell] --> DF[Dashboard Fragment]
-        D --> SF[Settings Fragment]
-        D --> AF[Actual Observations Page]
-        DF --> SS[SSE Stream]
+    subgraph Frontend["Frontend (HTMX + server-rendered HTML)"]
+        D[Dashboard] --> DF[Current-cycle fragment]
+        D --> SSE[Dashboard SSE]
+        S[Settings]
+        A[Actual observations]
     end
 
     subgraph Backend["Backend (Ktor + Koin)"]
-        DC[DashboardController] --> THS[TradeHistoryService]
+        DC[DashboardController] --> CPS[CurrentPortfolioState]
         DC --> CS[ConfigService]
         DC --> DV[DashboardView]
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
-        PM --> RD[ReportingDispatcher]
+        PM --> CPS
         PM --> AD[ActualObservationDispatcher]
         DC --> AD
-        AD --> AOS["ActualObservationStore (SQLite)"]
+        AD --> AOS[ActualObservationStore]
         AD --> EAB[ExecutionAccountBindingService]
-
         PA --> KS[KrakenService]
-        PA --> CS
-        PA --> PC[PortfolioCalculations]
         OE --> KS
-        OE --> EJ["Execution journal (SQLite)"]
-        RD --> THS
-        RD --> TP[TradeProjectionService]
-        THS --> TR["TradeRepository (SQLite)"]
-        TP -->|"read immutable events"| EJ
-        TP -->|"trade + cursor transaction"| TR
-        KS --> RL[RateLimiter]
+        OE --> OI[OrderIntentService]
+        OI --> EJ[Execution journal]
     end
 
-    subgraph ActualDB["Separate Actual observation SQLite"]
-        AOS --> AR[Append-only observations and asset evidence]
-    end
-
-    subgraph External
-        KA[Kraken API]
-    end
-
-    Frontend -- "REST API & SSE Stream\n/api/*" --> DC
-    PM -- "Coroutine Loop\n(configurable interval)" --> PM
-    KS -- "HMAC-SHA512\nAuthenticated" --> KA
+    Frontend --> DC
+    KS --> KA[Kraken API]
 ```
 
 ### Rebalance Cycle
 
-Each cycle executes three phases:
+Each cycle reads current balances and prices, compares the portfolio with the
+configured targets, executes eligible orders, and publishes the completed
+cycle snapshot for the Dashboard. Live-order intent and outcome handling remain
+part of the separate execution-safety path.
 
-```mermaid
-flowchart LR
-    A["📸 Snapshot\nFetch current balances & prices\nCalculate portfolio value"] --> B["📊 Analysis\nCompare with configured allocation\nUse fixed USD target\nDetermine trades"]
-    B --> C["⚡ Execution\nSell overweight assets\nBuy underweight assets\nPersist live intent"]
-    C --> R["Queue snapshot and trade report\nfor asynchronous persistence"]
-    R --> D["💤 delay()\n(configurable interval)"]
-    D --> A
-```
+See **[ALGORITHM.md](docs/ALGORITHM.md)** for current fixed-target rebalance
+logic, order sequence, and safety behavior. See **[FLOWS.md](docs/FLOWS.md)**
+for the active configuration, Dashboard SSE, order-settlement, and Actual
+observation flows.
 
-See **[ALGORITHM.md](docs/ALGORITHM.md)** for the fixed-target rebalance logic,
-order sequence, and the separate retained-history calculations.
+### Dashboard updates
 
-See **[FLOWS.md](docs/FLOWS.md)** for sequence diagrams and a comprehensive breakdown
-of how Kotlin's hot `SharedFlow` and cold `Flow` streams orchestrate configuration updates,
-real-time dashboard streaming, paginated transaction sync, and exponential backoff polling.
+The `/api/status/stream` SSE endpoint sends completed cycle snapshots to the
+Dashboard shell. HTMX requests `/fragments/dashboard` when an update arrives.
+The latest snapshot is displayed as current-cycle state; it is not a retained
+retrospective timeline. The STREAM/STALE chip describes update freshness and is
+separate from the SIMULATION / DRY RUN / LIVE TRADING mode plate.
 
-### Real-Time Event Streaming
-
-The dashboard and monitoring hooks use a reactive, push-based architecture with
-two complementary `SharedFlow` channels:
-
-#### Portfolio Snapshot Stream (Dashboard SSE)
-
-1. **Asynchronous report queue**: `PortfolioManagerImpl` places a snapshot in
-   the bounded `ReportingDispatcher` queue without waiting on SQLite. The
-   reporting worker persists the snapshot through `TradeHistoryServiceImpl`;
-   that store emits it on its `MutableSharedFlow<PortfolioSnapshot>` for SSE.
-2. **Ktor Server-Sent Events (SSE)**: The `/api/status/stream` route installs
-   Ktor 3's native `SSE` plugin. When a client connects, Ktor pushes the latest
-   cached snapshot and then collects subsequent snapshots from the
-   `SharedFlow`, streaming them over a single persistent HTTP connection.
-3. **HTMX SSE Extension**: The dashboard shell uses `hx-ext="sse"` and
-   `sse-connect="/api/status/stream"`. A div with `sse-swap="message"` and
-   `hx-trigger="sse:message"` automatically fetches updated dashboard fragments
-   from `/fragments/dashboard` whenever a new snapshot arrives.
-
-#### Config Hot-Reload Loop Restart (not SSE)
-
-This path is internal orchestration — not a second browser-facing SSE stream like
-`TradeHistorySnapshotStore.snapshotFlow` above.
-
-1. **Config `SharedFlow`**: `ConfigServiceImpl` maintains a hot
-   `MutableSharedFlow<Settings>` (`replay=1`) that emits when settings are saved
-   via the UI or reloaded from disk.
-2. **Reactive loop restart**: `PortfolioManagerImpl` collects
-   `ConfigService.watchConfigChanges()` with `collectLatest`, cancelling an
-   in-flight `delay()` and restarting the rebalancing loop immediately when
-   settings change. During an active rebalance, `ConfigServiceImpl` stages the
-   validated runtime config until the execution session exits, preventing one
-   cycle from mixing old and new settings.
+Settings changes update the configuration used by later cycles. During an
+active cycle, the saved settings take effect after that cycle finishes so one
+cycle does not mix configuration values.
 
 ---
 
 ## Project Structure
 
 ```text
-├── .agents/                                # AI Agent rules, guidelines & domain skills
-│   ├── AGENTS.md                          # Repository rules & technical guidelines
-│   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
-│   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
-├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
-│   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
-│   ├── shell-strategy.md                   # Compatibility symlink to canonical shell guidance
-│   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
-│   ├── run-script                          # Build fat JAR and start an isolated local simulation
-│   ├── agent-manager.json                  # Agent Manager worktree configuration
-│   ├── command/                            # Project command definitions
-│   └── agent/                              # Project agent definitions
-├── .opencode/                              # Cross-harness companion configuration
-│   └── shell-strategy.md                   # Canonical shell guidance
-├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
-├── CLAUDE.md                               # Claude Code entrypoint → .agents/
-├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
-├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
-│   ├── src/commonMain/kotlin/com/gemini/krakenbot/
-│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, RewardsOverTimePoint, SyncProgressResponse
-│       ├── codegen/                       # GenerateStringConstants and shared codegen sources
-│       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, StringConstantSchemas, generated SyncMetadataKeys
-│       ├── util/                          # PrecisionConstants, FormatSpec (price/fee tier single-source), StreamStatus
-│       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
-│   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
-├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
-├── engine/                                 # Pure Kotlin domain calculation library (:engine)
-│   ├── src/main/kotlin/com/gemini/krakenbot/
-│   │   ├── codegen/                        # GenerateApiMapper annotation processor target
-│   │   ├── domain/                         # RebalancerEngine, PortfolioCalculations, TradeCalculator, RebalancePlan, OrderResult, formatters, helpers
-│   │   └── model/                          # Domain models: PortfolioSnapshot (AssetSnapshot), TradeRecord
-│   └── src/test/kotlin/                    # Pure engine domain calculation unit tests (JaCoCo 95/90 gates)
-├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
-│   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
-│   │   ├── main.kt                        # Client-side routing entry point
-│   │   ├── AssetColors.kt                 # Palette generation and chart color helpers
-│   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
-│   │   ├── Settings.kt                    # Targets validation & dynamic row actions
-│   │   ├── History.kt                     # History page wiring (initHistory)
-│   │   ├── HistoryChartConfig.kt          # Chart.js defaults and option builders
-│   │   ├── HistoryChartState.kt           # Chart state, series visibility, and time range
-│   │   ├── HistoryCharts.kt               # Snapshot, rewards, and net-cash-flow chart builders
-│   │   ├── HistoryComparisonChart.kt      # Rebalancer comparison chart
-│   │   ├── HistoryFormatting.kt           # Localized date, time, and currency formatters
-│   │   ├── HistoryZoom.kt                 # Zoom buttons and pan scrubbers
-│   │   ├── HistoryLoading.kt              # History API loading and sync progress
-│   │   ├── HistorySessionState.kt         # History session cache and active filter state
-│   │   ├── HistoryTradeRendering.kt       # Trade table and summary-card rendering
-│   │   ├── HistoryJsonParsing.kt          # Typed History JSON parsing over :common api DTOs
-│   │   ├── HistoryViewPrefs.kt            # Browser-local History view presets
-│   │   └── DomExtensions.kt               # Shared DOM helpers for Kotlin/JS
-│   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
-├── backend/                                 # Ktor JVM backend (:backend)
-│   ├── src/main/kotlin/com/gemini/krakenbot/
-│   │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
-│   │   ├── config/
-│   │   │   ├── AppModule.kt                  # Koin dependency injection module
-│   │   │   ├── DatabaseConfig.kt             # Reporting SQLite + Exposed schema migrate
-│   │   │   ├── ExecutionDatabase.kt          # Separate live-order SQLite journal
-│   │   │   ├── ExecutionJournalBootstrap.kt  # Legacy intent import + restart recovery
-│   │   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
-│   │   │   ├── IndexRepair.kt                # SQLite index validation and rebuild
-│   │   │   ├── KtorConfig.kt                 # CORS, compression, content negotiation
-│   │   │   ├── LegacyDataRepair.kt           # Legacy submission state and trade id repair
-│   │   │   ├── MigrationBackup.kt            # Pre-migration database backup helper
-│   │   │   ├── SchemaMigrations.kt           # Versioned schema DDL migrations
-│   │   │   └── ServerConfig.kt               # Server port constant and JVM property key
-│   │   ├── controller/
-│   │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
-│   │   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
-│   │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
-│   │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
-│   │   ├── model/                             # OrderIntent, LedgerEvent, RewardsOverTime, HistoryStats, RebalancerComparison, PortfolioStats
-│   │   ├── repository/                        # Reporting repositories + execution-intent repository
-│   │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
-│   │   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
-│   │   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
-│   │   │   ├── actual/                        # Direct evidence, append-only Actual store, and bounded dispatcher
-│   │   │   └── impl/                          # Service implementations (coroutine-aware)
-│   │   │       ├── ConfigFilePermissionStrategy.kt # Cross-platform owner-only file permissions
-│   │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
-│   │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
-│   │   │       ├── KrakenParsers.kt          # Response parsing and error mapping
-│   │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
-│   │   │       ├── KrakenSigning.kt          # HMAC-SHA512 request signing
-│   │   │       ├── KrakenTransport.kt        # HTTP execution, nonce handling, and private endpoint routing
-│   │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
-│   │   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
-│   │   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
-│   │   │       ├── ReportingDispatcher.kt    # Bounded asynchronous reporting queues
-│   │   │       ├── TradeProjectionServiceImpl.kt # Idempotent execution-outcome projection
-│   │   │       ├── PortfolioAnalyzerImpl.kt  # Live balance, price, and plan calculations
-│   │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
-│   │   │       ├── PublicRateLimiter.kt      # Conservative public-call pacing
-│   │   │       ├── RateLimiter.kt            # Kraken private call-counter limiter
-│   │   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
-│   │   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
-│   │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
-│   │   │       └── history/                  # Trade history façade + collaborators
-│   │   │           ├── TradeHistoryServiceImpl.kt # Thin façade (Sync / SnapshotStore / Query / Reconstruction)
-│   │   │           ├── TradeHistorySyncService.kt
-│   │   │           ├── LedgersSyncService.kt
-│   │   │           ├── TradeHistorySnapshotStore.kt
-│   │   │           ├── TradeHistoryQueryService.kt
-│   │   │           ├── TradeHistoryReconstructionService.kt
-│   │   │           ├── RebalancerComparisonCalculator.kt # Rebalancer vs Buy & Hold comparison
-│   │   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
-│   │   ├── util/                              # Formatters, NetworkUtils, TradeDeduplicator
-│   │   └── view/                              # HTML templates & components (kotlinx.html DSL)
-│   │       ├── DashboardView.kt              # Facade class delegating to components
-│   │       ├── component/                    # Shell, Grid, Form, Actual, History, charts, activity, performance
-│   │       ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
-│   │       └── util/                         # AllocationExtensions, Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
-│   ├── src/test/kotlin/                       # JVM integration / E2E / evaluation tests (JaCoCo gates)
-│   ├── src/main/resources/                    # Static resources
-│   │   └── static/
-│   │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
-│   │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
-│   └── build.gradle.kts                       # Backend JVM build (JaCoCo, fatJar, copyJsBundle)
-├── docs/                                  # Project documentation and architecture guides
-│   ├── AGENTIC_DEVELOPMENT.md             # Human guide to the AI-assisted development system
-│   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Actual, History, Settings)
-│   ├── images/                            # README / User Guide screenshot PNGs
-│   ├── FLOWS.md                           # Kotlin Flow architecture guide
-│   ├── ALGORITHM.md                       # Detailed algorithm documentation
-│   └── EVALUATION.md                      # Scenario evaluation suite documentation
-├── rebalancer-config-template.json        # Configuration template
-└── build.gradle.kts                       # Root aggregator (Spotless + :backend/:frontend-js delegation)
+├── .agents/                    # Repository agent rules and skills
+├── common/                     # Shared KMP configuration, models, and UI catalogs
+├── engine/                     # Pure portfolio valuation, allocation, and order-planning math
+├── frontend-js/                # Kotlin/JS interactions for Dashboard and Settings
+├── backend/                    # Ktor server, rebalance loop, execution, and views
+│   └── src/main/kotlin/com/gemini/krakenbot/
+│       ├── config/             # DI, databases, migrations, and startup wiring
+│       ├── controller/         # Dashboard, Settings, Actual, health, and SSE routes
+│       ├── service/            # Current portfolio state and Actual observation services
+│       ├── service/impl/       # Configuration, analysis, execution, and loop services
+│       └── view/               # Dashboard, Settings, Actual HTML and CSS
+├── docs/                       # User, architecture, security, and evaluation guides
+├── rebalancer-config-template.json
+└── build.gradle.kts            # Root Gradle aggregator
 ```
 
 ---
@@ -745,15 +436,9 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 
 - JDK 25 or higher
 - Gradle (or use the included `./gradlew` wrapper — no installation required)
-- For **live** or **dry-run-against-Kraken** modes: a Kraken account with API
-  keys (Permissions: **Query Funds**, **Query Closed Orders & Trades**,
-  **Query Ledgers**, **Create & Modify Orders**)
-- **Funding-status permissions**: `DepositStatus` requires **Funds: Query**
-  (covered by **Query Funds**). `WithdrawStatus` accepts **Funds: Withdraw** or
-  **Data: Query ledger entries** (covered by **Query Ledgers**); the application
-  does not need withdrawal-placement permission. If either endpoint is denied,
-  the runtime reports the missing permission and keeps ATH/Buy & Hold funding
-  unresolved in historical reports rather than guessing.
+- For **dry-run-against-Kraken**: an API key with **Query Funds**. For **live
+  trading**, also grant **Query Closed Orders & Trades** and **Create & Modify
+  Orders**.
 - For **`simulation: true`**: no real keys required — template placeholders are
   enough; the emulator never calls Kraken
 
@@ -778,8 +463,13 @@ Edit `rebalancer-config.json`:
 - Define your desired `allocations` (must sum to 100%, must include USD)
 - Set `dryRun` to `true` for initial testing
 - `allocations.USD` sets the fixed cash target used by current rebalance plans
-- `fiatMaxDrawdown` and `fiatDeploymentExponent` are retained for historical
-  calculations and do not alter current order targets
+
+Older configuration files and the shipped template may still contain retired
+history-only keys such as `fiatMaxDrawdown`, `fiatDeploymentExponent`,
+`fiatDeploymentThresholdPercent`, `inceptionDate`, or `comparisonStartDate`.
+They are discarded when the configuration is read and have no effect on
+orders. The next Settings save writes the active configuration without those
+retired keys.
 
 ### 2. Start the Application
 
@@ -855,32 +545,34 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `deviationTriggerPercent`        | `Double`  | — (template `5.0`)  | Minimum absolute deviation % to trigger a trade; required in JSON                     |
 | `minimumOrderSizeUSD`            | `Double`  | `5.0`               | Min significant USD deviation (order generation) and min order notional (execution)   |
 | `dryRun`                         | `Boolean` | — (template `true`) | Required in JSON; suppresses order placement on the active backend (live or emulator) |
-| `simulation`                     | `Boolean` | `false`             | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
-| `fiatMaxDrawdown`                | `Double`  | `0.0`               | Retained for historical reporting; does not change the current rebalance target       |
-| `fiatDeploymentExponent`         | `Double`  | `1.0`               | Retained for historical reporting; does not change the current rebalance target       |
-| `fiatDeploymentThresholdPercent` | `Double`  | `0.0`               | Retained for historical reporting; does not change the current rebalance target       |
+| `simulation`                     | `Boolean` | `false`             | If true, routes exchange calls to the offline emulator; no Kraken key is required     |
 
-The reporting database defaults to `kraken-rebalancer.db`. The separate live
-execution journal defaults to its sibling `kraken-rebalancer-execution.db` and
-can be relocated with the JVM property `kraken.execution.db.path`. Back up the
-execution database, its `.journal-id` identity sidecar, the execution-journal
-witness, and the reporting database together. By default the witness is beside
-the reporting database; see the [execution-journal recovery notes](SECURITY.md#execution-journal-storage-and-recovery)
-for its failure-domain limits and upgrade steps.
+The existing `kraken-rebalancer.db` and its reporting tables remain in place,
+but the execution-journal cutover writes a one-time marker into the legacy
+database after importing its order intents and retains a backup. Older
+file-backed schemas are also migrated after a pre-migration backup. The legacy
+file remains available only for safe execution-journal migration and
+account-history continuity during binding; it is no longer an active reporting
+destination. The live execution journal defaults to the sibling
+`kraken-rebalancer-execution.db` and can be relocated with
+`-Dkraken.execution.db.path`. Actual observations use `kraken-actual.db` by
+default and can be relocated with `-Dkraken.actual.db.path`. Preserve the legacy
+database during cutover; back up the active execution database, its
+`.journal-id` identity sidecar, its witness, and the Actual database. By default
+the witness is beside the legacy database. See the [execution-journal recovery
+notes](SECURITY.md#execution-journal-storage-and-recovery) for its failure-domain
+limits and upgrade steps.
 
 Before a real live order, the execution journal must hold a verified Kraken
-account binding. Its first binding authenticates the account IIBAN and validates
-the legacy reporting account scope; credential rotations must authenticate to
-the same IIBAN. The journal stores only digests and an audit trail. A mismatch,
-missing or corrupt binding, or post-cutover live-order history without a binding
-blocks live submission. After binding, steady-state checks use the execution
-journal and do not depend on reporting-database availability. Simulation and
-dry-run modes do not create a live account binding.
+account binding. Its first binding authenticates the account IIBAN and checks
+the preserved local account-history scope; credential rotations must
+authenticate to the same IIBAN. The journal stores only digests and an audit
+trail. A mismatch, missing or corrupt binding, or prior live-order record
+without a binding blocks live submission. After binding, steady-state checks
+use the execution journal. Simulation and dry-run modes do not create a live
+account binding.
 
 > **Note:** `minimumOrderSizeUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
-> **Note:** the passive Buy & Hold anchor uses an independent invested-thesis floor of
-> `$5.00` (see `docs/ALGORITHM.md`); it mirrors the template default of
-> `minimumOrderSizeUSD` but is a fixed constant and does not track operator settings.
 
 ---
 
@@ -891,8 +583,8 @@ dry-run modes do not create a live account binding.
 | `GET` | `/` | Main dashboard shell (HTML) |
 | `GET` | `/settings` | Settings page (HTML) |
 | `POST` | `/settings` | Submit settings form (HTMX) |
-| `GET` | `/history` | History page (HTML charts + trade log) |
-| `GET` | `/actual` | Forward-only Actual page for directly observed configured managed assets |
+| `GET` | `/history` | Permanent redirect to `/actual` for legacy links |
+| `GET` | `/actual` | Forward-only Actual observations and optional prospective Buy & Hold comparison |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
 | `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
@@ -901,13 +593,11 @@ dry-run modes do not create a live account binding.
 | `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence and optional `orderTxid` (CSRF-protected; see [operator recovery runbook](SECURITY.md#operator-recovery-runbook)) |
 | `POST` | `/api/pause` | Pause loop (CSRF-protected) |
 | `POST` | `/api/resume` | Resume loop (CSRF-protected) |
-| `GET` | `/api/history/snapshots` | Portfolio snapshots for History charts (JSON, `?range=`) |
-| `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
-| `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
-| `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
-| `GET` | `/api/history/rewards` | Cumulative staking, dividend, promotion, transfer-airdrop, and Earn rewards by asset (JSON, `?range=`) |
-| `GET` | `/api/history/sync-progress` | Polling endpoint for ordinary Kraken history sync and bounded inception-recovery progress/status (JSON) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
+
+The former `/api/history/*` reporting endpoints return **410 Gone**. The
+application no longer syncs or reconstructs retrospective reports; existing
+legacy database files and tables are left untouched.
 
 ---
 
@@ -955,14 +645,11 @@ To run JS browser tests only:
 
 Tests cover:
 
-- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **41 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 41 scenarios.
-- **Simulation Evaluation Suite** (`SimulationEvaluationScenariosTest`) — 6 invariant cases against the production `SimulatedKrakenService` emulator with real TradeHistory + in-memory SQLite. See **[EVALUATION.md](docs/EVALUATION.md)** for case descriptions.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result
   verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
-- `PortfolioManagerDrawdownTest` — fixed USD target behavior and historical ATH math
 - `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing and
   successful execution verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
@@ -971,27 +658,28 @@ Tests cover:
   gaps, deviations, execution, settle, loop, and snapshot edge cases
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` / `KrakenTradeHistoryTest` /
-  `KrakenRetryAndRateLimitTest` — API signing, order handling, history parsing,
-  retry/lockout behaviour, and endpoint costs (using Ktor `MockEngine`)
+  `KrakenRetryAndRateLimitTest` — API signing, order handling, fill-confirmed
+  sell settlement, retry/lockout behaviour, and endpoint costs (using Ktor `MockEngine`)
 - `ModelTest` / `ResultTest` — unit tests for domain models and the `Result` type
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection, and `watchConfigChanges()` flow
 - `ServiceUtilsTest` / `FormatterTest` — utility function coverage
 - `RateLimiterTest` — call-counter decay, endpoint costs, waiting, and reset behavior
-- `DashboardControllerTest` / `DashboardHistoryApiTest` — page/settings routes,
-  REST history endpoints, SSE, health, and trade-history sync status
-- `TradeHistory*Test` — focused snapshot, reconciliation, sync lifecycle,
-  reconstruction, flow, range, and edge-case specs sharing one fixture
+- `DashboardCutoverApiTest` — latest current-cycle snapshot, `/history` redirect,
+  retired reporting routes, SSE, and health/readiness
+- `DashboardActualPageTest` — Actual observations and page rendering
+- `ActualObservation*Test` / `ProspectiveBenchmark*Test` — raw observation
+  capture, storage, valuation, and continuity-verified prospective comparison
+- `LiveOrderJournal*Test` / `OrderExecutor*Test` — durable live-order state,
+  ambiguity handling, and sell settlement
 - `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic
-- `SqliteTradeRepositoryImplTest` /
-  `SqliteTradeRepositoryFailureAndRetentionTest` /
-  `SqlitePortfolioStatsRepositoryImplTest` — SQLite persistence, retention,
-  Exposed ORM queries, and transactional error propagation
+- `DatabaseConfigTest` / `SchemaMigrationsTest` / `MigrationBackupTest` /
+  `ExecutionJournalCutoverTest` — schema migration, backup, and journal cutover
 
 ### Test Design Principles
 
 - **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools. Add `@Suppress("unused")` only when the compiler or IDE reports a real warning; Kotest discovers specs via reflection and does not require blanket suppression on every spec.
-- **Database Test Isolation**: All tests run against a clean in-memory SQLite database (`:memory:`) configured via a JVM system property (`kraken.db.path`). This ensures total test isolation and prevents modification of the local physical database file.
+- **Database Test Isolation**: Database tests use isolated in-memory or temporary SQLite paths for the legacy, execution, and Actual stores so they do not modify the operator's runtime data files.
 - **`FakeKrakenService`** — an in-process test double for `KrakenService` used
   by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of
   `suspend` functions in concurrent coroutine contexts.

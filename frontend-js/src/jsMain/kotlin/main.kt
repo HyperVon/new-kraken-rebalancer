@@ -61,7 +61,6 @@ private fun revealFormError() {
 fun main() {
     registerDashboardGlobals()
     registerSettingsGlobals()
-    registerHistoryGlobals()
 
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, {
         updateAge()
@@ -72,8 +71,7 @@ fun main() {
         revealFormError()
     })
 
-    // A form error belongs to the operator's latest settings mutation. Background proposal-slot
-    // GETs must not clear it while they resolve in parallel with editing.
+    // A form error belongs to the operator's latest settings mutation.
     document.addEventListener(HtmlEvents.HTMX_BEFORE_REQUEST, {
         val detail = it.asDynamic().detail
         val requestConfig = detail?.requestConfig
@@ -132,9 +130,5 @@ fun initOnLoad() {
 
     if (document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) != null) {
         initSettings()
-    }
-
-    if (document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART) != null) {
-        initHistory()
     }
 }

@@ -4,12 +4,10 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -40,9 +38,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 krakenService.executedOrders.isNotEmpty() shouldBe true
                 krakenService.executedOrders.any { it.pair == Asset.BTC_USD_PAIR } shouldBe true
 
-                val captor = slot<PortfolioSnapshot>()
-                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
-                captor.captured.actions.any { it.contains("Deviation: BTC") } shouldBe true
+                currentPortfolioState.snapshot.value?.actions?.any { it.contains("Deviation: BTC") } shouldBe true
             }
         }
 
@@ -71,10 +67,8 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     it.pair == Asset.BTC_USD_PAIR && it.side == TestFixtures.BUY
                 } shouldBe true
 
-                val captor = slot<PortfolioSnapshot>()
-                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
-                captor.captured.actions.any { it.contains("Deviation: BTC") } shouldBe true
-                captor.captured.actions.none {
+                currentPortfolioState.snapshot.value?.actions?.any { it.contains("Deviation: BTC") } shouldBe true
+                currentPortfolioState.snapshot.value?.actions?.none {
                     it.contains("fiat correction", ignoreCase = true)
                 } shouldBe true
             }

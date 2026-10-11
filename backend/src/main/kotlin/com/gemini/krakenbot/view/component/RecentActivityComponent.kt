@@ -7,9 +7,7 @@ import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.a
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.h3
@@ -51,26 +49,11 @@ class RecentActivityComponent {
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
-    fun render(history: List<PortfolioSnapshot>) {
+    fun render(snapshot: PortfolioSnapshot) {
         div.glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
-            if (history.isEmpty()) {
-                div(CssClass.Activity.EmptyHistoryBox) {
-                    icon(Icons.EMPTY_PIE)
-                    h3 { +ViewText.RECENT_ACTIVITY }
-                    p { +ViewText.NO_TRADING_HISTORY }
-                }
-            } else {
-                val now = Instant.now()
-                div(CssClass.Activity.Feed) {
-                    history.take(MAX_CYCLES).forEach { snapshot ->
-                        renderCycle(snapshot, now)
-                    }
-                }
-                div(CssClass.Activity.FeedFooter) {
-                    a(CssClass.Activity.ViewAll, href = Routes.HISTORY) {
-                        +ViewText.ACTIVITY_VIEW_ALL
-                    }
-                }
+            val now = Instant.now()
+            div(CssClass.Activity.Feed) {
+                renderCycle(snapshot, now)
             }
         }
     }
@@ -120,8 +103,6 @@ class RecentActivityComponent {
     }
 
     private companion object {
-        const val MAX_CYCLES = 6
-
         fun tradeSuffix(count: Int): String =
             if (count == 1) ViewText.ACTIVITY_ACTION_SUFFIX else ViewText.ACTIVITY_ACTIONS_SUFFIX
 

@@ -1,138 +1,114 @@
 ---
 name: coroutines-flows-sse
 description: >-
-  Kotlin Flow architecture — hot SharedFlow vs cold Flow, ConfigService config
-  flow, TradeHistorySnapshotStore snapshotFlow (via TradeHistoryService façade),
-  SSE /api/status/stream, and collectLatest restart of the rebalance loop. Use
-  when changing reactive pipelines, SSE, or PortfolioManager config watching.
-  See docs/FLOWS.md.
+  Kotlin Flow architecture for saved Settings, the latest current-cycle
+  Dashboard snapshot, SSE, bounded Actual observation capture, and
+  order-specific USD sell settlement. Use when changing reactive pipelines,
+  startup, SSE, or PortfolioManager config watching. See docs/FLOWS.md.
 ---
 
 # Coroutines, Flows & SSE
 
-Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
+Canonical runtime map: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 
-## How this differs from nearby skills
+## Active flow types
 
-| Skill | Role |
-| :--- | :--- |
-| **coroutines-flows-sse** (this) | Hot vs cold Flow, SSE path, config `collectLatest`, paginated sync and USD-settle **poll mechanics** |
-| [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) | Rebalance math + execution **safety invariants** (sell-first, settle policy, 99% budget) |
-| [trade-history-sync](../trade-history-sync/SKILL.md) | Trade/ledger sync, dedupe/seeding, and rewards queries |
-| [frontend-js-development](../frontend-js-development/SKILL.md) | Stream-chip age / chart rebind after HTMX SSE fragment swaps — **not** `EventSource` |
-| [koin-di-and-config](../koin-di-and-config/SKILL.md) | ConfigService / Settings persistence (not Flow restart semantics) |
-
-## Hot vs cold
-
-| | Cold `Flow` | Hot `SharedFlow` |
+| Type | Active use | Behavior |
 | :--- | :--- | :--- |
-| Starts | On collect | Independent of collectors |
-| Use here | Paginated trade/ledger sync, USD poll | Config changes, snapshot broadcast |
+| Cold `Flow` | Exchange retries and sell-settlement polling | Starts its request/poll work when collected. |
+| Hot `SharedFlow` | Saved Settings | Replays current Settings and publishes later updates. |
+| Hot `StateFlow` | `CurrentPortfolioState` | Retains only the latest completed cycle snapshot, or `null` before the first cycle. |
+| Bounded `Channel` | `ActualObservationDispatcher` | Passes eligible direct observation candidates to an off-cycle writer; a full queue can skip a sample. |
 
-## Key pipelines
+Retrospective trade/ledger synchronization, report reconstruction, and
+historical reporting flows are retired. The legacy database remains available
+only for safe migration and account-history continuity checks during binding;
+it is not an active reporting destination. Order-specific Kraken
+`TradesHistory` reads used to confirm sells are still part of execution safety.
 
-### Config (hot)
+## Settings changes and the rebalance loop
 
-`ConfigServiceImpl._configFlow` — `MutableSharedFlow<Settings>(replay=1, DROP_OLDEST)`.
+`ConfigServiceImpl.watchConfigChanges()` exposes a replaying hot
+`SharedFlow<Settings>`. `PortfolioManagerImpl` collects it with `collectLatest`:
+a change replaces the idle delay and starts the next cycle with the new
+Settings.
 
-`PortfolioManagerImpl` uses **`collectLatest`** on `watchConfigChanges()` so a
-settings change cancels the sleeping `delay()` and **restarts** the rebalance
-loop immediately. During `beginExecutionSession()` … `endExecutionSession()`,
-`ConfigServiceImpl` stages saved/reloaded config and emits only when the
-outermost session exits, so an active cycle or paginated account sync is never
-cancelled into a mixed settings/credential version.
+Settings updates saved during an execution session are staged and emitted
+after its outermost `endExecutionSession()`. The active cycle keeps its pinned
+configuration and exchange backend, then the loop uses the latest published
+Settings. Preserve cancellation as control flow: `collectLatest`, the cycle,
+and the idle delay must rethrow `CancellationException` so shutdown and loop
+restart work correctly.
 
-`performCycleWithStableSession()` owns the normal cycle-wide execution session
-and backend pin for in-cycle ledger/trade sync, reconstruction, and rebalance.
-Startup syncs and standalone/top-level sync entry points establish independent
-sessions and pins; nested calls reuse the outer cycle pin when one exists.
+## Current-cycle snapshots and SSE
 
-Historical snapshot reconstruction uses the same nested-safe execution session
-and pins one exchange backend for its full balances/ticker/OHLC pass. Sync
-callers pass their already-captured config/backend into reconstruction rather
-than starting a second unpinned read path.
+`PortfolioManagerImpl` publishes each completed snapshot to
+`CurrentPortfolioState`, an in-memory `StateFlow` holding one latest value.
+The Dashboard fragment reads that value; `/api/status/stream` collects it and
+sends current-cycle snapshot JSON through Ktor SSE. HTMX's SSE extension
+refreshes the Dashboard fragment. `:frontend-js` updates age and freshness but
+does not open `EventSource` or parse the stream.
 
-### Snapshots → SSE (hot)
+The server-side stream reports current cycle/snapshot state and unresolved
+order-intent status through the relevant endpoints. Do not persist or rebuild a
+historical cycle timeline for Dashboard, startup, health, or readiness.
+Per-client SSE failures stay local to that session, and cancellation must
+propagate.
 
-`TradeHistorySnapshotStore.snapshotFlow` — `replay=1`, buffer 16, `DROP_OLDEST`.
-`TradeHistoryServiceImpl` is a thin façade: `addSnapshot` / `getHistoryFlow()`
-delegate to the store.
+## Actual observations
 
-Path: rebalance cycle → façade `addSnapshot` → DB + store `tryEmit` →
-`DashboardController` collects `getHistoryFlow()` → **`GET /api/status/stream`**
-→ browser via **HTMX SSE** (`sse-connect` / `sse:message` fragment refresh).
-`:frontend-js` does **not** open `EventSource`.
+At startup, the application starts `ActualObservationDispatcher` and the
+portfolio manager. Eligible direct balance and price evidence from a completed
+live cycle is placed on the dispatcher's bounded channel. A worker verifies
+account binding and credential scope, then appends the raw observation to the
+Actual store outside the order path. Simulation does not create authenticated
+Actual observations. Queue, binding, or storage problems can skip a sample
+without blocking rebalancing.
 
-`handleSseStream` sends the DB latest snapshot, then collects the hot flow
-(`replay = 1` covers the subscribe race; a duplicate first event is acceptable).
+`/actual` reads raw evidence and gaps for the current account/configured asset
+scope. An optional prospective Buy & Hold segment can start from eligible
+complete evidence after continuity verification and proceeds forward. It does
+not require or trigger retrospective reconstruction. Preserve cancellation in
+the dispatcher worker and benchmark evaluation.
 
-- `snapshotFlow`: `extraBufferCapacity = 16`, `DROP_OLDEST`, `tryEmit` — slow
-  clients must not block rebalance producers.
-- Per-session SSE errors are swallowed (non-cancellation); other subscribers continue.
+## Cold USD sell settlement
 
-### Paginated sync / USD settle (cold)
+Settlement policy and safety invariants belong to
+[portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md). The cold
+poll implementation lives in `OrderSettleHelper` and runs after successful
+sells, outside dry-run:
 
-Owner of **settle policy** (when to settle, fail-closed buys, 99% budget):
-[portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md). This
-section owns the **cold Flow poll implementation**.
+1. When Kraken returned sell order transaction IDs, poll `TradesHistory` for
+   successful matching sell fills and sum net proceeds after fees. Scan up to
+   five pages and deduplicate repeated nonblank trade IDs.
+2. Cap confirmed proceeds to spendable USD when visible; if that read fails,
+   cap to projected cash. Accept the result only at or above 95% of projected
+   cash.
+3. If fills are missing or materially short, or IDs are unavailable, poll the
+   spendable USD balance as a fallback.
+4. Each cold poll is bounded to three attempts with exponential delay starting
+   at 250 ms. If safe USD cannot be confirmed, the executor stops buys for the
+   cycle.
 
-- `TradeHistorySyncService` paginated Kraken history fetch (private cold
-  `getTradeHistoryPaginated()`; invoked from the façade
-  `syncTradesFromKraken()`). One coroutine `Mutex` spans the throttle check and
-  pagination so concurrent top-level sync callers cannot overlap.
-- `LedgersSyncService` paginated Kraken ledger fetch (private cold
-  `getLedgersPaginated()`; invoked from `syncLedgersFromKraken()`). It uses the
-  same 300s throttle/session boundary, but inserts pages under a unique ledger
-  identity and persists separate seed progress and watermark metadata.
-- `OrderSettleHelper.settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
-  - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
-    matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
-    `min(fill, balance)` when spendable USD is visible, else
-    `min(fill, projectedCash)`.
-  - **Fallback:** `pollUsdBalanceAfterSells()` →
-    `pollUsdBalanceAfterSells().last()` when no txids or fill confirm is empty.
-  Both cold polls: **3** attempts from **250ms** (doubling; defensive
-  `coerceAtMost(32s)`); emit best positive observation (or `0`); executor aborts
-  buys when none. Skipped poll → buys use projected cash.
-
-Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
-
-- `pollFillConfirmedUsd`: 3 attempts, 250ms doubling backoff (cap 32s), 95%
-  early accept vs `projectedCash`, `startSec = now − 600s`.
-- `sumMatchedSellProceeds`: up to 5 pages × 50 rows; match sell `orderTxid`;
-  net `usdAmount − fee`; keep scanning after the first sighting (multi-leg fills).
-  Deduplicate repeated nonblank Kraken trade IDs across shifted pages, but keep
-  id-less rows distinct.
-- Cap fill-confirmed USD with `min(fill, balancePeek)` when spendable balance is
-  visible; otherwise `min(fill, projectedCash)` (same as the primary bullets
-  above — never both caps at once).
+These reads only confirm settlement for the current cycle's sell orders. They
+must not be turned into an account-history sync or reporting path.
 
 ## Concurrency rules
 
-- DB/network: `withContext(Dispatchers.IO)`.
-- No `GlobalScope` — use component-bound scopes.
-- Prefer `tryEmit` on DROP_OLDEST SharedFlows (non-suspending broadcast).
-
-### Cancellation is control flow (not a cycle error)
-
-- In `PortfolioManagerImpl.runLoop`, rethrow `CancellationException` from the
-  outer `collectLatest`, the inner cycle, and `delay()` — never log-and-continue.
-- Catching cancellation inside `while (isRunning)` prevents `collectLatest` from
-  cancelling the sleeping delay on a settings change.
-- Same rule for SSE handlers and USD-settle polls: catch `Exception`, but always
-  rethrow cancellation.
+- Use `withContext(Dispatchers.IO)` for blocking database or network work.
+- Do not use `GlobalScope`; use component-bound application or request scopes.
+- Keep the Actual queue bounded and non-blocking for the rebalance cycle.
+- Catch ordinary client/session failures locally where appropriate, but always
+  rethrow `CancellationException`.
 
 ## Checklist
 
-- [ ] Hot vs cold choice matches `docs/FLOWS.md`
-- [ ] If FLOWS Mermaid changed → run
-      [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)
-- [ ] Config watch uses `collectLatest`
-- [ ] Active execution sessions defer config-flow publication until cycle/sync exit
-- [ ] SSE endpoint remains `/api/status/stream`
-- [ ] Flow tests use `runTest` + `advanceUntilIdle`
-- [ ] Ledger pagination remains cold, mutex-protected, overlap-safe, and
-      cancellation-aware
-- [ ] Readiness diagnostics remain separate from liveness: `/api/health` stays
-      `200`, while `/api/readiness` reports unresolved journal/cycle state with
-      `503` when unsafe
+- [ ] Saved Settings use the replaying hot flow and `collectLatest`
+- [ ] Execution sessions defer Settings publication until the cycle completes
+- [ ] Dashboard state retains only the latest snapshot and SSE carries that state
+- [ ] Actual capture is bounded, direct-evidence based, and off the order path
+- [ ] Prospective Buy & Hold requires verified continuity and moves forward only
+- [ ] Sell fill checks remain scoped to returned order IDs; no history sync returns
+- [ ] Cold settlement polls remain bounded and stop buys when cash is uncertain
+- [ ] SSE, worker, and poll cancellation continues to propagate
+- [ ] `docs/FLOWS.md` remains the canonical runtime diagram and path description

@@ -2,18 +2,17 @@ package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.controller.DashboardController
-import com.gemini.krakenbot.model.FundingProvenanceResolver
-import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.impl.DynamicKrakenService
-import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -24,9 +23,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
+import org.koin.dsl.module
 import org.koin.test.KoinTest
 import org.koin.test.inject
-import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @Suppress("unused")
@@ -37,47 +36,27 @@ class KrakenRebalancerApplicationTest :
 
     init {
         "verify koin modules" {
-            // appModule builds ConfigServiceImpl against this relative path, so the graph only
-            // resolves if a config exists in the working directory. Synthesize a throwaway one when
-            // the developer has none, and never delete a real config that was already there.
-            val configFile = File("rebalancer-config.json")
-            val existed = configFile.exists()
-            if (!existed) {
-                configFile.writeText(
-                    """
-                    {
-                      "kraken": { "apiKey": "k", "privateKey": "s" },
-                      "settings": { "loopDelaySeconds": 60, "deviationTriggerPercent": 2.0, "minimumOrderSizeUSD": 5.0, "dryRun": true, "fiatMaxDrawdown": 0.0, "fiatDeploymentExponent": 1.0 },
-                      "allocations": [ { "symbol": "USD", "targetPercent": 100.0 } ]
-                    }
-                    """.trimIndent(),
-                )
-            }
-
             val previousDbPath = System.getProperty("kraken.db.path")
             val previousExecutionDbPath = System.getProperty("kraken.execution.db.path")
             System.setProperty("kraken.db.path", TestFixtures.MEMORY_)
             System.setProperty("kraken.execution.db.path", TestFixtures.MEMORY_)
             try {
-                // Koin's context is global: another spec may have left one running.
                 stopKoin()
+                val config = mockk<ConfigService>(relaxed = true)
+                every { config.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
                 startKoin {
-                    modules(appModule)
+                    allowOverride(true)
+                    modules(
+                        appModule,
+                        module { single<ConfigService> { config } },
+                    )
                 }
                 val pm: PortfolioManager by inject()
                 pm.shouldBeInstanceOf<PortfolioManagerImpl>()
-                val krakenField = PortfolioManagerImpl::class.java.getDeclaredField("krakenService")
-                krakenField.isAccessible = true
-                krakenField.get(pm).shouldBeInstanceOf<DynamicKrakenService>()
-                val resolver: FundingProvenanceResolver by inject()
-                resolver.shouldBeInstanceOf<KrakenFundingProvenanceResolver>()
-                val analyzer: PortfolioAnalyzer by inject()
+                val analyzer: com.gemini.krakenbot.service.PortfolioAnalyzer by inject()
                 analyzer.shouldBeInstanceOf<PortfolioAnalyzerImpl>()
-                val query: TradeHistoryQueryService by inject()
-                val queryField = TradeHistoryQueryService::class.java
-                    .getDeclaredField("fundingProvenanceResolver")
-                    .also { it.isAccessible = true }
-                queryField.get(query) shouldBe resolver
+                val currentState: CurrentPortfolioState by inject()
+                currentState.snapshot.value shouldBe null
                 val controller: DashboardController by inject()
                 controller.shouldBeInstanceOf<DashboardController>()
             } finally {
@@ -91,9 +70,6 @@ class KrakenRebalancerApplicationTest :
                     System.setProperty("kraken.execution.db.path", previousExecutionDbPath)
                 } else {
                     System.clearProperty("kraken.execution.db.path")
-                }
-                if (!existed) {
-                    configFile.delete()
                 }
             }
         }

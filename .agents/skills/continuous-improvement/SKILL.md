@@ -267,7 +267,7 @@ apply order:
 4. Approved dependency upgrades last (highest blast radius)
 
 Use the bounded delegation rules above when ownership is disjoint; keep the
-History JS module (`History*.kt`) and shared CSS modules single-owner.
+Dashboard/Settings Kotlin/JS files and shared CSS modules single-owner.
 
 ### Step 4 — Verify
 
@@ -280,7 +280,7 @@ Always:
 Also when UI changed:
 
 - Prefer [ui-manual-qa](../ui-manual-qa/SKILL.md) scoped or full (include
-  `STYLE-*`, `REGRESSION-*`, `HIST-ZOOM-*` if History touched)
+  `STYLE-*`, current Dashboard/Settings/Actual cases, and legacy-route checks)
 - Or at least [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md) against
   local sim after hard-refresh / `?v=`
 
@@ -350,7 +350,7 @@ results, test plan.
 - Mixing unrelated mega-themes in one PR (split cycles / PRs)
 - Skipping `pre_commit_check.sh` because “it’s just docs”
 - Silent live-trading or production-config use
-- Parallel edits to the same hot file (one `History*.kt` file, one CSS module)
+- Parallel edits to the same hot file (one Dashboard/Settings JS file, one CSS module)
 - Filing a GitHub issue for every trivial S polish that ships same-day (noise)
 - Leaving discoveries only in chat — always persist to
   `improvement-backlog.md`

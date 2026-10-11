@@ -26,7 +26,6 @@ class RebalancerEngineTest : StringSpec() {
             loopDelaySeconds = 60,
             deviationTriggerPercent = 5.0,
             minimumOrderSizeUSD = 10.0,
-            fiatMaxDrawdown = 20.0,
         )
 
         "resolvePriceFromTicker resolves exact trading pair" {
@@ -39,201 +38,13 @@ class RebalancerEngineTest : StringSpec() {
                 .shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
-        "calculateDrawdown computes exact percentage from ATH" {
-            val ath = BigDecimal("100000.00")
-            val current = BigDecimal("80000.00")
-            val dd = RebalancerEngine.calculateDrawdown(current, ath)
-            dd.shouldBeEqualComparingTo(BigDecimal("20.00"))
-        }
-
-        "calculateDrawdown retains four decimal places for repeating ratios" {
-            val dd = RebalancerEngine.calculateDrawdown(
-                totalPortfolioValueUSD = BigDecimal("2.00"),
-                ath = BigDecimal("3.00"),
-            )
-
-            dd.shouldBeEqualComparingTo(BigDecimal("33.3333"))
-        }
-
-        "adjustAthForCashFlow returns current ATH when ATH or pre-flow value is non-positive or net flow is zero" {
-            val ath = BigDecimal("10000.00")
-            val preFlow = BigDecimal("8000.00")
-
-            RebalancerEngine.adjustAthForCashFlow(BigDecimal.ZERO, preFlow, BigDecimal("1000.00"))
-                .shouldBeEqualComparingTo(BigDecimal.ZERO)
-            RebalancerEngine.adjustAthForCashFlow(BigDecimal("-100.00"), preFlow, BigDecimal("1000.00"))
-                .shouldBeEqualComparingTo(BigDecimal("-100.00"))
-            RebalancerEngine.adjustAthForCashFlow(ath, BigDecimal.ZERO, BigDecimal("1000.00"))
-                .shouldBeEqualComparingTo(ath)
-            RebalancerEngine.adjustAthForCashFlow(ath, BigDecimal("-500.00"), BigDecimal("1000.00"))
-                .shouldBeEqualComparingTo(ath)
-            RebalancerEngine.adjustAthForCashFlow(ath, preFlow, BigDecimal.ZERO)
-                .shouldBeEqualComparingTo(ath)
-        }
-
-        "adjustAthForCashFlow returns ZERO when net withdrawal equals or exceeds pre-flow value" {
-            val ath = BigDecimal("10000.00")
-            val preFlow = BigDecimal("5000.00")
-
-            RebalancerEngine.adjustAthForCashFlow(ath, preFlow, BigDecimal("-5000.00"))
-                .shouldBeEqualComparingTo(BigDecimal.ZERO)
-            RebalancerEngine.adjustAthForCashFlow(ath, preFlow, BigDecimal("-6000.00"))
-                .shouldBeEqualComparingTo(BigDecimal.ZERO)
-        }
-
-        "adjustAthForCashFlow proportionally scales ATH for deposits and preserves drawdown ratio" {
-            // Portfolio value: 8,000, ATH: 10,000 (20% drawdown).
-            // Deposit: 2,000 -> postFlow = 10,000.
-            // Factor = 10,000 / 8,000 = 1.25. New ATH = 10,000 * 1.25 = 12,500.
-            // New drawdown = (12,500 - 10,000) / 12,500 = 20%. Drawdown is preserved!
-            val ath = BigDecimal("10000.00")
-            val preFlow = BigDecimal("8000.00")
-            val deposit = BigDecimal("2000.00")
-
-            val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlow, deposit)
-            adjustedAth.shouldBeEqualComparingTo(BigDecimal("12500.00"))
-
-            val newDd = RebalancerEngine.calculateDrawdown(preFlow.add(deposit), adjustedAth)
-            newDd.shouldBeEqualComparingTo(BigDecimal("20.00"))
-        }
-
-        "adjustAthForCashFlow proportionally scales ATH for withdrawals and preserves drawdown ratio" {
-            // Portfolio value: 8,000, ATH: 10,000 (20% drawdown).
-            // Withdrawal: -2,000 -> postFlow = 6,000.
-            // Factor = 6,000 / 8,000 = 0.75. New ATH = 10,000 * 0.75 = 7,500.
-            // New drawdown = (7,500 - 6,000) / 7,500 = 20%. Drawdown is preserved!
-            val ath = BigDecimal("10000.00")
-            val preFlow = BigDecimal("8000.00")
-            val withdrawal = BigDecimal("-2000.00")
-
-            val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlow, withdrawal)
-            adjustedAth.shouldBeEqualComparingTo(BigDecimal("7500.00"))
-
-            val newDd = RebalancerEngine.calculateDrawdown(preFlow.add(withdrawal), adjustedAth)
-            newDd.shouldBeEqualComparingTo(BigDecimal("20.00"))
-        }
-
-        "calculateFiatDeployment respects deployment threshold deadband" {
-            val withThreshold = settings.copy(
-                fiatMaxDrawdown = 20.0,
-                fiatDeploymentExponent = 1.0,
-                fiatDeploymentThresholdPercent = 5.0,
-            )
-
-            // Drawdown at or below threshold produces 0 deployment
-            RebalancerEngine.calculateFiatDeployment(BigDecimal("3.00"), withThreshold)
-                .shouldBeEqualComparingTo(BigDecimal.ZERO)
-            RebalancerEngine.calculateFiatDeployment(BigDecimal("5.00"), withThreshold)
-                .shouldBeEqualComparingTo(BigDecimal.ZERO)
-
-            // Drawdown between threshold and maxDrawdown scales linearly from threshold to maxDD:
-            // effectiveDD = 12.5 - 5 = 7.5; effectiveMaxDD = 20 - 5 = 15; ratio = 7.5 / 15 = 0.5 -> 50%
-            RebalancerEngine.calculateFiatDeployment(BigDecimal("12.50"), withThreshold)
-                .shouldBeEqualComparingTo(BigDecimal("50.00"))
-
-            // When maxDrawdown is less than or equal to threshold, any drawdown exceeding threshold deploys 100%
-            val clampedThreshold = settings.copy(
-                fiatMaxDrawdown = 5.0,
-                fiatDeploymentThresholdPercent = 5.0,
-            )
-            RebalancerEngine.calculateFiatDeployment(BigDecimal("6.00"), clampedThreshold)
-                .shouldBeEqualComparingTo(BigDecimal("100.00"))
-        }
-
-        "calculateFiatDeployment scales correctly with drawdown exponent" {
-            val dd = BigDecimal("10.00")
-            val deployment = RebalancerEngine.calculateFiatDeployment(dd, settings)
-            deployment.shouldBeEqualComparingTo(BigDecimal("50.00"))
-        }
-
-        "calculateFiatDeployment returns zero when drawdown is zero or exponent is non-positive" {
-            val zeroDdDeployment = RebalancerEngine.calculateFiatDeployment(
-                BigDecimal.ZERO,
-                settings.copy(fiatDeploymentExponent = 0.0),
-            )
-            zeroDdDeployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
-
-            // Zero drawdown with negative threshold must still return ZERO
-            RebalancerEngine.calculateFiatDeployment(
-                BigDecimal.ZERO,
-                settings.copy(fiatDeploymentThresholdPercent = -5.0),
-            ).shouldBeEqualComparingTo(BigDecimal.ZERO)
-
-            // Non-finite threshold must return ZERO safely without throwing NumberFormatException
-            RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("10.00"),
-                settings.copy(fiatDeploymentThresholdPercent = Double.NaN),
-            ).shouldBeEqualComparingTo(BigDecimal.ZERO)
-            RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("10.00"),
-                settings.copy(fiatDeploymentThresholdPercent = Double.POSITIVE_INFINITY),
-            ).shouldBeEqualComparingTo(BigDecimal.ZERO)
-
-            val zeroExpDeployment = RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("10.00"),
-                settings.copy(fiatDeploymentExponent = 0.0),
-            )
-            zeroExpDeployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
-
-            val negExpDeployment = RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("10.00"),
-                settings.copy(fiatDeploymentExponent = -1.5),
-            )
-            negExpDeployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
-        }
-
-        "calculateFiatDeployment preserves intermediate ratio precision without premature truncation" {
-            // 10 / 30 = 1/3 = 0.33333333... With linear exponent, Deploy% = 33.3333%
-            val thirdSettings = settings.copy(
-                fiatMaxDrawdown = 30.0,
-                fiatDeploymentExponent = 1.0,
-                fiatDeploymentThresholdPercent = 0.0,
-            )
-            val deployment = RebalancerEngine.calculateFiatDeployment(BigDecimal("10.00"), thirdSettings)
-            deployment.shouldBeEqualComparingTo(BigDecimal("33.3333"))
-        }
-
-        "calculateFiatDeployment caps deployment at 100 percent" {
-            val deployment = RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("50.00"),
-                settings.copy(fiatMaxDrawdown = 20.0, fiatDeploymentExponent = 0.5),
-            )
-            deployment.shouldBeEqualComparingTo(BigDecimal("100.00"))
-        }
-
-        "calculateFiatDeployment returns zero when exponent evaluation is non-finite" {
-            val deployment = RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("10.00"),
-                settings.copy(fiatMaxDrawdown = 20.0, fiatDeploymentExponent = Double.NaN),
-            )
-            deployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
-        }
-
-        "calculateEffectiveUsdTarget shrinks USD target when fiat deployment > 0" {
-            val deployment = BigDecimal("50.00")
-            val effectiveUsd = RebalancerEngine.calculateEffectiveUsdTarget(deployment, allocations)
-            effectiveUsd.shouldBeEqualComparingTo(BigDecimal("10.00"))
-        }
-
-        "calculateEffectiveUsdTarget leaves USD unchanged when no crypto target can receive deployment" {
-            listOf(
-                listOf(Allocation(Asset.USD, 100.0)),
-                listOf(Allocation(Asset.BTC, 0.0), Allocation(Asset.USD, 100.0)),
-            ).forEach { noCryptoTargetAllocations ->
-                RebalancerEngine.calculateEffectiveUsdTarget(BigDecimal("50.00"), noCryptoTargetAllocations)
-                    .shouldBeEqualComparingTo(BigDecimal("100.00"))
-            }
-        }
-
-        "calculateEffectiveUsdTarget leaves USD unchanged when deployment is zero" {
-            RebalancerEngine.calculateEffectiveUsdTarget(BigDecimal.ZERO, allocations)
-                .shouldBeEqualComparingTo(BigDecimal("20.00"))
-        }
-
-        "calculateCryptoScaleFactor redistributes freed USD to crypto allocations" {
-            val effectiveUsd = BigDecimal("10.00")
-            val scale = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsd, allocations)
-            scale.shouldBeEqualComparingTo(BigDecimal("1.12500000"))
+        "calculateFixedUsdTarget preserves the configured cash allocation" {
+            RebalancerEngine.calculateFixedUsdTarget(allocations)
+                .shouldBeEqualComparingTo(BigDecimal("20.0"))
+            RebalancerEngine.calculateCryptoScaleFactor(
+                RebalancerEngine.calculateFixedUsdTarget(allocations),
+                allocations,
+            ).shouldBeEqualComparingTo(BigDecimal("1.00000000"))
         }
 
         "calculatePortfolioValues aborts when a non-USD price is missing" {
@@ -285,86 +96,6 @@ class RebalancerEngineTest : StringSpec() {
             plan.buyOrders.shouldBeEmpty()
             plan.events.filterIsInstance<RebalanceEvent.DeviationTriggered>()
                 .any { it.symbol == Asset.BTC && it.deviationPercent.compareTo(BigDecimal("20")) == 0 } shouldBe true
-        }
-
-        "analyzeDeviations suppresses the sell leg for an asset at a recent high" {
-            val plan = RebalancerEngine.analyzeDeviationsPlan(
-                totalPortfolioValueUSD = BigDecimal("10000.00"),
-                currentValuesUSD = mapOf(
-                    Asset.BTC to BigDecimal("6000.00"),
-                    Asset.ETH to BigDecimal("2500.00"),
-                    Asset.USD to BigDecimal("1500.00"),
-                ),
-                effectiveUsdTarget = BigDecimal("20.00"),
-                cryptoScaleFactor = BigDecimal.ONE,
-                allocations = allocations,
-                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 700.0),
-                trendingAssets = setOf(Asset.BTC),
-            )
-
-            plan.sellOrders.shouldBeEmpty()
-            plan.events.filterIsInstance<RebalanceEvent.TrendSuppressedSell>()
-                .map { it.symbol } shouldContain Asset.BTC
-        }
-
-        "withdrawal fiat correction sells a trending overweight asset to restore the USD reserve" {
-            val plan = RebalancerEngine.analyzeDeviationsPlan(
-                totalPortfolioValueUSD = BigDecimal("1000.00"),
-                currentValuesUSD = mapOf(
-                    Asset.BTC to BigDecimal("600.00"),
-                    Asset.ETH to BigDecimal("300.00"),
-                    Asset.USD to BigDecimal("100.00"),
-                ),
-                effectiveUsdTarget = BigDecimal("20.00"),
-                cryptoScaleFactor = BigDecimal.ONE,
-                allocations = allocations,
-                settings = settings.copy(deviationTriggerPercent = 15.0, minimumOrderSizeUSD = 10.0),
-                trendingAssets = setOf(Asset.BTC),
-            )
-
-            plan.sellOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("100.00"))
-            plan.buyOrders.shouldBeEmpty()
-            plan.events.filterIsInstance<RebalanceEvent.FiatCorrectionEnforced>().size shouldBe 1
-            plan.events.filterIsInstance<RebalanceEvent.TrendSuppressedSell>().isEmpty() shouldBe true
-        }
-
-        "analyzeDeviations still sells an overweight asset that is not at a recent high" {
-            val plan = RebalancerEngine.analyzeDeviationsPlan(
-                totalPortfolioValueUSD = BigDecimal("10000.00"),
-                currentValuesUSD = mapOf(
-                    Asset.BTC to BigDecimal("6000.00"),
-                    Asset.ETH to BigDecimal("3000.00"),
-                    Asset.USD to BigDecimal("1000.00"),
-                ),
-                effectiveUsdTarget = BigDecimal("20.00"),
-                cryptoScaleFactor = BigDecimal.ONE,
-                allocations = allocations,
-                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
-                trendingAssets = setOf(Asset.ETH),
-            )
-
-            plan.sellOrders.shouldContainKey(Asset.BTC)
-            plan.sellOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("1000.00"))
-        }
-
-        "analyzeDeviations never suppresses a buy for a trending asset" {
-            val plan = RebalancerEngine.analyzeDeviationsPlan(
-                totalPortfolioValueUSD = BigDecimal("10000.00"),
-                currentValuesUSD = mapOf(
-                    Asset.BTC to BigDecimal("4000.00"),
-                    Asset.ETH to BigDecimal("3000.00"),
-                    Asset.USD to BigDecimal("1000.00"),
-                ),
-                effectiveUsdTarget = BigDecimal("20.00"),
-                cryptoScaleFactor = BigDecimal.ONE,
-                allocations = allocations,
-                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
-                trendingAssets = setOf(Asset.BTC),
-            )
-
-            plan.sellOrders.shouldBeEmpty()
-            plan.buyOrders.shouldContainKey(Asset.BTC)
-            plan.buyOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("1000.00"))
         }
 
         "analyzeDeviationsPlan emits typed events before legacy log formatting" {
@@ -471,24 +202,6 @@ class RebalancerEngineTest : StringSpec() {
             PrecisionConstants.FEE_RATE_ESTIMATE.shouldBeEqualComparingTo(BigDecimal("0.006"))
             PrecisionConstants.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
             PrecisionConstants.ALLOCATION_TOLERANCE.shouldBeEqualComparingTo(BigDecimal("0.01"))
-        }
-
-        "calculateDrawdown returns ZERO when totalPortfolioValue >= ath or ath <= 0" {
-            RebalancerEngine.calculateDrawdown(BigDecimal("100.00"), BigDecimal("100.00")) shouldBe BigDecimal.ZERO
-            RebalancerEngine.calculateDrawdown(BigDecimal("110.00"), BigDecimal("100.00")) shouldBe BigDecimal.ZERO
-            RebalancerEngine.calculateDrawdown(BigDecimal("100.00"), BigDecimal.ZERO) shouldBe BigDecimal.ZERO
-            RebalancerEngine.calculateDrawdown(BigDecimal("100.00"), BigDecimal("-10.00")) shouldBe BigDecimal.ZERO
-        }
-
-        "calculateFiatDeployment returns ZERO when fiatMaxDrawdown <= 0 or drawdown <= 0" {
-            RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("10.00"),
-                settings.copy(fiatMaxDrawdown = 0.0),
-            ) shouldBe BigDecimal.ZERO
-            RebalancerEngine.calculateFiatDeployment(
-                BigDecimal("-5.00"),
-                settings.copy(fiatMaxDrawdown = 20.0),
-            ) shouldBe BigDecimal.ZERO
         }
 
         "analyzeDeviationsPlan handles crypto sells, USD withdrawal fiat correction, and skips fiat correction" {

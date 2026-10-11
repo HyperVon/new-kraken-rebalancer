@@ -13,5 +13,4 @@ data class RebalanceSessionContext(
     val prices: AssetPrices,
     val settings: Settings,
     val actionLog: MutableList<String>,
-    val cycleTradeIds: MutableList<Int>,
 )

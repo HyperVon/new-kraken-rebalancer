@@ -29,7 +29,7 @@ object TestFixtures {
     const val TEST_SERVER_API_KEY = "server-key"
     const val TEST_SERVER_API_SECRET = "server-secret"
 
-    /** Credentials used in TradeHistoryServiceTest. */
+    /** Kraken service credentials used by isolated authentication tests. */
     const val TRADE_HISTORY_API_KEY = "test-api-key"
 
     /** Base64 of `test-private-key` — Kraken private keys must decode as Base64. */
@@ -136,15 +136,11 @@ object TestFixtures {
         simulation: Boolean = !dryRun,
         loopDelaySeconds: Long = 0L,
         deviationTriggerPercent: Double = 2.0,
-        fiatMaxDrawdown: Double = 0.0,
-        fiatDeploymentExponent: Double = 1.0,
     ): Settings = Settings(
         loopDelaySeconds = loopDelaySeconds,
         deviationTriggerPercent = deviationTriggerPercent,
         minimumOrderSizeUSD = minimumOrderSizeUSD,
         dryRun = dryRun,
-        fiatMaxDrawdown = fiatMaxDrawdown,
-        fiatDeploymentExponent = fiatDeploymentExponent,
         simulation = simulation,
     )
 
@@ -159,8 +155,6 @@ object TestFixtures {
         totalValueUSD = totalValueUSD,
         assets = emptyMap(),
         actions = emptyList(),
-        drawdownPercent = BigDecimal.ZERO,
-        fiatDeploymentPercent = BigDecimal.ZERO,
         effectiveUsdTargetPercent = BigDecimal.ZERO,
     )
 

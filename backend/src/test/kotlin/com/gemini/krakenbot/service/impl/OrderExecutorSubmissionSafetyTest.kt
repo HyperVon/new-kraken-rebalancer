@@ -4,11 +4,8 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.OrderIntentService
-import com.gemini.krakenbot.service.ReportingDispatcher
-import com.gemini.krakenbot.service.TradeHistoryService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -34,16 +31,14 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "dry-run backend failure is recorded without using the live execution journal" {
+        "dry-run backend failure does not require the live execution journal" {
             runTest {
                 val kraken = FakeKrakenService()
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                coEvery { history.saveTrade(any()) } returns 61
                 val original = IOException("dry-run backend unavailable")
                 kraken.executeOrderAction = { _, _, _, _ -> throw original }
 
                 shouldThrow<IOException> {
-                    OrderExecutorImpl(kraken, history).executeOrders(
+                    OrderExecutorImpl(kraken).executeOrders(
                         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
                         sellOrders = emptyMap(),
                         currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
@@ -53,29 +48,18 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                     )
                 } shouldBe original
 
-                coVerify {
-                    history.updateTrade(
-                        any(),
-                        match<TradeRecord> {
-                            it.id == 61 && !it.success && it.dryRun &&
-                                it.submissionState == null && it.errorMessage == original.message
-                        },
-                    )
-                }
-                coVerify(exactly = 0) { history.hasPendingSubmissions() }
+                kraken.executedOrders.single().dryRun shouldBe true
             }
         }
 
-        "simulation backend failure is recorded as a non-live estimate" {
+        "simulation backend failure does not require the live execution journal" {
             runTest {
                 val kraken = FakeKrakenService()
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                coEvery { history.saveTrade(any()) } returns 62
                 val original = IOException("emulator placement failed")
                 kraken.executeOrderAction = { _, _, _, _ -> throw original }
 
                 shouldThrow<IOException> {
-                    OrderExecutorImpl(kraken, history).executeOrders(
+                    OrderExecutorImpl(kraken).executeOrders(
                         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
                         sellOrders = emptyMap(),
                         currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
@@ -85,26 +69,16 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                     )
                 } shouldBe original
 
-                coVerify {
-                    history.updateTrade(
-                        any(),
-                        match<TradeRecord> {
-                            it.id == 62 && !it.success && !it.dryRun &&
-                                it.submissionState == null && it.errorMessage == original.message
-                        },
-                    )
-                }
-                coVerify(exactly = 0) { history.hasPendingSubmissions() }
+                kraken.executedOrders.single().dryRun shouldBe false
             }
         }
 
-        "live orders fail closed before history writes when no execution journal is wired" {
+        "live orders fail closed when no execution journal is wired" {
             runTest {
                 val kraken = FakeKrakenService()
-                val history = mockk<TradeHistoryService>(relaxed = true)
 
                 shouldThrow<IllegalStateException> {
-                    OrderExecutorImpl(kraken, history).executeOrders(
+                    OrderExecutorImpl(kraken).executeOrders(
                         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
                         sellOrders = emptyMap(),
                         currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
@@ -116,18 +90,16 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                 }
 
                 kraken.executedOrders.shouldBeEmpty()
-                coVerify(exactly = 0) { history.saveTrade(any()) }
             }
         }
 
         "live placement is rejected before persistence when the cycle identity is blank" {
             runTest {
                 val kraken = FakeKrakenService()
-                val history = mockk<TradeHistoryService>(relaxed = true)
                 val intents = mockk<OrderIntentService>(relaxed = true)
 
                 shouldThrow<IllegalStateException> {
-                    OrderExecutorImpl(kraken, history, intents).executeOrders(
+                    OrderExecutorImpl(kraken, intents).executeOrders(
                         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
                         sellOrders = emptyMap(),
                         currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
@@ -140,14 +112,12 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
 
                 kraken.executedOrders.shouldBeEmpty()
                 coVerify(exactly = 0) { intents.savePending(any()) }
-                coVerify(exactly = 0) { history.saveTrade(any()) }
             }
         }
 
         "executeOrders skips orders with zero ticker price" {
             runTest {
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                OrderExecutorImpl(FakeKrakenService(), history).executeOrders(
+                OrderExecutorImpl(FakeKrakenService()).executeOrders(
                     buyOrders = mapOf(Asset.BTC to BigDecimal("50.00")),
                     sellOrders = emptyMap(),
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
@@ -155,15 +125,12 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                     settings = TestFixtures.settings(),
                     actionLog = mutableListOf(),
                 )
-
-                coVerify(exactly = 0) { history.saveTrade(any()) }
             }
         }
 
         "executeOrders skips a sell whose available volume rounds down to zero" {
             runTest {
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                OrderExecutorImpl(FakeKrakenService(), history).executeOrders(
+                OrderExecutorImpl(FakeKrakenService()).executeOrders(
                     buyOrders = emptyMap(),
                     sellOrders = mapOf(Asset.BTC to BigDecimal("10.00")),
                     currentValuesUSD = mapOf(Asset.BTC to BigDecimal("0.000000001")),
@@ -172,8 +139,6 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                     settings = TestFixtures.settings(),
                     actionLog = mutableListOf(),
                 )
-
-                coVerify(exactly = 0) { history.saveTrade(any()) }
             }
         }
 
@@ -357,123 +322,10 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                 }
             }
         }
-
-        "non-live reporting update failure is suppressed onto the original placement error" {
-            runTest {
-                val kraken = FakeKrakenService()
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                coEvery { history.saveTrade(any()) } returns 71
-                val original = IOException("emulator error")
-                val reportFailure = IOException("reporting store unavailable")
-                kraken.executeOrderAction = { _, _, _, _ -> throw original }
-                coEvery { history.updateTrade(any(), any()) } throws reportFailure
-
-                shouldThrow<IOException> {
-                    OrderExecutorImpl(kraken, history).executeOrders(
-                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
-                        sellOrders = emptyMap(),
-                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
-                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
-                        settings = TestFixtures.settings(dryRun = false, simulation = true),
-                        actionLog = mutableListOf(),
-                    )
-                } shouldBe original
-
-                original.suppressed.toList() shouldBe listOf(reportFailure)
-                coVerify(exactly = 0) { history.hasPendingSubmissions() }
-            }
-        }
-
-        "simulation reporting update failure is suppressed when history is dispatcher owned" {
-            runTest {
-                val kraken = FakeKrakenService()
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                coEvery { history.saveTrade(any()) } returns 72
-                val original = IOException("emulator placement failed")
-                val reportFailure = IOException("simulation trade update failed")
-                kraken.executeOrderAction = { _, _, _, _ -> throw original }
-                coEvery { history.updateTrade(any(), any()) } throws reportFailure
-                val dispatcher = ReportingDispatcher(
-                    historyServiceProvider = { history },
-                    projectionServiceProvider = { error("projection is not used by simulation orders") },
-                )
-                dispatcher.initializeBeforeSimulationCycle()
-
-                shouldThrow<IOException> {
-                    OrderExecutorImpl(
-                        kraken,
-                        tradeHistoryService = null,
-                        reportingDispatcher = dispatcher,
-                    ).executeOrders(
-                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
-                        sellOrders = emptyMap(),
-                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
-                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
-                        settings = TestFixtures.settings(dryRun = false, simulation = true),
-                        actionLog = mutableListOf(),
-                    )
-                } shouldBe original
-
-                original.suppressed.toList() shouldBe listOf(reportFailure)
-                coVerify(exactly = 1) {
-                    history.updateTrade(
-                        any(),
-                        match {
-                            !it.success &&
-                                it.errorMessage == original.message
-                        },
-                    )
-                }
-            }
-        }
-
-        "dry-run trade projection is queued without making order execution wait for reporting" {
-            runBlocking {
-                val history = mockk<TradeHistoryService>(relaxed = true)
-                val projectedFailure = CompletableDeferred<TradeRecord>()
-                coEvery { history.saveTrade(any()) } coAnswers {
-                    projectedFailure.complete(firstArg())
-                    1
-                }
-                val dispatcher = ReportingDispatcher(
-                    historyServiceProvider = { history },
-                    projectionServiceProvider = { error("execution journal projection is not used in this dry-run") },
-                )
-                val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-                val worker = dispatcher.start(scope)
-                val original = IOException("dry-run backend failed")
-                val kraken = FakeKrakenService().apply {
-                    executeOrderAction = { _, _, _, _ -> throw original }
-                }
-                try {
-                    shouldThrow<IOException> {
-                        OrderExecutorImpl(
-                            kraken,
-                            tradeHistoryService = null,
-                            reportingDispatcher = dispatcher,
-                        ).executeOrders(
-                            buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
-                            sellOrders = emptyMap(),
-                            currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
-                            prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
-                            settings = TestFixtures.settings(dryRun = true, simulation = false),
-                            actionLog = mutableListOf(),
-                        )
-                    } shouldBe original
-                    val projected = withTimeout(5_000) { projectedFailure.await() }
-                    projected.success shouldBe false
-                    projected.dryRun shouldBe true
-                    projected.errorMessage shouldBe original.message
-                } finally {
-                    worker.cancelAndJoin()
-                    scope.cancel()
-                }
-            }
-        }
     }
 
     private fun liveExecutor(kraken: FakeKrakenService, intents: OrderIntentService) =
-        OrderExecutorImpl(kraken, tradeHistoryService = null, orderIntentService = intents)
+        OrderExecutorImpl(kraken, orderIntentService = intents)
 
     private suspend fun executeLiveBuy(executor: OrderExecutorImpl) = executor.executeOrders(
         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),

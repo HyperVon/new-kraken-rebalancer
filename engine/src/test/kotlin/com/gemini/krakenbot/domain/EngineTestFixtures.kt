@@ -14,16 +14,12 @@ object EngineTestFixtures {
         deviationTriggerPercent: Double = 5.0,
         minimumOrderSizeUSD: Double = 5.0,
         dryRun: Boolean = false,
-        fiatMaxDrawdown: Double = 0.0,
-        fiatDeploymentExponent: Double = 1.0,
         simulation: Boolean = true,
     ): Settings = Settings(
         loopDelaySeconds = loopDelaySeconds,
         deviationTriggerPercent = deviationTriggerPercent,
         minimumOrderSizeUSD = minimumOrderSizeUSD,
         dryRun = dryRun,
-        fiatMaxDrawdown = fiatMaxDrawdown,
-        fiatDeploymentExponent = fiatDeploymentExponent,
         simulation = simulation,
     )
 

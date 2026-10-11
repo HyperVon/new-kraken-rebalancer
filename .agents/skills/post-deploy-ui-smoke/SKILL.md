@@ -1,101 +1,92 @@
 ---
 name: post-deploy-ui-smoke
 description: >-
-  After deploying UI changes, hard-refresh and smoke-check Dashboard / History /
-  Settings for stale CSS, mode plate, STREAM/STALE status, header density, view
-  presets, and zoom/scrubber. Use when the user says production looks wrong,
-  after deploy, or post-release UI verification.
+  After a UI deploy, hard-refresh and smoke-check Dashboard, Settings, and
+  Actual for cache, mode, current-cycle freshness, and retained controls. Use
+  when the user reports a production UI issue or requests post-release
+  verification.
 ---
 
 # Post-deploy UI smoke
 
-Fast verification after a deploy (LAN “production” or real host). Complements
-full [ui-manual-qa](../ui-manual-qa/SKILL.md); does **not** replace it for large
-UI features. After a messy deploy, start here then escalate to full QA if needed.
-
-Related: [ui-manual-qa](../ui-manual-qa/SKILL.md),
-[ui-visual-review](../ui-visual-review/SKILL.md),
-[dry-run-and-simulation](../dry-run-and-simulation/SKILL.md).
-
-For static screenshot evidence on a controllable simulation host, use the
-shared [capture helper](../docs-screenshot-refresh/SKILL.md) with the `laptop`
-and `phone` profiles. Keep browser screenshots for interaction-specific state
-only.
-
----
+Run a quick read-only check after a deploy on a host you cannot isolate. This
+complements the full [ui-manual-qa](../ui-manual-qa/SKILL.md) checklist; it does
+not replace it for broad UI changes. For static captures on a controllable
+simulation host, use [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md).
 
 ## Preconditions
 
-- Prefer an isolated **simulation** instance when you control the host.
-- If checking the user’s already-running deploy: **read-only** clicks; do not
-  flip `simulation` / `dryRun` off or save live-trading settings.
-
----
+- Prefer an isolated Simulation instance when you control the host.
+- For an operator's running deploy, use read-only clicks. Do not save Settings
+  or change Simulation, Dry Run, or live-trading mode.
 
 ## Workflow
 
 ```text
-- [ ] Step 0: Note base URL (e.g. http://10.0.0.x:8080)
-- [ ] Step 1: Hard-refresh / confirm stylesheet ?v=
-- [ ] Step 2: Global mode + stream status (fast)
-- [ ] Step 3: STYLE-* + REGRESSION-* cases (checklist)
-- [ ] Step 4: HIST-VIEW-2 (Day · Total only) + HIST-ZOOM-5/6 if History shipped
-- [ ] Step 5: Report pass/fail; open fix branch if P0/P1
+- [ ] Step 0: Note the base URL and whether the host is isolated
+- [ ] Step 1: Hard-refresh or confirm the versioned stylesheet URL
+- [ ] Step 2: Check the current mode plate and Dashboard freshness
+- [ ] Step 3: Check Dashboard, Settings, Actual, and legacy route responses
+- [ ] Step 4: Record evidence and report pass/fail/blocked
 ```
 
-### Step 1 — Kill stale CSS
+### Step 1 — Refresh static assets
 
-1. Hard-refresh the page (bypass cache) **or** inspect
-   `<link rel="stylesheet" href="/static/style.css?v=…">`.
-2. Fail **STYLE-1** if there is no `?v=` (clients may keep 24h-old CSS).
-3. Fail **STYLE-2** if History Views/Zoom look like white native OS buttons.
+Hard-refresh the page or inspect `<link rel="stylesheet">`. Fail `STYLE-1` from
+the [manual QA checklist](../ui-manual-qa/checklist.md) if
+`/static/style.css?v=` has no version value.
 
-### Step 2 — Global mode / status (critical, keep fast)
+### Step 2 — Check the header and latest cycle
 
-From [checklist.md](../ui-manual-qa/checklist.md), at **~1280–1440px**:
+At laptop/desktop width, use the manual QA cases:
 
-- **GLOBAL-7** — Mode plate on `/`, `/history`, `/settings` (sim → **SIMULATION**)
-- **GLOBAL-5** — Dashboard chip is **STREAM** or **STALE**, never **LIVE** /
-  **DELAYED**; relative age + clock time present
-- Spot-check: Settings Safety Modes still show Simulation / Dry Run cards with
-  visible **ON** / **OFF** (do not toggle on the user’s live deploy)
+- `GLOBAL-2` — mode plate on Dashboard, Settings, and Actual matches saved
+  settings; SIMULATION takes precedence over DRY RUN.
+- `GLOBAL-3` — Dashboard chip is STREAM or STALE and shows the snapshot age;
+  it does not imply real orders are executing.
+- `DASH-1` — Dashboard shows the latest completed current-cycle snapshot, or
+  the expected waiting state before the first cycle.
+- `DASH-3` — Asset Performance and over/under-target legend remain readable.
 
-### Step 3 — Desktop density
+Recent Activity belongs to the latest current cycle. There is no retrospective
+History timeline or reporting page.
 
-- **REGRESSION-1** — Mode plate + STREAM/STALE + relative age/time not squished
-- **REGRESSION-2** — Over target / Under target spaced with dots
-- **REGRESSION-3** — Chart legends use line/point markers, not heavy boxes
+### Step 3 — Check retained pages and compatibility routes
 
-### Step 4 — History interactions (if that surface changed)
+- `SETT-1` and `SETT-8` — active Settings controls render without retired
+  inception, drawdown, deployment, or retrospective comparison-start fields.
+- `ACT-1` and `ACT-2` — Actual preserves its simulation-unavailable state and
+  describes raw evidence/gaps; emulator values are not account evidence.
+- `ACT-3` — optional Buy & Hold remains prospective and continuity-verified.
+- `GLOBAL-4` and `GLOBAL-5` — `/history` redirects to `/actual`; former
+  `/api/history/*` endpoints return 410 Gone.
+- `GLOBAL-6` — health/readiness describe current loop/cycle/snapshot and
+  unresolved intent status.
 
-From [checklist.md](../ui-manual-qa/checklist.md):
+Do not try to create an authenticated observation or benchmark on an operator's
+live host. Mark account-backed checks blocked unless they can be exercised in
+an approved isolated environment.
 
-- **HIST-VIEW-2** — Day · Total only hides non-Total series
-- **HIST-ZOOM-5** — drag zooms, does not pan; scrubber enables after drag-zoom
-- **HIST-ZOOM-6** — scrubber drag **moves the chart** (not only the thumb)
-- **HIST-ZOOM-7** — wheel zoom also enables scrubber + pan works
-
-Fail HIST-ZOOM-6 if the range thumb moves but time ticks / series stay put
-(usually means pan wrote `options.scales` instead of `chart.zoomScale`).
-
-### Step 5 — Report
+### Step 4 — Report
 
 ```markdown
 # Post-deploy UI smoke
 - URL: …
-- STYLE-*: pass/fail
+- Host: isolated simulation | existing deploy (read-only)
+- STYLE-1: pass/fail
 - GLOBAL mode/stream: pass/fail
-- REGRESSION-*: pass/fail
-- History extras: pass/fail/skipped
-- Next: fix branch / hard-refresh instruction for operators
+- DASHBOARD / SETTINGS / ACTUAL: pass/fail/blocked
+- Legacy routes: pass/fail
+- Evidence: screenshot or DOM/network observation
+- Next: fix branch / hard-refresh instruction / follow-up QA
 ```
-
----
 
 ## Checklist
 
-- [ ] Hard-refresh or `?v=` confirmed
-- [ ] Mode plate + STREAM/STALE checked
-- [ ] Laptop viewport checked
-- [ ] Failures have screenshots or DOM evidence
-- [ ] No live-trading settings changed on the user’s deploy
+- [ ] Hard-refresh or version query confirmed
+- [ ] Mode plate and STREAM/STALE freshness checked
+- [ ] Latest current-cycle Dashboard state checked
+- [ ] Active Settings and Actual states checked
+- [ ] `/history` redirect and retired API responses checked
+- [ ] Evidence includes screenshots or DOM/network details
+- [ ] No Settings or live-trading changes made on an operator deploy

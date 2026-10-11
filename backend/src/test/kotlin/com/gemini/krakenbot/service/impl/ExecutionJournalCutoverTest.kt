@@ -8,14 +8,13 @@ import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.domain.OrderResult
-import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
 import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -25,21 +24,13 @@ import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
-import com.gemini.krakenbot.service.ReportingDispatcher
-import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
-import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -58,7 +49,7 @@ class ExecutionJournalCutoverTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "execution intent and outcome commit while reporting SQLite and its history lock are held" {
+        "execution intent and outcome commit while the reporting database is locked" {
             withTempDirectory { directory ->
                 val reportingPath = directory.resolve("reporting.db")
                 val executionPath = directory.resolve("execution.db")
@@ -76,7 +67,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 reportLock.createStatement().use { it.execute("INSERT INTO reporting_lock_probe VALUES (1)") }
 
                 try {
-                    var timings = Triple(0L, 0L, 0)
                     runBlocking {
                         suspend fun persistIntentAndOutcome(key: String): Int {
                             val id = repository.savePending(
@@ -93,58 +83,29 @@ class ExecutionJournalCutoverTest : StringSpec() {
                             return id
                         }
 
-                        val baselineStartedAt = System.nanoTime()
-                        persistIntentAndOutcome("uncontended")
-                        val baseline = (System.nanoTime() - baselineStartedAt) / 1_000_000
-
-                        val coordinator = HistoryEvidenceCoordinator()
-                        val lockEntered = CompletableDeferred<Unit>()
-                        val releaseCoordinator = CompletableDeferred<Unit>()
-                        val lockJob = launch {
-                            coordinator.withLock("reporting-lock-test") {
-                                lockEntered.complete(Unit)
-                                releaseCoordinator.await()
-                            }
+                        val contendedId = withTimeout(4_000) {
+                            persistIntentAndOutcome("reporting-locked")
                         }
-                        try {
-                            lockEntered.await()
-                            val startedAt = System.nanoTime()
-                            val contendedId = withTimeout(4_000) {
-                                persistIntentAndOutcome("reporting-locked")
-                            }
-                            val elapsed = (System.nanoTime() - startedAt) / 1_000_000
 
-                            reportLock.isClosed shouldBe false
-                            reportLock.autoCommit shouldBe false
-                            DriverManager.getConnection("jdbc:sqlite:$reportingPath").use { observer ->
-                                observer.createStatement().use { it.execute("PRAGMA busy_timeout=100") }
-                                shouldThrow<SQLException> {
-                                    observer.createStatement().use {
-                                        it.executeUpdate("INSERT INTO reporting_lock_probe VALUES (2)")
-                                    }
+                        reportLock.isClosed shouldBe false
+                        reportLock.autoCommit shouldBe false
+                        DriverManager.getConnection("jdbc:sqlite:$reportingPath").use { observer ->
+                            observer.createStatement().use { it.execute("PRAGMA busy_timeout=100") }
+                            shouldThrow<SQLException> {
+                                observer.createStatement().use {
+                                    it.executeUpdate("INSERT INTO reporting_lock_probe VALUES (2)")
                                 }
                             }
-                            readSingleString(
-                                executionPath,
-                                "SELECT state FROM execution_order_intents WHERE id=$contendedId",
-                            ) shouldBe OrderIntentState.CONFIRMED.name
-                            readSingleString(
-                                executionPath,
-                                "SELECT order_txid FROM execution_order_intents WHERE id=$contendedId",
-                            ) shouldBe "TX-reporting-locked"
-                            (elapsed < 4_000) shouldBe true
-                            timings = Triple(baseline, elapsed, contendedId)
-                        } finally {
-                            releaseCoordinator.complete(Unit)
-                            lockJob.join()
                         }
+                        readSingleString(
+                            executionPath,
+                            "SELECT state FROM execution_order_intents WHERE id=$contendedId",
+                        ) shouldBe OrderIntentState.CONFIRMED.name
+                        readSingleString(
+                            executionPath,
+                            "SELECT order_txid FROM execution_order_intents WHERE id=$contendedId",
+                        ) shouldBe "TX-reporting-locked"
                     }
-                    val (uncontendedMillis, contendedMillis, intentId) = timings
-                    println(
-                        "Execution DB pending+outcome writes: ${uncontendedMillis}ms without reporting lock, " +
-                            "${contendedMillis}ms with reporting DB transaction and coordinator lock held.",
-                    )
-                    intentId shouldBe 2
                 } finally {
                     reportLock.rollback()
                     reportLock.close()
@@ -152,10 +113,10 @@ class ExecutionJournalCutoverTest : StringSpec() {
             }
         }
 
-        "live placement and execution outcomes survive reporting failure after initialization" {
+        "live placement and execution outcomes survive reporting database loss after initialization" {
             withTempDirectory { directory ->
                 val reportingPath = directory.resolve("reporting.db")
-                val reportDatabase = DatabaseConfig.init(reportingPath.toString())
+                DatabaseConfig.init(reportingPath.toString())
                 val executionPath = directory.resolve("execution.db")
                 val database = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
@@ -166,30 +127,17 @@ class ExecutionJournalCutoverTest : StringSpec() {
                         reportingPath.toString(),
                     ).initialize()
                 }
-                val tradeRepository = SqliteTradeRepositoryImpl(reportDatabase)
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
-                DriverManager.getConnection("jdbc:sqlite:$reportingPath").use { connection ->
-                    connection.createStatement().use {
-                        it.execute(
-                            "CREATE TRIGGER injected_report_failure BEFORE INSERT ON trades " +
-                                "BEGIN SELECT RAISE(ABORT, 'injected report failure'); END",
-                        )
-                    }
-                }
 
                 runTest {
                     executeOneLiveBuy(executor)
                     repository.hasUnresolvedIntents() shouldBe false
                 }
                 fake.executedOrders.size shouldBe 1
-                runTest {
-                    shouldThrow<Exception> { TradeProjectionServiceImpl(repository, tradeRepository).projectPending() }
-                }
                 database.connect().use { connection ->
                     connection.createStatement().use { statement ->
                         statement.executeQuery(
@@ -216,11 +164,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                     val retainedOutcome = restartedRepository.loadProjectionEvents(0, 10).single()
                     retainedOutcome.intent.state shouldBe OrderIntentState.CONFIRMED
                 }
-                shouldThrow<Exception> {
-                    runTest {
-                        TradeProjectionServiceImpl(restartedRepository, tradeRepository).projectPending()
-                    }
-                }
                 runTest {
                     restartedRepository.loadProjectionEvents(0, 10).single().intent.state shouldBe
                         OrderIntentState.CONFIRMED
@@ -230,7 +173,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val offlineFake = FakeKrakenService()
                 val offlineExecutor = OrderExecutorImpl(
                     offlineFake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(restartedRepository),
                 )
                 runTest {
@@ -255,7 +197,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
 
@@ -267,7 +208,7 @@ class ExecutionJournalCutoverTest : StringSpec() {
 
         "live order executor fails closed when its execution journal dependency is missing" {
             val fake = FakeKrakenService()
-            val executor = OrderExecutorImpl(fake, tradeHistoryService = null)
+            val executor = OrderExecutorImpl(fake)
 
             runTest { shouldThrow<IllegalStateException> { executeOneLiveBuy(executor) } }
 
@@ -281,7 +222,7 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val legacyService = OrderIntentServiceImpl(
                     SqliteOrderIntentRepositoryImpl(DatabaseConfig.init(reportingPath.toString())),
                 )
-                val executor = OrderExecutorImpl(fake, tradeHistoryService = null, orderIntentService = legacyService)
+                val executor = OrderExecutorImpl(fake, orderIntentService = legacyService)
 
                 runTest {
                     shouldThrow<IllegalStateException> { executeOneLiveBuy(executor, "legacy-journal") }
@@ -312,7 +253,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
 
@@ -336,46 +276,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                         reportingPath.toString(),
                     ).initialize()
                     restartedRepository.loadUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
-                }
-            }
-        }
-
-        "full stopped reporting queue cannot block a durable live order projection" {
-            withTempDirectory { directory ->
-                val (database, repository) = readyJournal(
-                    directory.resolve("execution.db"),
-                    directory.resolve("reporting.db"),
-                )
-                val dispatcher = ReportingDispatcher(
-                    historyServiceProvider = { error("The stopped reporting worker must not be called") },
-                    projectionServiceProvider = { error("The stopped reporting worker must not be called") },
-                )
-                val queuedReport = TradeRecord(
-                    timestamp = Instant.parse("2026-10-08T12:00:00Z"),
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = Asset.BTC,
-                    volume = java.math.BigDecimal("0.02500000"),
-                    usdAmount = java.math.BigDecimal("25.00"),
-                    success = true,
-                    dryRun = true,
-                )
-                repeat(257) { dispatcher.enqueueTrade(queuedReport) }
-                val fake = FakeKrakenService()
-                val executor = OrderExecutorImpl(
-                    fake,
-                    tradeHistoryService = null,
-                    orderIntentService = orderIntentService(repository),
-                    reportingDispatcher = dispatcher,
-                )
-
-                runTest { executeOneLiveBuy(executor, "full-report-queue") }
-
-                fake.executedOrders.size shouldBe 1
-                runTest {
-                    val projected = repository.loadProjectionEvents(0, 10).single()
-                    projected.intent.state shouldBe OrderIntentState.CONFIRMED
-                    projected.journalId shouldBe database.journalId()
                 }
             }
         }
@@ -523,7 +423,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
             val fake = FakeKrakenService()
             val executor = OrderExecutorImpl(
                 fake,
-                tradeHistoryService = null,
                 orderIntentService = orderIntentService(repository),
             )
 
@@ -575,7 +474,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val firstFake = FakeKrakenService()
                 val firstExecutor = OrderExecutorImpl(
                     firstFake,
-                    tradeHistoryService = null,
                     orderIntentService = crashAfterCommit,
                 )
 
@@ -596,7 +494,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(restartedRepository),
                 )
 
@@ -626,7 +523,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 }
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
 
@@ -651,7 +547,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 }
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
 
@@ -729,7 +624,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 }
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
 
@@ -755,7 +649,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 }
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
 
@@ -950,7 +843,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
                 runTest { shouldThrow<IllegalStateException> { executeOneLiveBuy(executor, "unknown-legacy-state") } }
@@ -1028,7 +920,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
                 runTest { shouldThrow<IllegalStateException> { executeOneLiveBuy(executor, "unknown-legacy-guard") } }
@@ -1084,7 +975,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(restartedRepository),
                 )
                 runTest {
@@ -1125,7 +1015,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(restartedRepository),
                 )
                 runTest { shouldThrow<IllegalStateException> { executeOneLiveBuy(executor, "backup-changed") } }
@@ -1203,7 +1092,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val fake = FakeKrakenService()
                 val executor = OrderExecutorImpl(
                     fake,
-                    tradeHistoryService = null,
                     orderIntentService = orderIntentService(repository),
                 )
                 runTest { shouldThrow<IllegalStateException> { executeOneLiveBuy(executor, "cutover-blocked") } }
@@ -1352,92 +1240,6 @@ class ExecutionJournalCutoverTest : StringSpec() {
             }
         }
 
-        "report projection failure retries idempotently without writing the execution journal" {
-            withTempDirectory { directory ->
-                val reportPath = directory.resolve("reporting.db")
-                val (executionDatabase, executionRepository) = readyJournal(
-                    directory.resolve("execution.db"),
-                    reportPath,
-                )
-                val reportDatabase = DatabaseConfig.init(reportPath.toString())
-                val tradeRepository = SqliteTradeRepositoryImpl(reportDatabase)
-                var intentId = 0
-                runTest { intentId = executionRepository.savePending(newIntent()) }
-                runTest {
-                    executionRepository.recordOutcome(
-                        intentId,
-                        OrderIntentState.CONFIRMED,
-                        "TX-PROJECTION",
-                        null,
-                        Instant.now(),
-                        newIntent().volume,
-                    )
-                }
-                val projector = TradeProjectionServiceImpl(executionRepository, tradeRepository)
-                DriverManager.getConnection("jdbc:sqlite:$reportPath").use { connection ->
-                    connection.createStatement().use {
-                        it.execute(
-                            "CREATE TRIGGER injected_report_failure BEFORE INSERT ON trades " +
-                                "BEGIN SELECT RAISE(ABORT, 'injected report failure'); END",
-                        )
-                    }
-                }
-
-                runTest { shouldThrow<Exception> { projector.projectPending() } }
-                readSingleLong(
-                    Path.of(executionDatabase.path),
-                    "SELECT COUNT(*) FROM execution_projection_outbox",
-                ) shouldBe
-                    1L
-                readSingleString(
-                    Path.of(executionDatabase.path),
-                    "SELECT state FROM execution_order_intents WHERE id=$intentId",
-                ) shouldBe OrderIntentState.CONFIRMED.name
-                readSingleString(
-                    Path.of(executionDatabase.path),
-                    "SELECT order_txid FROM execution_order_intents WHERE id=$intentId",
-                ) shouldBe "TX-PROJECTION"
-
-                DriverManager.getConnection("jdbc:sqlite:$reportPath").use { connection ->
-                    connection.createStatement().use { it.execute("DROP TRIGGER injected_report_failure") }
-                }
-                DriverManager.getConnection("jdbc:sqlite:${executionDatabase.path}").use { connection ->
-                    connection.createStatement().use {
-                        it.execute(
-                            "CREATE TRIGGER execution_outbox_is_immutable BEFORE UPDATE " +
-                                "ON execution_projection_outbox BEGIN SELECT RAISE(ABORT, 'outbox update forbidden'); END",
-                        )
-                    }
-                }
-
-                var projectedCount = 0
-                val restartedProjector = TradeProjectionServiceImpl(executionRepository, tradeRepository)
-                runTest { projectedCount = restartedProjector.projectPending() }
-                projectedCount shouldBe 1
-                var reportRowsBeforeRetry = emptyList<com.gemini.krakenbot.model.TradeRecord>()
-                runTest {
-                    reportRowsBeforeRetry =
-                        tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(60))
-                }
-                reportRowsBeforeRetry.size shouldBe 1
-
-                runTest { projectedCount = restartedProjector.projectPending() }
-                projectedCount shouldBe 0
-                var reportRowsAfterRetry = emptyList<com.gemini.krakenbot.model.TradeRecord>()
-                runTest {
-                    reportRowsAfterRetry =
-                        tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(60))
-                }
-                reportRowsAfterRetry.size shouldBe 1
-                reportRowsAfterRetry.single().orderTxid shouldBe "TX-PROJECTION"
-                readSingleLong(
-                    reportPath,
-                    "SELECT CAST(value AS INTEGER) FROM history_sync_metadata " +
-                        "WHERE key='execution-projection:${executionDatabase.journalId()}'",
-                ) shouldBe 1L
-            }
-        }
-
         "application wiring injects a ready execution journal for production live submission" {
             withTempDirectory { directory ->
                 val reportingPath = directory.resolve("reporting.db").toString()
@@ -1507,7 +1309,12 @@ class ExecutionJournalCutoverTest : StringSpec() {
                     fake.executedOrders.size shouldBe 1
                     runTest {
                         application.koin.get<ExecutionOrderIntentRepository>().countUnresolvedIntents() shouldBe 0L
+                        val binding = application.koin.get<ExecutionAccountBindingRepository>().load()
+                        binding?.accountIdentityDigest shouldBe sha256("AA00TESTTESTTEST".toByteArray())
+                        binding?.credentialGenerationDigest shouldBe sha256("fake-account".toByteArray())
+                        binding?.auditVerified shouldBe true
                     }
+                    fake.getAuthenticatedAccountIdentityCallCount shouldBe 1
                 } finally {
                     application.close()
                     restoreSystemProperty("kraken.db.path", previousReportingPath)
@@ -1725,6 +1532,62 @@ class ExecutionJournalCutoverTest : StringSpec() {
             }
         }
 
+        "unmigrated reporting database without an order-intent table yields an empty execution import" {
+            withTempDirectory { directory ->
+                val reportingPath = directory.resolve("unmigrated-reporting.db")
+                DriverManager.getConnection("jdbc:sqlite:$reportingPath").use { connection ->
+                    connection.createStatement().use {
+                        it.execute("CREATE TABLE unrelated_reporting_data (id INTEGER PRIMARY KEY, value TEXT)")
+                        it.execute("INSERT INTO unrelated_reporting_data(value) VALUES ('retained')")
+                    }
+                }
+                val executionPath = directory.resolve("execution.db")
+                val database = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                runTest {
+                    ExecutionJournalBootstrap(database, repository, reportingPath.toString()).initialize()
+                }
+
+                readSingleLong(executionPath, "SELECT COUNT(*) FROM execution_order_intents") shouldBe 0L
+                readSingleLong(executionPath, "SELECT imported_intents FROM execution_legacy_migrations") shouldBe 0L
+                readSingleLong(executionPath, "SELECT cutover_guard_written FROM execution_legacy_migrations") shouldBe
+                    1L
+                readSingleString(reportingPath, "SELECT value FROM unrelated_reporting_data") shouldBe "retained"
+                database.ensureReadyForSubmission()
+            }
+        }
+
+        "interrupted migration backup is archived before a fresh retained snapshot is created" {
+            withTempDirectory { directory ->
+                val reportingPath = directory.resolve("reporting.db")
+                DatabaseConfig.init(reportingPath.toString())
+                val executionPath = directory.resolve("execution.db")
+                val database = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
+                val retainedBackup = directory.resolve("reporting.db.pre-execution-journal.bak")
+                val interruptedBackup = "prior interrupted backup".toByteArray()
+                Files.write(retainedBackup, interruptedBackup)
+
+                runTest {
+                    ExecutionJournalBootstrap(
+                        database,
+                        SqliteExecutionOrderIntentRepositoryImpl(database),
+                        reportingPath.toString(),
+                    ).initialize()
+                }
+
+                val archivedBackups = Files.list(directory).use { files ->
+                    files.filter {
+                        it.fileName.toString().startsWith("reporting.db.pre-execution-journal.bak.prior-")
+                    }.toList()
+                }
+                archivedBackups.size shouldBe 1
+                Files.readAllBytes(archivedBackups.single()).contentEquals(interruptedBackup) shouldBe true
+                readSingleString(retainedBackup, "PRAGMA integrity_check") shouldBe "ok"
+                database.ensureReadyForSubmission()
+            }
+        }
+
         "v1 execution journals migrate to an unbound execution account anchor" {
             withTempDirectory { directory ->
                 val reportingPath = directory.resolve("reporting.db")
@@ -1813,127 +1676,34 @@ class ExecutionJournalCutoverTest : StringSpec() {
             }
         }
 
-        "simulation reporting initialization failure is propagated to the caller" {
-            val historyService = mockk<TradeHistoryService>(relaxed = true)
-            coEvery { historyService.init() } throws IOException("reporting database unavailable")
-            val dispatcher = ReportingDispatcher(
-                historyServiceProvider = { historyService },
-                projectionServiceProvider = { error("projection service is not needed for initialization") },
-            )
-
-            runTest { shouldThrow<IOException> { dispatcher.initializeBeforeSimulationCycle() } }
-
-            coVerify(exactly = 1) { historyService.init() }
-        }
-
-        "simulation does not read account state before reporting initialization succeeds" {
+        "fixed allocation dry run submits planned orders with dry run enabled" {
             val allocations = listOf(
                 Allocation(Asset.BTC, 40.0),
                 Allocation(Asset.ETH, 40.0),
                 Allocation(Asset.USD, 20.0),
             )
             val config = TestFixtures.config(
-                settings = TestFixtures.settings(simulation = true, dryRun = false),
+                settings = TestFixtures.settings(dryRun = true, simulation = false),
                 allocations = allocations,
             )
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns config
-            val reporting = mockk<TradeHistoryService>(relaxed = true)
-            coEvery { reporting.init() } throws IOException("simulation seed unavailable")
-            var balanceReads = 0
             val kraken = FakeKrakenService().apply {
-                balanceSupplier = {
-                    balanceReads += 1
-                    mapOf(Asset.USD to 1000.0)
-                }
+                balanceSupplier = { mapOf(Asset.USD to 1000.0) }
                 pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 100.0, Asset.ETH_USD_PAIR to 100.0) }
             }
-            val analyzer = PortfolioAnalyzerImpl(kraken, configService, mockk(relaxed = true))
             val manager = PortfolioManagerImpl(
                 configService = configService,
-                portfolioAnalyzer = analyzer,
-                orderExecutor = OrderExecutorImpl(kraken, tradeHistoryService = null),
+                portfolioAnalyzer = PortfolioAnalyzerImpl(kraken, configService),
+                orderExecutor = OrderExecutorImpl(kraken),
                 krakenService = kraken,
-                reportingDispatcher = ReportingDispatcher(
-                    historyServiceProvider = { reporting },
-                    projectionServiceProvider = { error("projection service is not needed for this test") },
-                ),
             )
 
-            runTest { shouldThrow<IOException> { manager.performRebalanceCycle() } }
+            runTest { manager.performRebalanceCycle() }
 
-            balanceReads shouldBe 0
-        }
-
-        "fixed cash dry-run plan ignores failed history and ATH reads" {
-            withTempDirectory { _ ->
-                val allocations = listOf(
-                    Allocation(Asset.BTC, 40.0),
-                    Allocation(Asset.ETH, 40.0),
-                    Allocation(Asset.USD, 20.0),
-                )
-                val settings = TestFixtures.settings(
-                    dryRun = true,
-                    simulation = false,
-                    fiatMaxDrawdown = 20.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = TestFixtures.config(settings = settings, allocations = allocations)
-                val configService = mockk<ConfigService>()
-                every { configService.getConfig() } returns config
-                val reporting = mockk<TradeHistoryService>(relaxed = true)
-                coEvery { reporting.syncTradesFromKraken() } throws IllegalStateException("history database locked")
-                coEvery { reporting.syncLedgersFromKraken() } throws IllegalStateException("history database locked")
-                coEvery { reporting.rebuildHistoricalSnapshotsIfNeeded(any()) } throws
-                    IllegalStateException("history database locked")
-                val stats = mockk<PortfolioStatsRepository>(relaxed = true)
-                coEvery { stats.load() } throws IllegalStateException("ATH database unavailable")
-                val kraken = FakeKrakenService().apply {
-                    balanceSupplier = { mapOf(Asset.USD to 1000.0) }
-                    pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 100.0, Asset.ETH_USD_PAIR to 100.0) }
-                }
-                val analyzer = PortfolioAnalyzerImpl(kraken, configService, stats)
-                val executor = OrderExecutorImpl(kraken, reporting)
-                val manager = PortfolioManagerImpl(
-                    configService = configService,
-                    portfolioAnalyzer = analyzer,
-                    orderExecutor = executor,
-                    krakenService = kraken,
-                    reportingDispatcher = ReportingDispatcher({
-                        error("reporting unavailable")
-                    }, { error("reporting unavailable") }),
-                )
-
-                runTest { manager.performRebalanceCycle() }
-
-                val currentValues = mapOf(Asset.USD to java.math.BigDecimal("1000"))
-                val oldDeployment = RebalancerEngine.calculateFiatDeployment(
-                    java.math.BigDecimal("20"),
-                    settings,
-                )
-                val oldEffectiveUsd = RebalancerEngine.calculateEffectiveUsdTarget(oldDeployment, allocations)
-                val oldCryptoScale = RebalancerEngine.calculateCryptoScaleFactor(oldEffectiveUsd, allocations)
-                val oldTargets = RebalancerEngine.analyzeDeviationsPlan(
-                    totalPortfolioValueUSD = java.math.BigDecimal("1000"),
-                    currentValuesUSD = currentValues,
-                    effectiveUsdTarget = oldEffectiveUsd,
-                    cryptoScaleFactor = oldCryptoScale,
-                    allocations = allocations,
-                    settings = settings,
-                )
-                oldTargets.buyOrders[Asset.BTC]!!.shouldBeEqualComparingTo(java.math.BigDecimal("500.00"))
-                oldTargets.buyOrders[Asset.ETH]!!.shouldBeEqualComparingTo(java.math.BigDecimal("500.00"))
-
-                kraken.executedOrders.map { it.side to it.volume.multiply(java.math.BigDecimal("100")) } shouldBe
-                    listOf(
-                        "buy" to java.math.BigDecimal("400.00000000"),
-                        "buy" to java.math.BigDecimal("400.00000000"),
-                    )
-                coVerify(exactly = 0) { reporting.syncTradesFromKraken() }
-                coVerify(exactly = 0) { reporting.syncLedgersFromKraken() }
-                coVerify(exactly = 0) { reporting.rebuildHistoricalSnapshotsIfNeeded(any()) }
-                coVerify(exactly = 0) { stats.load() }
-            }
+            kraken.executedOrders.map { it.side to it.dryRun } shouldBe
+                listOf("buy" to true, "buy" to true)
+            kraken.getAuthenticatedAccountIdentityCallCount shouldBe 0
         }
     }
 

@@ -7,7 +7,6 @@ import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 import java.math.RoundingMode
-import kotlin.math.pow
 
 /**
  * Pure domain calculator for portfolio rebalancing math — no network, database, or
@@ -67,112 +66,9 @@ object RebalancerEngine {
         )
     }
 
-    fun calculateDrawdown(totalPortfolioValueUSD: BigDecimal, ath: BigDecimal): BigDecimal =
-        if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
-            val diff = ath.subtract(totalPortfolioValueUSD)
-            diff
-                .multiply(PrecisionConstants.HUNDRED)
-                .divide(
-                    ath,
-                    PrecisionConstants.SCALE_PERCENT,
-                    RoundingMode.HALF_UP,
-                )
-        } else {
-            BigDecimal.ZERO
-        }
-
-    /**
-     * Proportionally adjusts the portfolio All-Time High when external capital flows (deposits or withdrawals) occur.
-     *
-     * In portfolio management (Modified Dietz / Time-Weighted High-Water Mark):
-     * A withdrawal must not artificially manufacture a market crash drawdown.
-     * A deposit must not artificially inflate the market-achieved high-water mark.
-     *
-     * ATH_new = ATH_current * (1 + netFlowUSD / preFlowValueUSD)
-     *
-     * If preFlowValueUSD <= 0 or currentAth <= 0, the ATH is not adjusted.
-     */
-    fun adjustAthForCashFlow(currentAth: BigDecimal, preFlowValueUSD: BigDecimal, netFlowUSD: BigDecimal): BigDecimal {
-        if (currentAth <= BigDecimal.ZERO || preFlowValueUSD <= BigDecimal.ZERO || netFlowUSD.signum() == 0) {
-            return currentAth
-        }
-        val postFlowValueUSD = preFlowValueUSD.add(netFlowUSD)
-        if (postFlowValueUSD <= BigDecimal.ZERO) {
-            return BigDecimal.ZERO
-        }
-        val factor = postFlowValueUSD.divide(
-            preFlowValueUSD,
-            PrecisionConstants.SCALE_PERCENT + 4,
-            RoundingMode.HALF_UP,
-        )
-        return currentAth.multiply(factor).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-    }
-
-    fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
-        if (!settings.fiatDeploymentThresholdPercent.isFinite() ||
-            drawdownPct <= BigDecimal.ZERO ||
-            settings.fiatMaxDrawdown <= 0.0 ||
-            settings.fiatDeploymentExponent <= 0.0
-        ) {
-            return BigDecimal.ZERO
-        }
-
-        val threshold = BigDecimal.valueOf(settings.fiatDeploymentThresholdPercent.coerceAtLeast(0.0))
-        if (drawdownPct <= threshold) {
-            return BigDecimal.ZERO
-        }
-
-        val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
-        val effectiveDrawdown = drawdownPct.subtract(threshold)
-        val effectiveMaxDD = maxDD.subtract(threshold)
-        if (effectiveMaxDD <= BigDecimal.ZERO) {
-            return PrecisionConstants.HUNDRED
-        }
-
-        var ratio =
-            effectiveDrawdown.divide(
-                effectiveMaxDD,
-                PrecisionConstants.SCALE_PERCENT + 4,
-                RoundingMode.HALF_UP,
-            )
-        ratio = ratio.coerceAtMost(BigDecimal.ONE)
-
-        // Deploy% = (DD / MaxDD)^exponent × 100; ratio already capped at 1 so Deploy% ≤ 100.
-        // Fractional exponents require Double.pow (~15-digit mantissa); at current
-        // exponent range 1–3 this is well within SCALE_PERCENT precision. Re-enter
-        // BigDecimal immediately, guard non-finite, and re-scale — do not widen the
-        // double domain.
-        val deployDouble = (ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0)
-            .takeIf { it.isFinite() } ?: 0.0
-        return BigDecimal
-            .valueOf(deployDouble)
-            .setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
-            .coerceAtMost(PrecisionConstants.HUNDRED)
-    }
-
-    fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal, allocations: List<Allocation>): BigDecimal {
-        val baseUsdTarget = allocations
-            .filter { it.symbol.isUsd }
-            .sumOf { it.targetPercent.toBigDecimal() }
-        val hasUsdTarget = baseUsdTarget > BigDecimal.ZERO
-        val hasNonUsdTarget = allocations.any { !it.symbol.isUsd && it.targetPercent > 0.0 }
-
-        // Shrink configured USD target only when there is a non-zero USD allocation
-        // and a positive crypto target can receive the freed allocation.
-        return if (fiatDeploymentPct > BigDecimal.ZERO && hasUsdTarget && hasNonUsdTarget) {
-            val factor =
-                BigDecimal.ONE.subtract(
-                    fiatDeploymentPct.divide(
-                        PrecisionConstants.HUNDRED,
-                        PrecisionConstants.SCALE_PERCENT,
-                        RoundingMode.HALF_UP,
-                    ),
-                )
-            baseUsdTarget.multiply(factor)
-        } else {
-            baseUsdTarget
-        }
-    }
+    fun calculateFixedUsdTarget(allocations: List<Allocation>): BigDecimal = allocations
+        .filter { it.symbol.isUsd }
+        .sumOf { it.targetPercent.toBigDecimal() }
 
     fun calculateCryptoScaleFactor(effectiveUsdTarget: BigDecimal, allocations: List<Allocation>): BigDecimal {
         val totalNonUsdTarget = allocations
@@ -199,12 +95,10 @@ object RebalancerEngine {
         cryptoScaleFactor: BigDecimal,
         allocations: List<Allocation>,
         settings: Settings,
-        trendingAssets: Set<String> = emptySet(),
     ): RebalancePlan {
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
         val events = mutableListOf<RebalanceEvent>()
-        val trendSuppressedSells = sortedSetOf<String>()
         var usdTriggered = false
         var usdDeviationAmount = BigDecimal.ZERO
         val allDeviations = mutableMapOf<String, BigDecimal>()
@@ -250,11 +144,7 @@ object RebalancerEngine {
                 if (isTriggered) {
                     // Overweight (positive DevUSD) → sell excess; underweight → buy deficit.
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
-                        if (symbolVal in trendingAssets) {
-                            trendSuppressedSells.add(symbolVal)
-                        } else {
-                            sellOrders[symbolVal] = metrics.deviationUSD
-                        }
+                        sellOrders[symbolVal] = metrics.deviationUSD
                     } else {
                         buyOrders[symbolVal] = metrics.deviationUSD.abs()
                     }
@@ -274,13 +164,6 @@ object RebalancerEngine {
                 sellOrders = sellOrders,
                 events = events,
             )
-        }
-
-        // A withdrawal correction restores the configured USD reserve, so a trend cannot veto its
-        // necessary overweight sells. Do not log those same sells as suppressed after correcting them.
-        val correctingWithdrawal = fiatCorrectionWillRun && usdDeviationAmount.signum() < 0
-        if (!correctingWithdrawal) {
-            trendSuppressedSells.forEach { events.add(RebalanceEvent.TrendSuppressedSell(it)) }
         }
 
         return RebalancePlan(buyOrders, sellOrders, events)

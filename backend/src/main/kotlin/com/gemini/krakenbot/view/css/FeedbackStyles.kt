@@ -55,26 +55,6 @@ object FeedbackStyles {
             }
         }
 
-        ".${CssClass.Activity.EmptyHistoryBox}" {
-            display = Display.flex
-            flexDirection = FlexDirection.column
-            alignItems = Align.center
-            justifyContentRaw("center")
-            padding = Padding(4.rem, 1.rem)
-            color = CssTheme.colorTextMuted
-            textAlign = TextAlign.center
-            gap = 0.5.rem
-        }
-
-        ".${CssClass.Activity.EmptyHistoryBox} svg" {
-            color = CssTheme.colorIconFaint
-            marginBottom = 0.5.rem
-        }
-
-        ".${CssClass.Activity.EmptyHistoryBox} h3" {
-            color = CssTheme.colorTextSecondary
-        }
-
         ".${CssClass.Dashboard.WaitingTitle}" {
             fontSize = 1.25.rem
             fontWeight = FontWeight.w600

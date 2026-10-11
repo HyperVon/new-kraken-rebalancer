@@ -30,6 +30,7 @@ import com.gemini.krakenbot.service.actual.benchmark.BenchmarkSegmentStatus
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
 import com.gemini.krakenbot.view.component.renderActualObservationChartSvg
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -486,6 +487,118 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 postResp.status shouldBe HttpStatusCode.SeeOther
                 postResp.headers[HttpHeaders.Location] shouldBe "/actual"
                 coVerify(exactly = 1) { actualObservationDispatcher.startBenchmark(config) }
+            }
+        }
+
+        "Actual page renders lifecycle states and prospective benchmark outcomes" {
+            val config = TestFixtures.config(
+                settings = TestFixtures.settings(dryRun = true, simulation = false, loopDelaySeconds = 60),
+                allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+            )
+            every { configService.getConfig() } returns config
+
+            testApplication {
+                application { configureTestEnv() }
+
+                suspend fun render(page: ActualObservationPage): String {
+                    coEvery { actualObservationDispatcher.readCurrent(config, 250) } returns page
+                    return client.get("/actual").bodyAsText()
+                }
+
+                fun page(state: ActualPageState, observations: List<ActualObservation> = emptyList()) =
+                    ActualObservationPage(
+                        state = state,
+                        scopeSymbols = listOf("BTC", "USD"),
+                        scopeFingerprint = "f".repeat(64),
+                        accountReference = null,
+                        observations = observations,
+                        stale = false,
+                        lastCaptureIssue = null,
+                    )
+
+                val unavailableStates = listOf(
+                    ActualPageState.SIMULATION to ViewText.ACTUAL_SIMULATION,
+                    ActualPageState.ACCOUNT_UNVERIFIED to ViewText.ACTUAL_UNVERIFIED_ACCOUNT,
+                    ActualPageState.NO_OBSERVATIONS to ViewText.ACTUAL_NO_OBSERVATIONS,
+                    ActualPageState.STORAGE_UNAVAILABLE to ViewText.ACTUAL_STORAGE_UNAVAILABLE,
+                )
+                unavailableStates.forEach { (state, message) ->
+                    val html = render(page(state))
+                    html shouldContain message
+                    html shouldContain ViewText.ACTUAL_CHART_EMPTY
+                }
+
+                val complete = observation(
+                    "benchmark-page",
+                    "2026-10-10T12:00:00Z",
+                    ActualObservationStatus.COMPLETE,
+                    "1000.00",
+                )
+                val point = BenchmarkComparisonPoint(
+                    observationId = complete.observationId,
+                    observedAt = complete.observedAt,
+                    actualValueUsd = BigDecimal("1001"),
+                    holdValueUsd = BigDecimal("1000"),
+                    differenceUsd = BigDecimal.ONE,
+                    differencePercent = BigDecimal.ONE,
+                )
+                val terminalSegment = BenchmarkSegment(
+                    segmentId = "segment-terminal",
+                    baselineObservationId = complete.observationId,
+                    accountIdentityDigest = "a".repeat(64),
+                    scopeFingerprint = complete.scopeFingerprint,
+                    scopeSymbols = complete.scopeSymbols,
+                    baselineAt = complete.observedAt,
+                    initialHoldings = mapOf("BTC" to BigDecimal.ONE, "USD" to BigDecimal("10")),
+                    baselineMarks = mapOf("BTC" to BigDecimal("990"), "USD" to BigDecimal.ONE),
+                    baselineTotalUsd = BigDecimal("1000"),
+                    status = BenchmarkSegmentStatus.TERMINATED,
+                    terminationReason = "manual trade detected",
+                    lastVerifiedEventTime = complete.observedAt,
+                    createdAt = complete.observedAt,
+                )
+                val outcomes = listOf(
+                    BenchmarkStatus.READY to ViewText.ACTUAL_BENCHMARK_STATUS_TRACKING,
+                    BenchmarkStatus.PENDING_EVIDENCE to ViewText.ACTUAL_BENCHMARK_STATUS_PENDING,
+                    BenchmarkStatus.TERMINATED to ViewText.ACTUAL_BENCHMARK_STATUS_TERMINATED,
+                    BenchmarkStatus.UNAVAILABLE to ViewText.ACTUAL_BENCHMARK_STATUS_UNAVAILABLE,
+                )
+                outcomes.forEach { (status, label) ->
+                    val result = BenchmarkComparisonResult(
+                        status = status,
+                        segment = if (status == BenchmarkStatus.TERMINATED) terminalSegment else null,
+                        points = listOf(point),
+                        latestPoint = point.copy(
+                            differenceUsd = when (status) {
+                                BenchmarkStatus.READY -> BigDecimal.ONE
+                                BenchmarkStatus.PENDING_EVIDENCE -> BigDecimal.ZERO
+                                else -> BigDecimal.ONE.negate()
+                            },
+                        ),
+                        unavailableReason = "continuity evidence needs review",
+                    )
+                    val html = render(page(ActualPageState.READY, listOf(complete)).copy(benchmark = result))
+                    html shouldContain label.replace("&", "&amp;")
+                    html shouldContain "actual-hold-point"
+                    html shouldContain "continuity evidence needs review"
+                    if (status == BenchmarkStatus.TERMINATED || status == BenchmarkStatus.UNAVAILABLE) {
+                        html shouldContain ViewText.ACTUAL_BENCHMARK_RESTART_BUTTON
+                    }
+                    if (status == BenchmarkStatus.TERMINATED) {
+                        html shouldContain "manual trade detected"
+                    }
+                }
+
+                val notStarted = BenchmarkComparisonResult(
+                    status = BenchmarkStatus.NO_ACTIVE_SEGMENT,
+                    segment = null,
+                    points = emptyList(),
+                    latestPoint = null,
+                    unavailableReason = ViewText.ACTUAL_BENCHMARK_STATUS_NOT_STARTED,
+                )
+                val restart = render(page(ActualPageState.READY, listOf(complete)).copy(benchmark = notStarted))
+                restart shouldContain ViewText.ACTUAL_BENCHMARK_START_BUTTON.replace("&", "&amp;")
+                restart shouldContain "name=\"csrfToken\""
             }
         }
     }

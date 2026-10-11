@@ -49,12 +49,7 @@ object NavigationStyles {
             borderColor = CssTheme.colorWhiteFaint
         }
 
-        // Parens are load-bearing: without them `"A" + "B" { }` parses as
-        // `"A" + ("B".invoke(...))` and every selector except the last is dropped.
-        (
-            ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
-                ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible"
-            ) {
+        ".${CssClass.Navigation.Link}:focus-visible" {
             outlineRaw("none")
             borderColor = CssTheme.colorBluePrimary
             boxShadowRaw(CssTheme.focusRingStrong)

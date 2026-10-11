@@ -26,21 +26,23 @@ Before merging or deleting a type, name which pattern it implements.
 - `simulation` selects **which** adapter (`KrakenServiceImpl` vs
   `SimulatedKrakenService`); `dryRun` is enforced **inside** the adapter's
   `executeOrder`, not in the router.
-- `withStableBackend` pins the adapter on `CoroutineContext` for the whole
-  cycle/sync so a mid-cycle settings flip cannot split sell/buy across backends.
+- `withStableBackend` pins the adapter on `CoroutineContext` for the complete
+  rebalance cycle so a settings change cannot split sell/buy across backends.
 - **Rule:** Never "simplify" by resolving the backend on every call inside a
   money path. Nested pins must reuse the outer pin (already implemented — do
   not break).
 
-### 3. Façade (`TradeHistoryServiceImpl`)
+### 3. Current snapshot and Actual evidence ownership
 
-- Public history API is a thin façade over Sync / SnapshotStore / Query /
-  (Reconstruction via Sync).
-- Controllers and `PortfolioManager` talk to the **façade port**, not the
-  collaborators.
-- **Rule:** Do not re-inline sync/query into `DashboardController` or merge
-  SnapshotStore + Sync into one class during cleanup. Add methods on the
-  façade; keep collaborator SRP.
+- `CurrentPortfolioState` is an in-memory `StateFlow` of the latest completed
+  cycle snapshot; it does not retain a timeline or write reporting data.
+- `ActualObservationDispatcher` queues eligible direct evidence off the order
+  path, while the Actual store preserves raw observations and gaps.
+- Prospective Buy & Hold is scoped to an eligible baseline and verified
+  forward event continuity.
+- **Rule:** Keep current Dashboard state, Actual evidence, and any safe legacy
+  account-continuity checks in their respective owners. Do not add general
+  trade/ledger sync or retrospective reconstruction.
 
 ### 4. Pure-ish domain calculator (`RebalancerEngine` + `PortfolioCalculations`)
 
@@ -48,19 +50,20 @@ Before merging or deleting a type, name which pattern it implements.
 - Logging is allowed for cycle diagnostics; `:common` `ViewText` (and other
   pure shared strings) may appear in failure messages — still treat as
   calculation logic, not a view adapter.
-- `PortfolioAnalyzerImpl` owns I/O (balances, prices, ATH) and **delegates**
+- `PortfolioAnalyzerImpl` owns I/O (balances and prices) and **delegates**
   math to the engine.
-- **Rule:** New trigger/ATH/dust logic goes in the engine/calculations — not in
-  the executor or a view. Price-safety abort (`Result.Failure`) stays in the
-  calculator path before orders.
+- **Rule:** The configured USD target is fixed; crypto is scaled by configured
+  proportions. Fiat correction and dust logic belong in the engine/calculations,
+  not in the executor or a view. Price-safety abort (`Result.Failure`) stays in
+  the calculator path before orders.
 
 ### 5. Orchestrator / brain / brawn SRP
 
 | Role | Type | Pattern job |
 | :--- | :--- | :--- |
-| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → snapshot |
+| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → current snapshot / Actual capture |
 | Brain | `PortfolioAnalyzerImpl` | Snapshot inputs + analysis; no `executeOrder` |
-| Brawn | `OrderExecutorImpl` | Place/settle only; no ATH/target % math |
+| Brawn | `OrderExecutorImpl` | Place/settle only; no planning or target % math |
 
 ### 6. SSR component composition (not a SPA)
 
@@ -72,8 +75,11 @@ Before merging or deleting a type, name which pattern it implements.
 
 ### 7. Hot vs cold Flow ownership
 
-- Hot `SharedFlow`: config watch, snapshot broadcast (UI).
-- Cold `Flow`: paginated sync, USD settle poll (execution — never broadcast).
+- Hot `SharedFlow`: saved Settings; `collectLatest` restarts the idle loop after
+  the active cycle's execution session exits.
+- Hot `StateFlow`: current latest completed Dashboard snapshot.
+- Bounded channel: best-effort Actual observation writes outside the order path.
+- Cold `Flow`: exchange retry and USD sell-settlement polling.
 - **Rule:** Promoting a cold poll to a hot SharedFlow "for reuse" is an
   architecture bug. See [docs/FLOWS.md](../../../docs/FLOWS.md).
 
@@ -133,8 +139,8 @@ rg 'KrakenServiceImpl|SimulatedKrakenService' backend/src/main/kotlin/com/gemini
 
 - A function mixes **I/O + pure math** → split so math is unit-testable without
   fakes (engine/calculations pattern).
-- A type has **two reasons to change** (e.g. sync pagination vs snapshot
-  broadcast) → separate collaborators behind a façade.
+- A type has **two reasons to change** (e.g. order submission vs HTML
+  rendering) → separate responsibilities.
 - The same **BigDecimal scale/rounding** appears 3+ times → `toUsdScale()` /
   `PrecisionConstants` / shared helper.
 - A view block is copied across pages → `view/component/*` + `:common`
@@ -152,8 +158,8 @@ rg 'KrakenServiceImpl|SimulatedKrakenService' backend/src/main/kotlin/com/gemini
 
 - `*Impl` file continuously growing with unrelated sections (sync + HTTP +
   math).
-- Constructor arity climbing because the type absorbed collaborators (prefer
-  façade + smaller types, like history).
+- Constructor arity climbing because the type absorbed collaborators → split
+  by current ownership and responsibility.
 - Comments explaining *what the next 40 lines do* → extract a named function
   instead of a comment (see
   [complex-code-comments](../complex-code-comments/SKILL.md)).

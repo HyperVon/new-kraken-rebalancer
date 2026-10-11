@@ -1,179 +1,93 @@
 # UI Manual QA — Interaction Checklist
 
-Read this from [SKILL.md](SKILL.md) Step 3. Mark each case `pass` / `fail` /
-`blocked` in `$QA_DIR`. Prefer `HtmlIds` / visible labels from `:common`.
+Read this from [SKILL.md](SKILL.md) Step 3. Mark each selected case `pass`,
+`fail`, or `blocked` in `$QA_DIR`. Prefer visible labels and shared IDs from
+`:common`.
 
-Stable ids (see `HtmlAttrs.HtmlIds`):
+Stable controls include `save-button`, `total-allocated-display`,
+`allocations-container`, `new-symbol-input`, `csrf-token`, and the Dashboard
+`header-status`. Do not look for retired History chart, view, trade-table, or
+report controls.
 
-| Id | Control |
-| :--- | :--- |
-| `save-button` | Settings save |
-| `total-allocated-display` | Allocation total badge |
-| `allocations-container` | Allocation rows |
-| `new-symbol-input` | Add-asset symbol field |
-| `show-dry-run-checkbox` | History dry-run trade filter |
-| `history-views-select` | Views dropdown |
-| `history-save-view-btn` / `history-set-default-btn` / `history-delete-view-btn` | View actions |
-| `portfolio-value-chart` / `asset-holdings-chart` / `allocation-drift-chart` / `cumulative-net-cash-flow-chart` | Chart canvases |
-| `trade-table-body` | Trade log rows |
-| `stat-*` | Six summary cards (ATH, trades, volume, fees, avg fee, avg slippage) |
-| `history-zoom-btn` / `history-views-select` | Zoom + view toolbar (glass styling) |
-| `history-chart-scrubber-input` | Pan scrubber under each History chart |
-
----
-
-## Post-deploy / stylesheet (`STYLE-*`)
-
-Run **before** style-sensitive History/Dashboard cases. Stylesheet responses are
-cached **24h**; stale CSS makes new controls look like default browser buttons.
+## Stylesheet and global navigation
 
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| STYLE-1 | Hard-refresh `/` (bypass cache) **or** inspect page `<link rel="stylesheet">` | Href is `/static/style.css?v=` with a non-empty version query (cache-bust after deploy) |
-| STYLE-2 | Open `/history`; inspect Views select, Save / Set default / Delete, Zoom − / + / Reset | Dark-theme glass controls (`history-zoom-btn`, view toolbar); **not** white native OS `<button>` / `<select>` chrome |
+| STYLE-1 | Hard-refresh `/` or inspect the stylesheet link | `/static/style.css?v=` has a non-empty version query. |
+| STYLE-2 | Inspect retained page headers at laptop width | Dashboard, Settings, and Actual headers remain readable and unclipped. |
+| GLOBAL-1 | Open `/`; click Settings, then Dashboard, then Actual | URLs are `/settings`, `/`, `/actual`; active nav marks the current page. |
+| GLOBAL-2 | Inspect the brand and mode plate on each page | Brand is present and plate reports the configured mode; SIMULATION takes precedence over DRY RUN. |
+| GLOBAL-3 | Inspect Dashboard status cluster | STREAM or STALE and relative age are shown; neither indicates the trading mode. |
+| GLOBAL-4 | Visit `/history` | Browser lands on `/actual` after the permanent redirect. |
+| GLOBAL-5 | Request each former `/api/history/*` endpoint | Each returns 410 Gone; no retrospective report data is served. |
+| GLOBAL-6 | Open `/api/health` and `/api/readiness` | Health reports process/current state; readiness reports unresolved intent or current-loop conditions. |
+| GLOBAL-7 | Click pause then resume on a retained page | Loop state changes visibly and the control remains usable. |
 
----
-
-## Global
-
-| ID | Steps | Expected |
-| :--- | :--- | :--- |
-| GLOBAL-1 | From `/`, click **History** nav | URL `/history`; History title; active tab highlight |
-| GLOBAL-2 | Click **Settings** nav | URL `/settings`; Settings form; active tab |
-| GLOBAL-3 | Click **Dashboard** nav | URL `/`; hero / summary visible |
-| GLOBAL-4 | Confirm brand wordmark | Header shows **Kraken** + **Rebalancer** on each page |
-| GLOBAL-5 | Dashboard status cluster | Chip reads **STREAM** or **STALE** (never **LIVE** / **DELAYED**) plus a relative age (e.g. `12s`) and clock time |
-| GLOBAL-6 | Use the capture helper's `laptop` profile (1280px) and reload `/` | Header + mode plate + stream/age stay readable (see REGRESSION-1) |
-| GLOBAL-7 | Visit `/`, `/history`, `/settings` | Brand-adjacent mode plate on **every** page; sim QA shows **SIMULATION** |
-| GLOBAL-8 | Hover / inspect mode-plate `title` on Dashboard | Tooltip explains the active mode (simulation / dry-run / live consequence copy) |
-| GLOBAL-9 | On each page, click the pause icon, then the play icon | State changes RUNNING → PAUSED → RUNNING; the state pill stays grouped with its action icon |
-
-Mode-plate precedence (assert when mode is known): **SIMULATION** if
-simulation is on (even if dry-run is also on); else **DRY RUN**; else
-**LIVE TRADING**.
-
----
-
-## Production regression guardrails (`REGRESSION-*`)
-
-Explicit checks for recent production UI regressions. Run on the capture
-helper's **laptop** profile (1280px), not only narrow mobile; add `desktop`
-when checking the canonical wide header.
-
-| ID | Steps | Expected |
-| :--- | :--- | :--- |
-| REGRESSION-1 | Dashboard at the `laptop` profile (`GLOBAL-6`) | Mode plate + **STREAM**/**STALE** + relative age/time not vertically squished, clipped, or stacked illegibly |
-| REGRESSION-2 | Dashboard → Asset Performance deviation legend | **Over target** and **Under target** each with amber/blue dot; labels spaced — not concatenated run-on text |
-| REGRESSION-3 | History chart legends (Portfolio Value, Asset Holdings, Allocation Deviation, Cumulative Net Cash Flow) | Legend swatches use line/point markers; not heavy bordered box chips around every label |
-
----
+Run header checks at the capture helper's laptop profile (1280px); include
+phone width when responsive behavior is in scope.
 
 ## Dashboard (`/`)
 
+Wait for one completed cycle; before then, the waiting state is expected.
+
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| DASH-1 | Load `/`; wait for seed | **Total Portfolio** hero shows value, **24H** delta (or empty when history too short), and sparkline when ≥2 points |
-| DASH-2 | Inspect Cash / Crypto side tiles | **Cash (USD)** and **Crypto Assets** show value, progress bar, and target/meta (Cash includes Dev % when USD exists) |
-| DASH-3 | Inspect allocation section | Bars for major holdings; symbols readable |
-| DASH-4 | Inspect Asset Performance | Table rows with Dev %; over/under legend present |
-| DASH-5 | Inspect Recent Activity | Cycles grouped (Cycle badge + action count or “No trades — portfolio within tolerance”); **View all history** links to `/history` |
-| DASH-6 | Wait ≥ one SSE/HTMX refresh cycle (or ~loopDelay) | Relative age/time updates or fragment refreshes without full blank flash |
-
----
+| DASH-1 | Load `/` and wait for the first completed cycle | Dashboard shows the latest current-cycle snapshot, not a seeded historical timeline. |
+| DASH-2 | Inspect portfolio overview and Cash / Crypto allocation | Current total and configured allocations render without implying historical returns. |
+| DASH-3 | Inspect Asset Performance and deviation legend | Current asset rows render; Over target and Under target indicators are readable. |
+| DASH-4 | Inspect Recent Activity | Actions from the latest cycle are shown, or a clear no-action state appears; no link invites opening retrospective History. |
+| DASH-5 | Sort an asset table column, then wait for an SSE fragment refresh | Sort direction and selected column remain applied after the current snapshot updates. |
+| DASH-6 | Wait one configured loop interval or SSE update | Fragment/age refreshes without a blank or broken intermediate page. |
 
 ## Settings (`/settings`)
 
-Mutate only inside the throwaway sim config. **Restore** changed fields before
-leaving when later cases depend on defaults.
+Mutate only the throwaway simulation configuration. Restore any changed value
+before continuing.
 
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| SETT-1 | Open Settings | Global parameters + Safety Modes + allocations visible |
-| SETT-2 | Note current Loop Interval; change by +1; **Save Configuration** | Save succeeds (no error); value persists after reload of `/settings` |
-| SETT-3 | Restore Loop Interval; save again | Prior value restored |
-| SETT-4 | Toggle **Dry Run Mode** card on then off (save each time if required) | Card shows visible **ON** / **OFF** pill; state persists after save+reload |
-| SETT-5 | Confirm **Simulation Mode** stays on in this QA run | Simulation card remains **ON** (do not turn off) |
-| SETT-6 | Read Total allocation badge | Shows **100.00%** (or valid total) with success styling when sum is 100 |
-| SETT-7 | **Add Asset**: enter a disposable symbol (e.g. `SOL`), add row, set % so total ≠ 100 | Total badge leaves 100% / warns; Save should not silently accept invalid total if UI validates |
-| SETT-8 | Remove the disposable row (or fix percents to 100%); save if needed | Back to valid 100% universe; no stuck empty rows |
-| SETT-9 | Safety Modes block | Simulation + Dry Run are rich cards (title, consequence copy, ON/OFF), grouped under **Safety Modes**, not bare checkboxes in the numeric grid |
+| SETT-1 | Open Settings | Active global parameters, safety modes, target allocations, and quality-score controls render. |
+| SETT-2 | Change loop delay by one step and save | Save succeeds; the changed active value remains after reload. |
+| SETT-3 | Restore loop delay and save | Original disposable test value is restored. |
+| SETT-4 | Toggle Dry Run and save; keep Simulation on | Mode plate and safety cards match saved settings; Simulation remains enabled throughout QA. |
+| SETT-5 | Inspect allocation total and Save state | A valid total near 100% including USD enables Save; an invalid total or missing USD disables it. |
+| SETT-6 | Add a disposable new symbol | A canonical non-duplicate row appears with a zero target; symbol aliases cannot duplicate an existing asset. |
+| SETT-7 | Restore the allocation rows and save | The original valid allocation is restored without empty or duplicate rows. |
+| SETT-8 | Inspect settings form for retired fields | No inception, drawdown, deployment, or retrospective comparison-start control is present. |
+| SETT-9 | If using a disposable legacy config, save once and inspect that copy | Retired history-only keys are omitted; active settings remain, and the operator's config is untouched. |
 
----
+## Actual (`/actual`)
 
-## History — range & stats (`/history`)
-
-Wait until sync banner completes (or is absent) before chart assertions.
-
-| ID | Steps | Expected |
-| :--- | :--- | :--- |
-| HIST-1 | Open `/history` | **Six** summary cards (ATH, Total Trades, Volume, Fees, Avg Fee Rate, Avg Slippage) + charts or explicit empty state |
-| HIST-2 | Click **24h** | Cards + charts update; ATH card title may become period high |
-| HIST-3 | Click **7d**, **30d**, **90d**, **All** in turn | Each changes series/window; no blank stuck spinner |
-| HIST-4 | Note Total Trades / Volume / Fees on **30d** vs **24h** | Finite range stats differ or stay coherent (not NaN / blank) |
-
----
-
-## History — views / presets
+In isolated simulation the Actual page should explicitly show that authenticated
+observations are unavailable. Do not treat emulator balances as account
+evidence. Account-backed checks that cannot be exercised safely should be
+marked blocked.
 
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| HIST-VIEW-1 | Select **Overview** | 30d (or preset range); series visible |
-| HIST-VIEW-2 | Select **Day · Total only** | **24h** applied; Portfolio Value legend lists **Total** only (Cash/Crypto/per-asset labels absent); canvas draws **Total** line only — other series hidden, not merely dimmed |
-| HIST-VIEW-3 | Select **Week · Allocation** | 7d applied |
-| HIST-VIEW-4 | Select **Month · Net Cash Flow** | 30d; dry-run filter matches preset intent |
-| HIST-VIEW-5 | Manually change time range while a named view is selected | Select shows **Custom (unsaved)** (or equivalent); Set default / Delete disabled as designed |
-| HIST-VIEW-6 | **Save view…** with name `qa-temp`; confirm it appears in select | Custom option listed |
-| HIST-VIEW-7 | **Set as default** on `qa-temp`; reload `/history` | `qa-temp` (or its settings) applied on load |
-| HIST-VIEW-8 | **Delete** `qa-temp` | Removed; built-ins still present; cannot delete Overview |
+| ACT-1 | Open `/actual` in simulation | Simulation-unavailable state is explicit; no emulator values appear as authenticated Actual observations. |
+| ACT-2 | Inspect the page structure | Latest direct observation, evidence state, forward-only observation sequence, and observed asset coverage are described. |
+| ACT-3 | Inspect Buy & Hold section | It is described as optional and prospective. No retrospective comparison is shown as though it were reconstructed. |
+| ACT-4 | If account-backed evidence is unavailable | Mark raw observation capture and prospective start controls blocked; do not disable simulation to force them. |
+| ACT-5 | With approved eligible evidence in a safe test environment | Incomplete observations and missing coverage remain visible as gaps; only eligible complete evidence plus verified continuity can start a prospective baseline. |
 
----
-
-## History — charts, zoom, dry-run filter
+## Error and session behavior
 
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| HIST-CHART-1 | Portfolio Value chart has drawn series | Canvas non-empty after seed; header row has title + Zoom − / + / Reset |
-| HIST-CHART-2 | Asset Holdings chart drawn | Same consolidated header contract |
-| HIST-CHART-3 | Scroll to Allocation Deviation from Target | Signed %-style series around 0%; positive = overweight, negative = underweight; Y-axis is not fixed to 0–100% |
-| HIST-CHART-4 | Cumulative Net Cash Flow chart drawn | Axis ticks readable; negatives use `-$` if present; caption explains dry-run estimated fees / not accounting P&L |
-| HIST-CHART-5 | Click chart legend item to hide a series (if interactive) | Series hides; click again restores |
-| HIST-ZOOM-1 | On Portfolio Value: **Zoom +** twice | X-axis time window narrows (fewer ticks / shorter span visible); bottom scrubber becomes **enabled** (not stuck disabled) |
-| HIST-ZOOM-2 | **Zoom −** | Window widens toward prior span |
-| HIST-ZOOM-3 | **Reset** | Full selected time range restored; scrubber **disabled** again |
-| HIST-ZOOM-4 | Change time range after zoom | Charts rebuild; zoom + scrubber state cleared |
-| HIST-ZOOM-5 | After HIST-ZOOM-1: drag-select a region on Portfolio Value canvas | Selection **zooms** the x-axis; drag does **not** pan the chart sideways; scrubber becomes **enabled** after drag-zoom (same as Zoom +) |
-| HIST-ZOOM-6 | After zoom (buttons **or** drag/wheel): drag bottom scrubber (`history-chart-scrubber-input`) left↔right | Scrubber is **draggable**; **chart x-window actually pans** (time ticks / series shift). Fail if thumb moves but the chart view is unchanged |
-| HIST-ZOOM-7 | Wheel-zoom on Portfolio Value (if supported) then scrubber | Scrubber enables after wheel zoom; sliding pans the window (same contract as HIST-ZOOM-6) |
-| HIST-DRY-1 | Toggle **Show Dry Run Trades** | Trade table row set changes (or stays empty consistently); charts that include dry-run P&L update if applicable |
+| ERROR-1 | Submit an invalid Settings value in the disposable config | The rendered error remains visible, edited form values are retained, and Save can be retried after correction. |
+| ERROR-2 | If a test session expires, submit the current Settings form | Browser refreshes the hidden CSRF token, preserves edited values, and explains that the rejected action must be retried. |
+| ERROR-3 | If an unresolved live-order intent can be represented in an isolated test | Dashboard shows the unresolved status and evidence-based resolution controls; do not make live orders during manual QA. |
 
----
-
-## History — trade log
+## Optional narrow-layout check
 
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| HIST-LOG-1 | Scroll to trade table | Headers include Time, Pair, Side, Volume, USD, Status (and price/fee columns when present) |
-| HIST-LOG-2 | If successful (non–dry-run) rows exist | Status is a subtle success **dot** (tooltip SUCCESS), not a loud SUCCESS badge |
-| HIST-LOG-3 | If price or fee is zero / absent | Cell shows em dash (**—**), not `0.00` / `0.00000000` |
-| HIST-LOG-4 | If failed or dry-run rows exist | **FAILED** / **DRY RUN** badges remain readable; BUY/SELL badges still present |
-| HIST-LOG-5 | If no rows | Empty state is understandable (not a broken table) |
-
----
-
-## Optional / opportunistic
-
-Run when easy to trigger; otherwise mark `blocked` with reason.
-
-| ID | Steps | Expected |
-| :--- | :--- | :--- |
-| OPT-1 | Narrow viewport (~375px) or note desktop-only risk | Nav/forms usable or known limitation documented |
-| OPT-2 | Hard refresh during History sync (if banner visible) | Recovers without permanent error page |
-| OPT-3 | Open `/api/health` | JSON `status` UP |
-
----
+| OPT-1 | Open Dashboard, Settings, and Actual at phone width (~390px) | Nav, status, forms, and evidence sections remain usable or any limitation is documented. |
+| OPT-2 | Compare one route at laptop and desktop widths | Content reflows without clipping or hidden controls. |
 
 ## Maintenance
 
-When UI gains controls (new buttons, tabs, filters), **add cases here** in the
-same ID style and mention them in CHANGELOG / skill description triggers if
-needed. Prefer ids from `:common` over copying brittle class names.
+When a retained page gains or changes a control, add a focused case here using
+the same ID style. Do not restore cases for retrospective History, ATH, report
+reconstruction, or historical trade presentation.

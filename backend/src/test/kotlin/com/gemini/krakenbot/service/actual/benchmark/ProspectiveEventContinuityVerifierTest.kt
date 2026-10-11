@@ -11,6 +11,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
@@ -414,6 +415,161 @@ class ProspectiveEventContinuityVerifierTest :
             result.shouldBeInstanceOf<ContinuityVerificationResult.Terminated>()
             result.reason shouldBe "External deposit or withdrawal detected: deposit 0.5 XXBT"
             result.eventTime shouldBe depositLedger.time
+        }
+
+        "non-trade ledger categories all terminate a prospective segment" {
+            val cases = listOf(
+                "withdrawal" to BenchmarkTerminationReason.EXTERNAL_FUNDING,
+                "transfer" to BenchmarkTerminationReason.EXTERNAL_TRANSFER,
+                "staking" to BenchmarkTerminationReason.REWARD_OR_EARN,
+                "dividend" to BenchmarkTerminationReason.REWARD_OR_EARN,
+                "spend" to BenchmarkTerminationReason.ASSET_CONVERSION,
+                "conversion" to BenchmarkTerminationReason.ASSET_CONVERSION,
+                "unrecognized" to BenchmarkTerminationReason.UNCLASSIFIED_EVENT,
+            )
+            cases.forEachIndexed { index, (type, expectedReason) ->
+                val krakenService = mockk<VerifierKrakenService>()
+                val event = LedgerEvent(
+                    ledgerId = "category-$index",
+                    refid = null,
+                    time = t1.minusSeconds(30),
+                    type = type,
+                    asset = "XXBT",
+                    amount = BigDecimal("0.25"),
+                    balance = BigDecimal("1.25"),
+                )
+                coEvery {
+                    krakenService.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+                } returns listOf(event)
+                every { krakenService.hasLastLedgerPageShape() } returns true
+                every { krakenService.hasLastLedgerTotalCount() } returns true
+                every { krakenService.getLastLedgerTotalCount() } returns 1
+                every { krakenService.getLastLedgerRawPageSize() } returns 1
+
+                val result = ProspectiveEventContinuityVerifier(krakenService, null)
+                    .verifyContinuity(segment, t1)
+
+                result.shouldBeInstanceOf<ContinuityVerificationResult.Terminated>()
+                result.reason shouldContain expectedReason
+            }
+        }
+
+        "malformed ledger page evidence stays pending and a same-time checkpoint makes no exchange calls" {
+            val malformedShapeService = mockk<VerifierKrakenService>()
+            coEvery {
+                malformedShapeService.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns emptyList()
+            every { malformedShapeService.hasLastLedgerPageShape() } returns false
+            every { malformedShapeService.hasLastLedgerTotalCount() } returns true
+            every { malformedShapeService.getLastLedgerTotalCount() } returns 0
+            every { malformedShapeService.getLastLedgerRawPageSize() } returns 0
+            val malformedShape = ProspectiveEventContinuityVerifier(malformedShapeService, null)
+                .verifyContinuity(segment, t1)
+            malformedShape.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            malformedShape.message shouldContain "malformed ledger page shape"
+
+            val missingCountService = mockk<VerifierKrakenService>()
+            coEvery {
+                missingCountService.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns emptyList()
+            every { missingCountService.hasLastLedgerPageShape() } returns true
+            every { missingCountService.hasLastLedgerTotalCount() } returns false
+            val missingCount = ProspectiveEventContinuityVerifier(missingCountService, null)
+                .verifyContinuity(segment, t1)
+            missingCount.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            missingCount.message shouldContain "missing an authoritative count"
+
+            val blankIdService = mockk<VerifierKrakenService>()
+            coEvery {
+                blankIdService.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns listOf(
+                LedgerEvent(
+                    ledgerId = " ",
+                    refid = null,
+                    time = t1,
+                    type = "deposit",
+                    asset = "XXBT",
+                    amount = BigDecimal.ONE,
+                    balance = BigDecimal.ONE,
+                ),
+            )
+            every { blankIdService.hasLastLedgerPageShape() } returns true
+            every { blankIdService.hasLastLedgerTotalCount() } returns true
+            every { blankIdService.getLastLedgerTotalCount() } returns 1
+            every { blankIdService.getLastLedgerRawPageSize() } returns 1
+            val blankId = ProspectiveEventContinuityVerifier(blankIdService, null).verifyContinuity(segment, t1)
+            blankId.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            blankId.message shouldContain "blank ledgerId"
+
+            val checkpointService = mockk<VerifierKrakenService>()
+            val checkpoint = ProspectiveEventContinuityVerifier(checkpointService, null)
+                .verifyContinuity(segment, t0)
+            checkpoint shouldBe ContinuityVerificationResult.Continuous(t0)
+            coVerify(exactly = 0) { checkpointService.getLedgers(any(), any(), any(), any()) }
+        }
+
+        "manual trade evidence with missing references or unreliable trade pages cannot pass" {
+            val tradeLedger = LedgerEvent(
+                ledgerId = "L-TRADE-REF",
+                refid = "TR-1",
+                time = t1.minusSeconds(30),
+                type = "trade",
+                asset = "XXBT",
+                amount = BigDecimal("0.1"),
+                balance = BigDecimal("1.1"),
+            )
+            val ledgerWithoutReference = mockk<VerifierKrakenService>()
+            coEvery {
+                ledgerWithoutReference.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns listOf(tradeLedger.copy(refid = null))
+            every { ledgerWithoutReference.hasLastLedgerPageShape() } returns true
+            every { ledgerWithoutReference.hasLastLedgerTotalCount() } returns true
+            every { ledgerWithoutReference.getLastLedgerTotalCount() } returns 1
+            every { ledgerWithoutReference.getLastLedgerRawPageSize() } returns 1
+            coEvery {
+                ledgerWithoutReference.getRecoveryTradeHistoryUntil(startSec = any(), offset = 0, endSec = any())
+            } returns emptyList()
+            every { ledgerWithoutReference.hasLastTradeHistoryPageShape() } returns true
+            every { ledgerWithoutReference.hasLastTradeHistoryTotalCount() } returns true
+            every { ledgerWithoutReference.getLastTradeHistoryTotalCount() } returns 0
+            every { ledgerWithoutReference.getLastTradeHistoryRawPageSize() } returns 0
+            val missingReference = ProspectiveEventContinuityVerifier(ledgerWithoutReference, null)
+                .verifyContinuity(segment, t1)
+            missingReference.shouldBeInstanceOf<ContinuityVerificationResult.Terminated>()
+            missingReference.reason shouldContain "missing or blank refid"
+
+            val tradeHistoryFailure = mockk<VerifierKrakenService>()
+            coEvery {
+                tradeHistoryFailure.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns listOf(tradeLedger)
+            every { tradeHistoryFailure.hasLastLedgerPageShape() } returns true
+            every { tradeHistoryFailure.hasLastLedgerTotalCount() } returns true
+            every { tradeHistoryFailure.getLastLedgerTotalCount() } returns 1
+            every { tradeHistoryFailure.getLastLedgerRawPageSize() } returns 1
+            coEvery {
+                tradeHistoryFailure.getRecoveryTradeHistoryUntil(startSec = any(), offset = 0, endSec = any())
+            } throws IllegalStateException("trade history unavailable")
+            val unavailableTrades = ProspectiveEventContinuityVerifier(tradeHistoryFailure, null)
+                .verifyContinuity(segment, t1)
+            unavailableTrades.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            unavailableTrades.message shouldContain "trade history unavailable"
+
+            val malformedTradePage = mockk<VerifierKrakenService>()
+            coEvery {
+                malformedTradePage.getLedgers(startSec = any(), offset = 0, endSec = any(), types = any())
+            } returns listOf(tradeLedger)
+            every { malformedTradePage.hasLastLedgerPageShape() } returns true
+            every { malformedTradePage.hasLastLedgerTotalCount() } returns true
+            every { malformedTradePage.getLastLedgerTotalCount() } returns 1
+            every { malformedTradePage.getLastLedgerRawPageSize() } returns 1
+            coEvery {
+                malformedTradePage.getRecoveryTradeHistoryUntil(startSec = any(), offset = 0, endSec = any())
+            } returns emptyList()
+            every { malformedTradePage.hasLastTradeHistoryPageShape() } returns false
+            val malformedTrades = ProspectiveEventContinuityVerifier(malformedTradePage, null)
+                .verifyContinuity(segment, t1)
+            malformedTrades.shouldBeInstanceOf<ContinuityVerificationResult.PendingEvidence>()
+            malformedTrades.message shouldContain "malformed trade history page"
         }
 
         "API failure in getLedgers returns PendingEvidence without terminating" {

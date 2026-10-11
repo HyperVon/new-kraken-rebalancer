@@ -101,14 +101,14 @@ Rules:
 
 | Invariant | Owned by | Regression looks like |
 | :--- | :--- | :--- |
-| Mode plate on every page | `view/util/Layouts.kt` (`brandWithMode`) | Settings or History header renders `brandMark()` alone |
+| Mode plate on every page | `view/util/Layouts.kt` (`brandWithMode`) | Settings or Actual header renders `brandMark()` alone |
 | Stream chip separate from mode | `Layouts.streamStatusPlaceholder` + `DashboardFragmentComponent` OOB swap, `frontend-js` `Dashboard.kt` | Chip labelled `LIVE` again (reads as live trading) instead of `STREAM` / `STALE`; chip back on a separate right-aligned row |
-| Hero value + 24H delta + sparkline | `OverviewGridComponent` | Back to three equal status cards; empty sparkline slot |
+| Latest current-cycle snapshot | `OverviewGridComponent` + `CurrentPortfolioState` | Snapshot missing, stale-looking, or paired with actions from another cycle |
 | Cash / Crypto tile progress bars | `OverviewGridComponent.renderTileBar` | Bar width detached from the stated percentage |
-| Cycle-grouped activity + View all | `RecentActivityComponent` | Flat time/action table returns; link dropped |
+| Current-cycle actions | `RecentActivityComponent` | Actions detached from the latest snapshot or presented as a persistent timeline |
 | Safety toggle cards + ON/OFF pill | `SettingsFormComponent` | Bare checkbox labels; pill not tracking checked state |
-| Chart header row + net cash flow caption | `HistoryPageComponent` | Title / zoom split into stacked rows; caveat pushed back into the legend string |
-| Em dash + status dot in trade table | `frontend-js` `HistoryTradeRendering.kt` | `0.00000000` prices, constant `SUCCESS` column |
+| Actual raw evidence and coverage gaps | `ActualObservationsPageComponent` | Incomplete samples joined as complete observations, or missing coverage hidden |
+| Prospective Buy & Hold | `ActualObservationsPageComponent` + benchmark service | Comparison shown without eligible baseline and verified continuity |
 
 ### Step 3: Gates before verify
 
@@ -160,22 +160,20 @@ and fakes a regression.
 Cheap to read off the same after-PNGs, and it catches redesign regressions the
 approved IDs did not cover:
 
-- [ ] Dashboard, Settings, **and** History headers each show the mode plate, and
+- [ ] Dashboard, Settings, **and** Actual headers each show the mode plate, and
       it matches the verify run (`simulation: true` → `SIMULATION`)
 - [ ] Stream chip (Dashboard only) reads `STREAM` / `STALE`, one line with
       relative age/time at ~1280–1440px
-- [ ] Hero shows value + 24H delta + sparkline; Cash / Crypto bars fill
-      proportionally
-- [ ] Activity feed still cycle-grouped with the **View all history** link
+- [ ] Dashboard shows the latest current-cycle snapshot, Cash / Crypto summary
+      tiles, and actions from that same cycle
 - [ ] Settings safety cards show `ON` / `OFF` pills matching checkbox state
-- [ ] History charts: one header row (title + zoom), net cash flow caption
-      present, canvases not squat
-- [ ] Trade table: em dash for zero price/fee; plain success is a dot, dry-run
-      and failed keep badges
+- [ ] Settings exposes active controls and omits retired history-only controls
+- [ ] Actual keeps incomplete evidence and coverage gaps visibly distinct
+- [ ] Prospective Buy & Hold is tied to an eligible baseline with verified
+      continuity
 
-If acceptance touched History zoom/pan: also run
-[ui-manual-qa](../ui-manual-qa/SKILL.md) `HIST-ZOOM-5/6/7` — scrubber must enable
-after drag/wheel zoom and **pan the chart** (thumb-only motion is a fail).
+Use [ui-manual-qa](../ui-manual-qa/SKILL.md) for functional checks of the
+retained Dashboard, Settings, and Actual controls.
 
 ### Step 7: Iteration cap
 
@@ -239,8 +237,8 @@ artifacts. Final message:
 - [ ] Changes in view/css/component / frontend-js / :common as appropriate
 - [ ] spotless + relevant tests green
 - [ ] Isolated sim verify; after PNGs read against acceptance
-- [ ] Refined Glass regression sweep clean (mode plate, stream chip, hero,
-      activity feed, safety cards, chart header, trade table)
+- [ ] Retained-page regression sweep clean (mode plate, stream chip, latest
+      Dashboard snapshot/actions, Settings safety controls, Actual evidence)
 - [ ] Iterations capped; regressions noted
 - [ ] docs-screenshot-refresh + USER_GUIDE/CHANGELOG when shipping
 - [ ] App stopped; real config/DB untouched

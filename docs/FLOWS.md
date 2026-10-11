@@ -1,750 +1,215 @@
-# Kotlin Flow Architecture
+# Kotlin Flow and Runtime Data Paths
 
-This document explains how **Kotlin Coroutines Flows** are used throughout the application to handle asynchronous events without blocking threads. There are two kinds of flow in play: **hot** `SharedFlow` (a live broadcast) and **cold** `Flow` (an on-demand pipeline).
+This document describes the active runtime paths for configuration, the current
+Dashboard snapshot, live-order safety, and Actual observations. Retrospective
+History reporting and reconstruction are retired.
 
----
+## Flow types in use
 
-## The Two Types at a Glance
-
-| | Cold `Flow` | Hot `SharedFlow` |
+| Type | Active use | Behavior |
 | --- | --- | --- |
-| **Analogy** | On-demand video (starts when you press play) | Live radio (broadcasting regardless of listeners) |
-| **Execution** | Starts only when collected | Runs independently of collectors |
-| **Per-collector** | Each collector gets its own independent run | All collectors share the same broadcast |
-| **Lifecycle** | Finite — completes when the producer finishes | Infinite — never completes on its own |
-| **Backpressure** | Automatic: `emit()` suspends if collector is slow | Configurable: buffer + overflow strategy |
-| **Use in this app** | Paginated API fetching, balance polling | Config changes, live dashboard streaming |
+| Cold `Flow` | Kraken API retries and sell-settlement polling | Runs when collected; each collection performs its own request/poll sequence. |
+| Hot `SharedFlow` | Configuration changes | Publishes saved settings to the running portfolio loop. |
+| Hot `StateFlow` | `CurrentPortfolioState` | Holds one value: the latest completed cycle snapshot, or `null` before the first snapshot. |
+| Bounded channel | Actual observation writer | Buffers a small number of observation candidates so persistence stays outside the order path. |
 
----
-
-## System-Wide Flow Map
-
-This diagram shows every place flows are used and how data moves between components.
+## System map
 
 ```mermaid
 flowchart TB
-    subgraph UI["🖥️  Browser / Dashboard"]
-        SSE["SSE Client\n(HTMX sse-connect)"]
-        Settings["Settings UI\n(Save Config)"]
-        ActualPage["Actual observations page"]
-        History["History actions\n(sync / recovery)"]
+    subgraph Browser
+        Settings[Settings form]
+        Dashboard[Dashboard]
+        SSE[SSE client]
+        Actual[Actual page]
     end
 
-    subgraph Ktor["⚡ Ktor HTTP Server"]
-        DashCtrl["DashboardController\nhandleSseStream()"]
-        SettingsPost["DashboardController\nhandlePostSettings()"]
+    subgraph Server
+        Controller[DashboardController]
+        Config[ConfigService SharedFlow]
+        Manager[PortfolioManager loop]
+        Analyzer[PortfolioAnalyzer]
+        Executor[OrderExecutor]
+        Current[CurrentPortfolioState StateFlow]
+        ActualDispatcher[ActualObservationDispatcher]
+        ActualStore[ActualObservationStore]
+        OrderIntent[Order intent service]
+        Binding[Account binding verifier]
+        Health[Health and readiness]
     end
 
-    subgraph Core["🔄 Core Application Logic"]
-        PM["PortfolioManagerImpl\nrunLoop()"]
-        Cycle["performCycleWithStableSession()\nouter ConfigService session\n+ stable backend pin"]
-        OE["OrderExecutorImpl\n(delegates to OrderSettleHelper)"]
-        OSH["OrderSettleHelper\nsettleUsdAfterSells()"]
-        RD["ReportingDispatcher\n(bounded asynchronous queues)"]
-        ActualD["ActualObservationDispatcher\n(bounded async queue)"]
+    subgraph Kraken
+        Exchange[Kraken API or offline emulator]
     end
 
-    subgraph Services["📦 Services"]
-        CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, no extraBufferCapacity, DROP_OLDEST"]
-        EJ["ExecutionOrderIntentRepository\n(separate SQLite journal)"]
-        TP["TradeProjectionService\n(durable outbox consumer)"]
-        THS["TradeHistoryServiceImpl\n(façade)"]
-        Store["TradeHistorySnapshotStore\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
-        Sync["TradeHistorySyncService\n(60s throttle + pagination)"]
-        LedgerSync["LedgersSyncService\n(60s throttle + pagination)"]
-        Recovery["InceptionRecoveryService\n(4 pages/run + durable resume)"]
-        ActualStore["ActualObservationStore\n(append-only SQLite)"]
+    subgraph Stores
+        ExecutionDB[(Execution SQLite)]
+        ActualDB[(Actual SQLite)]
+        LegacyDB[(Preserved legacy database)]
     end
 
-    subgraph External["🌐 External"]
-        Kraken["Kraken API"]
-    end
-
-    subgraph DB["🗄️ Reporting SQLite"]
-        Repo["Trade / Snapshot\nRepository"]
-    end
-
-    subgraph ExecutionDB["🗄️ Execution SQLite"]
-        IntentRows["Live order intents\n+ projection outbox"]
-    end
-
-    subgraph ActualDB["🗄️ Separate Actual SQLite"]
-        ActualRows["Immutable observations\n+ asset evidence"]
-    end
-
-    %% Config flow path
-    Settings -->|"HTTP POST /settings"| SettingsPost
-    SettingsPost -->|"updateConfig()"| CS
-    CS -->|"HOT: tryEmit(settings)\nalways succeeds synchronously"| CS
-    CS -->|"watchConfigChanges()\ncollectLatest { settings → }"| PM
-
-    %% Rebalance loop and session/backend ownership
-    PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
-    PM -->|"normal iteration"| Cycle
-    Cycle -->|"performRebalanceCycle()"| OE
-    Cycle -->|"enqueue direct balance + ticker evidence\nafter order execution returns"| ActualD
-    OE -->|"place buy/sell orders"| Kraken
-    OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
-    OE -->|"PENDING / outcome transaction"| EJ
-    EJ --> IntentRows
-    ActualD -->|"verify bound identity; value sample"| ActualStore
-    ActualStore --> ActualRows
-    ActualPage -->|"GET /actual\ncurrent account + scope, max 250"| DashCtrl
-    DashCtrl -->|"read current segment"| ActualStore
-
-    %% Snapshot and trade reporting remains outside the live order path
-    Cycle -->|"trySend(snapshot)"| RD
-    RD -->|"project pending executions"| TP
-    TP -->|"read immutable execution events"| EJ
-    TP -->|"trade projection + cursor in one transaction"| Repo
-    RD -->|"addSnapshot(snapshot)"| THS
-    THS -->|"delegate"| Store
-    Store -->|"saveSnapshot()"| Repo
-    Store -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| Store
-    Store -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
-    DashCtrl -->|"send(ServerSentEvent)"| SSE
-
-    %% User-requested history sync (60s throttle inside Sync)
-    History -->|"syncTradesFromKraken()"| THS
-    THS -->|"delegate"| Sync
-    Sync -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
-    Kraken -->|"pages of TradeRecord"| Sync
-    Sync -->|"reconcile & save"| Repo
-
-    %% User-requested ledger sync (60s throttle inside LedgerSync)
-    History -->|"syncLedgersFromKraken()"| THS
-    THS -->|"delegate"| LedgerSync
-    LedgerSync -->|"COLD getLedgersPaginated()\n.collect { page -> }"| Kraken
-    Kraken -->|"external ledger pages"| LedgerSync
-    LedgerSync -->|"insert with identity dedupe"| Repo
-
-    History -->|"bounded recovery request"| Recovery
-    Recovery -->|"private trades + ledgers\n(stable backend)"| Kraken
-    Recovery -->|"coverage/status/evidence\n+ reconstructed baseline"| Repo
-
-    %% Dashboard initial load
-    SSE -->|"SSE connect /api/status/stream"| DashCtrl
-    DashCtrl -->|"getLatestSnapshot()"| Repo
-
-    classDef hot fill:#1a3a5c,stroke:#4fa3e0,color:#e8f4fd
-    classDef cold fill:#1a3c2a,stroke:#4caf7d,color:#e8f5e9
-    classDef external fill:#3c2a1a,stroke:#e09a4f,color:#fdf5e8
-    classDef infra fill:#2a1a3c,stroke:#9a4fe0,color:#f5e8fd
-
-    class CS,Store hot
-    class Sync cold
-    class Recovery cold
-    class Kraken external
-    class Repo,DB,IntentRows,ExecutionDB,ActualRows,ActualDB,ActualStore infra
+    Settings -->|POST settings| Controller
+    Controller -->|persist and emit settings| Config
+    Config -->|collectLatest| Manager
+    Manager --> Analyzer
+    Analyzer -->|balances and prices| Exchange
+    Manager -->|plan| Executor
+    Executor -->|orders and settlement reads| Exchange
+    Executor --> OrderIntent
+    OrderIntent --> ExecutionDB
+    Manager -->|publish latest completed snapshot| Current
+    Current -->|current fragment| Controller
+    Current -->|snapshot JSON| SSE
+    SSE --> Dashboard
+    Manager -->|enqueue direct observation| ActualDispatcher
+    ActualDispatcher --> ActualStore
+    ActualStore --> ActualDB
+    Actual -->|bounded read and optional prospective comparison| Controller
+    Controller --> ActualStore
+    Controller --> Health
+    LegacyDB -.->|continuity checks during safe migration or binding| Binding
+    Binding --> ExecutionDB
 ```
 
----
+The legacy database shown here is retained for safe migration and account-history
+continuity checks during binding. It is not an active reporting destination.
+The application does not synchronize historical trades or ledgers, reconstruct
+retrospective reports, or write new retrospective report data. Existing files
+and tables remain untouched.
 
-## Flow 1 — Config Changes (Hot SharedFlow)
+## Configuration changes
 
-**Path:** Settings UI → `ConfigService._configFlow` → `PortfolioManager`
-
-The Settings save first tries the shared history-evidence lock. If a history
-scan currently owns it, the form returns a conflict response with the submitted
-values preserved. `/api/history/sync-progress` reads its display-only local
-progress without waiting for that lock, so the Settings recovery poll can
-continue during a paginated sync.
+**Path:** Settings form → `DashboardController` → `ConfigService` →
+`PortfolioManagerImpl`
 
 ```mermaid
 sequenceDiagram
-    participant User as User (Browser)
-    participant API as DashboardController.handlePostSettings
-    participant CS as ConfigServiceImpl
+    participant User
+    participant Controller as DashboardController
+    participant Config as ConfigServiceImpl
     participant PM as PortfolioManagerImpl
 
-    User->>API: POST /settings (new settings)
-    API->>CS: updateConfig(newConfig)
-    CS->>CS: validate & save to disk atomically
-    alt no active execution session
-        note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
-        CS-->>PM: SharedFlow emits new Settings
-    else active execution session
-        CS->>CS: stage runtime config (no flow emission)
-        note over CS: Disk state may be newer while the active cycle or<br/>standalone sync still reads the old runtime config.
+    User->>Controller: POST /settings
+    Controller->>Config: updateConfig(settings)
+    Config->>Config: validate and atomically persist
+    alt cycle execution session is active
+        Config->>Config: stage runtime publication
+        Note over Config: The current cycle keeps its pinned settings and backend.
+    else no active session
+        Config-->>PM: emit updated Settings
     end
-
     opt outermost execution session exits
-        CS->>CS: publish staged runtime config
-        CS-->>PM: SharedFlow emits new Settings
-        note over PM: collectLatest does not cancel an active cycle merely<br/>because persistence completed, it restarts after publication,<br/>once the current session-owned work has returned.
-        PM->>PM: cancel sleeping delay() and restart with new settings
+        Config-->>PM: emit staged Settings
     end
+    PM->>PM: restart the idle delay with the latest settings
 ```
 
-**Key design choices:**
+`ConfigServiceImpl` exposes a hot `SharedFlow` with the current settings
+replayed to a new collector. The loop uses `collectLatest`, so a change replaces
+an idle delay promptly. A setting saved during a cycle is persisted at once,
+then published for later cycles after the active execution session exits.
 
-- `replay = 1` means `PortfolioManager` immediately gets the current config the moment it subscribes on startup — no race condition on boot.
-- Config’s `MutableSharedFlow` uses **no** `extraBufferCapacity` (default 0) with `DROP_OLDEST`; snapshot flow uses `extraBufferCapacity = 16` so slow SSE clients do not stall emitters.
-- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()`
-  takes effect immediately. During an active rebalance session, config saves/reloads persist to disk
-  but defer runtime publication until the **outermost** session exits. Persistence can therefore
-  complete during a cycle without cancelling it; after publication, `collectLatest` restarts the
-  loop with the new settings. Unrelated coroutine cancellation still propagates normally.
-- Normal iterations enter `performCycleWithStableSession()`, whose execution session and stable
-  backend pin cover current balance and price reads, planning, order execution, and order-specific
-  fill settlement. History synchronization and reconstruction run outside this cycle.
-- Real-live order placement writes `PENDING` plus the deterministic `cl_ord_id` to the separate
-  execution database before AddOrder.
-  Definite exchange rejections resolve the row immediately; transport/response failures become
-  `UNCERTAIN` and immediately abort the remaining batch. An unresolved row is excluded from
-  heuristic fill reconciliation, duplicate cleanup, and retention pruning: an operator must verify
-  Kraken open orders, closed orders, and fills before clearing its state in SQLite. Absence from
-  trade history alone is never treated as proof of rejection.
-- Historical reconstruction establishes its own execution-session boundary and pins one exchange
-  backend for that reporting pass, so balances, ticker/OHLC prices, and derived snapshots cannot
-  mix settings or live/simulation backends.
+## Current-cycle Dashboard updates
 
----
-
-## Flow 2 — Live Dashboard Updates (Hot SharedFlow)
-
-**Path:** `PortfolioManager` → `ReportingDispatcher` → `TradeHistoryServiceImpl` façade →
-`TradeHistorySnapshotStore.snapshotFlow` → Ktor SSE → Browser
+**Path:** `PortfolioManagerImpl` → `CurrentPortfolioState` → Dashboard fragment
+and `/api/status/stream` → browser
 
 ```mermaid
 sequenceDiagram
     participant PM as PortfolioManagerImpl
-    participant RD as ReportingDispatcher
-    participant THS as TradeHistoryServiceImpl
-    participant Store as TradeHistorySnapshotStore
-    participant DB as SQLite
-    participant SSE as DashboardController.handleSseStream
-    participant Browser as Browser Tab
+    participant State as CurrentPortfolioState
+    participant Controller as DashboardController
+    participant Browser
 
-    Browser->>SSE: GET /api/status/stream (HTMX SSE extension)
-    SSE->>DB: getLatestSnapshot()
-    DB-->>SSE: last snapshot
-    SSE->>Browser: send initial snapshot
-
-    note over SSE: collect() suspends here.<br/>Coroutine is parked, consuming<br/>no CPU, waiting for emissions.
-
-    loop Every rebalance cycle
-        PM->>RD: enqueueSnapshot(snapshot) [non-blocking]
-        RD->>THS: addSnapshot(snapshot)
-        THS->>Store: addSnapshot(snapshot)
-        Store->>DB: saveSnapshot()
-        Store->>Store: tryEmit(snapshot)
-        note over Store: Broadcast to all<br/>connected SSE sessions
-        Store-->>SSE: snapshot emitted via getHistoryFlow()
-        SSE->>Browser: send(ServerSentEvent)
+    Browser->>Controller: GET /fragments/dashboard
+    Controller->>State: read latest snapshot
+    alt first cycle has not completed
+        Controller-->>Browser: waiting-for-first-cycle fragment
+    else snapshot exists
+        State-->>Controller: latest completed cycle snapshot
+        Controller-->>Browser: current Dashboard fragment
     end
 
-    Browser-->>SSE: disconnect
-    note over SSE: Ktor cancels the coroutine.<br/>CancellationException breaks<br/>collect(), SSE handler exits.
-```
-
-**Key design choices:**
-
-- Each SSE `data` payload is Jackson-serialized **`PortfolioSnapshot` JSON** (`timestamp`, `totalValueUSD`, `assets`, `actions`, and other snapshot fields).
-- A bounded queue separates the cycle from reporting persistence. The reporting worker persists a queued snapshot before the store emits it. A slow or unavailable reporting database does not hold the live order path.
-- Live-order outcomes do not depend on either reporting queue: the execution journal
-  commits each outcome and its projection-outbox entry together, and the projector
-  retries from that durable outbox. The projected trade initially uses the ticker
-  quote and local fee estimate; an explicit Kraken History sync can replace those
-  estimates with exchange fills and fees.
-- Snapshots use a conflated queue, and non-live trade estimates use a bounded queue.
-  Queue overflow or reporting write failures can omit those non-authoritative
-  records; failures are logged. These queues never delay or change order execution.
-- `replay = 1` + `extraBufferCapacity = 16` + `DROP_OLDEST` means late SSE subscribers still get the latest emitted snapshot, and a slow browser connection **never** stalls the rebalancing loop.
-- Multiple browser tabs can all connect simultaneously — each gets its own `collect()` call which independently consumes from the same shared broadcast.
-
----
-
-## Flow 3 — Paginated Trade Sync (Cold Flow)
-
-**Path:** A History workflow → `TradeHistoryServiceImpl.syncTradesFromKraken()` →
-`TradeHistorySyncService` → `getTradeHistoryPaginated()` → Kraken API
-(page by page) → SQLite
-
-```mermaid
-sequenceDiagram
-    participant Caller as syncTradesFromKraken()
-    participant Sync as TradeHistorySyncService
-    participant Flow as getTradeHistoryPaginated() [cold]
-    participant API as Kraken API
-    participant DB as SQLite
-
-    Caller->>Sync: syncTradesFromKraken()
-    Sync->>Flow: .collect { apiTrades → }
-    note over Flow: Cold! Execution starts<br/>NOW because collect() was called.
-
-    loop "While API count indicates more pages"
-        Flow->>API: getTradeHistory(offset=0, 50, 100 ...)
-        API-->>Flow: List<TradeRecord> (up to 50) + count
-        note over Flow: Configured-pair filtering can make a page shorter.<br/>A positive count drives continuation, while absent or zero count falls back to page size.
-        Flow->>Sync: emit(page)
-        note over Flow: emit() suspends here.<br/>Waits for collector to finish<br/>processing before fetching next page.<br/>This is automatic backpressure.
-        Sync->>DB: reconcile & save trades
-        note over Flow: Collector done → Flow resumes<br/>and fetches the next page.
-    end
-
-    Flow->>Sync: (completes — no more pages)
-    note over Caller: collect() returns normally.<br/>Execution continues to next line.
-```
-
-**Key design choices:**
-
-- The periodic rebalance cycle does not call `syncTradesFromKraken()`. History
-  workflows request synchronization; `TradeHistorySyncService` (via the façade)
-  **no-ops** unless ≥ **60 seconds** have elapsed since `lastSyncTime`.
-- Live sync is skipped when credentials are invalid and `simulation` is false;
-  simulation mode never hits Kraken for history.
-- A non-no-op sync opens a nested-safe `ConfigService` execution session and
-  backend pin before collecting pages and closes them in `finally`. Config and
-  credential updates therefore publish only after the sync's pinned work ends.
-- Incremental sync uses a **300-second overlap** window from the **effective**
-  watermark (`latestTradeTime` is the latest successful non-dry-run trade time,
-  including local estimates; it falls back to `sync_watermark_epoch_sec` when
-  none exists) so fills near the cutoff are not missed and dry-run-only accounts
-  do not re-pull from EPOCH.
-- Within one sync pass, the captured `endSec` keeps newest-first offsets stable
-  against fills arriving after the pass begins. API fills are fingerprinted so
-  repeated pages cannot double-insert the same fill. The bound does not make
-  separate operations immutable or protect against backfilled or exchange-
-  reordered rows; the overlap window and identity deduplication recover those
-  cases. Dry-run locals never match API fills (`isMatchingApiTrade` returns false
-  when `local.dryRun`).
-- The throttle check and pagination run under one coroutine mutex; concurrent
-  callers wait and then recheck. A backward wall-clock jump allows the next
-  sync to rebase the 60-second throttle instead of suppressing it indefinitely.
-- Reconciliation first prefers an exact nonblank `orderTxid` match. The
-  economics tolerance applies only to successful, non-dry-run
-  `LOCAL_ESTIMATE` rows; `LEGACY_UNKNOWN` rows require an exact persisted
-  identity or fingerprint. Conflicting nonblank IDs never reconcile.
-- API fetching happens page-by-page (at most **50** rows), but local trades in
-  the query range and seen API-fill identities are retained for the whole pass;
-  total memory is therefore not constant in the size of the history.
-- `emit()` naturally suspends until the collector finishes, meaning Kraken's API
-  is never hit faster than the database can process the last batch — automatic
-  backpressure.
-- Being cold means pagination only runs when a History workflow collects
-  `syncTradesFromKraken()` — nothing polls Kraken for trades in the background.
-
----
-
-## Flow 4 — Live-Order Intent Journal and Readiness
-
-**Path:** `OrderExecutorImpl` → execution SQLite `execution_order_intents` → operator API
-
-```mermaid
-sequenceDiagram
-    participant Cycle as Rebalance cycle
-    participant Executor as OrderExecutorImpl
-    participant Journal as Execution SQLite order_intents
-    participant Kraken as Kraken AddOrder
-    participant Operator as Trusted LAN operator
-
-    Cycle->>Executor: execute live order
-    Executor->>Journal: INSERT PENDING + deterministic cl_ord_id
-    Executor->>Kraken: AddOrder (one attempt)
-    alt definite response
-        Kraken-->>Executor: txid or definite rejection
-        Executor->>Journal: CONFIRMED or REJECTED
-    else ambiguous transport/response
-        Kraken--xExecutor: timeout, exception, or missing txid
-        Executor->>Journal: UNCERTAIN
-        Executor-->>Cycle: abort remaining order batch
-    end
-    Operator->>Journal: GET /api/order-intents
-    Operator->>Kraken: verify open/closed order and fills
-    Operator->>Journal: POST resolve + evidence + optional orderTxid
-    Journal-->>Operator: terminal outcome
-```
-
-The journal is the live-order safety boundary. Any `PENDING` or `UNCERTAIN`
-intent blocks later live batches and makes `/api/readiness` return `503`.
-`/api/health` remains a `200` liveness/diagnostic response. Resolution may
-include the Kraken order transaction ID when known. It requires the normal
-double-submit CSRF token, an explicit terminal state, and evidence;
-only UNCERTAIN intents are eligible for manual resolution while PENDING denotes
-an in-flight AddOrder. There is no automatic retry, reconciliation,
-deduplication, or age-based prune
-for unresolved intents.
-
----
-
-## Flow 5 — USD Settle after sells (Cold Flow)
-
-**Path:** After **≥1 successful sell** and when **not** dry-run →
-`settleUsdAfterSells()`:
-
-1. **Primary (when sell AddOrder txids exist):** `pollFillConfirmedUsd()` →
-   `sumMatchedSellProceeds()` (trade history matched by `orderTxid`, net of fee,
-   paginate up to 5 pages of at most 50 rows) → optional balance peek
-   `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
-   `projectedCash`.
-2. **Fallback:** when no txids, fill confirmation returns no positive USD, or
-   its balance/projected-cash-capped result is below 95% of projected cash →
-   `pollUsdBalanceAfterSells().last()` (below). A materially short fill result
-   may reflect lagging or truncated Kraken trade-history pagination.
-
-Skipped when dry-run or no sell succeeded (buys use projected cash). Fail-closed:
-abort buys if neither path confirms positive USD.
-
-```mermaid
-sequenceDiagram
-    participant OE as OrderExecutorImpl
-    participant OSH as OrderSettleHelper
-    participant Fill as pollFillConfirmedUsd() [cold]
-    participant Hist as getTradeHistory
-    participant Bal as getBalances
-
-    note over OE: Only when executedSells and not dryRun
-    alt "sell orderTxids present"
-        OE->>OSH: settleUsdAfterSells(backend, openingUsd, projectedCash, txids)
-        OSH->>Fill: pollFillConfirmedUsd → .last()
-        loop "Up to 3 attempts (250ms doubling)"
-            Fill->>Fill: delay(backoffMs)
-            Fill->>Hist: pages by count or page-size fallback, max 5
-            Hist-->>Fill: matched fills (up to 50 per page, cost - fee)
-        end
-        OSH->>Bal: peekUsdBalance (once when fills are positive)
-        Bal-->>OSH: spendable USD or transient error
-        alt "capped fill >= 95% of projected"
-            OSH->>OE: return capped fill-confirmed cash
-        else "zero or positive but below 95%"
-            OSH->>Bal: pollUsdBalanceAfterSells (3 attempts)
-        end
-    else "no txids or fillConfirmed = 0"
-        OE->>OE: pollUsdBalanceAfterSells (Flow 5b)
+    Browser->>Controller: GET /api/status/stream
+    loop each completed cycle
+        PM->>State: publish(snapshot)
+        State-->>Controller: StateFlow emits latest snapshot
+        Controller-->>Browser: SSE snapshot JSON
+        Browser->>Controller: request refreshed Dashboard fragment
     end
 ```
 
-### Flow 5b — USD Balance Polling fallback (Cold Flow)
+`CurrentPortfolioState` is an in-memory `StateFlow` that retains only the latest
+completed cycle. It does not persist a cycle timeline. The Dashboard shows that
+snapshot and the activity from that cycle. Its STREAM/STALE chip reports SSE
+freshness; the persistent mode plate reports Simulation, Dry Run, or Live
+Trading independently.
 
-**Path:** `pollUsdBalanceAfterSells().last()` →
-Kraken balances API (with backoff). Used when sell txids are missing (e.g. some
-test doubles) or fill confirmation found no matching positive proceeds.
+The Dashboard's health and readiness endpoints describe current operation:
+loop state, cycle timestamps and error, latest snapshot, active mode, and
+unresolved live-order intent status. Readiness is unavailable until the loop
+runs, configuration and diagnostics are available, a cycle snapshot exists,
+the latest cycle has no operational error, and no unresolved live-order intent
+remains. SSE carries current-cycle snapshots only.
 
-```mermaid
-sequenceDiagram
-    participant OE as OrderExecutorImpl
-    participant Flow as pollUsdBalanceAfterSells() [cold]
-    participant API as Kraken API
+## Live-order intent and readiness
 
-    note over OE: Fallback when no txids or empty fill confirm
-    OE->>Flow: pollUsdBalanceAfterSells → .last()
-    note over Flow: .last() is a terminal operator.<br/>It collects the entire flow and<br/>returns only the final emitted value.
+A real live order is recorded in the separate execution database before Kraken
+AddOrder is called. A definite rejection resolves the intent as rejected. An
+ambiguous transport or response failure becomes `UNCERTAIN` and stops the
+remaining live batch. Unresolved intents block later live orders and keep the
+application unready until an operator verifies the exchange state and resolves
+the journal entry with evidence.
 
-    loop "Up to 3 attempts (250ms → 500ms → 1000ms)"
-        Flow->>Flow: delay(backoffMs)
-        Flow->>API: getBalances()
-        API-->>Flow: USD balance
-        alt "Balance >= 95% of expected"
-            Flow->>OE: emit(bestObserved)
-            Flow->>OE: (flow completes early)
-        else "Positive but below 95%"
-            Flow->>OE: emit(bestObserved)
-            Flow->>Flow: "backoffMs = min(backoffMs * 2, 32s)"
-        else "Zero / empty / error"
-            Flow->>Flow: "backoffMs = min(backoffMs * 2, 32s)"
-        end
-    end
+The execution journal and its account binding are part of the live-order safety
+path. The preserved legacy store may be consulted for account-history
+continuity during a safe migration or initial binding; it is not used to
+reconstruct or publish retrospective reports.
 
-    note over OE: .last() returns the best (max)<br/>positive observed balance, or 0<br/>if none — then OE aborts buys.
-```
+## USD settlement after sells
 
-**Key design choices:**
+**Path:** `OrderExecutorImpl` → `OrderSettleHelper` → Kraken API
 
-- Fill confirmation is preferred when AddOrder returns txids — buy budget is
-  sized from **opening USD + net fill proceeds**, capped by a balance peek when
-  spendable cash is already visible, otherwise by **projected cash** so history
-  cannot invent liquidity beyond the cycle's sell intents.
-- Balance polling remains the fail-safe path (and the only path for backends
-  that omit txids).
-- Using `.last()` instead of `.collect()` is intentional — both cold polls track
-  the **best (maximum) positive** observation across attempts. If nothing
-  positive is observed, `.last()` yields `0` and `OrderExecutorImpl` **aborts
-  buys** (fail-closed).
-- Backoff starts at **250ms** and doubles per attempt
-  (**250ms → 500ms → 1000ms** with `MAX_REFRESH_ATTEMPTS = 3`). Code also
-  `coerceAtMost(32000)` as a defensive ceiling; that cap is unreachable under
-  current constants.
-- Being cold means this only runs when explicitly triggered after a successful
-  sell outside dry-run — it never polls in the background.
+After successful sells, the executor confirms available USD before issuing
+buys. When Kraken returns sell transaction IDs, settlement checks matching
+`TradesHistory` fills, caps confirmed proceeds to observed spendable USD, and
+falls back to bounded USD balance polling when fills are missing or materially
+short. This is order-specific fill confirmation; it does not synchronize
+account history or produce retrospective reports. If safe cash cannot be
+confirmed, buys are stopped for that cycle.
 
----
+The exchange reads and polling use cold flows. A collection starts the work;
+normal coroutine cancellation stops it. The cycle-wide execution session keeps
+the settings and selected live/simulation backend stable during planning,
+orders, and this settlement.
 
-## Flow 6 - Paginated Ledger Sync (Cold Flow)
+## Actual observations and prospective Buy & Hold
 
-**Path:** `TradeHistoryServiceImpl.syncLedgersFromKraken()` ->
-`LedgersSyncService` -> `getLedgersPaginated()` -> Kraken `/0/private/Ledgers`
--> SQLite
+**Raw observation path:** current cycle direct balance and ticker evidence →
+bounded `ActualObservationDispatcher` queue → append-only `ActualObservationStore`
 
-Ledger synchronization follows the same cold, page-by-page backpressure model as
-trade synchronization, but it has separate metadata and insert-only semantics.
-History workflows request it; the periodic rebalance cycle does not call it:
+Application startup starts the Actual dispatcher and portfolio manager. The
+first completed cycle publishes Dashboard state; startup does not reconstruct
+retrospective reports.
 
-- `LedgersSyncService` skips calls made within **60 seconds** of the previous
-  completed sync. A requested sync establishes its own execution session and
-  stable backend pin.
-- The first and recovered initial passes fetch at most the **96-day** seed
-  window, record durable page progress, and mark the ledger store seeded. A
-  resumed seed restarts from page zero because new rows can shift Kraken offsets.
-- Incremental passes begin from the latest stored ledger time or watermark minus
-  **300 seconds**, with a captured end time for stable newest-first pagination.
-- Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
-  so overlap and repeated pages are harmless. Coverage-grade synchronization
-  (`CURRENT_LEDGER_COVERAGE_VERSION = "10"`) requests unprojected ledger pages (`types = null`),
-  ensuring all raw entries (including `trade` balance-continuity checkpoints and unknown future types)
-  are captured and persisted without allow-list projection. Ordinary non-coverage sync passes request
-  `staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
-  `spend`, `receive`, `margin`, `rollover`, `settled`, `credit`, and top-level `reward`
-  response types. The live Kraken adapter sends `type=sale` for `spend` and `receive`
-  because `sale` is the documented query filter, and sends `type=all` for `earn`,
-  `reward`, and `conversion`; it filters returned rows by their actual response type.
-- Inception recovery separately requests unfiltered ledger pages. If Kraken
-  returns an observed top-level `type=reward` row there, it is persisted and
-  replayed as an in-kind actual balance event; Buy & Hold mirrors explicitly
-  classified account-level credits even when the synthetic basket did not already
-  hold that asset. Other holding-dependent reward credits remain actual-only when
-  the credited asset was unheld in the counterfactual.
-  Ordinary synchronization uses the same local response-type filtering for future reward rows. Durable trade
-coverage version `2` records start epoch sec, horizon epoch sec, and verified account
-  scope digest, enabling start-aware reconstruction without relying on forward trade watermarks.
-- Invalid live credentials skip the sync without opening an execution session;
-  a real sync brackets all pages with the same `ConfigService` execution-session
-  boundary used by trade synchronization. Simulation mode does not call Kraken.
+The loop enqueues the direct pre-trade balance and price observations after
+order execution returns. The dispatcher verifies the account binding and
+credential scope, values the configured managed assets, and appends the sample
+asynchronously. A full queue, verification failure, or storage failure can
+skip an observation; it does not block a safe rebalance cycle. Simulation does
+not add authenticated Actual observations.
 
-The History rewards query filters the persisted ledger range to `staking`,
-`dividend`, top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward` rows for tracked assets, then aligns cumulative
-amounts to portfolio snapshots and values them with each snapshot's prices. Earn
-allocation mechanics are internal and remain out of the rewards series. The
-actual comparison and reverse snapshot reconstruction consume all supported
-persisted ledger types, including observed top-level promotion `reward` rows
-returned by unfiltered recovery, with `amount - fee` where applicable. For pure
-Buy & Hold, complete conversions and complete refid-linked consumer `spend`/`receive`
-groups are validated and consumed as plumbing but emit no synthetic conversion,
-trade, or owner-flow event. Unlinked or singleton consumer passthrough rows are
-excluded from the passive event stream because their missing counterpart cannot
-prove an independent credit or charge; incomplete linked groups fail closed.
-Kraken documents those app transactions in Ledger history rather than Trades history.
-The ATH path prepares one immutable funding-provenance snapshot for the retained
-ledger batch and shares it across classification, card normalization, and basis
-replay. Confirmed card funding waits for its complete refid-linked shape; an
-incomplete card group defers ATH and is not journaled, while an ordinary
-confirmed Wire/ACH deposit remains an owner-capital event. Card normalization
-keeps synthetic net owner capital separate from exact per-leg asset deltas:
-Buy & Hold uses the synthetic amount, and later ATH basis reconstruction replays
-the actual deltas and fees once. At inception, the pure benchmark starts with
-the exact positive holdings in the selected recorded anchor and their normalized
-recorded value weights; it does not reconstruct current target percentages. When
-lifetime inception recovery is unresolved, the selected anchor may instead be the
-earliest genuinely recorded snapshot on or after the bounded passive evidence floor.
-Zero-valued assets and assets absent from that anchor receive no synthetic units,
-while later owner capital uses the same fixed anchor weights. Old decided ambiguous
-groups do not block an unrelated undecided bank flow, but a group split between
-decided and newly arrived rows fails closed rather than applying a partial sibling.
-Owner-flow ordering remains fail-closed when a withdrawal overlaps a tracked balance
-reduction or contribution/withdrawal source evidence whose sequence cannot be proven.
-Dividends for untracked assets remain excluded from the rewards series. It is a
-normal suspend query, not a background flow. Before the comparison renders, each
-tracked interval must reconcile against authoritative trades and supported ledger
-events at USD scale 2 or crypto scale 8; the first unexplained mismatch returns
-`UNEXPLAINED_BALANCE_CHANGE` at the next snapshot timestamp and hides numeric output.
-The History range is a display filter, not an accounting lower bound: comparison
-loads the effective baseline through the requested end, trims the unstable tail,
-reconciles the complete stable prefix, and only then filters and down-samples the
-points returned to the chart. Thus overlapping finite ranges retain the same
-economics as `all`; fewer than two displayed points returns
-`INSUFFICIENT_SNAPSHOTS` after the full accounting pass. The stable prefix requires
-current trade and ledger coverage certificates. Certificates also require coverage starts,
-consistent account-scope digests, and epoch-second values representable by the downstream
-millisecond metadata path. Event replay is capped at the end of the earlier certified second
-so uncertified live-tail events cannot produce a verified comparison or proposal.
+`GET /actual` reads the current account and configured-asset scope from the
+Actual store. It returns forward-only raw observations, including incomplete
+evidence and gaps. An optional prospective Buy & Hold comparison can start
+from an eligible complete observation after event continuity is verified. It
+uses observations moving forward from that baseline; it does not reconstruct an
+earlier period. Changing allocation weights alone does not change the observed
+asset scope, while changing configured assets does.
 
----
+## Retired History routes
 
-## Flow 7 — History/Settings Inception Recovery
-
-History and Settings workflows request inception recovery. `AccountHistoryScopeGuard`
-validates the active account/database scope before private-history data is persisted.
-A scope mismatch, unavailable scope, or non-empty unbound legacy database aborts
-that reporting workflow; recovered baselines are not trusted until the scope is
-validated again. This flow is separate from the periodic rebalance cycle.
-A mismatch caused by rotated keys rebinds when bounded marker-timestamped windows
-(newest + oldest retained fill/ledger, ±5 minutes, paginated to a 4-page cap per
-window) still contain one exact retained identity against the trusted lineage,
-while unbound legacy first binding samples up to five trades plus five ledgers
-across the retained lifetime and requires every sampled marker to match — any
-definitive absence alongside a match is conflict, never a bind. Typed `tradeId`/
-`ledgerId`
-equality is the proof and timestamps only locate the search. An unbound legacy
-database binds on the same proof, while an empty database binds only after a
-live credential check; a bound-but-empty database may adopt authenticated
-replacement credentials. Bindings carry proof-contract version 3: v1, v2, or missing
-versions are revalidated once under the current strong policy rather than fast-pathed. A window that stays full
-at the page cap reports
-incomplete (fail closed, binding retained), never absent; ledger windows use raw
-page occupancy so filtered short parsed pages cannot fake completion. History
-rendering
-reads a local fingerprint-vs-binding trust state with a try-lock instead of starting continuity
-proof, and a manually configured inception date never overrides a failed,
-busy, or unknown binding. Proof windows run inside a config execution session
-plus a pinned backend so every scope read, probe, window query, recheck, and
-write observes one credential generation, and the proven fingerprint is
-re-derived before any binding write, so credentials changing mid-proof abort
-without writing. V1, v2, or missing binding versions are never fast-pathed and
-never take the lightweight rotation proof: they revalidate under the strong
-legacy consistency policy regardless of fingerprint equality. Only v3 lineage
-may use the fast path and the one-hit rotation proof.
-Recovery is bounded to four pages per invocation, continuing healthy incomplete batches after ~30 seconds
-while retaining a conservative five-minute retry delay for failures and transient conditions; the UI observes
-durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
-for an unbounded account-history scan. A confirmed recovery baseline is separate from comparison
-readiness: History and Settings apply the same full reconciliation policy, and a later-start search
-uses a serialized durable cursor with `VERIFIED`, `INCOMPLETE`, or `EXHAUSTED` status. Accepting a
-verified later timestamp changes only the comparison anchor, never the strategy inception. The search
-fails closed with `HISTORICAL_COVERAGE_GAP` when retained snapshots cannot prove continuous coverage
-  from strategy start (tracked monotonically via continuous history metadata), so pruning cannot masquerade
-  as a verified comparison start. A valid configured inception date is persisted as a retention floor
-  before recovery completes, preserving the history needed for later exact baseline reconstruction.
-  Settings automatic baseline verification additionally runs only against the latest stable,
-  coverage-confirmed state: verification uses the longest contiguous prefix of snapshots whose
-  observation boundaries are covered by the `min(certified trade, ledger) coverage horizon` —
-  an uncovered snapshot starts the unstable tail, and later snapshots may not re-enter the
-  verification window until coverage catches up monotonically (a covered observation after an
-  uncovered one defers with `HISTORY_COVERAGE_NON_MONOTONIC`) — excluded from verification and
-  the persisted proof horizon until trade/ledger history catches up (deferring with a
-  `HISTORY_COVERAGE_STALE` log instead of reporting `UNEXPLAINED_BALANCE_CHANGE`); real
-  reconciliation failures inside confirmed coverage still fail closed.
-
-```mermaid
-sequenceDiagram
-    participant Caller as History or Settings workflow
-    participant Scope as AccountHistoryScopeGuard
-    participant Recovery as InceptionRecoveryService
-    participant Kraken as Kraken private API
-    participant THS as TradeHistorySyncService
-    participant DB as SQLite
-    participant History as History UI
-
-    Caller->>Scope: validate active account/database scope
-    alt scope valid
-        Caller->>Recovery: recoverOneBoundedRun()
-        Recovery->>DB: read version, fingerprint, offsets, horizon
-        Recovery->>Kraken: TradesHistory page (fixed end horizon)
-        Kraken-->>Recovery: fills + count
-        Recovery->>THS: importRecoveredApiTrades(page)
-        THS->>DB: reconcile API fill, preserve local/order identities
-        Recovery->>Kraken: Ledgers page (all types, fixed end horizon)
-        Kraken-->>Recovery: ledger rows + count
-        Recovery->>DB: insert by ledger identity and checkpoint offset
-        alt both streams complete
-            Recovery->>DB: validate ownership, provenance, anchor, prices
-            Recovery->>DB: atomically save candidate-1ms baseline + evidence
-        else page failure, cancellation, or incomplete coverage
-            Recovery->>DB: retain resumable progress, no inception confirmation
-        end
-    else scope unavailable, mismatched, or unbound
-        Scope-->>History: unavailable/scope-mismatch, no private writes
-    end
-    History->>DB: GET /api/history/sync-progress
-    DB-->>History: ordinary sync + recovery status/progress/reason
-```
-
-When both bounded recovery streams are complete, the approved-start path validates the retained
-ledger evidence before constructing the baseline. The validator treats Kraken's authoritative
-post-entry balances as wallet-scoped checkpoints, includes trade ledger rows for continuity while
-leaving trade economics to `TradesHistory`, and solves same-timestamp rows as bounded groups
-without manufacturing an order from ledger IDs. Older `SOL`/`SOL03` rows with one ledger ID are
-projected as one canonical `SOL` event only when all other evidence fields match; conflicting duplicate
-identities remain invalid. A singleton internal-transfer row is accepted only when its authoritative
-balance and documented subtype/sign prove a non-Spot wallet scope. Spot-facing singleton legs still
-require a complete linked pair, so a missing counterpart cannot be silently skipped by ordinary
-comparison. Parser amount validity and obvious credit/debit direction violations are persisted/checked
-before replay. It preserves fail-closed behavior for ambiguous wallet scopes that change aggregate
-balances, incomplete or uncheckpointed Spot-facing transfer groups, malformed fees, duplicate
-identities, including a pruned fill whose exact `orderTxid` or `clientOrderId` could bind
-to more than one retained trade or ledger refid, unsupported transfer scopes, and unresolved
-balance differences. No amount/time fuzzy match is used. Changing this derived replay
-contract advances the baseline replay version (currently `18`; snapshot reconstruction is `19`).
-The validator's resolved per-ledger wallet scope is
-passed directly to baseline replay: trade-type rows are consumed as wallet-effect evidence only,
-while trade economics come from `TradesHistory`;
-every non-conversion row resolved to Spot is reversed against the configured balance; staking,
-Futures, and opaque-staking rows are excluded from the Spot snapshot balance; and unresolved
-nonzero rows fail closed. Zero-net rows may remain unresolved because they cannot mutate the
-reconstructed balance. Complete conversions retain their explicit strategy-neutral two-leg
-treatment. Completed recovery offsets and stream status are kept.
-
----
-
-## Hot vs. Cold: Why Does It Matter?
-
-The choice between hot and cold flows in this application is deliberate and maps directly to the nature of each problem:
-
-| Use Case | Type | Why? |
-| --- | --- | --- |
-| Config changes | **Hot** | Config exists before anyone listens. New subscribers must get the current value immediately (`replay=1`). Multiple components could theoretically watch it. |
-| Dashboard streaming | **Hot** | Snapshots are produced by the rebalancer loop independently of how many browsers are connected. Each connected browser should see the same live broadcast. |
-| Paginated API sync | **Cold** | Fetching is always triggered on-demand for a specific reason. The caller owns the full lifecycle. Backpressure is critical for memory safety with large histories. |
-| Paginated ledger sync | **Cold** | History workflows request ledger pages; import uses insert-only identity dedupe and durable seed progress. |
-| Inception recovery | **Cold + durable state** | Four-page bounded runs use a fixed horizon and overlap-on-resume offsets; incomplete or ambiguous evidence never becomes a lifetime baseline. |
-| Automatic B&H baseline proof | **Durable state** | The successful inception-is-baseline verification persists its identity and evidence digest; Settings evaluations re-validate the record (re-hashing local evidence up to the verified horizon) and serve the proven baseline identity without reconciliation replay, historical pricing, or funding preparation until a bounded invalidation reason fails it closed. |
-| USD settle (fill / balance) | **Cold** | One-shot after sells. Fill-confirm or balance poll only makes sense in that context; the caller only needs the final settled cash. |
-| Live-order journal | **Durable state** | A database row survives process failure and blocks ambiguous live retries until an operator verifies the exchange outcome. |
-| Actual observation capture | **Bounded asynchronous queue + durable state** | Reuses one cycle's direct balance and ticker responses after order execution returns. A dropped or failed sample is not counted as persisted Actual history. |
-
-## Flow 8 — Forward-Only Actual Observations
-
-`PortfolioAnalyzerImpl` retains the raw Kraken Balance and Ticker responses and
-their local request boundaries alongside the ordinary planning values. After
-`OrderExecutor` returns, `PortfolioManagerImpl` offers that evidence to the
-bounded `ActualObservationDispatcher` queue. It does not make a new balance or
-price request, and it does not wait for Actual SQLite persistence before
-continuing the live cycle. Simulation and backends without authenticated direct
-evidence do not enqueue Actual samples.
-
-The background writer verifies the captured credential generation against the
-established execution-account binding, calculates only the configured asset
-scope, and appends the observation and asset evidence in one transaction to a
-separate SQLite file. The stored scope fingerprint represents configured
-asset membership: changing only allocation percentages keeps the same measured
-boundary; changing membership selects a different history segment. The store
-rejects updates and deletes. A queue overflow, account mismatch, valuation
-failure, or storage error leaves the sample absent or incomplete and is
-reported without entering the order-safety path. The in-memory queue is not a
-durable capture claim; a sample becomes Actual history only after append
-commits.
-
-The `/actual` page reads at most 250 stored observations matching the current
-account binding and scope. It does not invoke trade/ledger reconstruction,
-OHLC pricing, or the legacy History services. Incomplete observations are
-retained as visible gaps; the chart does not connect a line across them. A
-different scope or account is not silently joined to the current series.
-
-```mermaid
-sequenceDiagram
-    participant PM as PortfolioManagerImpl
-    participant PA as PortfolioAnalyzerImpl
-    participant OE as OrderExecutor
-    participant Kraken as Kraken API
-    participant Queue as ActualObservationDispatcher
-    participant Binding as ExecutionAccountBindingService
-    participant ActualDB as Separate Actual SQLite
-    participant Browser as Actual page
-
-    PM->>PA: fetch cycle balances + prices
-    PA->>Kraken: private Balance + public Ticker
-    Kraken-->>PA: direct response evidence + local request windows
-    PA-->>PM: planning values and retained evidence
-    PM->>OE: execute or complete dry-run plan
-    OE-->>PM: order execution returns
-    PM->>Queue: trySend(cycle evidence)
-    note over PM,Queue: bounded, non-blocking, queue admission is not persistence
-    Queue->>Binding: verify account identity and captured credential generation
-    alt bound identity available
-        Queue->>ActualDB: append observation + asset rows atomically
-        ActualDB-->>Queue: commit complete or incomplete direct sample
-    else incomplete evidence, mismatch, or store failure
-        Queue->>Queue: skip or retain incomplete sample, expose capture issue
-    end
-    Browser->>ActualDB: bounded query for current account + scope
-    ActualDB-->>Browser: immutable forward-only observations
-```
+The former `/history` page permanently redirects to `/actual`. Former
+`/api/history/*` reporting endpoints return **410 Gone**. Historical sync,
+reconstruction, and retrospective report writes no longer run. Existing legacy
+database files and tables are left in place for migration and continuity needs.

@@ -38,7 +38,7 @@ coverage, and agent routing (recommend-only), use
 | `CODE_OF_CONDUCT.md` | Only if links/contacts are broken |
 | `docs/ALGORITHM.md` | Rebalancing math & execution |
 | `docs/FLOWS.md` | Flow / SharedFlow / SSE architecture |
-| `docs/EVALUATION.md` | Scenario evaluation suite |
+| `docs/EVALUATION.md` | Focused tests for current product contracts |
 | `.agents/AGENTS.md` | Invariants, skill index, stack pins |
 | `.agents/OPERATING.md` | Always-on norms; must stay aligned with `.cursor/rules/*.mdc` |
 | `CLAUDE.md` / `.github/copilot-instructions.md` | Thin harness entrypoints → `.agents/` |
@@ -73,23 +73,24 @@ Gather facts from code/build (do not trust docs yet):
     `common/build.gradle.kts`, `engine/build.gradle.kts`, `frontend-js/build.gradle.kts`,
     `gradle/wrapper/gradle-wrapper.properties`, JDK toolchain, Spotless/ktlint.
 2. **Architecture** — packages under `backend/src/main/kotlin/com/gemini/krakenbot/`,
-    `:common`, `:engine`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
+   `:common`, `:engine`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
    `PortfolioAnalyzerImpl`, `PortfolioCalculations`, `OrderExecutorImpl`,
-   `DynamicKrakenService`, `RateLimiter`, `TradeHistoryServiceImpl`,
-   `DashboardRoutes` / `DashboardController`, view components).
-3. **Config surface** — `Settings`, `AppConfig`, `Allocation`,
-   `rebalancer-config-template.json` keys (`dryRun`, `simulation`,
-    `fiatMaxDrawdown`, `minimumOrderSizeUSD`, etc.).
-4. **HTTP / UI** — `Routes` / `FormFields` in `:common`; SSE path; History
-   summary cards contract.
-5. **Algorithm** — `PortfolioCalculations`, `PortfolioAnalyzerImpl`,
-   `OrderExecutorImpl` vs `docs/ALGORITHM.md`.
-6. **Flows** — config `SharedFlow`, snapshot `SharedFlow`, cold poll/sync
-   flows vs `docs/FLOWS.md`.
-7. **Tests / evaluation** — `EvaluationScenariosTest` scenario count/names and
-   the separate `SimulationEvaluationScenariosTest` production-emulator
-   invariants vs `docs/EVALUATION.md`; coverage gates in JaCoCo +
-   `frontend-js/karma.config.d/coverage.js`.
+   `DynamicKrakenService`, `RateLimiter`, `CurrentPortfolioState`,
+   `ActualObservationDispatcher`, `DashboardController`, view components).
+3. **Config surface** — `Settings`, `AppConfig`, `Allocation`, and
+   `rebalancer-config-template.json`; distinguish active controls from retired
+   history-only keys discarded on load and removed by Settings save.
+4. **HTTP / UI** — routes and form fields; Dashboard latest-cycle snapshot,
+   active Settings, Actual raw observations and continuity-verified prospective
+   Buy & Hold, `/history` redirect, retired API responses, and SSE.
+5. **Algorithm** — fixed configured USD target, `PortfolioCalculations`,
+   `PortfolioAnalyzerImpl`, and `OrderExecutorImpl` vs `docs/ALGORITHM.md`.
+6. **Flows** — config updates, in-memory current snapshot state, asynchronous
+   Actual capture, and Dashboard SSE vs `docs/FLOWS.md`; check that retrospective
+   report synchronization/reconstruction is absent.
+7. **Tests / evaluation** — focused current-contract tests mapped in
+   `docs/EVALUATION.md`; verify file names and behavior in source. Check JaCoCo
+   and `frontend-js/karma.config.d/coverage.js` separately.
 8. **CI** — `.github/workflows/*` (verify CodeQL language support and triggers).
 9. **Security model** — no dashboard auth; CORS via `isLocalOrPrivateOrigin`.
 
@@ -191,11 +192,10 @@ High-risk mismatch examples:
 - Package tree in README ≠ `backend/src/main/kotlin` / `repository/table/`
 - `dryRun` confused with `simulation`
 - Rate limiting described as “Mutex only” without call-counter `RateLimiter`
-- Algorithm missing fiat deployment / fiat correction / dust / 99% buy / 95% settle
+- Algorithm missing the fixed USD target, fiat correction, dust checks, 99% buy reserve, or settled-cash safeguards
 - Coverage stated as vague “75%+ JS” instead of Karma 90/80/90/75
 - Lint paths pointing at root `AGENTS.md` (file is `.agents/AGENTS.md`)
-- Evaluation suite tables out of sync with `EvaluationScenariosTest` or
-  `SimulationEvaluationScenariosTest`
+- Evaluation test maps name retired suites or list tests that no longer exist
 - Config template missing keys present on `Settings`
 
 #### Code snippet, flag, and link verification
@@ -303,11 +303,9 @@ Spot-check:
 
 - [ ] README tech stack versions match Gradle
 - [ ] README directory tree matches packages (tables under `repository/table/`)
-- [ ] ALGORITHM covers ATH/drawdown deploy, fiat correction, dust, sell→buy, 99% cap
-- [ ] FLOWS matches ConfigService + TradeHistoryService + SSE route
-- [ ] EVALUATION scenario and invariant-suite lists match
-      `EvaluationScenariosTest` and `SimulationEvaluationScenariosTest` (or note
-      an intentional subset)
+- [ ] ALGORITHM covers fixed USD target, fiat correction, dust, sell→buy, 99% cash reserve, Dashboard, and Actual contracts
+- [ ] FLOWS matches config updates, current snapshot state, Actual capture, and SSE route
+- [ ] EVALUATION links focused current-contract tests and identifies intentionally retired retrospective coverage
 - [ ] Template JSON keys ⊆ `Settings` / `AppConfig`
 - [ ] AGENTS skill index links resolve to existing `SKILL.md` files
 - [ ] `dryRun` vs `simulation` distinguished wherever both appear
@@ -323,8 +321,8 @@ Do not declare complete until markdown lint is clean on touched files.
 | Topic | Code anchors | Doc anchors |
 | :--- | :--- | :--- |
 | Rebalance math | `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl` | `docs/ALGORITHM.md` |
-| Flows / SSE | `ConfigServiceImpl`, `TradeHistoryServiceImpl`, `DashboardController` | `docs/FLOWS.md` |
-| Evaluation | `EvaluationScenariosTest` + `FakeKrakenService`; `SimulationEvaluationScenariosTest` + `SimulatedKrakenService` | `docs/EVALUATION.md` |
+| Flows / SSE | `ConfigServiceImpl`, `CurrentPortfolioState`, `ActualObservationDispatcher`, `DashboardController` | `docs/FLOWS.md` |
+| Evaluation | Focused planning, execution-safety, Dashboard, Settings, Actual, and prospective-continuity tests | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
 | Coverage | `backend/build.gradle.kts` JaCoCo, `frontend-js/karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
 | Security | `KtorConfig.configureCORS`, `SECURITY.md` | SECURITY, AGENTS security section |

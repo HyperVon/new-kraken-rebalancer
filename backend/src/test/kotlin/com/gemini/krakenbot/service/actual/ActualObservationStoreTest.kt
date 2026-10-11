@@ -10,10 +10,14 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.test.runTest
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.Instant
@@ -92,6 +96,29 @@ class ActualObservationStoreTest : StringSpec() {
             }
         }
 
+        "version one incomplete observation without asset rows remains incomplete after migration" {
+            withTempDirectory { directory ->
+                val paths = paths(directory)
+                val observation = sample("legacy-without-assets").copy(
+                    status = ActualObservationStatus.INCOMPLETE,
+                    totalUsd = null,
+                    incompleteReasons = listOf("legacy sample contained no asset rows"),
+                    assets = emptyList(),
+                )
+                createVersionOneDatabase(paths.actual, observation)
+
+                runTest {
+                    val loaded = store(paths)
+                        .querySegment(observation.scopeFingerprint, observation.accountIdentityDigest)
+                        .single()
+                    loaded.status shouldBe ActualObservationStatus.INCOMPLETE
+                    loaded.totalUsd shouldBe null
+                    loaded.assets shouldBe emptyList()
+                    loaded.incompleteReasons shouldBe observation.incompleteReasons
+                }
+            }
+        }
+
         "ambiguous version one evidence leaves the original database intact" {
             withTempDirectory { directory ->
                 val paths = paths(directory)
@@ -118,6 +145,109 @@ class ActualObservationStoreTest : StringSpec() {
                         }
                     }
                 }
+            }
+        }
+
+        "version one migration rejects duplicate and incomplete raw evidence without changing the source" {
+            listOf(
+                "XXBT\u0000first\nXXBT\u0000second" to "duplicate keys",
+                "orphan\u0000value" to "incomplete raw balance evidence",
+            ).forEachIndexed { index, (legacyValues, expectedMessage) ->
+                withTempDirectory { directory ->
+                    val paths = paths(directory)
+                    val observation = sample("legacy-invalid-$index")
+                    createVersionOneDatabase(paths.actual, observation)
+                    DriverManager.getConnection("jdbc:sqlite:${paths.actual}").use { connection ->
+                        connection.prepareStatement(
+                            "UPDATE actual_observation_assets SET raw_balance_values = ? " +
+                                "WHERE observation_id = ? AND asset_symbol = 'BTC'",
+                        ).use { statement ->
+                            statement.setString(1, legacyValues)
+                            statement.setString(2, observation.observationId)
+                            statement.executeUpdate() shouldBe 1
+                        }
+                    }
+
+                    runTest {
+                        val query: suspend () -> List<ActualObservation> = {
+                            store(paths).querySegment(observation.scopeFingerprint, observation.accountIdentityDigest)
+                        }
+                        val failure = if (index == 0) {
+                            shouldThrow<IllegalArgumentException> { query() }
+                        } else {
+                            shouldThrow<IllegalStateException> { query() }
+                        }
+                        failure.message.orEmpty() shouldContain expectedMessage
+                    }
+                    DriverManager.getConnection("jdbc:sqlite:${paths.actual}").use { connection ->
+                        connection.createStatement().use { statement ->
+                            statement.executeQuery("SELECT MAX(version) FROM actual_schema_migrations").use { rows ->
+                                rows.next() shouldBe true
+                                rows.getInt(1) shouldBe 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        "version one migration rejects ambiguous or incomplete ticker response evidence" {
+            val invalidCases = listOf(
+                Triple(
+                    "XXBTZUSD\nXXBTZUSD",
+                    "XXBTZUSD\u0000100.00",
+                    "ambiguous ticker response pairs",
+                ),
+                Triple(
+                    "missing-pair",
+                    "XXBTZUSD\u0000100.00",
+                    "incomplete raw price evidence",
+                ),
+            )
+            invalidCases.forEachIndexed { index, (candidatePairs, candidatePrices, expectedMessage) ->
+                withTempDirectory { directory ->
+                    val paths = paths(directory)
+                    val observation = sample("legacy-invalid-price-$index")
+                    createVersionOneDatabase(paths.actual, observation)
+                    DriverManager.getConnection("jdbc:sqlite:${paths.actual}").use { connection ->
+                        connection.prepareStatement(
+                            "UPDATE actual_observation_assets SET candidate_response_pairs = ?, " +
+                                "candidate_raw_prices = ? WHERE observation_id = ? AND asset_symbol = 'BTC'",
+                        ).use { statement ->
+                            statement.setString(1, candidatePairs)
+                            statement.setString(2, candidatePrices)
+                            statement.setString(3, observation.observationId)
+                            statement.executeUpdate() shouldBe 1
+                        }
+                    }
+
+                    runTest {
+                        val failure = shouldThrow<IllegalStateException> {
+                            store(paths).querySegment(observation.scopeFingerprint, observation.accountIdentityDigest)
+                        }
+                        failure.message.orEmpty() shouldContain expectedMessage
+                    }
+                    DriverManager.getConnection("jdbc:sqlite:${paths.actual}").use { connection ->
+                        connection.createStatement().use { statement ->
+                            statement.executeQuery("SELECT MAX(version) FROM actual_schema_migrations").use { rows ->
+                                rows.next() shouldBe true
+                                rows.getInt(1) shouldBe 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        "unsupported observation schema versions are rejected before storage is opened" {
+            withTempDirectory { directory ->
+                val paths = paths(directory)
+                runTest {
+                    shouldThrow<IllegalArgumentException> {
+                        store(paths).append(sample("future-observation").copy(observationSchemaVersion = 999))
+                    }
+                }
+                Files.exists(paths.actual) shouldBe false
             }
         }
 
@@ -148,6 +278,56 @@ class ActualObservationStoreTest : StringSpec() {
                 }
                 runTest {
                     store.querySegment(original.scopeFingerprint, original.accountIdentityDigest).size shouldBe 1
+                }
+            }
+        }
+
+        "version one payload hashes preserve idempotent retries without permitting evidence replacement" {
+            withTempDirectory { directory ->
+                val paths = paths(directory)
+                val store = store(paths)
+                val original = sample("legacy-payload-hash")
+                val observation = original.copy(
+                    status = ActualObservationStatus.INCOMPLETE,
+                    totalUsd = null,
+                    incompleteReasons = listOf("raw price evidence was unavailable"),
+                    assets = original.assets.map { asset ->
+                        asset.copy(
+                            status = ActualAssetStatus.INVALID_PRICE,
+                            rawBalanceValues = asset.rawBalanceValues.mapValues { null },
+                            quantity = null,
+                            requestedPair = null,
+                            responsePair = null,
+                            candidateRawPrices = asset.candidateRawPrices.mapValues { null },
+                            rawPrice = null,
+                            priceUsd = null,
+                            valueUsd = null,
+                        )
+                    },
+                )
+
+                runTest {
+                    store.append(observation) shouldBe true
+                }
+                DriverManager.getConnection("jdbc:sqlite:${paths.actual}").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("DROP TRIGGER actual_observations_no_update")
+                    }
+                    connection.prepareStatement(
+                        "UPDATE actual_observations SET payload_hash_version = 1, payload_hash = ? " +
+                            "WHERE observation_id = ?",
+                    ).use { statement ->
+                        statement.setString(1, legacyPayloadHash(observation))
+                        statement.setString(2, observation.observationId)
+                        statement.executeUpdate() shouldBe 1
+                    }
+                }
+
+                runTest {
+                    store.append(observation) shouldBe false
+                    shouldThrow<IllegalStateException> {
+                        store.append(observation.copy(totalUsd = BigDecimal("999.99")))
+                    }
                 }
             }
         }
@@ -208,6 +388,70 @@ class ActualObservationStoreTest : StringSpec() {
                     store.append(otherAccount)
                     val limited = store.querySegment(first.scopeFingerprint, first.accountIdentityDigest, limit = 1)
                     limited.map { it.observationId } shouldBe listOf("second")
+                }
+            }
+        }
+
+        "file-backed store rejects memory paths, invalid limits, future schemas, and corrupt encodings" {
+            withTempDirectory { directory ->
+                val paths = paths(directory)
+                runTest {
+                    shouldThrow<IllegalArgumentException> {
+                        ActualObservationStore(":memory:", paths.reporting.toString(), paths.execution.toString())
+                            .querySegment("f".repeat(64), ACCOUNT_DIGEST)
+                    }
+                    shouldThrow<IllegalArgumentException> {
+                        ActualObservationStore(" ", paths.reporting.toString(), paths.execution.toString())
+                            .querySegment("f".repeat(64), ACCOUNT_DIGEST)
+                    }
+                    shouldThrow<IllegalArgumentException> {
+                        ActualObservationStore(
+                            "jdbc:sqlite:file:actual?mode=memory&cache=shared",
+                            paths.reporting.toString(),
+                            paths.execution.toString(),
+                        ).querySegment("f".repeat(64), ACCOUNT_DIGEST)
+                    }
+                    shouldThrow<IllegalArgumentException> {
+                        store(paths).querySegment("f".repeat(64), ACCOUNT_DIGEST, limit = 0)
+                    }
+                }
+
+                DriverManager.getConnection("jdbc:sqlite:${paths.actual}").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute(
+                            "CREATE TABLE actual_schema_migrations " +
+                                "(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at_ns INTEGER NOT NULL)",
+                        )
+                        statement.execute(
+                            "INSERT INTO actual_schema_migrations(version, name, applied_at_ns) " +
+                                "VALUES (5, 'future', 1)",
+                        )
+                    }
+                }
+                runTest {
+                    shouldThrow<IllegalStateException> {
+                        store(paths).querySegment("f".repeat(64), ACCOUNT_DIGEST)
+                    }
+                }
+
+                val corruptDirectory = Files.createDirectory(directory.resolve("corrupt"))
+                val corruptPaths = paths(corruptDirectory)
+                val corruptStore = store(corruptPaths)
+                val observation = sample("corrupt-encoded-value")
+                runTest { corruptStore.append(observation) shouldBe true }
+                DriverManager.getConnection("jdbc:sqlite:${corruptPaths.actual}").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("DROP TRIGGER actual_observation_assets_no_update")
+                        statement.execute(
+                            "UPDATE actual_observation_assets SET raw_balance_keys = '%' " +
+                                "WHERE observation_id = '${observation.observationId}' AND asset_symbol = 'BTC'",
+                        )
+                    }
+                }
+                runTest {
+                    shouldThrow<IllegalArgumentException> {
+                        corruptStore.querySegment(observation.scopeFingerprint, observation.accountIdentityDigest)
+                    }
                 }
             }
         }
@@ -295,6 +539,58 @@ class ActualObservationStoreTest : StringSpec() {
         value = BigDecimal(value),
         status = DirectEvidenceStatus.VALID,
     )
+
+    /** Historical v1 hash encoding used to verify a retry against an existing v1 row. */
+    private fun legacyPayloadHash(observation: ActualObservation): String {
+        val fields = buildList {
+            add(observation.observationId)
+            add(observation.accountIdentityDigest)
+            add(observation.walletScope)
+            add(observation.scopeFingerprint)
+            addAll(observation.scopeSymbols)
+            add(observation.observedAt.toString())
+            add(observation.balanceRequestStartedAt.toString())
+            add(observation.balanceResponseEndedAt.toString())
+            add(observation.priceRequestStartedAt.toString())
+            add(observation.priceResponseEndedAt.toString())
+            add(observation.status.name)
+            add(observation.totalUsd?.toPlainString().orEmpty())
+            addAll(observation.incompleteReasons)
+            observation.assets.sortedBy(ActualAssetObservation::symbol).forEach { asset ->
+                add(asset.symbol)
+                add(asset.status.name)
+                addAll(asset.rawBalanceKeys.sorted())
+                asset.rawBalanceValues.toSortedMap().forEach { (key, value) ->
+                    add(key)
+                    add(value.orEmpty())
+                }
+                add(asset.quantity?.toPlainString().orEmpty())
+                add(asset.requestedPair.orEmpty())
+                add(asset.responsePair.orEmpty())
+                addAll(asset.candidateResponsePairs.sorted())
+                asset.candidateRawPrices.toSortedMap().forEach { (key, value) ->
+                    add(key)
+                    add(value.orEmpty())
+                }
+                add(asset.rawPrice.orEmpty())
+                add(asset.priceUsd?.toPlainString().orEmpty())
+                add(asset.valueUsd?.toPlainString().orEmpty())
+                add(asset.reason.orEmpty())
+            }
+        }
+        val bytes = ByteArrayOutputStream()
+        DataOutputStream(bytes).use { output ->
+            fields.forEach { field ->
+                val encoded = field.toByteArray(Charsets.UTF_8)
+                output.writeInt(encoded.size)
+                output.writeByte(0)
+                output.write(encoded)
+            }
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(bytes.toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte) }
+    }
 
     private fun paths(directory: Path) = DatabasePaths(
         actual = directory.resolve("actual.db"),

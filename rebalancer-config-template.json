@@ -9,8 +9,7 @@
     "minimumOrderSizeUSD": 5.0,
     "dryRun": true,
     "simulation": false,
-    "fiatMaxDrawdown": 0.0,
-    "fiatDeploymentExponent": 1.0
+    "qualityScores": {}
   },
   "allocations": [
     {

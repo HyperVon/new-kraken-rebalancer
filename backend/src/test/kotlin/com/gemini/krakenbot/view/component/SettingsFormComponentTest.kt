@@ -4,330 +4,38 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ComparisonAvailability
-import com.gemini.krakenbot.model.ComparisonProposalStatus
-import com.gemini.krakenbot.model.ComparisonUnavailableReason
-import com.gemini.krakenbot.service.AutomaticBaselineStatus
-import com.gemini.krakenbot.service.ComparisonStartProposal
-import com.gemini.krakenbot.service.InceptionDisplayInfo
-import com.gemini.krakenbot.service.InceptionDisplayStatus
-import com.gemini.krakenbot.service.SettingsComparisonStatus
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
-import kotlinx.html.body
 import kotlinx.html.div
-import kotlinx.html.html
 import kotlinx.html.stream.createHTML
-import java.time.Instant
 
 class SettingsFormComponentTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private fun config(inceptionDate: String? = null, comparisonStartDate: String? = null) = AppConfig(
-        KrakenCredentials("test-key", "dGVzdC1wcml2YXRlLWtleQ=="),
-        TestFixtures.settings(dryRun = true)
-            .copy(inceptionDate = inceptionDate, comparisonStartDate = comparisonStartDate),
-        listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
-    )
-
-    private fun render(
-        settingsConfig: AppConfig,
-        display: InceptionDisplayInfo,
-        proposal: ComparisonStartProposal? = null,
-    ): String = createHTML().div {
-        SettingsFormComponent().renderForm(
-            this,
-            settingsConfig,
-            null,
-            "csrf-token",
-            inceptionDisplay = display,
-            laterStartProposal = proposal,
-        )
-    }
-
     init {
-        "the score preview fields each carry a visible label" {
-            val html = render(
-                config(),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.UNAVAILABLE),
+        "settings shows active trading controls and preserved allocation values only" {
+            val config = AppConfig(
+                kraken = KrakenCredentials("key", "secret"),
+                settings = TestFixtures.settings(dryRun = true, simulation = true, loopDelaySeconds = 60),
+                allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
             )
-
-            // Both preview inputs are pre-filled or empty, so a label is the only thing that
-            // explains them. A prefilled emphasis is the worst case: its placeholder can never
-            // show, so without a label the operator sees a bare "4" with nothing to say what it is
-            // or what it does.
-            html shouldContain "Emphasis (1–8)"
-            html shouldContain "Scored sleeve (%)"
-            html shouldContain "reweighted between themselves"
-            // The group itself is untitled: "scored sleeve" names the field, not the box.
-            html shouldNotContain "allocation-control-label"
-        }
-
-        "the emphasis input pre-selects the shared domain default" {
-            val html = render(
-                config(),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.UNAVAILABLE),
-            )
-
-            html shouldContain "value=\"${QualityAllocation.DEFAULT_EMPHASIS}\""
-            // An out-of-range default would make every preview fail validation, so the form
-            // default has to sit inside the range the engine accepts.
-            (QualityAllocation.DEFAULT_EMPHASIS in 1..QualityAllocation.MAX_EMPHASIS) shouldBe true
-            // An absent field means "not chosen" and falls back to the flattest weighting, which
-            // is deliberately not the pre-selected default.
-            QualityAllocation.FALLBACK_EMPHASIS shouldBe 1
-        }
-
-        "approved pending renders the recovery progress marker" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_PENDING),
-            )
-
-            html shouldContain "inception-baseline-pending"
-            html shouldContain "Approved start saved"
-        }
-
-        "approved ready renders the established baseline message" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(
-                    status = InceptionDisplayStatus.APPROVED_READY,
-                    message = "Comparison baseline established at 2026-01-01T00:00:00Z",
-                ),
-            )
-
-            html shouldContain "Comparison baseline established at"
-            html shouldNotContain "inception-baseline-pending"
-        }
-
-        "approved ready with a blocked comparison renders the verified-start control" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(
-                    status = InceptionDisplayStatus.APPROVED_READY,
-                    message = "Comparison baseline established at 2026-01-01T00:00:00Z",
-                ),
-                proposal = ComparisonStartProposal(
-                    ComparisonProposalStatus.VERIFIED,
-                    Instant.parse("2026-08-01T10:30:00Z"),
-                    snapshotId = 7,
-                ),
-            )
-
-            html shouldContain "approved baseline is ready"
-            html shouldContain "Use verified start"
-        }
-
-        "approved unavailable with a proposal renders the verified-start control" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
-                proposal = ComparisonStartProposal(
-                    ComparisonProposalStatus.VERIFIED,
-                    Instant.parse("2026-08-01T10:30:00Z"),
-                    snapshotId = 7,
-                ),
-            )
-
-            html shouldContain "Earliest verified comparison start"
-            html shouldContain "Use verified start"
-            html shouldContain "value='2026-08-01T10:30:00Z'"
-        }
-
-        "verified proposal without a snapshot identity renders no acceptance control" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
-                proposal = ComparisonStartProposal(
-                    ComparisonProposalStatus.VERIFIED,
-                    Instant.parse("2026-08-01T10:30:00Z"),
-                ),
-            )
-
-            html shouldNotContain "Earliest verified comparison start"
-            html shouldNotContain "Use verified start"
-        }
-
-        "incomplete proposal renders progress without an accept control" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
-                proposal = ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE),
-            )
-
-            html shouldContain "Later-start verification is still in progress"
-            html shouldNotContain "Use verified start"
-        }
-
-        "exhausted proposal renders the retained-history outcome" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
-                proposal = ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED),
-            )
-
-            html shouldContain "No retained later start passed complete reconciliation"
-            html shouldNotContain "Use verified start"
-        }
-
-        "approved unavailable without a proposal renders no verified-start control" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
-            )
-
-            html shouldContain "No trustworthy baseline could be established"
-            html shouldNotContain "Use verified start"
-        }
-
-        "the async comparison-status slot is the only place a requested comparison start is shown" {
-            val html = render(
-                config(inceptionDate = "2026-01-01T00:00:00Z", comparisonStartDate = "2026-06-07"),
-                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_READY),
-            )
-            html shouldNotContain "Requested comparison start"
-
-            val fragment = createHTML().div {
-                SettingsFormComponent().renderProposalSlotFragment(
-                    this,
-                    SettingsComparisonStatus(),
-                    "2026-06-07",
-                )
-            }
-            val occurrences = fragment.split("Requested comparison start").size - 1
-            occurrences shouldBe 1
-        }
-
-        "async comparison status renders progress and failure without claiming a baseline" {
-            val progressFragment = createHTML().div {
-                SettingsFormComponent().renderProposalSlotFragment(
-                    this,
-                    SettingsComparisonStatus(evaluationInProgress = true),
-                    null,
-                )
-            }
-            progressFragment shouldContain "Determining effective comparison baseline…"
-            progressFragment shouldNotContain "Effective comparison baseline:"
-
-            val failedFragment = createHTML().div {
-                SettingsFormComponent().renderProposalSlotFragment(
-                    this,
-                    SettingsComparisonStatus(evaluationFailed = true),
-                    null,
-                )
-            }
-            failedFragment shouldContain "Unable to load comparison baseline status."
-            failedFragment shouldNotContain "Effective comparison baseline:"
-        }
-
-        "an unavailable comparison renders the exact reason and evidence timestamp" {
-            val fragment = createHTML().div {
-                SettingsFormComponent().renderProposalSlotFragment(
-                    this,
-                    SettingsComparisonStatus(
-                        comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
-                        unavailableReason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                        unavailableAt = "2026-06-08T00:00:00Z",
-                    ),
-                    null,
-                )
+            val html = createHTML().div {
+                SettingsFormComponent().renderForm(this, config, null, "csrf-token")
             }
 
-            fragment shouldContain "The comparison baseline is currently unavailable."
-            fragment shouldContain "A deposit, withdrawal, transfer, or incomplete trade history may exist."
-            fragment shouldContain "(failed at: 2026-06-08T00:00:00Z)"
-        }
-
-        "a fast-path baseline status renders Automatic without claiming a comparison evaluation" {
-            val fragment = createHTML().div {
-                SettingsFormComponent().renderProposalSlotFragment(
-                    this,
-                    SettingsComparisonStatus(
-                        baselineStatus = AutomaticBaselineStatus.VERIFIED,
-                        baselineTimestamp = "2026-06-07T00:00:00Z",
-                    ),
-                    null,
-                )
-            }
-
-            fragment shouldContain "Automatic"
-            fragment shouldContain "Effective comparison baseline: 2026-06-07T00:00:00Z"
-            fragment shouldNotContain "currently unavailable"
-            fragment shouldNotContain "failed at"
-        }
-
-        "the full settings page renders through the body-context entry point" {
-            val markup = createHTML().html {
-                body {
-                    SettingsFormComponent().render(
-                        config(inceptionDate = "2026-01-01T00:00:00Z"),
-                        null,
-                        "csrf-token",
-                    )
-                }
-            }
-
-            markup shouldContain "csrf-token"
-            markup shouldContain "name=\"comparisonStartDate\""
-            markup shouldContain "id=\"comparison-start-date-picker\""
-        }
-
-        "full inference evidence renders its groups and empty date input" {
-            val display = InceptionDisplayInfo(
-                status = InceptionDisplayStatus.NOT_DETECTED,
-                inferredStartText = "2026-01-02T00:00:00Z",
-                inferredWindowStartText = "2026-01-01T00:00:00Z",
-                inferredWindowEndText = "2026-01-03T00:00:00Z",
-                firstPositiveText = "2026-01-02T00:00:01Z",
-                inferredStartStrengthText = "HIGH",
-                inferredStartReasonsText = "bot burst",
-                inferredStartContradictionsText = "gap before start",
-                strongestEpisodeText = "2026-01-05T00:00:00Z",
-                strongestEpisodeStrengthText = "MEDIUM",
-                strongestEpisodeReasonsText = "trading burst",
-                earliestAmbiguousText = "2025-12-20T00:00:00Z",
-                earlierAmbiguousCountText = "3",
-                competingCandidatesText = "2 candidates",
-                unsupportedMarketsText = "SOL",
-                coverageText = "2025-12-01 to 2026-08-01",
-            )
-            val html = render(
-                config(inceptionDate = "2026-01-02T00:00:00Z", comparisonStartDate = "2026-06-07T10:30:00Z"),
-                display,
-            )
-
-            html shouldContain "2026-01-02T00:00:01Z"
-            html shouldContain "bot burst"
-            html shouldContain "gap before start"
-            html shouldContain "trading burst"
-            html shouldContain "3"
-            html shouldContain "2025-12-20T00:00:00Z"
-        }
-
-        "renderForm defaults keep the settings form intact" {
-            val markup = createHTML().div {
-                SettingsFormComponent().renderForm(
-                    this,
-                    config(inceptionDate = "2026-01-01T00:00:00Z"),
-                    null,
-                    "csrf-token",
-                )
-            }
-
-            markup shouldContain "name=\"comparisonStartDate\""
-        }
-
-        "no approved start renders no baseline status block" {
-            val html = render(config(), InceptionDisplayInfo())
-
-            html shouldNotContain "Approved start saved"
-            html shouldNotContain "Comparison baseline established at"
+            html shouldContain "Simulation Mode"
+            html shouldContain "Dry Run Mode"
+            html shouldContain "value=\"50.0\""
+            html shouldContain "loopDelaySeconds"
+            html shouldContain "deviationTriggerPercent"
+            html shouldContain "minimumOrderSizeUSD"
+            html.lowercase() shouldNotContain "inception"
+            html.lowercase() shouldNotContain "deployment"
+            html.lowercase() shouldNotContain "drawdown"
+            html.lowercase() shouldNotContain "sync-progress"
         }
     }
 }

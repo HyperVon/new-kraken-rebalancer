@@ -4,7 +4,8 @@ description: >-
   Write Kotest specs and evaluation/E2E tests — StringSpec init blocks,
   IsolationMode, TestFixtures, FakeKraken vs SimulatedKraken, BigDecimal
   shouldBeEqualComparingTo, in-memory SQLite, and advanceUntilIdle for Flow
-  tests. Use when adding or changing JVM/JS tests or EvaluationScenariosTest.
+  tests. Use when adding or changing JVM/JS tests for current cycle, order
+  safety, Dashboard, Settings, Actual, or prospective benchmark behavior.
 ---
 
 # Writing Kotest Unit Tests
@@ -63,11 +64,10 @@ Never touch `kraken-rebalancer.db` from tests.
 | **`FakeKrakenService`** | Test-only controllable fake (suppliers, `executedOrders`) — prefer in unit/evaluation tests |
 | **`SimulatedKrakenService`** | Production emulator used when `settings.simulation=true` |
 
-Do not confuse the two:
-
-- `EvaluationScenariosTest` → `FakeKrakenService` (controlled behavior).
-- `SimulationEvaluationScenariosTest` → production `SimulatedKrakenService`
-  stack; use it when validating emulator integration, not unit order math.
+Use `FakeKrakenService` for controlled cases and `SimulatedKrakenService` when
+the production emulator behavior itself is under test. Current focused test
+coverage is mapped in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md); there
+is no retrospective-history scenario suite.
 
 ```kotlin
 val fakeKraken = FakeKrakenService().apply {
@@ -110,33 +110,24 @@ Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 
 ## Evaluation / E2E / chaos
 
-### When EvaluationScenariosTest is mandatory
+### Focused contract coverage
 
-Add or update a scenario when the diff touches:
+Add or update focused tests when a change affects:
 
-- `RebalancerEngine`, `PortfolioCalculations`, `OrderExecutorImpl`, or
-  sell/settle/buy ordering
-- `DynamicKrakenService` routing, `dryRun` / `simulation`, or `cl_ord_id` mapping
-- Fiat correction, dust threshold, ATH/drawdown deployment, 99% buy cap,
-  95% settle
+- Fixed USD targets, `RebalancerEngine`, `PortfolioCalculations`, fiat
+  correction, dust thresholds, or sell/settle/buy ordering
+- `OrderExecutorImpl`, settled-cash limits, the 99% buy reserve, or live
+  `cl_ord_id` intent safety
+- `DynamicKrakenService`, `dryRun` / `simulation`, or current Settings parsing
+- Dashboard's latest in-memory cycle snapshot, `/history` redirect, retired API
+  responses, health/readiness, or SSE
+- Actual direct observations, incomplete evidence, account/scope continuity, or
+  prospective Buy & Hold start eligibility
 
-Workflow:
-
-1. Run the suite:
-
-   ```bash
-   ./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest" \
-     -x jacocoTestCoverageVerification
-   ```
-
-2. Refresh the outcomes table in `docs/EVALUATION.md` from
-   `backend/build/reports/scenarios_evaluation_report.md`.
-3. Prefer `FakeKrakenService` + `TestFixtures.DEFAULT_TEST_SETTINGS`; never a
-   file-backed DB in unit tests.
-
-- Suite: `EvaluationScenariosTest` (41 scenarios)
-- Report: `backend/build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
-- Principles: no absolute paths, FakeKraken, virtual time, SSE multi-subscriber checks
+Use the focused tests listed in `docs/EVALUATION.md` as the starting point;
+update that coverage map when test ownership changes. Prefer `FakeKrakenService`
+and `TestFixtures.DEFAULT_TEST_SETTINGS` for deterministic cases; never use a
+file-backed runtime database in unit tests.
 
 ## Kotlin/JS tests
 
@@ -147,14 +138,6 @@ DOM/HTML, JSON, HTTP, route, header, or persisted-key spelling, use independent
 raw expected literals instead of the generated production catalog. A shared
 test mirror of production constants is not an independent oracle.
 Coverage gates: 90% statements/lines, 80% functions, 75% branches.
-
-History chart zoom/scrubber specs should cover:
-
-- Scrubber **disabled** when not zoomed; **enabled** after zoom
-- Pan via `chart.zoomScale('x', {min, max})` (assert call args)
-- Fallback when `zoomScale` is absent (options.scales + `update`)
-- `onZoomComplete` re-attached after `JSON.parse(JSON.stringify(…))` clone
-- No-op pan when full span == current span
 
 ```bash
 ./gradlew :frontend-js:jsBrowserTest
@@ -186,6 +169,5 @@ Full rubric: [ai-slop-detector](../ai-slop-detector/SKILL.md) § Test necessity.
 - [ ] Each test kills a distinct defect class; no impossible-case or coverage-padding tests
 - [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
 - [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
-- [ ] Evaluation scenarios updated when algorithm behavior changes
-- [ ] JS History zoom/scrubber branches covered when touching `HistoryZoom.kt`
+- [ ] Focused current-contract tests updated when behavior changes
 - [ ] No machine paths/hostnames; no FQNs

@@ -1,7 +1,7 @@
 ---
 name: ui-visual-review
 description: >-
-  Visually review the live Dashboard / Settings / History UI in simulation mode
+  Visually review the live Dashboard / Settings / Actual UI in simulation mode
   and recommend redesigns, removals, additions, or polish. Use when the user
   asks for a UI review, visual audit, design critique, or screenshot-based UX
   improvements — recommend only; do not implement (use ui-visual-implement).
@@ -32,18 +32,17 @@ Review every primary surface users see:
 | :--- | :--- | :--- |
 | Dashboard | `/` | top (cards/allocation) + bottom (table/activity) |
 | Settings | `/settings` | full form |
-| History | `/history` | summary/charts, mid charts, trade log |
+| Actual | `/actual` | raw observation evidence, coverage gaps, optional prospective Buy & Hold |
 
 Also note empty/error/loading states if you can trigger them safely in simulation
-(e.g. before seed finishes — usually skip; prefer seeded happy path + obvious
-clutter).
+(e.g. before the first cycle snapshot exists — usually skip; prefer a completed
+current-cycle snapshot and the explicit simulation-unavailable Actual state).
 
 Capture through the shared screenshot helper at **desktop**, **laptop**, and
 **phone** profiles (add **tablet** and **wide** when the layout is a focus).
-Recent production regressions such as header status density and History toolbar
-styling only show at laptop breakpoints, while mobile-only captures miss narrow
-reflow failures. Do not take direct embedded-browser screenshots for static
-evidence.
+Header status density and evidence tables can fail at laptop breakpoints, while
+mobile-only captures miss narrow reflow failures. Do not take direct
+embedded-browser screenshots for static evidence.
 
 **Out of scope for this skill:** implementing CSS/HTML/JS, changing trading
 math, rewriting docs (except quoting findings).
@@ -53,9 +52,9 @@ math, rewriting docs (except quoting findings).
 ## Refined Glass baseline (current UI)
 
 See [refined-glass-baseline.md](refined-glass-baseline.md) for the shipped
-baseline table (mode plate, STREAM/STALE chip, hero, activity, safety cards,
-History charts, trade table). Treat missing/broken baseline items as **P0/P1**;
-do not re-propose them as new ideas.
+baseline table (mode plate, STREAM/STALE chip, latest Dashboard snapshot,
+current-cycle actions, safety cards, and Actual evidence). Treat missing/broken
+baseline items as **P0/P1**; do not re-propose them as new ideas.
 
 ---
 
@@ -109,7 +108,7 @@ For **each** PNG under `$REVIEW_DIR`:
 
 #### Async freshness & interaction review checklist
 
-- **Async freshness:** When asynchronous responses arrive (SSE updates, HTMX swaps), verify that late responses cannot overwrite newer state and that filter changes (e.g. History timeframe) invalidate superseded in-flight work.
+- **Async freshness:** When asynchronous responses arrive (SSE updates, HTMX swaps), verify that late responses cannot replace a newer current-cycle snapshot or current form state.
 - **Async mutation protection:** Verify submit buttons indicate pending state during in-flight requests to prevent double submission.
 - **Keyboard navigation & focus:** Interactive elements must be reachable via `Tab`/`Enter`/`Space`; visible focus styles must never be suppressed with `outline: none` without a visible replacement.
 - **Semantic HTML (No ARIA):** Rely on semantic HTML elements (`<button>`, `<a>`, `<label for="...">`); do not add `aria-*` attributes per repository invariants.
@@ -127,14 +126,14 @@ Present findings to the user **before** any implementation. Use this structure:
 ## Baseline
 - Theme: Refined Glass (`CssTheme` — Inter/Outfit, cool-blue glass, cyan rim)
 - Captures: `$REVIEW_DIR` (list files)
-- Simulation seed: yes/no; dryRun: on/off
+- Simulation: on/off; dryRun: on/off; current-cycle snapshot visible: yes/no
 - Mode plate observed: SIMULATION | DRY RUN | LIVE TRADING (must match settings)
 
 ## Findings
 
 ### [P0|P1|P2|P3] SHORT-ID — Title
 - **Type**: redesign | add | remove | restyle | layout | typography | chart | a11y | motion
-- **Page**: Dashboard | Settings | History | Global
+- **Page**: Dashboard | Settings | Actual | Global
 - **Evidence**: which screenshot / region (and what you saw)
 - **Problem**: what’s wrong or weak
 - **Recommendation**: concrete change (can be ambitious)
@@ -174,10 +173,8 @@ pixel tweaks. Cover at least:
    language (`CssTheme` / `CssClass`).
 6. **Information architecture** — Duplicate stats? Missing empty states? Settings
    field grouping / labels?
-7. **Charts** — Legend clutter, overlapping lines, timeframe control clarity,
-   History mid-page charts vs summary.
-8. **Activity / trade log** — Scanability of cycle groups, BUY/SELL/DRY RUN
-   badges, and the quiet success dot (see Refined Glass checks below).
+7. **Actual chart** — Raw observed values, incomplete-sample markers, visible coverage gaps, and the optional prospective comparison when verified.
+8. **Current-cycle actions** — Scanability of the latest cycle activity and BUY/SELL/DRY RUN labels without implying a persistent activity timeline.
 9. **Responsive risk** — Does `80rem` max-width leave awkward margins; would
    narrow viewports collapse badly?
 10. **Motion / feedback** — HTMX/SSE updates feel calm vs jumpy (if observed live).
@@ -187,54 +184,44 @@ pixel tweaks. Cover at least:
 Judge each from the PNGs; report any miss as a finding rather than assuming the
 implementation is fine:
 
-1. **Mode plate** — Present beside the brand on **all three** pages, label
-   matches the run's settings (`simulation: true` → `SIMULATION`), and
-   `LIVE TRADING` reads as high-consequence. Fail if it is missing on Settings /
-   History, or if plate and stream chip look like the same control.
+1. **Mode plate** — Present beside the brand on Dashboard, Settings, and Actual;
+   label matches the run settings (`simulation: true` → `SIMULATION`) and is
+   visually distinct from stream health.
 2. **Stream chip** — On Dashboard only: reads `STREAM` / `STALE` (never `LIVE`)
-   and sits on one line with relative age + timestamp at 1280–1440px, no wrap or
-   clipping.
-3. **Hero** — Total value clearly dominant; 24H delta colour/sign match the
-   direction; sparkline actually renders (not an empty or clipped box).
-4. **Cash / Crypto tiles** — Bar fill visually matches the stated percentage,
-   fill colour matches the asset series, target and deviation stay legible.
-5. **Activity feed** — Cycles visually separated with relative time and correct
-   singular/plural action counts; quiet cycles show the tolerance summary;
-   **View all history** reads as a link, not stray text.
+   and sits on one line with relative age + timestamp at 1280–1440px.
+3. **Dashboard snapshot** — Latest current-cycle total value and its configured
+   allocation targets/deviations are readable; do not expect a historical delta,
+   sparkline, or persisted activity timeline.
+4. **Cash / Crypto tiles** — Bar fill visually matches the stated share; target
+   and deviation stay legible.
+5. **Current-cycle actions** — Actions remain attached to the latest snapshot and
+   readable as current-cycle BUY/SELL/DRY RUN outcomes.
 6. **Safety cards** — Checked vs unchecked is obvious from the `ON`/`OFF` pill
-   and card treatment; consequence prose is readable, not truncated; cards never
-   degrade to bare native checkboxes.
-7. **History chart header** — Title and zoom share one compact row above the
-   legend (no three stacked bands); the net cash flow caption is present and
-   muted; canvases look taller, not squat.
-8. **Trade table** — Zero price/fee render as a muted em dash (not
-   `0.00000000`); the plain-success dot is visible and not mistaken for an empty
-   cell; dry-run and failed rows keep labelled badges.
+   and card treatment; consequence prose is readable, not truncated.
+7. **Actual evidence** — Incomplete samples and missing coverage remain visibly
+   distinct from complete observations; the chart does not bridge evidence gaps.
+8. **Prospective Buy & Hold** — Show it only from an eligible complete baseline
+   after continuity verification; do not present a retrospective backtest.
 
 ### Production regression smells (mandatory on full reviews)
 
-Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*` /
-`REGRESSION-*` / History cases:
+Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*`,
+`REGRESSION-*`, Dashboard, Settings, and Actual cases:
 
-1. **Stale CSS after deploy** — controls render as default white native
-   `<button>` / `<select>` because `/static/style.css` was cached (24h); verify
-   `?v=` cache-bust or hard-refresh before judging styling.
+1. **Stale CSS after deploy** — controls render as default white native buttons
+   or selects because `/static/style.css` was cached; verify the `?v=` cache-bust
+   or hard-refresh before judging styling.
 2. **Desktop header density (~1280–1440px)** — Brand, mode plate, stream chip,
-   age, and nav vertically squished, clipped, or illegibly stacked (not only a
-   mobile problem).
+   age, and nav become squished, clipped, or illegibly stacked.
 3. **Deviation legend spacing** — Dashboard Asset Performance **Over target** /
-   **Under target** labels concatenated without spaced amber/blue dots.
-4. **History toolbar styling** — Views select and Zoom − / + / Reset must match
-   dark glass theme; white OS-native chrome is a regression.
-5. **Day · Total only preset** — Portfolio Value chart should hide non-**Total**
-   series in legend and on canvas (not just de-emphasized).
-6. **Chart zoom vs pan** — Drag on chart should zoom the x-axis, not pan; after
-   **any** zoom (Zoom + buttons, drag-select, or wheel), the bottom range scrubber
-   must become **enabled** and **actually pan** the visible window when dragged
-   (fail if the thumb moves but the chart does not). Do not re-enable chart
-   drag-pan as a substitute.
-7. **Chart.js legend markers** — Line/point swatches (`usePointStyle`); not
-   heavy bordered box chips around every legend label.
+   **Under target** labels concatenate without spaced amber/blue dots.
+4. **Dashboard snapshot** — The latest completed cycle is missing, stale-looking,
+   or detached from its own actions; retired trend metrics reappear.
+5. **Settings controls** — Retired drawdown, deployment, inception, or
+   comparison-start controls return to the active form.
+6. **Actual evidence** — Incomplete observations or missing coverage appear as a
+   continuous measured line, or prospective Buy & Hold is shown without verified
+   continuity.
 
 ### Design-system stance
 
@@ -321,7 +308,7 @@ Below the report, add a compact reply cheat-sheet:
 
 Reply with one of:
 
-- `apply DASH-1, HIST-2` — listed SHORT-IDs only
+- `apply DASH-1, ACTUAL-1` — listed SHORT-IDs only
 - `apply P0-P1` — all severity ≤ P1
 - `apply all` — every finding
 - `none` — stop after review
@@ -339,8 +326,8 @@ Then wait for the user’s selection before running ui-visual-implement.
 - [ ] Isolated sim run; captures in temp dir (docs/images untouched)
 - [ ] Every capture PNG read with vision
 - [ ] Refined Glass baseline evaluated ([refined-glass-baseline.md](refined-glass-baseline.md))
-      and checks 1–8 (mode plate, stream chip, hero, tiles, activity feed, safety
-      cards, chart header, trade table)
+      and checks 1–8 (mode plate, stream chip, latest Dashboard snapshot, tiles,
+      current-cycle actions, safety cards, Actual evidence, prospective B&H)
 - [ ] Findings use SHORT-IDs, severity, acceptance criteria
 - [ ] `findings.json` written under `$REVIEW_DIR`
 - [ ] Interactive canvas picker created + linked (checkboxes + Implement selected)

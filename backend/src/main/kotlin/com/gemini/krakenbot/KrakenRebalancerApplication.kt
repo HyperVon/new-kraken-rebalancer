@@ -11,10 +11,8 @@ import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
-import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.ReportingDispatcher
 import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
@@ -71,8 +69,6 @@ fun main() {
     runBlocking { executionJournalBootstrap.initialize() }
     val portfolioManager = koin.get<PortfolioManager>()
     val orderIntentService = koin.get<OrderIntentService>()
-    val configService = koin.get<ConfigService>()
-    val reportingDispatcher = koin.get<ReportingDispatcher>()
     val actualObservationDispatcher = koin.get<ActualObservationDispatcher>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
@@ -80,10 +76,6 @@ fun main() {
     val applicationScope: CoroutineScope = koin.get(
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
-    if (configService.getConfig().settings.simulation) {
-        runBlocking { reportingDispatcher.initializeBeforeSimulationCycle() }
-    }
-    reportingDispatcher.start(applicationScope)
     actualObservationDispatcher.start(applicationScope)
     portfolioManager.startRebalancingLoop(applicationScope)
 

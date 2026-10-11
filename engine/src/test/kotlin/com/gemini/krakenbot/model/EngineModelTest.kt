@@ -1,8 +1,9 @@
 package com.gemini.krakenbot.model
 
-import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.domain.EngineTestFixtures
+import com.gemini.krakenbot.domain.OrderFillReconciler
 import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.QualityAllocation
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -504,47 +505,6 @@ class EngineModelTest : StringSpec() {
             submittedFailure.errorMessage shouldBe "Insufficient funds"
         }
 
-        "generated wire mapping carries snapshot aggregates to the API boundary" {
-            val snapshot = PortfolioSnapshot(
-                timestamp = Instant.parse("2026-08-21T00:00:00Z"),
-                totalValueUSD = BigDecimal("1000.00"),
-                assets = mapOf(
-                    "BTC" to PortfolioSnapshot.AssetSnapshot(
-                        symbol = "BTC",
-                        balance = BigDecimal("0.02"),
-                        price = BigDecimal("50000.00"),
-                        valueUSD = BigDecimal("1000.00"),
-                        targetPercent = BigDecimal("50.00"),
-                        currentPercent = BigDecimal("100.00"),
-                        deviationPercent = BigDecimal("50.00"),
-                        deviationUSD = BigDecimal("500.00"),
-                    ),
-                ),
-                actions = listOf($$"BUY BTC Volume: 0.1 Cost: $5000.00"),
-                drawdownPercent = BigDecimal("12.50"),
-                fiatDeploymentPercent = BigDecimal("25.00"),
-                effectiveUsdTargetPercent = BigDecimal("40.00"),
-            )
-
-            val dto = snapshot.toApiDto()
-            dto.timestamp shouldBe "2026-08-21T00:00:00Z"
-            dto.totalValueUSD shouldBe "1000.00"
-            dto.assets.keys shouldBe setOf("BTC")
-            dto.actions shouldBe listOf($$"BUY BTC Volume: 0.1 Cost: $5000.00")
-            dto.drawdownPercent shouldBe "12.50"
-            dto.fiatDeploymentPercent shouldBe "25.00"
-            dto.effectiveUsdTargetPercent shouldBe "40.00"
-        }
-
-        "generated wire mapping carries trade identity for history endpoints" {
-            val trade = EngineTestFixtures.tradeRecord(id = 7, tradeId = "TTXN-1")
-
-            val dto = trade.toApiDto()
-            dto.id shouldBe 7
-            dto.pair shouldBe "XBTUSD"
-            dto.source shouldBe "LOCAL_ESTIMATE"
-        }
-
         "isSupportedMarket accepts recognized USD-quoted markets and rejects unmapped or non-USD pairs" {
             val usdTrade = EngineTestFixtures.tradeRecord(pair = "XBTUSD", symbol = "BTC")
             usdTrade.isSupportedMarket() shouldBe true
@@ -577,6 +537,56 @@ class EngineModelTest : StringSpec() {
 
             val malformedPair = EngineTestFixtures.tradeRecord(pair = "", symbol = "BTC")
             malformedPair.isHistoricallyReplayable() shouldBe false
+        }
+
+        "current portfolio and execution models expose their retained fields" {
+            val timestamp = Instant.parse("2026-10-10T12:00:00Z")
+            val snapshot = PortfolioSnapshot(
+                timestamp = timestamp,
+                totalValueUSD = BigDecimal("15000.50"),
+                assets = emptyMap(),
+                actions = listOf("cycle complete"),
+                effectiveUsdTargetPercent = BigDecimal("5.0"),
+            )
+            snapshot.timestamp shouldBe timestamp
+            snapshot.totalValueUSD shouldBe BigDecimal("15000.50")
+            snapshot.assets shouldBe emptyMap()
+            snapshot.actions shouldBe listOf("cycle complete")
+            snapshot.effectiveUsdTargetPercent shouldBe BigDecimal("5.0")
+            snapshot.balancesObservedAt shouldBe timestamp
+
+            val trade = TradeRecord(
+                timestamp = timestamp,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("100.00"),
+                success = true,
+                dryRun = false,
+                id = 7,
+                submissionState = OrderSubmissionState.PENDING,
+                executionJournalId = "journal-7",
+                executionIntentId = 11,
+            )
+            trade.id shouldBe 7
+            trade.submissionState shouldBe OrderSubmissionState.PENDING
+            trade.executionJournalId shouldBe "journal-7"
+            trade.executionIntentId shouldBe 11
+
+            QualityAllocation.Profile(
+                weightedScore = BigDecimal("7.5"),
+                maxWeightPercent = BigDecimal("50.0"),
+                effectiveAssetCount = BigDecimal("2.0"),
+            ).effectiveAssetCount shouldBe BigDecimal("2.0")
+
+            OrderFillReconciler.AggregatedFills(
+                fills = emptyList(),
+                totalVolume = BigDecimal.ZERO,
+                totalUsd = BigDecimal.ZERO,
+                totalFee = BigDecimal("0.05"),
+                isComplete = true,
+            ).totalFee shouldBe BigDecimal("0.05")
         }
     }
 }

@@ -260,32 +260,5 @@ class PortfolioCalculationsTest : StringSpec() {
             PortfolioCalculations.calculateTargetValue(BigDecimal("50.00"), BigDecimal("1000.00"))
                 .shouldBeEqualComparingTo(BigDecimal("500.00"))
         }
-
-        "compute24hDelta computes percentage delta against 24h baseline" {
-            val now = java.time.Instant.now()
-            val latest = PortfolioSnapshot(
-                timestamp = now,
-                totalValueUSD = BigDecimal("1100.00"),
-                assets = emptyMap(),
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.ZERO,
-            )
-            val past24h = latest.copy(timestamp = now.minusSeconds(86400), totalValueUSD = BigDecimal("1000.00"))
-            val delta = PortfolioCalculations.compute24hDelta(latest, listOf(latest, past24h))
-            delta!!.shouldBeEqualComparingTo(BigDecimal("10.00"))
-
-            // Short history returns null
-            PortfolioCalculations.compute24hDelta(latest, listOf(latest)) shouldBe null
-
-            // No baseline older than 24h
-            val past1h = latest.copy(timestamp = now.minusSeconds(3600), totalValueUSD = BigDecimal("1000.00"))
-            PortfolioCalculations.compute24hDelta(latest, listOf(latest, past1h)) shouldBe null
-
-            // Zero baseline returns null
-            val zeroPast = past24h.copy(totalValueUSD = BigDecimal.ZERO)
-            PortfolioCalculations.compute24hDelta(latest, listOf(latest, zeroPast)) shouldBe null
-        }
     }
 }

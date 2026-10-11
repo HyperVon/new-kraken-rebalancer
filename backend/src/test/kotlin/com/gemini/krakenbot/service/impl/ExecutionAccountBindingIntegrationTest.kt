@@ -1,10 +1,12 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.ApiKey
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.ExecutionDatabase
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.PrivateKey
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
@@ -13,6 +15,7 @@ import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.ExecutionAccountBinding
+import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
 import com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult
 import com.gemini.krakenbot.repository.impl.SqliteExecutionAccountBindingRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
@@ -28,6 +31,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -91,6 +95,150 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
             }
         }
 
+        "credential rotation cannot switch the account bound to this execution journal" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_A }
+                    authenticatedAccountIdentitySupplier = { ACCOUNT_A }
+                }
+                val environment = openEnvironment(directory, exchange)
+                executeBuy(environment, "bind-account-a")
+                val originalBinding = checkNotNull(environment.bindingRepository.load())
+
+                exchange.fundingEvidenceScopeSupplier = { GENERATION_B }
+                exchange.authenticatedAccountIdentitySupplier = { ACCOUNT_B }
+                shouldThrow<IllegalStateException> { executeBuy(environment, "rotate-to-account-b") }
+
+                exchange.executedOrders.size shouldBe 1
+                environment.bindingRepository.load() shouldBe originalBinding
+                scalar(environment.executionPath, "SELECT COUNT(*) FROM execution_account_binding_audit") shouldBe 1
+            }
+        }
+
+        "blank authenticated account identity cannot establish a live binding" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_A }
+                    authenticatedAccountIdentitySupplier = { " \t " }
+                }
+                val environment = openEnvironment(directory, exchange)
+
+                shouldThrow<IllegalStateException> { executeBuy(environment, "blank-account-identity") }
+
+                exchange.executedOrders.shouldBeEmpty()
+                environment.bindingRepository.load() shouldBe null
+                scalar(environment.executionPath, "SELECT COUNT(*) FROM execution_account_binding_audit") shouldBe 0
+            }
+        }
+
+        "initial account bind fails closed for every repository conflict and race result" {
+            val conflicts = listOf(
+                ExecutionAccountBindingWriteResult.ALREADY_PRESENT,
+                ExecutionAccountBindingWriteResult.BLOCKED_BY_LIVE_ORDER_HISTORY,
+                ExecutionAccountBindingWriteResult.BLOCKED_BY_UNRESOLVED_INTENT,
+                ExecutionAccountBindingWriteResult.BLOCKED_BY_PRIOR_BINDING_EVIDENCE,
+                ExecutionAccountBindingWriteResult.UPDATED,
+                ExecutionAccountBindingWriteResult.STALE_BINDING,
+            )
+            conflicts.forEach { conflict ->
+                withTempDirectory { directory ->
+                    val legacyTrade = seedLegacyAccountA(directory)
+                    val exchange = FakeKrakenService().apply {
+                        fundingEvidenceScopeSupplier = { GENERATION_A }
+                        authenticatedAccountIdentitySupplier = { ACCOUNT_A }
+                        tradeHistorySupplier = { _, _ -> listOf(legacyTrade) }
+                    }
+                    val bindingRepository = mockk<ExecutionAccountBindingRepository>()
+                    coEvery { bindingRepository.load() } returns null
+                    coEvery { bindingRepository.hasBindingAnchor() } returns false
+                    coEvery { bindingRepository.createIfPristine(any()) } returns conflict
+                    val environment = openEnvironment(
+                        directory,
+                        exchange,
+                        bindingRepositoryOverride = bindingRepository,
+                    )
+
+                    shouldThrow<IllegalStateException> { executeBuy(environment, "initial-$conflict") }
+
+                    exchange.executedOrders.shouldBeEmpty()
+                    coVerify(exactly = 1) { bindingRepository.createIfPristine(any()) }
+                }
+            }
+        }
+
+        "initial binding converges on the verified account returned by a concurrent writer" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_A }
+                    authenticatedAccountIdentitySupplier = { ACCOUNT_A }
+                }
+                val racedBinding = ExecutionAccountBinding(
+                    accountIdentityDigest = identityDigest(ACCOUNT_A),
+                    credentialGenerationDigest = digest(GENERATION_A),
+                    bindingVersion = 1,
+                    verificationMethod = "legacy-scope-guard-plus-kraken-iiban",
+                    verifiedAtMillis = 1L,
+                    auditVerified = true,
+                )
+                val bindingRepository = mockk<ExecutionAccountBindingRepository>()
+                coEvery { bindingRepository.load() } returnsMany listOf(null, racedBinding)
+                coEvery { bindingRepository.hasBindingAnchor() } returns false
+                coEvery { bindingRepository.createIfPristine(any()) } returns
+                    ExecutionAccountBindingWriteResult.ALREADY_PRESENT
+                val environment = openEnvironment(
+                    directory,
+                    exchange,
+                    bindingRepositoryOverride = bindingRepository,
+                )
+
+                environment.bindingService.ensureVerifiedForSubmission()
+
+                exchange.getAuthenticatedAccountIdentityCallCount shouldBe 1
+                coVerify(exactly = 1) { bindingRepository.createIfPristine(any()) }
+                coVerify(exactly = 2) { bindingRepository.load() }
+            }
+        }
+
+        "live binding preconditions reject simulation dry run and missing credentials before Kraken access" {
+            val cases = listOf(
+                TestFixtures.settings(simulation = true) to KrakenCredentials(
+                    TestFixtures.TRADE_HISTORY_API_KEY,
+                    TestFixtures.TRADE_HISTORY_API_SECRET,
+                ),
+                TestFixtures.settings(dryRun = true, simulation = false) to KrakenCredentials(
+                    TestFixtures.TRADE_HISTORY_API_KEY,
+                    TestFixtures.TRADE_HISTORY_API_SECRET,
+                ),
+                liveSettings() to KrakenCredentials(ApiKey(""), PrivateKey("")),
+            )
+            cases.forEach { (settings, credentials) ->
+                withTempDirectory { directory ->
+                    var scopeCalls = 0
+                    val exchange = FakeKrakenService().apply {
+                        fundingEvidenceScopeSupplier = {
+                            scopeCalls += 1
+                            GENERATION_A
+                        }
+                        authenticatedAccountIdentitySupplier = { ACCOUNT_A }
+                    }
+                    val environment = openEnvironment(
+                        directory,
+                        exchange,
+                        settings = settings,
+                        credentials = credentials,
+                    )
+
+                    shouldThrow<IllegalStateException> {
+                        environment.bindingService.ensureVerifiedForSubmission()
+                    }
+
+                    scopeCalls shouldBe 0
+                    exchange.getAuthenticatedAccountIdentityCallCount shouldBe 0
+                    environment.bindingRepository.load() shouldBe null
+                }
+            }
+        }
+
         "credential rotation is blocked until authenticated account identity is available" {
             withTempDirectory { directory ->
                 val exchange = FakeKrakenService().apply {
@@ -114,6 +262,44 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 rotated.accountIdentityDigest shouldBe originalBinding.accountIdentityDigest
                 rotated.credentialGenerationDigest shouldBe digest(GENERATION_B)
                 scalar(environment.executionPath, "SELECT COUNT(*) FROM execution_account_binding_audit") shouldBe 2
+            }
+        }
+
+        "credential rotation accepts a matching binding committed by a concurrent verifier" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { GENERATION_B }
+                    authenticatedAccountIdentitySupplier = { ACCOUNT_A }
+                }
+                val priorBinding = ExecutionAccountBinding(
+                    accountIdentityDigest = identityDigest(ACCOUNT_A),
+                    credentialGenerationDigest = digest(GENERATION_A),
+                    bindingVersion = 1,
+                    verificationMethod = "legacy-scope-guard-plus-kraken-iiban",
+                    verifiedAtMillis = 1L,
+                    auditVerified = true,
+                )
+                val racedBinding = priorBinding.copy(
+                    credentialGenerationDigest = digest(GENERATION_B),
+                    verificationMethod = "kraken-iiban-credential-rotation",
+                    verifiedAtMillis = 2L,
+                )
+                val bindingRepository = mockk<ExecutionAccountBindingRepository>()
+                coEvery { bindingRepository.load() } returnsMany listOf(priorBinding, racedBinding)
+                coEvery {
+                    bindingRepository.updateCredentialGeneration(any(), any(), any())
+                } returns ExecutionAccountBindingWriteResult.STALE_BINDING
+                val environment = openEnvironment(
+                    directory,
+                    exchange,
+                    bindingRepositoryOverride = bindingRepository,
+                )
+
+                environment.bindingService.ensureVerifiedForSubmission()
+
+                exchange.getAuthenticatedAccountIdentityCallCount shouldBe 1
+                coVerify(exactly = 1) { bindingRepository.updateCredentialGeneration(any(), any(), any()) }
+                coVerify(exactly = 2) { bindingRepository.load() }
             }
         }
 
@@ -170,6 +356,22 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 dryRunEnvironment.bindingService.verifiedAccountIdentityDigestForObservation(GENERATION_A) shouldBe
                     null
                 dryRunExchange.getAuthenticatedAccountIdentityCallCount shouldBe 0
+            }
+        }
+
+        "Actual observation identity is withheld when credential scope lookup fails" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { throw IllegalStateException("scope unavailable") }
+                }
+                val environment = openEnvironment(
+                    directory,
+                    exchange,
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
+                )
+
+                environment.bindingService.verifiedAccountIdentityDigestForObservation(GENERATION_A) shouldBe null
+                exchange.getAuthenticatedAccountIdentityCallCount shouldBe 0
             }
         }
 
@@ -230,6 +432,77 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
 
                 exchange.executedOrders.shouldBeEmpty()
                 environment.bindingRepository.hasBindingAnchor() shouldBe true
+            }
+        }
+
+        "corrupt binding audit, version, digests, and proof method fail closed before order submission" {
+            val tampering = listOf(
+                "audit" to null,
+                "binding_version" to "99",
+                "account_identity_digest" to "not-a-digest",
+                "credential_generation_digest" to "not-a-digest",
+                "verification_method" to "unrecognized-proof",
+            )
+            tampering.forEach { (field, value) ->
+                withTempDirectory { directory ->
+                    val exchange = FakeKrakenService().apply {
+                        fundingEvidenceScopeSupplier = { GENERATION_A }
+                    }
+                    val environment = openEnvironment(directory, exchange)
+                    val binding = ExecutionAccountBinding(
+                        accountIdentityDigest = identityDigest(ACCOUNT_A),
+                        credentialGenerationDigest = digest(GENERATION_A),
+                        bindingVersion = 1,
+                        verificationMethod = "legacy-scope-guard-plus-kraken-iiban",
+                        verifiedAtMillis = Instant.parse("2026-10-10T12:00:00Z").toEpochMilli(),
+                        auditVerified = true,
+                    )
+                    environment.bindingRepository.createIfPristine(binding) shouldBe
+                        ExecutionAccountBindingWriteResult.CREATED
+
+                    DriverManager.getConnection("jdbc:sqlite:${environment.executionPath}").use { connection ->
+                        if (field == "audit") {
+                            connection.createStatement().use {
+                                it.executeUpdate("DELETE FROM execution_account_binding_audit")
+                            }
+                        } else {
+                            connection.prepareStatement(
+                                "UPDATE execution_account_binding SET $field = ? WHERE singleton_id = 1",
+                            ).use { statement ->
+                                statement.setString(1, value)
+                                statement.executeUpdate() shouldBe 1
+                            }
+                            if (field != "binding_version") {
+                                connection.prepareStatement(
+                                    "UPDATE execution_account_binding_audit SET $field = ?",
+                                ).use { statement ->
+                                    statement.setString(1, value)
+                                    statement.executeUpdate() shouldBe 1
+                                }
+                            }
+                        }
+                    }
+
+                    shouldThrow<IllegalStateException> {
+                        environment.bindingService.ensureVerifiedForSubmission()
+                    }
+                    exchange.executedOrders.shouldBeEmpty()
+                }
+            }
+        }
+
+        "unavailable credential generation cannot establish a verified account binding" {
+            withTempDirectory { directory ->
+                val exchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { "scope-unavailable" }
+                    authenticatedAccountIdentitySupplier = { ACCOUNT_A }
+                }
+                val environment = openEnvironment(directory, exchange)
+
+                shouldThrow<IllegalStateException> { environment.bindingService.ensureVerifiedForSubmission() }
+
+                environment.bindingRepository.load() shouldBe null
+                exchange.executedOrders.shouldBeEmpty()
             }
         }
 
@@ -384,6 +657,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
             TestFixtures.TRADE_HISTORY_API_KEY,
             TestFixtures.TRADE_HISTORY_API_SECRET,
         ),
+        bindingRepositoryOverride: ExecutionAccountBindingRepository? = null,
     ): Environment {
         val reportingPath = directory.resolve("reporting.db")
         val executionPath = directory.resolve("execution.db")
@@ -393,7 +667,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         val executionDatabase = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
         val intentRepository = SqliteExecutionOrderIntentRepositoryImpl(executionDatabase)
         ExecutionJournalBootstrap(executionDatabase, intentRepository, reportingPath.toString()).initialize()
-        val bindingRepository = SqliteExecutionAccountBindingRepositoryImpl(executionDatabase)
+        val bindingRepository =
+            bindingRepositoryOverride ?: SqliteExecutionAccountBindingRepositoryImpl(executionDatabase)
         val configService = mockk<ConfigService>()
         every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
             kraken = credentials,
@@ -434,7 +709,6 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         simulation: Boolean = false,
     ) = OrderExecutorImpl(
         krakenService = environment.exchange,
-        tradeHistoryService = null,
         orderIntentService = environment.intentService,
     ).executeOrders(
         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
@@ -491,7 +765,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         val executionDatabase: ExecutionDatabase,
         val tradeRepository: SqliteTradeRepositoryImpl,
         val intentRepository: SqliteExecutionOrderIntentRepositoryImpl,
-        val bindingRepository: SqliteExecutionAccountBindingRepositoryImpl,
+        val bindingRepository: ExecutionAccountBindingRepository,
         val bindingService: ExecutionAccountBindingService,
         val intentService: OrderIntentServiceImpl,
         val exchange: FakeKrakenService,

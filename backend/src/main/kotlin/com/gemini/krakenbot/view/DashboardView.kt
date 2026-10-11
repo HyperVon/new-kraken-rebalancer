@@ -5,14 +5,10 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.ComparisonStartProposal
-import com.gemini.krakenbot.service.InceptionDisplayInfo
-import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.actual.ActualObservationPage
 import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
-import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.component.SettingsFormValues
 import com.gemini.krakenbot.view.util.CdnIntegrity
@@ -33,7 +29,6 @@ class DashboardView(
     private val shellComponent: DashboardShellComponent,
     private val settingsFormComponent: SettingsFormComponent,
     private val fragmentComponent: DashboardFragmentComponent,
-    private val historyPageComponent: HistoryPageComponent,
     private val actualObservationsPageComponent: ActualObservationsPageComponent = ActualObservationsPageComponent(),
 ) {
 
@@ -43,15 +38,7 @@ class DashboardView(
     }
 
     context(html: HTML)
-    fun renderSettingsPage(
-        config: AppConfig,
-        errorMessage: String?,
-        csrfToken: String,
-        paused: Boolean = false,
-        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: ComparisonStartProposal? = null,
-        laterStartProposalAsync: Boolean = false,
-    ) {
+    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String, paused: Boolean = false) {
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
@@ -63,20 +50,8 @@ class DashboardView(
                 errorMessage,
                 csrfToken,
                 paused,
-                inceptionDisplay,
-                laterStartProposal,
-                laterStartProposalAsync,
             )
         }
-    }
-
-    /** Settings proposal async-slot fragment body. */
-    fun renderSettingsProposalFragment(
-        parent: FlowContent,
-        status: SettingsComparisonStatus?,
-        configuredComparisonStart: String?,
-    ) {
-        settingsFormComponent.renderProposalSlotFragment(parent, status, configuredComparisonStart)
     }
 
     fun renderSettingsFormFragment(
@@ -85,9 +60,6 @@ class DashboardView(
         errorMessage: String?,
         csrfToken: String,
         paused: Boolean = false,
-        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: ComparisonStartProposal? = null,
-        laterStartProposalAsync: Boolean = false,
         formValues: SettingsFormValues? = null,
     ) {
         settingsFormComponent.renderForm(
@@ -96,21 +68,8 @@ class DashboardView(
             errorMessage,
             csrfToken,
             paused,
-            inceptionDisplay,
-            laterStartProposal,
-            laterStartProposalAsync,
             formValues,
         )
-    }
-
-    context(html: HTML)
-    fun renderHistoryPage(
-        settings: Settings,
-        symbolColorMap: Map<String, String> = emptyMap(),
-        csrfToken: String? = null,
-        paused: Boolean = false,
-    ) {
-        historyPageComponent.render(settings, symbolColorMap, csrfToken, paused)
     }
 
     context(html: HTML)
@@ -127,9 +86,7 @@ class DashboardView(
     fun renderDashboardFragment(
         settings: Settings,
         latest: PortfolioSnapshot,
-        history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
-        delta24h: BigDecimal? = null,
         unresolvedIntents: List<OrderIntent> = emptyList(),
         csrfToken: String? = null,
         qualityScores: Map<String, BigDecimal> = emptyMap(),
@@ -137,9 +94,7 @@ class DashboardView(
         fragmentComponent.render(
             settings,
             latest,
-            history,
             allocations,
-            delta24h,
             unresolvedIntents,
             csrfToken,
             qualityScores,

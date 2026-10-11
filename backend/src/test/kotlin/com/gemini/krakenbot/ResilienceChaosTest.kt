@@ -5,9 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
@@ -38,7 +36,7 @@ class ResilienceChaosTest : StringSpec() {
                             privateKey = "c2VjcmV0",
                         ),
                         settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
                         allocations =
                         listOf(
                             Allocation(
@@ -69,11 +67,9 @@ class ResilienceChaosTest : StringSpec() {
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                     )
-                val mockTradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutorImpl(krakenService, mockTradeHistoryService)
+                    OrderExecutorImpl(krakenService)
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
@@ -97,7 +93,7 @@ class ResilienceChaosTest : StringSpec() {
                             privateKey = "c2VjcmV0",
                         ),
                         settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
                         allocations =
                         listOf(
                             Allocation(
@@ -123,11 +119,9 @@ class ResilienceChaosTest : StringSpec() {
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                     )
-                val mockTradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutorImpl(krakenService, mockTradeHistoryService)
+                    OrderExecutorImpl(krakenService)
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,
