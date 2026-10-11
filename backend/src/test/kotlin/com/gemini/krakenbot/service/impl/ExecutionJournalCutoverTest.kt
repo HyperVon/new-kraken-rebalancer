@@ -36,7 +36,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
+import org.opentest4j.TestAbortedException
 import java.io.IOException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -44,6 +46,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.Instant
 import java.util.Comparator
+import java.util.Locale
 
 class ExecutionJournalCutoverTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -1345,23 +1348,62 @@ class ExecutionJournalCutoverTest : StringSpec() {
             }
         }
 
-        "execution journal rejects a symlink alias and a shared named-memory database" {
+        "execution journal rejects a symlink alias" {
             withTempDirectory { directory ->
                 val reportPath = directory.resolve("reporting.db")
                 val aliasPath = directory.resolve("reporting-alias.db")
                 Files.createFile(reportPath)
-                Files.createSymbolicLink(aliasPath, reportPath.fileName)
+                createSymbolicLinkOrSkip(aliasPath, reportPath.fileName)
 
                 shouldThrow<IllegalArgumentException> {
                     ExecutionDatabase.init(aliasPath.toString(), reportPath.toString())
                 }
-                shouldThrow<IllegalArgumentException> {
-                    ExecutionDatabase.init(
-                        "file:shared-memory?mode=memory&cache=shared",
-                        "jdbc:sqlite:file:shared-memory?mode=memory&cache=shared",
+            }
+        }
+
+        "execution journal rejects a shared named-memory database" {
+            shouldThrow<IllegalArgumentException> {
+                ExecutionDatabase.init(
+                    "file:shared-memory?mode=memory&cache=shared",
+                    "jdbc:sqlite:file:shared-memory?mode=memory&cache=shared",
+                )
+            }
+        }
+
+        "symlink creation skips only when unavailable and propagates other filesystem errors" {
+            val aliasPath = Path.of("alias")
+            val targetPath = Path.of("reporting.db")
+
+            shouldThrow<TestAbortedException> {
+                createSymbolicLinkOrSkip(aliasPath, targetPath) {
+                    throw UnsupportedOperationException("Symbolic links are unsupported")
+                }
+            }
+            shouldThrow<TestAbortedException> {
+                createSymbolicLinkOrSkip(aliasPath, targetPath, osName = "Windows 11") {
+                    throw FileSystemException(
+                        aliasPath.toString(),
+                        targetPath.toString(),
+                        "A required privilege is not held by the client",
                     )
                 }
             }
+            shouldThrow<TestAbortedException> {
+                createSymbolicLinkOrSkip(aliasPath, targetPath, osName = "Linux") {
+                    throw FileSystemException(
+                        aliasPath.toString(),
+                        targetPath.toString(),
+                        "Operation not supported",
+                    )
+                }
+            }
+
+            val unexpectedFailure = shouldThrow<FileSystemException> {
+                createSymbolicLinkOrSkip(aliasPath, targetPath, osName = "Windows 11") {
+                    throw FileSystemException(aliasPath.toString(), targetPath.toString(), "Access is denied")
+                }
+            }
+            unexpectedFailure.reason shouldBe "Access is denied"
         }
 
         "legacy migration identity remains stable when reporting storage is opened through a symlink" {
@@ -1371,7 +1413,7 @@ class ExecutionJournalCutoverTest : StringSpec() {
                 val executionPath = directory.resolve("execution.db")
                 val reportingDatabase = DatabaseConfig.init(reportingPath.toString())
                 runTest { SqliteOrderIntentRepositoryImpl(reportingDatabase).savePending(newIntent()) }
-                Files.createSymbolicLink(reportingAlias, reportingPath.fileName)
+                createSymbolicLinkOrSkip(reportingAlias, reportingPath.fileName)
 
                 val database = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
@@ -1784,6 +1826,37 @@ class ExecutionJournalCutoverTest : StringSpec() {
 
     private fun restoreSystemProperty(key: String, value: String?) {
         if (value == null) System.clearProperty(key) else System.setProperty(key, value)
+    }
+
+    private fun createSymbolicLinkOrSkip(
+        link: Path,
+        target: Path,
+        osName: String = System.getProperty("os.name"),
+        createSymbolicLink: () -> Unit = { Files.createSymbolicLink(link, target) },
+    ) {
+        try {
+            createSymbolicLink()
+        } catch (exception: UnsupportedOperationException) {
+            throw TestAbortedException("Symbolic links are unsupported in this environment.", exception)
+        } catch (exception: FileSystemException) {
+            if (!isUnavailableSymlinkFailure(exception, osName)) throw exception
+            throw TestAbortedException(
+                "Symbolic links are unavailable in this environment: ${exception.reason}",
+                exception,
+            )
+        }
+    }
+
+    private fun isUnavailableSymlinkFailure(exception: FileSystemException, osName: String): Boolean {
+        val reason = exception.reason?.trim()?.trimEnd('.')?.trim()?.lowercase(Locale.ROOT) ?: return false
+        return when (reason) {
+            "operation not supported", "function not implemented" -> true
+
+            "a required privilege is not held by the client", "the request is not supported", "incorrect function" ->
+                osName.startsWith("Windows", ignoreCase = true)
+
+            else -> false
+        }
     }
 
     private class SimulatedProcessCrash : Error()
