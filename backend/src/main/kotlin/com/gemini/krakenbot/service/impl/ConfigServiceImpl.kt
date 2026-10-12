@@ -34,6 +34,7 @@ class ConfigServiceImpl internal constructor(
 ) : ConfigService {
     private val log = LoggerFactory.getLogger(ConfigServiceImpl::class.java)
     private val configLock = Mutex()
+    private val configMutationLock = Mutex()
     private var executionSessionDepth = 0
     private var pendingConfig: AppConfig? = null
 
@@ -57,20 +58,36 @@ class ConfigServiceImpl internal constructor(
     }
 
     private fun loadConfigBlocking() {
+        val loadedConfig = readConfigFromDisk()
+        persistedKrakenCredentials = loadedConfig.persistedCredentials
+        publishOrStage(loadedConfig.runtimeConfig)
+    }
+
+    private fun readConfigFromDisk(): LoadedConfig {
         cleanupStaleTempFile()
         val rawContent = readRawConfigContent()
         val rawConfig = parseConfig(rawContent)
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
         val validatedConfig = validateAndNormalize(parsedConfig)
-        persistedKrakenCredentials = rawConfig.kraken
-        publishOrStage(validatedConfig)
+        return LoadedConfig(
+            persistedCredentials = rawConfig.kraken,
+            runtimeConfig = validatedConfig,
+        )
     }
+
+    private data class LoadedConfig(val persistedCredentials: KrakenCredentials, val runtimeConfig: AppConfig)
+
+    private data class ConfigUpdatePlan(val persistedConfig: AppConfig, val runtimeConfig: AppConfig)
 
     @Throws(IOException::class)
     override suspend fun loadConfig() {
         withContext(Dispatchers.IO) {
-            configLock.withLock {
-                loadConfigBlocking()
+            configMutationLock.withLock {
+                val loadedConfig = readConfigFromDisk()
+                configLock.withLock {
+                    persistedKrakenCredentials = loadedConfig.persistedCredentials
+                    publishOrStage(loadedConfig.runtimeConfig)
+                }
             }
         }
     }
@@ -79,17 +96,29 @@ class ConfigServiceImpl internal constructor(
 
     override suspend fun updateConfig(newConfig: AppConfig) {
         withContext(Dispatchers.IO) {
-            configLock.withLock {
-                val validatedConfig = validateAndNormalize(newConfig)
-                // Compare against the active config exposed to callers. A staged update is not
-                // visible through getConfig(), so using pendingConfig here could treat a later
-                // settings-only update built from the active config as a credential rotation and
-                // persist its resolved value over an earlier staged rotation.
-                val previousKraken = appConfig.kraken
-                val persistedConfig = configForPersistence(validatedConfig, previousKraken)
-                writeConfigAtomically(persistedConfig)
-                persistedKrakenCredentials = persistedConfig.kraken
-                publishOrStage(configForRuntime(validatedConfig, previousKraken))
+            configMutationLock.withLock {
+                val updatePlan = configLock.withLock {
+                    val validatedConfig = validateAndNormalize(newConfig)
+                    // Compare against the active config exposed to callers. A staged update is not
+                    // visible through getConfig(), so using pendingConfig here could treat a later
+                    // settings-only update built from the active config as a credential rotation and
+                    // persist its resolved value over an earlier staged rotation.
+                    val previousKraken = appConfig.kraken
+                    ConfigUpdatePlan(
+                        persistedConfig = configForPersistence(validatedConfig, previousKraken),
+                        runtimeConfig = configForRuntime(validatedConfig, previousKraken),
+                    )
+                }
+
+                // Serialize file mutations separately from the short state lock. Execution-session
+                // cleanup must be able to decrement its depth while a slow filesystem write is in flight.
+                writeConfigAtomically(updatePlan.persistedConfig)
+                withContext(NonCancellable) {
+                    configLock.withLock {
+                        persistedKrakenCredentials = updatePlan.persistedConfig.kraken
+                        publishOrStage(updatePlan.runtimeConfig)
+                    }
+                }
             }
         }
     }

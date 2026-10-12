@@ -1244,12 +1244,12 @@ class ConfigServiceTest : StringSpec() {
             tempFile.readText() shouldBe originalContent
         }
 
-        "endExecutionSession completes despite cancellation while configLock is held by updateConfig" {
+        "endExecutionSession completes while updateConfig is waiting on a slow atomic write" {
             runTest {
                 val lockHoldGate = CompletableDeferred<Unit>()
                 val writerEntered = CompletableDeferred<Unit>()
                 // Delegate real parsing so construction reads the on-disk config, but block the atomic
-                // write so updateConfig holds configLock for the duration of the contention.
+                // write while configLock remains available to execution-session cleanup.
                 val mapper = mockk<ObjectMapper>()
                 val writer = mockk<ObjectWriter>()
                 every { mapper.writerWithDefaultPrettyPrinter() } returns writer
@@ -1277,23 +1277,21 @@ class ConfigServiceTest : StringSpec() {
                 }
                 writerEntered.await()
 
-                // Cleanup contends with the lock held by blocker and is then cancelled, as a rebalance
-                // worker cancelled mid-cycle would be.
+                // Ending the session must not wait for the disk write: credential lookups use a
+                // bounded timeout, and their mandatory session cleanup must remain prompt.
                 val sessionJob = launch {
                     service.endExecutionSession()
                 }
-                runCurrent()
-                sessionJob.cancel()
-                runCurrent()
+                sessionJob.join()
+                sessionJob.isCompleted shouldBe true
 
-                // While the lock is held, the staged config must not have published yet.
+                // The new config is not published before its atomic file replacement succeeds.
                 service.getConfig().settings.loopDelaySeconds shouldBe 60L
 
-                // Release the lock: with the NonCancellable cleanup guarantee the pending decrement must
-                // still run, publishing the staged config instead of stranding depth above zero.
+                // Once the write completes, the update publishes normally; cleanup did not strand
+                // the execution-session depth while waiting for the file operation.
                 lockHoldGate.complete(Unit)
                 blocker.join()
-                sessionJob.join()
 
                 service.getConfig().settings.loopDelaySeconds shouldBe 999L
 
