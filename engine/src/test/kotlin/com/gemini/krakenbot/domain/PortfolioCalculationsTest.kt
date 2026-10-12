@@ -260,5 +260,14 @@ class PortfolioCalculationsTest : StringSpec() {
             PortfolioCalculations.calculateTargetValue(BigDecimal("50.00"), BigDecimal("1000.00"))
                 .shouldBeEqualComparingTo(BigDecimal("500.00"))
         }
+
+        "configured USD percentage grows and shrinks with total portfolio value" {
+            PortfolioCalculations.calculateTargetValue(BigDecimal("5.00"), BigDecimal("20000.00"))
+                .shouldBeEqualComparingTo(BigDecimal("1000.00"))
+            PortfolioCalculations.calculateTargetValue(BigDecimal("5.00"), BigDecimal("40000.00"))
+                .shouldBeEqualComparingTo(BigDecimal("2000.00"))
+            PortfolioCalculations.calculateTargetValue(BigDecimal("5.00"), BigDecimal("10000.00"))
+                .shouldBeEqualComparingTo(BigDecimal("500.00"))
+        }
     }
 }

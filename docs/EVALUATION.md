@@ -9,7 +9,7 @@ they are not a current test report or a description of emulator behavior.
 
 | Contract | Focused tests |
 | --- | --- |
-| Fixed configured USD target, deviation triggers, fiat correction, precision, and order planning | [`RebalancerEngineTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/RebalancerEngineTest.kt), [`PortfolioCalculationsTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/PortfolioCalculationsTest.kt), [`PortfolioManagerFiatCorrectionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerFiatCorrectionTest.kt), [`PortfolioManagerZeroAllocationTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerZeroAllocationTest.kt) |
+| Configured USD percentage target, deviation triggers, fiat correction, precision, and order planning | [`RebalancerEngineTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/RebalancerEngineTest.kt), [`PortfolioCalculationsTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/PortfolioCalculationsTest.kt), [`PortfolioManagerFiatCorrectionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerFiatCorrectionTest.kt), [`PortfolioManagerZeroAllocationTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerZeroAllocationTest.kt) |
 | Sell-first execution, settled cash limits, and live submission safety | [`PortfolioManagerOrderExecutionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerOrderExecutionTest.kt), [`OrderExecutorFillSettlementTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorFillSettlementTest.kt), [`OrderExecutorCashCapTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorCashCapTest.kt), [`OrderExecutorSubmissionSafetyTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorSubmissionSafetyTest.kt), [`ExecutionJournalCutoverTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/ExecutionJournalCutoverTest.kt) |
 | Latest current-cycle Dashboard snapshot, `/history` redirect, retired API responses, health/readiness, and SSE | [`DashboardCutoverApiTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardCutoverApiTest.kt) |
 | Actual direct observations, incomplete evidence, account/scope continuity, and page rendering | [`DashboardActualPageTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardActualPageTest.kt), [`ActualObservationDispatcherTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/ActualObservationDispatcherTest.kt), [`ActualObservationStoreTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/ActualObservationStoreTest.kt), [`ActualObservationValuatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/ActualObservationValuatorTest.kt) |
@@ -37,7 +37,8 @@ authenticated Actual observations.
 
 ## Product behavior to keep covered
 
-- A cycle plans against configured asset weights and its fixed USD target.
+- A cycle keeps the configured USD percentage fixed and recalculates its dollar
+  target from the current portfolio total.
   Historical ATH/drawdown fields and comparison data do not change the plan.
 - The Dashboard displays the latest completed in-memory cycle snapshot and its
   current-cycle actions. SSE publishes that snapshot; it is not a persisted

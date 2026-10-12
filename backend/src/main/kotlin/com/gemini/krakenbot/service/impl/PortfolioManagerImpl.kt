@@ -308,7 +308,7 @@ class PortfolioManagerImpl(
             }",
         )
 
-        val effectiveUsdTarget = RebalancerEngine.calculateFixedUsdTarget(config.allocations)
+        val effectiveUsdTarget = RebalancerEngine.calculateConfiguredUsdTargetPercent(config.allocations)
         val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, config.allocations)
 
         val plan = portfolioAnalyzer.analyzeDeviations(

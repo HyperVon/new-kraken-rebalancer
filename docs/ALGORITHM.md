@@ -2,7 +2,8 @@
 
 This document describes the active rebalance cycle and the current portfolio
 surfaces. The cycle uses the configured allocation directly, including its
-fixed USD target. Retrospective History reporting, history reconstruction,
+configured USD percentage target. Its dollar target scales with the current
+portfolio total. Retrospective History reporting, history reconstruction,
 and retrospective comparisons are retired. Current planning does not use
 ATH/drawdown deployment.
 
@@ -14,7 +15,7 @@ flowchart TD
     BAL --> VALUE[Value configured assets in USD]
     VALUE --> VALID{All required prices valid?}
     VALID -- No --> STOP["Skip orders; record cycle error"]
-    VALID -- Yes --> TARGET[Calculate fixed configured targets]
+    VALID -- Yes --> TARGET[Calculate configured targets from current total]
     TARGET --> PLAN[Measure signed deviations and apply both trigger gates]
     PLAN --> CORRECT{Only USD triggered?}
     CORRECT -- Yes --> CASH[Distribute cash change across counter-deviations]
@@ -53,8 +54,10 @@ USD targetValue = round_to_cents(V × USD target / 100)
 deviationUSD[i] = currentValue[i] − targetValue[i]
 ```
 
-The configured USD percentage remains fixed across cycles. The remaining
-portfolio weight is divided among non-USD assets in the proportions already
+The configured USD percentage remains fixed across cycles, while its target
+dollar value is recalculated from the current portfolio total each cycle. A 5%
+USD target is $1,000 at a $20,000 portfolio value and $2,000 at $40,000. The
+remaining portfolio weight is divided among non-USD assets in the proportions already
 specified by their configured weights. Current plans do not use portfolio ATH,
 drawdown, historical capital flows, historical price highs, or Buy & Hold
 results to adjust orders.
@@ -155,12 +158,13 @@ storage and migration procedures.
 
 ## Dashboard, health, and readiness
 
-`CurrentPortfolioState` holds an in-memory `StateFlow` containing only the
-latest completed cycle snapshot. It does not retain a historical timeline. The
-Dashboard renders that snapshot and its current-cycle actions; `/api/status/stream`
-sends snapshot updates over SSE. The Dashboard's STREAM/STALE chip describes
-feed freshness and remains separate from the persistent Simulation / Dry Run /
-Live Trading mode plate.
+`CurrentPortfolioState` publishes the latest completed cycle through an
+in-memory `StateFlow` and retains up to 24 recent snapshots for the Dashboard
+hero trend. The trend appears after the second cycle and resets on restart; it
+does not read persisted history. `/api/status/stream` sends current snapshots
+over SSE. The Dashboard's STREAM/STALE chip describes feed freshness and
+remains separate from the persistent Simulation / Dry Run / Live Trading mode
+plate.
 
 Health and readiness describe current operation: loop and cycle state, active
 mode, latest snapshot, and unresolved live-order intent status. Readiness is
@@ -176,10 +180,13 @@ The former `/history` page permanently redirects to `/actual`. Former
 Actual records direct observations for configured managed assets. It stores the
 Balance response, direct USD ticker marks, local request windows, account/scope
 evidence, and incomplete samples in a separate append-only database. It does
-not fill gaps or substitute historical prices. The dispatcher verifies the
-established account binding and writes asynchronously, so collection or storage
-problems can skip a sample without changing an order decision. Simulation does
-not contribute authenticated Actual observations.
+not fill gaps or substitute historical prices. The dispatcher authenticates the
+current Kraken account identity and checks that credentials have not changed
+since cycle capture before writing asynchronously. Dry-run observations do not
+require an existing execution binding; live-order authorization keeps its
+separate binding checks. Collection or storage problems can skip a sample
+without changing an order decision. Simulation does not contribute authenticated
+Actual observations.
 
 An optional prospective Buy & Hold comparison remains available when an
 eligible complete observation and verified event continuity provide a safe

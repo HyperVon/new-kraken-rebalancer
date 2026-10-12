@@ -98,16 +98,20 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 val html = response.bodyAsText()
                 response.status shouldBe HttpStatusCode.OK
                 html shouldContain "Actual Observations - Kraken Rebalancer"
+                html shouldContain "https://unpkg.com/htmx.org@2.0.4"
+                html shouldContain "src=\"/static/rebalancer.js?v="
                 html shouldContain "LIVE TRADING"
                 html shouldContain "href=\"/actual\""
-                html shouldContain "Bound account reference"
+                html shouldContain "Authenticated account reference"
                 html shouldContain "ab12cd34"
                 html shouldContain "BTC, ETH, USD"
                 html shouldContain "Other Kraken balances are excluded and not valued."
                 html shouldContain "Observed managed portfolio value"
                 html shouldContain "Price request window"
                 html shouldContain "2026-10-09T12:03:59Z"
-                html shouldContain "$1,250.0000"
+                html shouldContain "$1,250.00"
+                html shouldContain "$25,000.00"
+                html shouldNotContain "$25,000.000"
                 html shouldContain "Observed balance"
                 html shouldContain "USD mark"
                 html shouldContain "Marked value"
@@ -119,8 +123,75 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                     .map { match ->
                         match.groupValues[1].split(' ').map { point -> point.substringBefore(',') }
                     }
-                    .toList() shouldBe listOf(listOf("14.00", "247.00"), listOf("713.00", "946.00"))
+                    .toList() shouldBe listOf(listOf("92.00", "305.00"), listOf("731.00", "944.00"))
                 coVerify(exactly = 1) { actualObservationDispatcher.readCurrent(config, 250) }
+            }
+        }
+
+        "actual page formats displayed USD amounts to two decimal places" {
+            val config = TestFixtures.config(
+                settings = TestFixtures.settings(dryRun = true, simulation = false),
+                allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+            )
+            val complete = observation(
+                "precise-usd-values",
+                "2026-10-10T12:00:00Z",
+                ActualObservationStatus.COMPLETE,
+                "28500.061728",
+            ).let { sample ->
+                sample.copy(
+                    assets = sample.assets.map { asset ->
+                        if (asset.symbol == Asset.BTC) {
+                            asset.copy(
+                                priceUsd = BigDecimal("50000.123456"),
+                                valueUsd = BigDecimal("25000.061728"),
+                            )
+                        } else {
+                            asset
+                        }
+                    },
+                )
+            }
+            val page = ActualObservationPage(
+                state = ActualPageState.READY,
+                scopeSymbols = listOf("BTC", "ETH", "USD"),
+                scopeFingerprint = "f".repeat(64),
+                accountReference = "ab12cd34",
+                observations = listOf(complete),
+                stale = false,
+                lastCaptureIssue = null,
+                benchmark = BenchmarkComparisonResult(
+                    status = BenchmarkStatus.READY,
+                    segment = null,
+                    points = emptyList(),
+                    latestPoint = BenchmarkComparisonPoint(
+                        observationId = "precise-usd-values",
+                        observedAt = Instant.parse("2026-10-10T12:00:00Z"),
+                        actualValueUsd = BigDecimal("28500.061728"),
+                        holdValueUsd = BigDecimal("28501.296728"),
+                        differenceUsd = BigDecimal("-1.235"),
+                        differencePercent = BigDecimal("-0.4567"),
+                    ),
+                    unavailableReason = null,
+                ),
+            )
+            every { configService.getConfig() } returns config
+            coEvery { actualObservationDispatcher.readCurrent(config, 250) } returns page
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val response = client.get("/actual")
+                val html = response.bodyAsText()
+                response.status shouldBe HttpStatusCode.OK
+                html shouldContain "$28,500.06"
+                html shouldContain "$50,000.12"
+                html shouldContain "$25,000.06"
+                html shouldContain "-$1.24 (-0.46%)"
+                html shouldNotContain "$-1.24"
+                html shouldNotContain "$28,500.061728"
+                html shouldNotContain "$50,000.123456"
+                html shouldNotContain "$25,000.061728"
             }
         }
 
@@ -134,9 +205,16 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 loopDelaySeconds = 60,
             )
 
-            svg shouldContain "points=\"14.00,248.00 247.00,130.00 946.00,12.00\""
+            svg shouldContain "points=\"92.00,230.69 305.00,135.00 944.00,39.31\""
             svg shouldNotContain "NaN"
             svg shouldNotContain "Infinity"
+            svg shouldContain "actual-axis-label"
+            svg shouldContain ">$316.00</text>"
+            svg shouldContain ">$200.00</text>"
+            svg shouldContain ">$84.00</text>"
+            svg shouldNotContain ">$316</text>"
+            svg shouldNotContain "aria-label"
+            svg shouldContain "text-anchor=\"end\""
         }
 
         "actual chart breaks long unobserved intervals and marks persisted incomplete samples" {
@@ -158,7 +236,7 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
             )
 
             missingInterval.countOccurrences("<polyline") shouldBe 1
-            missingInterval shouldContain "points=\"14.00,248.00 17.88,130.00\""
+            missingInterval shouldContain "points=\"92.00,230.69 95.55,135.00\""
             missingInterval.countOccurrences("actual-gap-marker") shouldBe 0
             incompleteSample.countOccurrences("<polyline") shouldBe 0
             incompleteSample.countOccurrences("actual-gap-marker") shouldBe 1
@@ -178,9 +256,9 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 loopDelaySeconds = 60,
             )
 
-            single shouldContain "<circle cx=\"480.00\" cy=\"130.00\""
+            single shouldContain "<circle cx=\"518.00\" cy=\"135.00\""
             single.countOccurrences("<polyline") shouldBe 0
-            zeroSpan shouldContain "points=\"480.00,248.00 480.00,12.00\""
+            zeroSpan shouldContain "points=\"518.00,230.69 518.00,39.31\""
             zeroSpan shouldNotContain "NaN"
             zeroSpan shouldNotContain "Infinity"
         }
@@ -211,7 +289,7 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 application { configureTestEnv() }
 
                 val html = client.get("/actual").bodyAsText()
-                html shouldContain "No complete managed value has been captured for this account and scope yet."
+                html shouldContain "Incomplete evidence: ETH: no direct USD mark"
                 html shouldContain "Incomplete direct observation"
                 html shouldContain "Stale"
                 html shouldContain "Observation sample skipped."
@@ -224,7 +302,8 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 withTempDirectory { directory ->
                     val now = Instant.parse("2026-10-09T12:10:00Z")
                     val credentialScope = "isolated-smoke-credential-generation"
-                    val accountDigest = "a".repeat(64)
+                    val accountIdentity = "IIBAN-ISOLATED-TEST-ACCOUNT"
+                    val accountDigest = digest(accountIdentity)
                     val bindingRepository = mockk<ExecutionAccountBindingRepository>()
                     coEvery { bindingRepository.load() } returns ExecutionAccountBinding(
                         accountIdentityDigest = accountDigest,
@@ -241,6 +320,7 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                     val exchange = mockk<KrakenService>(relaxed = true)
                     val kraken = object : KrakenService by exchange {
                         override suspend fun getFundingEvidenceScope(): String = credentialScope
+                        override suspend fun getAuthenticatedAccountIdentity(): String = accountIdentity
 
                         override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
                     }
@@ -259,8 +339,6 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                             reportingDatabasePath = directory.resolve("reporting.db").toString(),
                             executionDatabasePath = directory.resolve("execution.db").toString(),
                         ),
-                        accountBindingService = bindingService,
-                        bindingRepository = bindingRepository,
                         krakenService = kraken,
                         nowProvider = { now.plusSeconds(5) },
                     )
@@ -325,6 +403,11 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                             html shouldContain "$200.00"
                             html shouldContain "Complete direct observation"
                             html shouldContain "BTC, USD"
+                            html shouldContain "50%"
+                            html shouldContain "80%"
+                            html shouldContain "20%"
+                            html shouldContain "data-label=\"Portfolio share\""
+                            html shouldContain "data-label=\"Configured target\""
                         }
 
                         coVerify(exactly = 0) {
@@ -525,6 +608,9 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                 unavailableStates.forEach { (state, message) ->
                     val html = render(page(state))
                     html shouldContain message
+                    if (state == ActualPageState.SIMULATION) {
+                        html shouldNotContain "actual-status-pill"
+                    }
                     html shouldContain ViewText.ACTUAL_CHART_EMPTY
                 }
 
@@ -534,6 +620,16 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                     ActualObservationStatus.COMPLETE,
                     "1000.00",
                 )
+                val incomplete = observation(
+                    "latest-incomplete-page",
+                    "2026-10-10T12:01:00Z",
+                    ActualObservationStatus.INCOMPLETE,
+                    null,
+                )
+                val latestIncompleteHtml = render(page(ActualPageState.READY, listOf(complete, incomplete)))
+                latestIncompleteHtml shouldContain ViewText.ACTUAL_OBSERVED_AT
+                latestIncompleteHtml shouldContain "2026-10-10T12:01:00Z"
+                latestIncompleteHtml shouldContain "2026-10-10T12:00:00Z"
                 val point = BenchmarkComparisonPoint(
                     observationId = complete.observationId,
                     observedAt = complete.observedAt,

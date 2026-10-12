@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.actual.ActualAssetStatus
 import com.gemini.krakenbot.service.actual.ActualObservation
 import com.gemini.krakenbot.service.actual.ActualObservationPage
@@ -10,19 +11,24 @@ import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonPoint
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.CdnIntegrity
+import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.button
+import com.gemini.krakenbot.view.util.cdnScript
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.loopControl
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
+import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.th
@@ -36,6 +42,7 @@ import kotlinx.html.form
 import kotlinx.html.head
 import kotlinx.html.header
 import kotlinx.html.input
+import kotlinx.html.script
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.thead
@@ -46,6 +53,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class ActualObservationsPageComponent {
@@ -54,6 +63,7 @@ class ActualObservationsPageComponent {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.ACTUAL_TITLE} - ${ViewText.APP_TITLE}")
+            cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
             div(CssClass.Layout.Container + CssClass.Actual.Content) {
@@ -65,8 +75,9 @@ class ActualObservationsPageComponent {
                 renderLatest(page)
                 renderBenchmark(page, csrfToken)
                 renderChart(page.observations, settings.loopDelaySeconds, page.benchmark)
-                renderAssets(page.observations.lastOrNull())
+                renderAssets(page.observations.lastOrNull(), page.targetPercentBySymbol)
             }
+            script(src = rebalancerJsSrc()) {}
         }
     }
 
@@ -75,45 +86,45 @@ class ActualObservationsPageComponent {
         val latestComplete = page.observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE }
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) { +ViewText.ACTUAL_LATEST_HEADING }
-            div(CssClass.Actual.SummaryGrid) {
-                summaryCard(
-                    ViewText.ACTUAL_VALUE_LABEL,
-                    latestComplete?.totalUsd
-                        ?.let(::formatUsdExact) ?: ViewText.ACTUAL_NO_VALUE,
-                )
-                summaryCard(
+            div(CssClass.Actual.LatestHero) {
+                div {
+                    p(CssClass.Actual.SummaryLabel) { +ViewText.ACTUAL_VALUE_LABEL }
+                    div(CssClass.Actual.MainValue) {
+                        +latestComplete?.totalUsd?.let(::formatUsd).orDash()
+                    }
+                }
+                if (latest != null) {
+                    div(CssClass.Actual.LatestBadges) {
+                        val statusClass = when (latest.status) {
+                            ActualObservationStatus.COMPLETE -> CssClass.Actual.Fresh
+                            ActualObservationStatus.INCOMPLETE -> CssClass.Actual.Incomplete
+                        }
+                        val statusText = when (latest.status) {
+                            ActualObservationStatus.COMPLETE -> ViewText.ACTUAL_COMPLETE
+                            ActualObservationStatus.INCOMPLETE -> ViewText.ACTUAL_INCOMPLETE
+                        }
+                        span(CssClass.Actual.StatusPill + statusClass) { +statusText }
+                        val freshnessClass = if (page.stale) CssClass.Actual.Stale else CssClass.Actual.Fresh
+                        val freshnessText = if (page.stale) ViewText.ACTUAL_STALE else ViewText.ACTUAL_FRESH
+                        span(CssClass.Actual.StatusPill + freshnessClass) { +freshnessText }
+                    }
+                }
+            }
+            div(CssClass.Actual.LatestDetails) {
+                latestDetail(
                     ViewText.ACTUAL_VALUE_CAPTURED_AT,
                     latestComplete?.observedAt?.let(::formatInstant) ?: ViewText.EM_DASH,
                 )
-                summaryCard(
+                latestDetail(
                     ViewText.ACTUAL_PRICE_CAPTURED_AT,
                     latestComplete?.let {
                         "${formatInstant(it.priceRequestStartedAt)} – ${formatInstant(it.priceResponseEndedAt)}"
                     } ?: ViewText.EM_DASH,
                 )
-                summaryCard(ViewText.ACTUAL_OBSERVED_AT, latest?.observedAt?.let(::formatInstant) ?: ViewText.EM_DASH)
-                val freshnessText = when {
-                    latest == null -> ViewText.EM_DASH
-                    page.stale -> ViewText.ACTUAL_STALE
-                    else -> ViewText.ACTUAL_FRESH
+                if (latest?.status == ActualObservationStatus.INCOMPLETE) {
+                    latestDetail(ViewText.ACTUAL_OBSERVED_AT, formatInstant(latest.observedAt))
                 }
-                val freshnessClass = when {
-                    latest == null -> CssClass.Actual.Muted
-                    page.stale -> CssClass.Actual.Stale
-                    else -> CssClass.Actual.Fresh
-                }
-                summaryCard(ViewText.ACTUAL_FRESHNESS, freshnessText, freshnessClass)
-                summaryCard(ViewText.ACTUAL_ACCOUNT, page.accountReference ?: ViewText.EM_DASH)
-                val statusText = when (latest?.status) {
-                    ActualObservationStatus.COMPLETE -> ViewText.ACTUAL_COMPLETE
-                    ActualObservationStatus.INCOMPLETE -> ViewText.ACTUAL_INCOMPLETE
-                    null -> ViewText.EM_DASH
-                }
-                summaryCard(
-                    ViewText.ACTUAL_OBSERVATION_STATUS,
-                    statusText,
-                    if (latest?.status == ActualObservationStatus.INCOMPLETE) CssClass.Actual.Stale else null,
-                )
+                latestDetail(ViewText.ACTUAL_ACCOUNT, page.accountReference ?: ViewText.EM_DASH)
             }
             p(CssClass.Actual.Muted) {
                 +"${ViewText.ACTUAL_SCOPE}: ${page.scopeSymbols.joinToString(", ").ifEmpty { ViewText.EM_DASH }}"
@@ -177,20 +188,20 @@ class ActualObservationsPageComponent {
                     )
                     summaryCard(
                         ViewText.ACTUAL_BENCHMARK_BASELINE_VALUE_LABEL,
-                        benchmark.segment?.baselineTotalUsd?.let(::formatUsdExact) ?: ViewText.EM_DASH,
+                        benchmark.segment?.baselineTotalUsd?.let(::formatUsd) ?: ViewText.EM_DASH,
                     )
                     val latestPoint = benchmark.latestPoint
                     summaryCard(
                         ViewText.ACTUAL_BENCHMARK_HOLD_VALUE_LABEL,
-                        latestPoint?.holdValueUsd?.let(::formatUsdExact) ?: ViewText.EM_DASH,
+                        latestPoint?.holdValueUsd?.let(::formatUsd) ?: ViewText.EM_DASH,
                     )
                     summaryCard(
                         ViewText.ACTUAL_BENCHMARK_ACTUAL_VALUE_LABEL,
-                        latestPoint?.actualValueUsd?.let(::formatUsdExact) ?: ViewText.EM_DASH,
+                        latestPoint?.actualValueUsd?.let(::formatUsd) ?: ViewText.EM_DASH,
                     )
                     val diffText = latestPoint?.let {
                         val sign = if (it.differenceUsd >= BigDecimal.ZERO) "+" else ""
-                        "${formatUsdExact(it.differenceUsd)} ($sign${it.differencePercent.toPlainString()}%)"
+                        "${formatUsd(it.differenceUsd)} ($sign${Formatter.formatPercent(it.differencePercent)}%)"
                     } ?: ViewText.EM_DASH
                     val diffClass = when {
                         latestPoint == null -> null
@@ -280,7 +291,7 @@ class ActualObservationsPageComponent {
         }
     }
 
-    private fun DIV.renderAssets(latest: ActualObservation?) {
+    private fun DIV.renderAssets(latest: ActualObservation?, targetPercentBySymbol: Map<String, Double>) {
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) { +ViewText.ACTUAL_ASSET_BREAKDOWN }
             if (latest == null || latest.assets.isEmpty()) {
@@ -294,17 +305,53 @@ class ActualObservationsPageComponent {
                                 th { +ViewText.ACTUAL_BALANCE }
                                 th { +ViewText.ACTUAL_PRICE }
                                 th { +ViewText.ACTUAL_MARKED_VALUE }
+                                th { +ViewText.ACTUAL_ASSET_SHARE }
+                                th { +ViewText.ACTUAL_ASSET_TARGET }
                                 th { +ViewText.ACTUAL_ASSET_STATUS }
                             }
                         }
                         tbody {
                             latest.assets.forEach { asset ->
+                                val totalUsd = latest.totalUsd?.takeIf {
+                                    latest.status == ActualObservationStatus.COMPLETE && it.signum() > 0
+                                }
+                                val sharePercent =
+                                    if (asset.status == ActualAssetStatus.COMPLETE && totalUsd != null) {
+                                        asset.valueUsd?.multiply(HUNDRED)?.divide(totalUsd, 2, RoundingMode.HALF_UP)
+                                    } else {
+                                        null
+                                    }
+                                val targetPercent =
+                                    targetPercentBySymbol[
+                                        Asset.normalizeLedgerAsset(asset.symbol).uppercase(Locale.ROOT),
+                                    ]?.let { BigDecimal.valueOf(it).setScale(2, RoundingMode.HALF_UP) }
                                 tr {
-                                    td { +asset.symbol }
-                                    td { +asset.quantity?.toPlainString().orDash() }
-                                    td { +asset.priceUsd?.let(::formatUsdExact).orDash() }
-                                    td { +asset.valueUsd?.let(::formatUsdExact).orDash() }
                                     td {
+                                        attributes["data-label"] = ViewText.ACTUAL_ASSET
+                                        +asset.symbol
+                                    }
+                                    td {
+                                        attributes["data-label"] = ViewText.ACTUAL_BALANCE
+                                        +asset.quantity?.toPlainString().orDash()
+                                    }
+                                    td {
+                                        attributes["data-label"] = ViewText.ACTUAL_PRICE
+                                        +asset.priceUsd?.let(::formatUsd).orDash()
+                                    }
+                                    td {
+                                        attributes["data-label"] = ViewText.ACTUAL_MARKED_VALUE
+                                        +asset.valueUsd?.let(::formatUsd).orDash()
+                                    }
+                                    td {
+                                        attributes["data-label"] = ViewText.ACTUAL_ASSET_SHARE
+                                        +sharePercent?.let { "${it.stripTrailingZeros().toPlainString()}%" }.orDash()
+                                    }
+                                    td {
+                                        attributes["data-label"] = ViewText.ACTUAL_ASSET_TARGET
+                                        +targetPercent?.let { "${it.stripTrailingZeros().toPlainString()}%" }.orDash()
+                                    }
+                                    td {
+                                        attributes["data-label"] = ViewText.ACTUAL_ASSET_STATUS
                                         div(
                                             CssClass.Actual.AssetStatus +
                                                 if (asset.status == ActualAssetStatus.COMPLETE) {
@@ -337,22 +384,18 @@ class ActualObservationsPageComponent {
         }
     }
 
+    private fun DIV.latestDetail(label: String, value: String) {
+        div(CssClass.Actual.LatestDetail) {
+            p(CssClass.Actual.SummaryLabel) { +label }
+            div(CssClass.Actual.Muted) { +value }
+        }
+    }
+
     private fun DIV.stateBanner(message: String) {
         p(CssClass.Actual.StateBanner) { +message }
     }
 
     private fun formatInstant(value: Instant): String = value.toString()
-
-    private fun formatUsdExact(value: BigDecimal): String {
-        val scale = maxOf(2, value.scale())
-        val decimal = value.setScale(scale).toPlainString()
-        val (integer, fraction) = decimal.removePrefix("-").split('.', limit = 2).let {
-            it[0] to it.getOrElse(1) { "" }
-        }
-        val groupedInteger = integer.reversed().chunked(3).joinToString(",").reversed()
-        val sign = if (value.signum() < 0) "-" else ""
-        return "$" + sign + groupedInteger + "." + fraction
-    }
 
     private fun String?.orDash(): String = this ?: ViewText.EM_DASH
 }
@@ -372,33 +415,47 @@ internal fun renderActualObservationChartSvg(
     }
     if (values.isEmpty()) return ""
 
-    val width = 960.0
-    val height = 260.0
-    val horizontalPadding = 14.0
-    val verticalPadding = 12.0
+    val width = 960
+    val height = 300
+    val plotLeft = 92.0
+    val plotRight = 944.0
+    val plotTop = 24.0
+    val plotBottom = 246.0
+    val horizontalSpan = plotRight - plotLeft
+    val verticalSpan = plotBottom - plotTop
     val allValues = values + benchmarkPoints.map { it.holdValueUsd }
     val min = allValues.minOrNull() ?: return ""
     val max = allValues.maxOrNull() ?: return ""
-    val range = max.subtract(min)
+    val rawRange = max.subtract(min)
+    val padding =
+        if (rawRange.signum() == 0) {
+            min.abs().multiply(BigDecimal("0.005")).max(BigDecimal.ONE)
+        } else {
+            rawRange.multiply(BigDecimal("0.08"))
+        }
+    val chartMin = min.subtract(padding)
+    val chartMax = max.add(padding)
+    val range = chartMax.subtract(chartMin)
     val first = ordered.first().observedAt
     val last = ordered.last().observedAt
     val timeSpan = Duration.between(first, last)
     val timeSpanSeconds = timeSpan.toDoubleSeconds()
     val maxConnectedGapSeconds = loopDelaySeconds.toDouble() * 2
+    fun yFor(value: BigDecimal): Double =
+        plotBottom - value.subtract(chartMin).divide(range, 12, RoundingMode.HALF_UP).toDouble() * verticalSpan
+
     val points = ordered.map { observation ->
         val value = observation.totalUsd.takeIf { observation.status == ActualObservationStatus.COMPLETE }
         val x = if (timeSpan.isZero) {
-            width / 2
+            plotLeft + horizontalSpan / 2
         } else {
             val elapsed = Duration.between(first, observation.observedAt).toDoubleSeconds()
-            horizontalPadding + (width - horizontalPadding * 2) * elapsed / timeSpanSeconds
+            plotLeft + horizontalSpan * elapsed / timeSpanSeconds
         }
-        val y = if (value == null || range.signum() == 0) {
-            height / 2
+        val y = if (value == null) {
+            plotTop + verticalSpan / 2
         } else {
-            height - verticalPadding -
-                value.subtract(min).divide(range, 12, RoundingMode.HALF_UP).toDouble() *
-                (height - verticalPadding * 2)
+            yFor(value)
         }
         ChartPoint(observation.observedAt, x, y, value != null)
     }
@@ -424,18 +481,12 @@ internal fun renderActualObservationChartSvg(
 
     val holdPoints = benchmarkPoints.sortedBy { it.observedAt }.map { point ->
         val x = if (timeSpan.isZero) {
-            width / 2
+            plotLeft + horizontalSpan / 2
         } else {
             val elapsed = Duration.between(first, point.observedAt).toDoubleSeconds()
-            horizontalPadding + (width - horizontalPadding * 2) * elapsed / timeSpanSeconds
+            plotLeft + horizontalSpan * elapsed / timeSpanSeconds
         }
-        val y = if (range.signum() == 0) {
-            height / 2
-        } else {
-            height - verticalPadding -
-                point.holdValueUsd.subtract(min).divide(range, 12, RoundingMode.HALF_UP).toDouble() *
-                (height - verticalPadding * 2)
-        }
+        val y = yFor(point.holdValueUsd)
         ChartPoint(point.observedAt, x, y, true)
     }
     val holdSegments = mutableListOf<List<ChartPoint>>()
@@ -454,21 +505,36 @@ internal fun renderActualObservationChartSvg(
     if (holdSegment.isNotEmpty()) holdSegments += holdSegment
 
     fun fmt(value: Double): String = String.format(Locale.US, "%.2f", value)
+    val startLabel = CHART_TIME_FORMATTER.format(first)
+    val endLabel = CHART_TIME_FORMATTER.format(last)
     return buildString {
         append(
-            "<svg class=\"${CssClass.Actual.ChartSvg.value}\" viewBox=\"0 0 960 260\" preserveAspectRatio=\"none\">",
+            "<svg class=\"${CssClass.Actual.ChartSvg.value}\" viewBox=\"0 0 $width $height\" " +
+                "preserveAspectRatio=\"none\">",
         )
-        listOf(0.0, height / 2, height).forEach { y ->
+        val axisValues = listOf(
+            chartMax,
+            chartMin.add(chartMax).divide(BigDecimal("2"), 12, RoundingMode.HALF_UP),
+            chartMin,
+        )
+        axisValues.forEachIndexed { index, value ->
+            val y = plotTop + index * verticalSpan / 2
             append(
-                "<line x1=\"0\" y1=\"${fmt(y)}\" x2=\"$width\" y2=\"${fmt(y)}\" " +
+                "<line x1=\"${fmt(plotLeft)}\" y1=\"${fmt(y)}\" " +
+                    "x2=\"${fmt(plotRight)}\" y2=\"${fmt(y)}\" " +
                     "class=\"${CssClass.Actual.GridLine.value}\"/>",
+            )
+            append(
+                "<text x=\"${fmt(plotLeft - 8)}\" y=\"${fmt(y + AXIS_LABEL_BASELINE)}\" " +
+                    "text-anchor=\"end\" class=\"${CssClass.Actual.AxisLabel.value}\">" +
+                    "${formatChartAxisUsd(value)}</text>",
             )
         }
         points.forEach { point ->
             if (!point.complete) {
                 append(
-                    "<line x1=\"${fmt(point.x)}\" y1=\"$verticalPadding\" " +
-                        "x2=\"${fmt(point.x)}\" y2=\"${fmt(height - verticalPadding)}\" " +
+                    "<line x1=\"${fmt(point.x)}\" y1=\"${fmt(plotTop)}\" " +
+                        "x2=\"${fmt(point.x)}\" y2=\"${fmt(plotBottom)}\" " +
                         "class=\"${CssClass.Actual.GapMarker.value}\"/>",
                 )
             }
@@ -499,6 +565,14 @@ internal fun renderActualObservationChartSvg(
                 append("\" class=\"${CssClass.Actual.Line.value}\"/>")
             }
         }
+        append(
+            "<text x=\"${fmt(plotLeft)}\" y=\"286\" text-anchor=\"start\" " +
+                "class=\"${CssClass.Actual.AxisLabel.value}\">$startLabel</text>",
+        )
+        append(
+            "<text x=\"${fmt(plotRight)}\" y=\"286\" text-anchor=\"end\" " +
+                "class=\"${CssClass.Actual.AxisLabel.value}\">$endLabel</text>",
+        )
         append("</svg>")
     }
 }
@@ -506,3 +580,13 @@ internal fun renderActualObservationChartSvg(
 private data class ChartPoint(val observedAt: Instant, val x: Double, val y: Double, val complete: Boolean)
 
 private fun Duration.toDoubleSeconds(): Double = seconds.toDouble() + nano / 1_000_000_000.0
+
+private fun formatUsd(value: BigDecimal): String =
+    (if (value.signum() < 0) "-" else "") + '$' + Formatter.formatCurrency(value.abs())
+
+private fun formatChartAxisUsd(value: BigDecimal): String = formatUsd(value)
+
+private val HUNDRED = BigDecimal("100")
+private const val AXIS_LABEL_BASELINE = 4.0
+private val CHART_TIME_FORMATTER =
+    DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US).withZone(ZoneId.systemDefault())

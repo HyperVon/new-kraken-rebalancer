@@ -14,8 +14,9 @@ section. For rebalancing math internals, see [ALGORITHM.md](ALGORITHM.md).
 Market moves, deposits, and withdrawals cause a portfolio to drift away from its
 target allocation. Correcting that drift by hand requires repeated monitoring,
 calculations, and order entry. Kraken Rebalancer automates those rules so a
-Kraken user can follow a chosen allocation consistently, including a fixed USD
-cash allocation, and review what the strategy did from one local dashboard.
+Kraken user can follow a chosen allocation consistently, including a
+percentage-based USD cash target that grows or shrinks with the portfolio, and
+review what the strategy did from one local dashboard.
 
 This is an execution and monitoring tool, not a source of trading signals. You
 choose the assets, targets, and risk settings; the application does not predict
@@ -73,7 +74,7 @@ Live Trading settings.
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Latest completed cycle snapshot, allocation bars, performance table, current-cycle actions |
 | **Actual** | `/actual` | Forward-only observed managed value, evidence status, and asset balances |
-| **Settings** | `/settings` | Loop timing, triggers, fixed USD target, safety modes, allocations |
+| **Settings** | `/settings` | Loop timing, triggers, USD percentage target, safety modes, allocations |
 
 Legacy links to `/history` permanently redirect to `/actual`. Retired
 `/api/history/*` reporting endpoints return **410 Gone**. The application no
@@ -104,13 +105,19 @@ that.
 ### Portfolio overview
 
 The Dashboard displays the latest completed rebalance cycle: a hero portfolio
-value plus two tiles:
+value with a short trailing chart plus two tiles:
 
 | Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** (hero) | Mark-to-market value of the tracked assets in the latest completed cycle. |
+| **Total Portfolio** (hero) | Mark-to-market value of the tracked assets in the latest completed cycle. The adjacent chart shows up to 24 recent completed cycles captured during this application run. |
 | **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, the configured USD target, and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
+
+The trend uses only in-memory snapshots from the current application run. It
+appears after the second completed cycle, shows the cycle count and observed
+times, and resets when the application restarts. It does not read older
+database snapshots, which may predate the current account or include simulation
+data.
 
 ### Loop control
 
@@ -301,7 +308,7 @@ which one:
 | **Largest single position** | Am I concentrated? | The **whole book**, including the targets preserved for unscored assets. |
 | **Effective independent bets** | How many genuinely separate positions do I hold? | The **whole book**. `1 / Σ(share²)`: equals the leg count when evenly weighted, and **1** when everything sits in one asset. Two assets at 86 / 14 behave like **1.3** bets, not 2. |
 
-The fixed USD target, sell-then-buy sequence, and dust handling are documented in
+The configured USD percentage target, sell-then-buy sequence, and dust handling are documented in
 [ALGORITHM.md](ALGORITHM.md).
 
 ---
@@ -315,6 +322,13 @@ The **Actual** page shows a forward-only sequence of directly observed managed
 values. It starts when eligible observations begin; it does not reconstruct
 earlier balances or prices. Authenticated Actual observations are unavailable
 in simulation mode; emulator values are not shown as an account history.
+
+The latest panel emphasizes the most recent complete managed value, its
+observation time, the authenticated account reference, freshness, and the latest
+sample status. The asset table includes each configured asset's observed
+balance, direct USD mark, marked value, portfolio share, target percentage, and
+evidence status. On narrow screens, the table presents each row as a labeled
+card.
 
 The page uses the configured allocation symbols, including configured USD,
 from Kraken's authenticated [Get Account Balance](https://docs.kraken.com/api-reference/account-data/get-account-balance)
@@ -355,8 +369,11 @@ event continuity is verified. It compares forward observations from that
 baseline and does not reconstruct an earlier period or report a retrospective
 backtest. A change in configured asset membership starts a separate scope
 series, while changing allocation weights alone does not change the measured
-asset boundary. Account or credential identity must also match the established
-execution binding before stored observations are shown.
+asset boundary. The observation scope comes from Kraken's authenticated account
+identity, normalized and hashed locally to keep each account's observations
+separate. Real-account Dry Run can use this read-only identity to display Actual
+without an existing execution-journal binding; live-order authorization still
+uses its separate binding checks.
 
 Observations are queued after the cycle's order execution returns and persisted
 asynchronously. If collection, account verification, or storage fails, the

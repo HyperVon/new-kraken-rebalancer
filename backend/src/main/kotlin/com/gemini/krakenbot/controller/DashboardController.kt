@@ -638,7 +638,8 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {
-        val latest = currentPortfolioState.snapshot.value
+        val dashboardState = currentPortfolioState.readDashboardView()
+        val latest = dashboardState.latest
         val config = configService.getConfig()
         val allocations = config.allocations
 
@@ -669,6 +670,7 @@ class DashboardController(
                     csrfToken = csrfToken,
                     qualityScores = config.settings.qualityScores
                         .mapValues { BigDecimal.valueOf(it.value) },
+                    recentSnapshots = dashboardState.recentSnapshots,
                 )
             }
         call.respondText(html, ContentType.Text.Html)

@@ -53,6 +53,7 @@ class DashboardFragmentComponent(
         unresolvedIntents: List<OrderIntent> = emptyList(),
         csrfToken: String? = null,
         qualityScores: Map<String, BigDecimal> = emptyMap(),
+        recentSnapshots: List<PortfolioSnapshot> = listOf(latest),
     ) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
@@ -72,7 +73,7 @@ class DashboardFragmentComponent(
             renderUnresolvedIntentsBanner(unresolvedIntents, csrfToken)
         }
 
-        overviewGridComponent.render(latest)
+        overviewGridComponent.render(latest, recentSnapshots)
 
         div.div(CssClass.Layout.DetailGrid) {
             allocationChartComponent.render(latest, allocations, qualityScores)

@@ -62,7 +62,10 @@ class DashboardCutoverApiTest : StringSpec() {
         routing { server.controller.registerRoutes(this) }
     }
 
-    private fun server(snapshot: PortfolioSnapshot? = null): Server {
+    private fun server(
+        snapshot: PortfolioSnapshot? = null,
+        previousSnapshots: List<PortfolioSnapshot> = emptyList(),
+    ): Server {
         val configService = mockk<ConfigService>()
         val portfolioManager = mockk<PortfolioManager>()
         val orderIntentService = mockk<OrderIntentService>()
@@ -74,6 +77,7 @@ class DashboardCutoverApiTest : StringSpec() {
         every { portfolioManager.getOperationalStatus() } returns RebalanceOperationalStatus()
         coEvery { orderIntentService.countUnresolvedIntents() } returns 0L
         coEvery { orderIntentService.getUnresolvedIntents() } returns emptyList()
+        previousSnapshots.forEach(currentPortfolioState::publish)
         snapshot?.let(currentPortfolioState::publish)
         val view = DashboardView(
             shellComponent = DashboardShellComponent(),
@@ -143,6 +147,22 @@ class DashboardCutoverApiTest : StringSpec() {
                 html.lowercase() shouldNotContain "drawdown"
                 html.lowercase() shouldNotContain "recent high"
                 html.lowercase() shouldNotContain "view all history"
+            }
+        }
+
+        "dashboard hero chart uses recent in-memory cycles without a database history read" {
+            val earlier = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:00:00Z"), BigDecimal("1230.00"))
+            val latest = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:01:00Z"), BigDecimal("1234.50"))
+            val server = server(snapshot = latest, previousSnapshots = listOf(earlier))
+
+            testApplication {
+                application { installRoutes(server) }
+                val response = client.get("/fragments/dashboard")
+                response.status shouldBe HttpStatusCode.OK
+                val html = response.bodyAsText()
+                html shouldContain "hero-trend-svg"
+                html shouldContain "2 completed cycles"
+                html shouldContain "points=\"66.00,104.97 514.00,17.03\""
             }
         }
 

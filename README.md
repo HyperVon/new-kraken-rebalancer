@@ -19,8 +19,8 @@ of Dashboard, Actual observations, Settings, and safety modes
 
 - **Stay disciplined automatically** — define the mix you want and let the bot
   correct meaningful drift instead of reacting to headlines or price swings.
-- **Set a fixed cash allocation** — the configured USD target is part of the
-  portfolio allocation and remains fixed across cycles.
+- **Set a USD percentage target** — the configured weight remains fixed while
+  its dollar value grows or shrinks with the current portfolio total.
 - **Respond to cash changes** — rebalance new cash after a deposit or sell
   overweight assets after a withdrawal, according to the configured targets.
 - **See the current cycle clearly** — inspect the latest portfolio snapshot,
@@ -242,9 +242,10 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 - Sells overweight assets first to generate liquidity, then buys underweight
   assets
 
-### Fixed Cash Allocation
+### Proportional USD Target
 
-- Treats the configured USD allocation as a fixed target during each rebalance
+- Keeps the configured USD percentage as the target weight during each rebalance
+- Recalculates its dollar amount from the current portfolio total each cycle
 - Bases orders on current account balances, market prices, configured weights,
   and the deviation threshold
 
@@ -257,8 +258,10 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 
 ### Live Dashboard
 
-- Shows the latest completed current-cycle portfolio snapshot, with push updates
-  over Server-Sent Events
+- Shows the latest completed cycle and a trailing chart of up to 24 recent
+  in-memory cycles; the chart appears after the second cycle and resets when the
+  application restarts, so it never imports unverified database history
+- Pushes current-cycle updates over Server-Sent Events
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
 - **Recent Activity** — current-cycle action feed with BUY/SELL badges
@@ -270,9 +273,11 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 ### Forward-Only Actual Observations
 
 - `/actual` shows forward-only raw observations of configured managed assets,
-  their balance and ticker evidence, and an append-only value chart. It excludes
-  other wallet balances and retains incomplete samples as gaps. An optional
-  prospective Buy & Hold comparison is available when observation continuity is
+  their balance and ticker evidence, portfolio shares and configured targets,
+  and an append-only value chart. Authenticated read-only identity makes Actual
+  available in real-account Dry Run without a pre-existing execution binding.
+  It excludes other wallet balances and retains incomplete samples as gaps. An
+  optional prospective Buy & Hold comparison is available when observation continuity is
   verified; it does not reconstruct retrospective history. See the [Actual
   section in the User Guide](docs/USER_GUIDE.md#actual-observations) for scope,
   timestamps, and limitations.
@@ -462,7 +467,8 @@ Edit `rebalancer-config.json`:
 - Add your Kraken API Key and Private Key
 - Define your desired `allocations` (must sum to 100%, must include USD)
 - Set `dryRun` to `true` for initial testing
-- `allocations.USD` sets the fixed cash target used by current rebalance plans
+- `allocations.USD` sets the configured cash percentage; its target dollar amount
+  scales with the current portfolio total
 
 Older configuration files and the shipped template may still contain retired
 history-only keys such as `fiatMaxDrawdown`, `fiatDeploymentExponent`,
