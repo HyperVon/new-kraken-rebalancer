@@ -38,11 +38,11 @@ class RebalancerEngineTest : StringSpec() {
                 .shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
-        "calculateFixedUsdTarget preserves the configured cash allocation" {
-            RebalancerEngine.calculateFixedUsdTarget(allocations)
+        "calculateConfiguredUsdTargetPercent preserves the configured USD weight" {
+            RebalancerEngine.calculateConfiguredUsdTargetPercent(allocations)
                 .shouldBeEqualComparingTo(BigDecimal("20.0"))
             RebalancerEngine.calculateCryptoScaleFactor(
-                RebalancerEngine.calculateFixedUsdTarget(allocations),
+                RebalancerEngine.calculateConfiguredUsdTargetPercent(allocations),
                 allocations,
             ).shouldBeEqualComparingTo(BigDecimal("1.00000000"))
         }

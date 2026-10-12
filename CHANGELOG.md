@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.114] - 2026-10-11
+
+### Changed
+
+- **Portfolio source changes**: reset the in-memory hero trend when simulation
+  mode or credential scope changes. Actual identity checks now hold the config
+  execution session across scope and identity reads and time out after three
+  seconds.
+- **Dashboard portfolio hero trend**: restored a trailing total-value chart over
+  up to 24 recent cycles held only in process memory. The chart labels its cycle
+  count and observed times, appears after two completed cycles, and resets on
+  restart without reading legacy or otherwise unverified database history.
+- **USD allocation wording and names**: clarify that the configured USD target
+  is a percentage whose dollar value scales with the current portfolio total;
+  rename the helper that returns that configured percentage and add growth and
+  shrinkage coverage.
+- **Actual page account scope and presentation**: scope observations with the
+  authenticated Kraken account identity so read-only Dry Run works without an
+  existing execution binding, while leaving live-order binding checks intact.
+  The page now emphasizes the latest value and evidence status and shows asset
+  portfolio shares and configured targets. It also loads the shared HTMX and
+  client scripts so its pause and prospective comparison controls work.
+
 ## [6.17.113] - 2026-10-11
 
 ### Removed

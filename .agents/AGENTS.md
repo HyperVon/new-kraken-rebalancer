@@ -121,7 +121,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **20**, decay **0.5**) + `PublicRateLimiter` |
-| Dashboard snapshot state | `CurrentPortfolioState` (`StateFlow` of the latest completed cycle only) |
+| Dashboard snapshot state | `CurrentPortfolioState` (`StateFlow` of the latest cycle plus up to 24 recent in-memory snapshots for the hero trend; the window clears when simulation mode or credential scope changes) |
 | Actual observations | `ActualObservationDispatcher` → append-only `ActualObservationStore`; optional prospective comparison requires verified event continuity |
 | HTTP | `DashboardRoutes` / `DashboardController` |
 | Views | `view/component/*`, `DashboardView`, `view/css/*` |
@@ -133,7 +133,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
-- **Fixed USD target**: current plans use the configured USD allocation as written; no ATH, drawdown, or history-based deployment changes the target. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
+- **Configured USD percentage target**: the percentage stays fixed, while the target dollar value scales with the current portfolio total; no ATH, drawdown, or history-based deployment changes the target. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
   **and** `|DeviationUSD| ≥ minimumOrderSizeUSD` (`isSignificant`).
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
@@ -152,7 +152,7 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
-- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries only current-cycle snapshots. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
+- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries current-cycle snapshots; the hero trend uses up to 24 in-memory cycles from one mode and credential scope, clears when that source changes, and never reads persisted history. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
 - **Schema safety**: `DatabaseConfig` records schema versions, backs up file-backed databases before migration, and idempotently imports legacy `TradeRecord.submissionState` guards into `order_intents` while retaining the legacy blocking column until resolution.
 
 ---

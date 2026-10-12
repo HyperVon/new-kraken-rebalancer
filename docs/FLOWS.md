@@ -10,7 +10,7 @@ History reporting and reconstruction are retired.
 | --- | --- | --- |
 | Cold `Flow` | Kraken API retries and sell-settlement polling | Runs when collected; each collection performs its own request/poll sequence. |
 | Hot `SharedFlow` | Configuration changes | Publishes saved settings to the running portfolio loop. |
-| Hot `StateFlow` | `CurrentPortfolioState` | Holds one value: the latest completed cycle snapshot, or `null` before the first snapshot. |
+| Hot `StateFlow` + bounded memory | `CurrentPortfolioState` | Exposes the latest completed cycle and retains up to 24 same-source snapshots in process memory for the Dashboard hero chart; clears the window when simulation mode or credential scope changes. |
 | Bounded channel | Actual observation writer | Buffers a small number of observation candidates so persistence stays outside the order path. |
 
 ## System map
@@ -58,7 +58,7 @@ flowchart TB
     Executor --> OrderIntent
     OrderIntent --> ExecutionDB
     Manager -->|publish latest completed snapshot| Current
-    Current -->|current fragment| Controller
+Current -->|latest snapshot + recent in-memory window| Controller
     Current -->|snapshot JSON| SSE
     SSE --> Dashboard
     Manager -->|enqueue direct observation| ActualDispatcher
@@ -139,9 +139,14 @@ sequenceDiagram
     end
 ```
 
-`CurrentPortfolioState` is an in-memory `StateFlow` that retains only the latest
-completed cycle. It does not persist a cycle timeline. The Dashboard shows that
-snapshot and the activity from that cycle. Its STREAM/STALE chip reports SSE
+`CurrentPortfolioState` exposes the latest completed cycle through a `StateFlow`
+and retains up to 24 recent snapshots from the same portfolio source in a
+bounded in-memory window for the Dashboard hero chart. The source combines
+simulation mode with the adapter's non-secret credential scope, and a change
+clears the window. The window starts empty on process startup and is never
+loaded from the reporting database. The chart appears after two comparable
+cycles and resets when the process restarts or the source changes. The Dashboard
+also shows activity from the latest cycle. Its STREAM/STALE chip reports SSE
 freshness; the persistent mode plate reports Simulation, Dry Run, or Live
 Trading independently.
 
@@ -193,11 +198,14 @@ first completed cycle publishes Dashboard state; startup does not reconstruct
 retrospective reports.
 
 The loop enqueues the direct pre-trade balance and price observations after
-order execution returns. The dispatcher verifies the account binding and
-credential scope, values the configured managed assets, and appends the sample
-asynchronously. A full queue, verification failure, or storage failure can
-skip an observation; it does not block a safe rebalance cycle. Simulation does
-not add authenticated Actual observations.
+order execution returns. The dispatcher obtains Kraken's authenticated account
+identity, checks that credentials have not changed since the cycle captured its
+evidence, values the configured managed assets, and appends the sample
+asynchronously. Dry-run observations do not require an existing execution
+binding; live-order authorization retains its separate binding checks. A full
+queue, verification failure, or storage failure can skip an observation; it
+does not block a safe rebalance cycle. Simulation does not add authenticated
+Actual observations.
 
 `GET /actual` reads the current account and configured-asset scope from the
 Actual store. It returns forward-only raw observations, including incomplete

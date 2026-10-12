@@ -89,6 +89,17 @@ object MediaQueries {
             }
         }
 
+        "@media (min-width: 1280px)" {
+            CssClass.Hero.Card.querySelector {
+                flexDirection = FlexDirection.row
+                alignItems = Align.center
+            }
+            CssClass.Hero.Trend.querySelector {
+                put("flex", "1 1 0%")
+                put("width", "auto")
+            }
+        }
+
         // DASH-2: tablet headers use named grid areas instead of relying on a
         // flex item wrapping at whichever word happens to be next.
         "@media (min-width: 768px) and (max-width: 1023px)" {

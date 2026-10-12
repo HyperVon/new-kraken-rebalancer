@@ -90,6 +90,7 @@ class DashboardView(
         unresolvedIntents: List<OrderIntent> = emptyList(),
         csrfToken: String? = null,
         qualityScores: Map<String, BigDecimal> = emptyMap(),
+        recentSnapshots: List<PortfolioSnapshot> = listOf(latest),
     ) {
         fragmentComponent.render(
             settings,
@@ -98,6 +99,7 @@ class DashboardView(
             unresolvedIntents,
             csrfToken,
             qualityScores,
+            recentSnapshots,
         )
     }
 }

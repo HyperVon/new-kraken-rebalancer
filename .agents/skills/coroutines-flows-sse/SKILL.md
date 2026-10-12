@@ -17,7 +17,7 @@ Canonical runtime map: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 | :--- | :--- | :--- |
 | Cold `Flow` | Exchange retries and sell-settlement polling | Starts its request/poll work when collected. |
 | Hot `SharedFlow` | Saved Settings | Replays current Settings and publishes later updates. |
-| Hot `StateFlow` | `CurrentPortfolioState` | Retains only the latest completed cycle snapshot, or `null` before the first cycle. |
+| Hot `StateFlow` + bounded deque | `CurrentPortfolioState` | Exposes the latest completed snapshot and keeps up to 24 in-memory snapshots for the hero trend; clears the trend when simulation mode or credential scope changes. |
 | Bounded `Channel` | `ActualObservationDispatcher` | Passes eligible direct observation candidates to an off-cycle writer; a full queue can skip a sample. |
 
 Retrospective trade/ledger synchronization, report reconstruction, and
@@ -43,15 +43,18 @@ restart work correctly.
 ## Current-cycle snapshots and SSE
 
 `PortfolioManagerImpl` publishes each completed snapshot to
-`CurrentPortfolioState`, an in-memory `StateFlow` holding one latest value.
-The Dashboard fragment reads that value; `/api/status/stream` collects it and
-sends current-cycle snapshot JSON through Ktor SSE. HTMX's SSE extension
-refreshes the Dashboard fragment. `:frontend-js` updates age and freshness but
-does not open `EventSource` or parse the stream.
+`CurrentPortfolioState`, whose `StateFlow` holds the latest value and whose
+bounded in-memory deque supplies up to 24 same-source snapshots to the hero
+trend. A simulation-mode or credential-scope change clears that deque. The
+Dashboard fragment reads the latest value and trend; `/api/status/stream`
+collects the latest value and sends current-cycle snapshot JSON through Ktor
+SSE. HTMX's SSE extension refreshes the Dashboard fragment. `:frontend-js`
+updates age and freshness but does not open `EventSource` or parse the stream.
 
 The server-side stream reports current cycle/snapshot state and unresolved
 order-intent status through the relevant endpoints. Do not persist or rebuild a
-historical cycle timeline for Dashboard, startup, health, or readiness.
+historical cycle timeline for Dashboard, startup, health, or readiness; the
+bounded hero trend remains process-local and source-scoped.
 Per-client SSE failures stay local to that session, and cancellation must
 propagate.
 
@@ -105,7 +108,7 @@ must not be turned into an account-history sync or reporting path.
 
 - [ ] Saved Settings use the replaying hot flow and `collectLatest`
 - [ ] Execution sessions defer Settings publication until the cycle completes
-- [ ] Dashboard state retains only the latest snapshot and SSE carries that state
+- [ ] Dashboard state exposes the latest snapshot plus a source-scoped bounded hero trend; SSE carries current-cycle snapshots
 - [ ] Actual capture is bounded, direct-evidence based, and off the order path
 - [ ] Prospective Buy & Hold requires verified continuity and moves forward only
 - [ ] Sell fill checks remain scoped to returned order IDs; no history sync returns

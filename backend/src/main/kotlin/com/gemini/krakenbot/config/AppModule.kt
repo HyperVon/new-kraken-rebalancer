@@ -126,9 +126,8 @@ val coreModule =
         single {
             ActualObservationDispatcher(
                 store = get(),
-                accountBindingService = get(),
-                bindingRepository = get(),
                 krakenService = get(),
+                configService = get(),
                 benchmarkService = get(),
             )
         }

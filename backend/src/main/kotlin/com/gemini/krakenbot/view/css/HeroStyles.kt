@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.css
 
+import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import kotlinx.css.Align
 import kotlinx.css.BorderStyle
@@ -49,6 +50,7 @@ object HeroStyles {
         // DASH-1: Total Portfolio hero card
         CssClass.Hero.Card.querySelector {
             display = Display.flex
+            flexDirection = FlexDirection.column
             alignItems = Align.stretch
             gap = 1.5.rem
             padding = Padding(1.5.rem, 1.75.rem)
@@ -62,6 +64,87 @@ object HeroStyles {
             justifyContentRaw("center")
             gap = 0.5.rem
             flexShrink = 0.0
+        }
+
+        CssClass.Hero.Trend.querySelector {
+            display = Display.flex
+            flexDirection = FlexDirection.column
+            flexGrow = 1.0
+            minWidth = 0.px
+            gap = 0.35.rem
+        }
+
+        CssClass.Hero.TrendHeader.querySelector {
+            display = Display.flex
+            alignItems = Align.center
+            justifyContentRaw("space-between")
+            gap = 0.75.rem
+            minWidth = 0.px
+        }
+
+        CssClass.Hero.TrendTitle.querySelector {
+            fontSize = 0.6875.rem
+            fontWeight = FontWeight.w600
+            color = CssTheme.colorTextSecondary
+            textTransformRaw("uppercase")
+            letterSpacingRaw("0.06em")
+        }
+
+        CssClass.Hero.TrendSummary.querySelector {
+            fontFamily = CssTheme.fontMono
+            fontSize = 0.6875.rem
+            color = CssTheme.colorTextMuted
+            whiteSpaceRaw("nowrap")
+        }
+
+        CssClass.Hero.TrendChart.querySelector {
+            width = 100.pct
+            height = 10.5.rem
+            minWidth = 0.px
+            background = ChartProps.COLOR_BLUE_BG
+            borderRadius = CssTheme.radiusMd
+        }
+
+        CssClass.Hero.TrendSvg.querySelector {
+            display = Display.block
+            width = 100.pct
+            height = 100.pct
+            overflow = Overflow.visible
+        }
+
+        CssClass.Hero.TrendGrid.querySelector {
+            put("stroke", CssTheme.colorGlassBorderHover.value)
+            put("stroke-opacity", "0.9")
+            put("stroke-width", "1.2")
+        }
+
+        CssClass.Hero.TrendLine.querySelector {
+            put("fill", "none")
+            put("stroke", ChartProps.COLOR_BLUE)
+            put("stroke-width", "3.5")
+            put("stroke-linejoin", "round")
+            put("stroke-linecap", "round")
+            put("filter", "drop-shadow(0 0 3px rgba(96,165,250,0.55))")
+        }
+
+        CssClass.Hero.TrendPoint.querySelector {
+            put("fill", ChartProps.COLOR_BLUE)
+            put("stroke", CssTheme.colorSurface1.value)
+            put("stroke-width", "2.5")
+        }
+
+        CssClass.Hero.TrendAxisLabel.querySelector {
+            put("fill", CssTheme.colorTextSecondary.value)
+            put("font-size", "13")
+            put("font-family", CssTheme.fontMono)
+        }
+
+        CssClass.Hero.TrendEmpty.querySelector {
+            display = Display.flex
+            alignItems = Align.center
+            height = 9.5.rem
+            fontSize = 0.8125.rem
+            color = CssTheme.colorTextMuted
         }
 
         ".${CssClass.Hero.Label.value}" {

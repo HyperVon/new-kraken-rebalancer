@@ -66,7 +66,7 @@ object RebalancerEngine {
         )
     }
 
-    fun calculateFixedUsdTarget(allocations: List<Allocation>): BigDecimal = allocations
+    fun calculateConfiguredUsdTargetPercent(allocations: List<Allocation>): BigDecimal = allocations
         .filter { it.symbol.isUsd }
         .sumOf { it.targetPercent.toBigDecimal() }
 

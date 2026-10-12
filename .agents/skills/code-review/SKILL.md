@@ -57,7 +57,7 @@ not treat this skill’s checklist as a substitute.
 | `PortfolioAnalyzerImpl` | Place orders; write trades | Kraken balance/price reads, `RebalancerEngine`, emit analysis |
 | `OrderExecutorImpl` | Plan construction, target percentages | `executeOrder`, order-specific USD settlement, `withStableBackend` |
 | `PortfolioManagerImpl` | Inline rebalance math or raw AddOrder | Orchestrate analyzer → executor → publish current snapshot |
-| `CurrentPortfolioState` | Persist or accumulate a cycle timeline | Retain the latest completed snapshot in memory |
+| `CurrentPortfolioState` | Persist or retain an unbounded cycle timeline | Retain the latest snapshot plus up to 24 same-source snapshots in memory; clear the trend when mode or credential scope changes |
 | `ActualObservationDispatcher` | Block the order path on observation persistence | Queue eligible direct evidence for off-cycle storage |
 | `view/component/*` | Business rules, Kraken calls | Render DTOs + `:common` constants; receive `Settings` |
 | `:common` `commonMain` | JVM/JS-only imports, SLF4J, `java.math.*` | Routes, IDs, CSS tokens, wire DTOs, KMP-safe models |
@@ -137,7 +137,7 @@ not treat this skill’s checklist as a substitute.
       publication until the cycle exits
 - [ ] `CancellationException` always rethrown in loop/SSE handlers
 - [ ] Config `SharedFlow` replays the latest Settings with `DROP_OLDEST`
-- [ ] `CurrentPortfolioState` retains only the latest completed cycle snapshot
+- [ ] `CurrentPortfolioState` retains the latest snapshot plus a bounded trend that resets on source changes
 - [ ] Non-cancellation SSE errors stay isolated per client session
 - [ ] SSE consumes current snapshots; cold exchange retries and settle polls do
       not become hot broadcasts

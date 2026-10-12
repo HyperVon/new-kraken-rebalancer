@@ -115,9 +115,11 @@ rounding. Sell volume cannot exceed the cycle-entry holding.
 
 ## Current portfolio surfaces and persistence
 
-`CurrentPortfolioState` is an in-memory `StateFlow` containing only the latest
-completed cycle snapshot. Dashboard and SSE expose that current snapshot and its
-cycle actions; they do not retain a retrospective timeline. `/history`
+`CurrentPortfolioState` exposes the latest completed cycle snapshot through an
+in-memory `StateFlow` and retains up to 24 same-source snapshots for the
+Dashboard hero trend. The trend clears when simulation mode or credential scope
+changes; it is process-local and is not a retrospective persisted timeline.
+Dashboard and SSE expose current-cycle state and actions. `/history`
 permanently redirects to `/actual`, and former `/api/history/*` endpoints
 return `410 Gone`.
 
@@ -168,7 +170,7 @@ Do not add retrospective ATH/reconstruction/comparison scenarios.
 - [ ] Sells precede settled-cash-limited buys; 99% reserve remains
 - [ ] No zero/negative amount or volume reaches an exchange backend
 - [ ] Ambiguous live AddOrder stays unresolved and blocks later live orders
-- [ ] Dashboard state stays latest-cycle-only; Actual evidence stays raw and forward-only
+- [ ] Dashboard exposes current-cycle state and a bounded, source-scoped hero trend; Actual evidence stays raw and forward-only
 - [ ] Prospective Buy & Hold requires eligible baseline and verified continuity
 - [ ] Retired config fields are dropped while schema/migration compatibility remains
 - [ ] Update `docs/ALGORITHM.md` and focused tests when contracts change

@@ -1,14 +1,15 @@
 package com.gemini.krakenbot.service.actual
 
 import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
-import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
+import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -21,17 +22,18 @@ import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 
 /** Best-effort bounded writer; no observation database is opened on application startup. */
 class ActualObservationDispatcher(
     private val store: ActualObservationStore,
-    private val accountBindingService: ExecutionAccountBindingService,
-    private val bindingRepository: ExecutionAccountBindingRepository,
     private val krakenService: KrakenService,
+    private val configService: ConfigService,
     private val nowProvider: () -> Instant = Instant::now,
     private val benchmarkService: ProspectiveBenchmarkService? = null,
     private val benchmarkTimeoutMs: Long = BENCHMARK_EVALUATION_TIMEOUT_MS,
+    private val identityLookupTimeoutMs: Long = IDENTITY_LOOKUP_TIMEOUT_MS,
 ) {
     private val log = LoggerFactory.getLogger(ActualObservationDispatcher::class.java)
     private val queue = Channel<PendingObservation>(capacity = QUEUE_CAPACITY)
@@ -89,6 +91,9 @@ class ActualObservationDispatcher(
     suspend fun readCurrent(config: AppConfig, limit: Int = DEFAULT_QUERY_LIMIT): ActualObservationPage {
         val symbols = ActualObservationValuator.scopeSymbols(config)
         val scopeFingerprint = ActualObservationValuator.scopeFingerprint(symbols)
+        val targetPercentBySymbol = config.allocations.associate {
+            Asset.normalizeLedgerAsset(it.symbol.value).uppercase(Locale.ROOT) to it.targetPercent
+        }
         if (config.settings.simulation) {
             return ActualObservationPage(
                 state = ActualPageState.SIMULATION,
@@ -98,11 +103,19 @@ class ActualObservationDispatcher(
                 observations = emptyList(),
                 stale = false,
                 lastCaptureIssue = lastCaptureIssue.get(),
+                targetPercentBySymbol = targetPercentBySymbol,
             )
         }
         return try {
-            val binding = bindingRepository.load()
-            if (binding == null || !binding.auditVerified || !binding.accountIdentityDigest.matches(ACCOUNT_DIGEST)) {
+            val accountIdentityDigest = try {
+                authenticatedObservationIdentityDigest()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Actual account identity could not be authenticated: {}", e.message)
+                null
+            }
+            if (accountIdentityDigest == null) {
                 return ActualObservationPage(
                     state = ActualPageState.ACCOUNT_UNVERIFIED,
                     scopeSymbols = symbols,
@@ -110,30 +123,17 @@ class ActualObservationDispatcher(
                     accountReference = null,
                     observations = emptyList(),
                     stale = false,
-                    lastCaptureIssue = lastCaptureIssue.get(),
+                    lastCaptureIssue = lastCaptureIssue.get() ?: ViewText.ACTUAL_IDENTITY_UNAVAILABLE,
+                    targetPercentBySymbol = targetPercentBySymbol,
                 )
             }
-            val currentCredentialScope = krakenService.withStableBackend { it.getFundingEvidenceScope().trim() }
-            if (currentCredentialScope.isBlank() || currentCredentialScope == "scope-unavailable" ||
-                digest(currentCredentialScope) != binding.credentialGenerationDigest
-            ) {
-                return ActualObservationPage(
-                    state = ActualPageState.ACCOUNT_UNVERIFIED,
-                    scopeSymbols = symbols,
-                    scopeFingerprint = scopeFingerprint,
-                    accountReference = null,
-                    observations = emptyList(),
-                    stale = false,
-                    lastCaptureIssue = lastCaptureIssue.get(),
-                )
-            }
-            val observations = store.querySegment(scopeFingerprint, binding.accountIdentityDigest, limit)
+            val observations = store.querySegment(scopeFingerprint, accountIdentityDigest, limit)
             val latest = observations.lastOrNull()
             val latestComplete = observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE }
             val maxAgeSeconds = maxOf(MIN_STALE_AFTER_SECONDS, config.settings.loopDelaySeconds * 3L)
             val benchmark = try {
                 withTimeoutOrNull(benchmarkTimeoutMs) {
-                    benchmarkService?.evaluate(config, binding.accountIdentityDigest, observations)
+                    benchmarkService?.evaluate(config, accountIdentityDigest, observations)
                 } ?: if (benchmarkService != null) {
                     log.warn("Prospective benchmark comparison timed out after {}ms", benchmarkTimeoutMs)
                     BenchmarkComparisonResult(
@@ -162,13 +162,14 @@ class ActualObservationDispatcher(
                 state = if (latest == null) ActualPageState.NO_OBSERVATIONS else ActualPageState.READY,
                 scopeSymbols = symbols,
                 scopeFingerprint = scopeFingerprint,
-                accountReference = binding.accountIdentityDigest.take(8),
+                accountReference = accountIdentityDigest.take(8),
                 observations = observations,
                 stale = latestComplete?.let {
                     Duration.between(it.observedAt, nowProvider()).seconds > maxAgeSeconds
                 } ?: false,
                 lastCaptureIssue = lastCaptureIssue.get(),
                 benchmark = benchmark,
+                targetPercentBySymbol = targetPercentBySymbol,
             )
         } catch (e: CancellationException) {
             throw e
@@ -182,17 +183,42 @@ class ActualObservationDispatcher(
                 observations = emptyList(),
                 stale = false,
                 lastCaptureIssue = "Observation history is temporarily unavailable.",
+                targetPercentBySymbol = targetPercentBySymbol,
             )
         }
     }
 
+    /**
+     * Derives the observation key only from Kraken's authenticated account identity. The credential
+     * scope is used to reject a queued sample if credentials changed before it was processed; it is
+     * never used as account ownership evidence or as the observation key.
+     */
+    private suspend fun authenticatedObservationIdentityDigest(expectedCredentialScope: String? = null): String? =
+        withTimeoutOrNull(identityLookupTimeoutMs) {
+            configService.withExecutionSession {
+                krakenService.withStableBackend { backend ->
+                    val currentCredentialScope = backend.getFundingEvidenceScope().trim()
+                    if (
+                        currentCredentialScope.isBlank() || currentCredentialScope == "scope-unavailable" ||
+                        expectedCredentialScope?.let { it != currentCredentialScope } == true
+                    ) {
+                        return@withStableBackend null
+                    }
+                    val identity = backend.getAuthenticatedAccountIdentity()
+                        ?.filterNot(Char::isWhitespace)
+                        ?.uppercase(Locale.ROOT)
+                        ?.takeIf(String::isNotBlank)
+                        ?: return@withStableBackend null
+                    digest(identity)
+                }
+            }
+        }
+
     private suspend fun persistCandidate(pending: PendingObservation) {
         try {
-            val accountDigest = accountBindingService.verifiedAccountIdentityDigestForObservation(
-                pending.credentialScope,
-            )
+            val accountDigest = authenticatedObservationIdentityDigest(pending.credentialScope)
             if (accountDigest == null) {
-                lastCaptureIssue.set("Observation skipped because a matching verified account binding is unavailable.")
+                lastCaptureIssue.set(ViewText.ACTUAL_IDENTITY_UNAVAILABLE)
                 return
             }
             val directBalances = checkNotNull(pending.balances.directCapture)
@@ -230,11 +256,17 @@ class ActualObservationDispatcher(
     suspend fun startBenchmark(config: AppConfig): Boolean {
         if (config.settings.simulation) return false
         val svc = benchmarkService ?: return false
-        val binding = bindingRepository.load() ?: return false
-        if (!binding.auditVerified) return false
+        val accountIdentityDigest = try {
+            authenticatedObservationIdentityDigest() ?: return false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Buy & Hold baseline could not authenticate the current account identity: {}", e.message)
+            return false
+        }
         val symbols = ActualObservationValuator.scopeSymbols(config)
         val scopeFingerprint = ActualObservationValuator.scopeFingerprint(symbols)
-        val observations = store.querySegment(scopeFingerprint, binding.accountIdentityDigest, 50)
+        val observations = store.querySegment(scopeFingerprint, accountIdentityDigest, 50)
         val latestComplete = observations.lastOrNull { it.status == ActualObservationStatus.COMPLETE } ?: return false
         svc.startBenchmark(latestComplete)
         return true
@@ -245,6 +277,7 @@ class ActualObservationDispatcher(
         const val DEFAULT_QUERY_LIMIT = 250
         const val MIN_STALE_AFTER_SECONDS = 300L
         const val BENCHMARK_EVALUATION_TIMEOUT_MS = 3_000L
+        const val IDENTITY_LOOKUP_TIMEOUT_MS = 3_000L
         val ACCOUNT_DIGEST = Regex("[0-9a-f]{64}")
     }
 }
@@ -260,4 +293,5 @@ data class ActualObservationPage(
     val stale: Boolean,
     val lastCaptureIssue: String?,
     val benchmark: BenchmarkComparisonResult? = null,
+    val targetPercentBySymbol: Map<String, Double> = emptyMap(),
 )

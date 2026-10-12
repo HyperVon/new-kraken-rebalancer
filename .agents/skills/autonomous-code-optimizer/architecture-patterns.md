@@ -34,8 +34,10 @@ Before merging or deleting a type, name which pattern it implements.
 
 ### 3. Current snapshot and Actual evidence ownership
 
-- `CurrentPortfolioState` is an in-memory `StateFlow` of the latest completed
-  cycle snapshot; it does not retain a timeline or write reporting data.
+- `CurrentPortfolioState` exposes the latest completed cycle in an in-memory
+  `StateFlow` and retains up to 24 same-source snapshots for the hero trend;
+  it clears that window on mode or credential-scope changes and writes no
+  reporting data.
 - `ActualObservationDispatcher` queues eligible direct evidence off the order
   path, while the Actual store preserves raw observations and gaps.
 - Prospective Buy & Hold is scoped to an eligible baseline and verified
@@ -77,7 +79,8 @@ Before merging or deleting a type, name which pattern it implements.
 
 - Hot `SharedFlow`: saved Settings; `collectLatest` restarts the idle loop after
   the active cycle's execution session exits.
-- Hot `StateFlow`: current latest completed Dashboard snapshot.
+- Hot `StateFlow` plus a bounded deque: latest Dashboard snapshot and its
+  source-scoped hero trend.
 - Bounded channel: best-effort Actual observation writes outside the order path.
 - Cold `Flow`: exchange retry and USD sell-settlement polling.
 - **Rule:** Promoting a cold poll to a hot SharedFlow "for reuse" is an
