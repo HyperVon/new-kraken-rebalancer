@@ -10,11 +10,16 @@ class CurrentPortfolioState {
     private val mutableSnapshot = MutableStateFlow<PortfolioSnapshot?>(null)
     private val lock = Any()
     private val recent = ArrayDeque<PortfolioSnapshot>()
+    private var sourceScope: String? = null
 
     val snapshot: StateFlow<PortfolioSnapshot?> = mutableSnapshot.asStateFlow()
 
-    fun publish(snapshot: PortfolioSnapshot) {
+    fun publish(snapshot: PortfolioSnapshot, sourceScope: String) {
         synchronized(lock) {
+            if (this.sourceScope != sourceScope) {
+                recent.clear()
+                this.sourceScope = sourceScope
+            }
             recent.addLast(snapshot)
             while (recent.size > MAX_RECENT_SNAPSHOTS) recent.removeFirst()
             mutableSnapshot.value = snapshot

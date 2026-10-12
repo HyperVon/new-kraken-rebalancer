@@ -22,6 +22,7 @@ class CurrentPortfolioStateTest : StringSpec() {
                         timestamp = start.plusSeconds(index.toLong()),
                         totalValueUSD = BigDecimal.valueOf(index.toLong()),
                     ),
+                    sourceScope = "live:credential-generation-a",
                 )
             }
 
@@ -30,6 +31,35 @@ class CurrentPortfolioStateTest : StringSpec() {
             view.recentSnapshots.first().totalValueUSD shouldBe BigDecimal("3")
             view.latest shouldBe view.recentSnapshots.last()
             view.recentSnapshots.last().totalValueUSD shouldBe BigDecimal("26")
+        }
+
+        "dashboard trend clears when the portfolio source changes" {
+            val state = CurrentPortfolioState()
+            val start = Instant.parse("2026-10-11T12:00:00Z")
+
+            state.publish(
+                TestFixtures.emptySnapshot(start, BigDecimal("100")),
+                sourceScope = "live:credential-generation-a",
+            )
+            state.publish(
+                TestFixtures.emptySnapshot(start.plusSeconds(1), BigDecimal("110")),
+                sourceScope = "live:credential-generation-a",
+            )
+            state.publish(
+                TestFixtures.emptySnapshot(start.plusSeconds(2), BigDecimal("115")),
+                sourceScope = "live:credential-generation-b",
+            )
+
+            state.readDashboardView().recentSnapshots.map { it.totalValueUSD } shouldBe listOf(BigDecimal("115"))
+
+            state.publish(
+                TestFixtures.emptySnapshot(start.plusSeconds(3), BigDecimal("20")),
+                sourceScope = "simulation:simulated-backend",
+            )
+
+            val view = state.readDashboardView()
+            view.recentSnapshots.map { it.totalValueUSD } shouldBe listOf(BigDecimal("20"))
+            view.latest shouldBe view.recentSnapshots.single()
         }
     }
 }

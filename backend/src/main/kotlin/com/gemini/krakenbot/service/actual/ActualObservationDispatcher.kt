@@ -2,12 +2,14 @@ package com.gemini.krakenbot.service.actual
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkComparisonResult
 import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStatus
 import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
+import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -27,9 +29,11 @@ import java.util.concurrent.atomic.AtomicReference
 class ActualObservationDispatcher(
     private val store: ActualObservationStore,
     private val krakenService: KrakenService,
+    private val configService: ConfigService,
     private val nowProvider: () -> Instant = Instant::now,
     private val benchmarkService: ProspectiveBenchmarkService? = null,
     private val benchmarkTimeoutMs: Long = BENCHMARK_EVALUATION_TIMEOUT_MS,
+    private val identityLookupTimeoutMs: Long = IDENTITY_LOOKUP_TIMEOUT_MS,
 ) {
     private val log = LoggerFactory.getLogger(ActualObservationDispatcher::class.java)
     private val queue = Channel<PendingObservation>(capacity = QUEUE_CAPACITY)
@@ -190,20 +194,24 @@ class ActualObservationDispatcher(
      * never used as account ownership evidence or as the observation key.
      */
     private suspend fun authenticatedObservationIdentityDigest(expectedCredentialScope: String? = null): String? =
-        krakenService.withStableBackend { backend ->
-            val currentCredentialScope = backend.getFundingEvidenceScope().trim()
-            if (
-                currentCredentialScope.isBlank() || currentCredentialScope == "scope-unavailable" ||
-                expectedCredentialScope?.let { it != currentCredentialScope } == true
-            ) {
-                return@withStableBackend null
+        withTimeoutOrNull(identityLookupTimeoutMs) {
+            configService.withExecutionSession {
+                krakenService.withStableBackend { backend ->
+                    val currentCredentialScope = backend.getFundingEvidenceScope().trim()
+                    if (
+                        currentCredentialScope.isBlank() || currentCredentialScope == "scope-unavailable" ||
+                        expectedCredentialScope?.let { it != currentCredentialScope } == true
+                    ) {
+                        return@withStableBackend null
+                    }
+                    val identity = backend.getAuthenticatedAccountIdentity()
+                        ?.filterNot(Char::isWhitespace)
+                        ?.uppercase(Locale.ROOT)
+                        ?.takeIf(String::isNotBlank)
+                        ?: return@withStableBackend null
+                    digest(identity)
+                }
             }
-            val identity = backend.getAuthenticatedAccountIdentity()
-                ?.filterNot(Char::isWhitespace)
-                ?.uppercase(Locale.ROOT)
-                ?.takeIf(String::isNotBlank)
-                ?: return@withStableBackend null
-            digest(identity)
         }
 
     private suspend fun persistCandidate(pending: PendingObservation) {
@@ -269,6 +277,7 @@ class ActualObservationDispatcher(
         const val DEFAULT_QUERY_LIMIT = 250
         const val MIN_STALE_AFTER_SECONDS = 300L
         const val BENCHMARK_EVALUATION_TIMEOUT_MS = 3_000L
+        const val IDENTITY_LOOKUP_TIMEOUT_MS = 3_000L
         val ACCOUNT_DIGEST = Regex("[0-9a-f]{64}")
     }
 }

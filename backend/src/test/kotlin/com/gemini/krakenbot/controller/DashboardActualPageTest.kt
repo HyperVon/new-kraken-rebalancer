@@ -340,6 +340,7 @@ class DashboardActualPageTest : DashboardControllerTestBase() {
                             executionDatabasePath = directory.resolve("execution.db").toString(),
                         ),
                         krakenService = kraken,
+                        configService = configService,
                         nowProvider = { now.plusSeconds(5) },
                     )
                     coEvery { actualObservationDispatcher.readCurrent(config, 250) } coAnswers {

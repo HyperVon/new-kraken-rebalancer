@@ -127,6 +127,7 @@ val coreModule =
             ActualObservationDispatcher(
                 store = get(),
                 krakenService = get(),
+                configService = get(),
                 benchmarkService = get(),
             )
         }

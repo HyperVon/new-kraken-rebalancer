@@ -190,8 +190,9 @@ implementation is fine:
 2. **Stream chip** — On Dashboard only: reads `STREAM` / `STALE` (never `LIVE`)
    and sits on one line with relative age + timestamp at 1280–1440px.
 3. **Dashboard snapshot** — Latest current-cycle total value and its configured
-   allocation targets/deviations are readable; do not expect a historical delta,
-   sparkline, or persisted activity timeline.
+   allocation targets/deviations are readable; the hero trend may show up to 24
+   same-source in-memory cycles and clears on mode or credential-scope changes.
+   Do not expect a persisted portfolio or activity timeline.
 4. **Cash / Crypto tiles** — Bar fill visually matches the stated share; target
    and deviation stay legible.
 5. **Current-cycle actions** — Actions remain attached to the latest snapshot and

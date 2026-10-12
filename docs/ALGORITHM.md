@@ -119,9 +119,9 @@ volume is submitted.
    to cents. Each successful buy reduces the remaining cycle budget. Apply the
    minimum-order and volume checks again after budget adjustment.
 6. **Publish.** Build a snapshot with the cycle actions, final available
-   valuation, configured targets, and deviations. Publish only the latest
-   completed snapshot to in-memory `CurrentPortfolioState` for Dashboard and
-   SSE consumers.
+   valuation, configured targets, and deviations. Publish it to in-memory
+   `CurrentPortfolioState` as the latest Dashboard and SSE snapshot; the state
+   also maintains the bounded, source-scoped hero trend window.
 7. **Observe Actual.** Queue direct balance and ticker evidence for asynchronous
    Actual capture. Observation storage is separate from the order path.
 8. **Wait.** Sleep for `loopDelaySeconds`, unless a settings update replaces the
@@ -159,12 +159,13 @@ storage and migration procedures.
 ## Dashboard, health, and readiness
 
 `CurrentPortfolioState` publishes the latest completed cycle through an
-in-memory `StateFlow` and retains up to 24 recent snapshots for the Dashboard
-hero trend. The trend appears after the second cycle and resets on restart; it
-does not read persisted history. `/api/status/stream` sends current snapshots
-over SSE. The Dashboard's STREAM/STALE chip describes feed freshness and
-remains separate from the persistent Simulation / Dry Run / Live Trading mode
-plate.
+in-memory `StateFlow` and retains up to 24 recent snapshots from the same
+portfolio source for the Dashboard hero trend. The source combines simulation
+mode with the adapter's non-secret credential scope; a source change clears the
+trend. It appears after the second comparable cycle, resets on restart, and does
+not read persisted history. `/api/status/stream` sends current snapshots over
+SSE. The Dashboard's STREAM/STALE chip describes feed freshness and remains
+separate from the persistent Simulation / Dry Run / Live Trading mode plate.
 
 Health and readiness describe current operation: loop and cycle state, active
 mode, latest snapshot, and unresolved live-order intent status. Readiness is

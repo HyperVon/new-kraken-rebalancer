@@ -10,6 +10,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Portfolio source changes**: reset the in-memory hero trend when simulation
+  mode or credential scope changes. Actual identity checks now hold the config
+  execution session across scope and identity reads and time out after three
+  seconds.
 - **Dashboard portfolio hero trend**: restored a trailing total-value chart over
   up to 24 recent cycles held only in process memory. The chart labels its cycle
   count and observed times, appears after two completed cycles, and resets on

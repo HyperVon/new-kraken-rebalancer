@@ -22,7 +22,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
         "concurrent SSE subscribers receive the latest current snapshot and its next update" {
             val initial = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:00:00Z"), BigDecimal("10000.00"))
             val update = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:01:00Z"), BigDecimal("12000.00"))
-            currentPortfolioState.publish(initial)
+            currentPortfolioState.publish(initial, "test-source")
 
             testApplication {
                 val client = createClient { install(ClientSSE) }
@@ -42,7 +42,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 }
 
                 firstEventSeen.awaitAll()
-                currentPortfolioState.publish(update)
+                currentPortfolioState.publish(update, "test-source")
                 jobs.awaitAll()
 
                 val expected = listOf(
@@ -56,8 +56,8 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
         "late SSE subscribers start at the current snapshot without replaying retired history" {
             val initial = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:00:00Z"), BigDecimal("10000.00"))
             val current = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:02:00Z"), BigDecimal("13000.00"))
-            currentPortfolioState.publish(initial)
-            currentPortfolioState.publish(current)
+            currentPortfolioState.publish(initial, "test-source")
+            currentPortfolioState.publish(current, "test-source")
 
             testApplication {
                 val client = createClient { install(ClientSSE) }

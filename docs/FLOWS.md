@@ -10,7 +10,7 @@ History reporting and reconstruction are retired.
 | --- | --- | --- |
 | Cold `Flow` | Kraken API retries and sell-settlement polling | Runs when collected; each collection performs its own request/poll sequence. |
 | Hot `SharedFlow` | Configuration changes | Publishes saved settings to the running portfolio loop. |
-| Hot `StateFlow` + bounded memory | `CurrentPortfolioState` | Exposes the latest completed cycle and retains up to 24 recent snapshots in process memory for the Dashboard hero chart. |
+| Hot `StateFlow` + bounded memory | `CurrentPortfolioState` | Exposes the latest completed cycle and retains up to 24 same-source snapshots in process memory for the Dashboard hero chart; clears the window when simulation mode or credential scope changes. |
 | Bounded channel | Actual observation writer | Buffers a small number of observation candidates so persistence stays outside the order path. |
 
 ## System map
@@ -140,13 +140,15 @@ sequenceDiagram
 ```
 
 `CurrentPortfolioState` exposes the latest completed cycle through a `StateFlow`
-and retains up to 24 recent snapshots in a bounded in-memory window for the
-Dashboard hero chart. The window starts empty on process startup and is never
-loaded from the reporting database, so it cannot mix retained simulation or
-unverified history into the chart. The chart appears after two cycles and resets
-when the process restarts. The Dashboard also shows activity from the latest
-cycle. Its STREAM/STALE chip reports SSE freshness; the persistent mode plate
-reports Simulation, Dry Run, or Live Trading independently.
+and retains up to 24 recent snapshots from the same portfolio source in a
+bounded in-memory window for the Dashboard hero chart. The source combines
+simulation mode with the adapter's non-secret credential scope, and a change
+clears the window. The window starts empty on process startup and is never
+loaded from the reporting database. The chart appears after two comparable
+cycles and resets when the process restarts or the source changes. The Dashboard
+also shows activity from the latest cycle. Its STREAM/STALE chip reports SSE
+freshness; the persistent mode plate reports Simulation, Dry Run, or Live
+Trading independently.
 
 The Dashboard's health and readiness endpoints describe current operation:
 loop state, cycle timestamps and error, latest snapshot, active mode, and

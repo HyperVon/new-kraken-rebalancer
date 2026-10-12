@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.ExecutionAccountBinding
 import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
+import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectBalanceCapture
 import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerCapture
@@ -28,6 +29,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -70,6 +73,7 @@ class ActualObservationDispatcherTest : StringSpec() {
                     val first = ActualObservationDispatcher(
                         store = store,
                         krakenService = kraken,
+                        configService = mockk(relaxed = true),
                         nowProvider = { NOW.plusSeconds(20) },
                     )
                     val firstWorker = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -94,6 +98,7 @@ class ActualObservationDispatcherTest : StringSpec() {
                     val restarted = ActualObservationDispatcher(
                         store = store(paths),
                         krakenService = kraken,
+                        configService = mockk(relaxed = true),
                         nowProvider = { NOW.plusSeconds(20) },
                     )
                     val persistedPage = restarted.readCurrent(config)
@@ -238,6 +243,128 @@ class ActualObservationDispatcherTest : StringSpec() {
                     benchmarkCancellationPropagated = true
                 }
                 benchmarkCancellationPropagated shouldBe true
+            }
+        }
+
+        "scope and authenticated identity stay pinned to one credential generation" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
+                    allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+                )
+                val configService = mockk<ConfigService>(relaxed = true)
+                var activeGeneration = "a"
+                var pendingGeneration: String? = null
+                var sessionDepth = 0
+                val identityReadStarted = CompletableDeferred<Unit>()
+                val allowIdentityRead = CompletableDeferred<Unit>()
+                coEvery { configService.beginExecutionSession() } coAnswers {
+                    sessionDepth += 1
+                }
+                coEvery { configService.endExecutionSession() } coAnswers {
+                    sessionDepth -= 1
+                    if (sessionDepth == 0) {
+                        pendingGeneration?.let { activeGeneration = it }
+                        pendingGeneration = null
+                    }
+                }
+                coEvery { configService.updateConfig(any()) } coAnswers {
+                    if (sessionDepth > 0) {
+                        pendingGeneration = "b"
+                    } else {
+                        activeGeneration = "b"
+                    }
+                }
+
+                val exchange = mockk<KrakenService>(relaxed = true)
+                val kraken = object : KrakenService by exchange {
+                    override suspend fun getFundingEvidenceScope(): String = "generation-$activeGeneration"
+
+                    override suspend fun getAuthenticatedAccountIdentity(): String {
+                        identityReadStarted.complete(Unit)
+                        allowIdentityRead.await()
+                        return "IIBAN-account-$activeGeneration"
+                    }
+
+                    override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
+                }
+                val actualStore = mockk<ActualObservationStore>()
+                coEvery { actualStore.querySegment(any(), any(), any()) } returns emptyList()
+                val target = dispatcher(
+                    store = actualStore,
+                    accountService = mockk(),
+                    bindings = mockk(),
+                    kraken = kraken,
+                    configService = configService,
+                )
+
+                val read = async { target.readCurrent(config) }
+                identityReadStarted.await()
+                configService.updateConfig(config.copy(settings = config.settings.copy(loopDelaySeconds = 1L)))
+                activeGeneration shouldBe "a"
+                allowIdentityRead.complete(Unit)
+
+                val page = read.await()
+                page.accountReference shouldBe digest("IIBAN-ACCOUNT-A").take(8)
+                activeGeneration shouldBe "b"
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
+            }
+        }
+
+        "identity timeout lets the off-cycle writer continue draining queued samples" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = true, simulation = false),
+                    allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+                )
+                val identityCalls = AtomicInteger()
+                val secondIdentityAttempt = CompletableDeferred<Unit>()
+                val exchange = mockk<KrakenService>(relaxed = true)
+                val kraken = object : KrakenService by exchange {
+                    override suspend fun getFundingEvidenceScope(): String = "test-credential-generation"
+
+                    override suspend fun getAuthenticatedAccountIdentity(): String? {
+                        if (identityCalls.incrementAndGet() == 2) secondIdentityAttempt.complete(Unit)
+                        awaitCancellation()
+                    }
+
+                    override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
+                }
+                val actualStore = mockk<ActualObservationStore>()
+                val target = dispatcher(
+                    store = actualStore,
+                    accountService = mockk(),
+                    bindings = mockk(),
+                    kraken = kraken,
+                    identityLookupTimeoutMs = 10L,
+                )
+                val writer = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(testScheduler))
+
+                try {
+                    target.start(writer)
+                    target.captureAfterCycle(
+                        "identity-timeout-1",
+                        config,
+                        observedBalances(NOW, "1.0", "100.00"),
+                        observedPrices(NOW, "100.00"),
+                    ) shouldBe true
+                    target.captureAfterCycle(
+                        "identity-timeout-2",
+                        config,
+                        observedBalances(NOW.plusSeconds(10), "1.0", "100.00"),
+                        observedPrices(NOW.plusSeconds(10), "110.00"),
+                    ) shouldBe true
+
+                    withTimeout(5_000) { secondIdentityAttempt.await() }
+                    identityCalls.get() shouldBe 2
+                    coVerify(exactly = 0) { actualStore.append(any()) }
+
+                    target.readCurrent(config).state shouldBe ActualPageState.ACCOUNT_UNVERIFIED
+                    identityCalls.get() shouldBe 3
+                } finally {
+                    writer.cancel()
+                }
             }
         }
 
@@ -737,12 +864,16 @@ class ActualObservationDispatcherTest : StringSpec() {
         kraken: KrakenService,
         benchmarkService: ProspectiveBenchmarkService? = null,
         benchmarkTimeoutMs: Long = 3_000L,
+        configService: ConfigService = mockk(relaxed = true),
+        identityLookupTimeoutMs: Long = 3_000L,
     ) = ActualObservationDispatcher(
         store = store,
         krakenService = kraken,
+        configService = configService,
         nowProvider = { NOW.plusSeconds(20) },
         benchmarkService = benchmarkService,
         benchmarkTimeoutMs = benchmarkTimeoutMs,
+        identityLookupTimeoutMs = identityLookupTimeoutMs,
     )
 
     private suspend fun awaitHistory(

@@ -77,8 +77,8 @@ class DashboardCutoverApiTest : StringSpec() {
         every { portfolioManager.getOperationalStatus() } returns RebalanceOperationalStatus()
         coEvery { orderIntentService.countUnresolvedIntents() } returns 0L
         coEvery { orderIntentService.getUnresolvedIntents() } returns emptyList()
-        previousSnapshots.forEach(currentPortfolioState::publish)
-        snapshot?.let(currentPortfolioState::publish)
+        previousSnapshots.forEach { currentPortfolioState.publish(it, "test-source") }
+        snapshot?.let { currentPortfolioState.publish(it, "test-source") }
         val view = DashboardView(
             shellComponent = DashboardShellComponent(),
             settingsFormComponent = SettingsFormComponent(),

@@ -383,7 +383,7 @@ class PortfolioManagerImpl(
                 balancesObservedAt = finalState.balancesObservedAt,
             )
 
-        currentPortfolioState.publish(snapshot)
+        currentPortfolioState.publish(snapshot, portfolioSourceScope(config, cycleId))
 
         log.info("--- Cycle Complete ---")
         return snapshot
@@ -391,6 +391,21 @@ class PortfolioManagerImpl(
 
     private fun markCycleError(error: String) {
         operationalStatus = operationalStatus.copy(lastCycleError = error)
+    }
+
+    private suspend fun portfolioSourceScope(config: com.gemini.krakenbot.config.AppConfig, cycleId: String): String {
+        val source = if (config.settings.simulation) "simulation" else "live"
+        val credentialScope = try {
+            krakenService?.getFundingEvidenceScope()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && it != "scope-unavailable" }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Could not determine portfolio source scope; resetting the hero trend: {}", e.message)
+            null
+        }
+        return "$source:${credentialScope ?: cycleId}"
     }
 
     private suspend fun enqueueActualObservation(

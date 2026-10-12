@@ -76,15 +76,18 @@ same persisted mode information.
 ## Dashboard and SSE
 
 The Dashboard shows the latest completed in-memory cycle snapshot, including
-the current allocation/performance view and activity from that cycle. It has
-no retrospective timeline or report history. Before the first completed cycle,
-the fragment shows a waiting state.
+the current allocation/performance view and activity from that cycle. Its hero
+trend uses up to 24 recent snapshots from the same mode and credential scope;
+the window resets when that source changes. It is process-local, with no
+retrospective report history. Before the first completed cycle, the fragment
+shows a waiting state.
 
 `DashboardShellComponent` loads HTMX plus its SSE extension. The shell connects
 to `/api/status/stream`; `sse:message` triggers a refreshed
-`/fragments/dashboard`. `CurrentPortfolioState` retains only the latest
-snapshot. The JS client updates age/freshness and preserves table sorting; it
-does not open `EventSource` or reconstruct reports.
+`/fragments/dashboard`. `CurrentPortfolioState` retains the latest snapshot
+and a source-scoped bounded window for the hero chart. The JS client updates
+age/freshness and preserves table sorting; it does not open `EventSource` or
+reconstruct reports.
 
 The Actual page uses `ActualObservationsPageComponent`. It presents directly
 observed raw values, evidence gaps, and an optional prospective Buy & Hold

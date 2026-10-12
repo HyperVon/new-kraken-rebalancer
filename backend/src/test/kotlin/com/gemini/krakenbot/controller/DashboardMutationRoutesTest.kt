@@ -448,7 +448,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                         ),
                         actions = listOf("BUY BTC"),
                     )
-                currentPortfolioState.publish(snapshot)
+                currentPortfolioState.publish(snapshot, "test-source")
                 val current = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
                 current shouldContain "Intent #10"
                 current shouldContain "exchange response was ambiguous"
@@ -523,6 +523,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
 
                 currentPortfolioState.publish(
                     TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:00:00Z"), BigDecimal("100")),
+                    "test-source",
                 )
                 coEvery { orderIntentService.countUnresolvedIntents() } returns 1
                 val unresolved = client.get(Routes.API_READINESS)
