@@ -403,6 +403,31 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             }
         }
 
+        "startup checks file paths containing a memory URI marker" {
+            val directory = Files.createTempDirectory("legacy-path-memory-marker-")
+            try {
+                val legacyDirectory = Files.createDirectory(directory.resolve("mode=memory"))
+                val legacyPath = legacyDirectory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("CREATE TABLE order_intents (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+                        statement.execute("INSERT INTO order_intents(state) VALUES ('PENDING')")
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
         "startup blocks live orders when the legacy trade has an unresolved submission" {
             val directory = Files.createTempDirectory("legacy-pending-order-trade-")
             try {
@@ -473,6 +498,18 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             } finally {
                 directory.toFile().deleteRecursively()
             }
+        }
+
+        "startup skips legacy filesystem inspection for a memory database" {
+            val database = ExecutionDatabase.initialize(":memory:")
+            val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+            runBlocking {
+                ExecutionJournalBootstrap(database, repository, ":memory:").initialize()
+            }
+
+            val error = shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            error.message shouldBe "Live order submission requires a file-backed execution journal."
         }
     }
 

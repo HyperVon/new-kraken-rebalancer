@@ -361,8 +361,14 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
             else -> "jdbc:sqlite:$dbPath"
         }
 
-        private fun isMemoryDatabase(dbPath: String): Boolean =
-            dbPath == ":memory:" || dbPath.contains("mode=memory") || dbPath.contains(":memory:")
+        internal fun isMemoryDatabase(dbPath: String): Boolean {
+            val sqlitePath = dbPath.removePrefix("jdbc:sqlite:")
+            val databaseName = sqlitePath.substringBefore('?')
+            if (databaseName == ":memory:" || databaseName == "file::memory:") return true
+            if (!databaseName.startsWith("file:")) return false
+
+            return sqlitePath.substringAfter('?', "").split('&').any { it == "mode=memory" }
+        }
 
         private fun writeJournalMarker(path: Path, contents: String) {
             try {

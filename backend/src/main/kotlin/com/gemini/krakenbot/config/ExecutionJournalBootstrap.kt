@@ -22,6 +22,8 @@ class ExecutionJournalBootstrap(
     }
 
     private fun rejectUnresolvedLegacySubmissions() {
+        if (ExecutionDatabase.isMemoryDatabase(legacyDatabasePath)) return
+
         val path = Path.of(legacyDatabasePath)
         try {
             if (Files.notExists(path)) return
