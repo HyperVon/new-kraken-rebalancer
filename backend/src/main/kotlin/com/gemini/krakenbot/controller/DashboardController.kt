@@ -16,6 +16,7 @@ import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HISTORY_PAGE_LIMIT
+import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
@@ -725,9 +726,7 @@ class DashboardController(
             checkpoints = if (filters.assetKey == null) {
                 empty()
             } else {
-                service.queryBalanceCheckpoints(
-                    filters.copy(pair = null, type = null, limit = HISTORY_MAX_PAGE_LIMIT),
-                )
+                service.queryAllBalanceCheckpoints(filters.copy(pair = null, type = null))
             },
             trades = service.queryTrades(filters.copy(offset = tradesOffset)),
             ledgers = service.queryLedgers(filters.copy(offset = ledgersOffset)),
@@ -735,6 +734,31 @@ class DashboardController(
             accountAvailable = true,
             filterOptions = service.queryFilterOptions(filters),
         )
+    }
+
+    private suspend fun HistoryService.queryAllBalanceCheckpoints(
+        query: HistoryEventQuery,
+    ): HistoryPage<HistoryBalanceCheckpoint> {
+        val checkpoints = mutableListOf<HistoryBalanceCheckpoint>()
+        var total: Long? = null
+        var offset = 0
+        while (true) {
+            val page = queryBalanceCheckpoints(
+                query.copy(limit = HISTORY_MAX_PAGE_LIMIT, offset = offset),
+            )
+            if (total == null) total = page.total
+            checkpoints.addAll(page.items)
+            if (!page.hasMore || page.items.isEmpty()) {
+                return HistoryPage(
+                    items = checkpoints,
+                    total = total ?: checkpoints.size.toLong(),
+                    limit = HISTORY_MAX_PAGE_LIMIT,
+                    offset = 0,
+                    hasMore = false,
+                )
+            }
+            offset += page.items.size
+        }
     }
 
     private suspend fun RoutingContext.respondHistoryPage(query: suspend (HistoryService, String) -> HistoryPage<*>) {

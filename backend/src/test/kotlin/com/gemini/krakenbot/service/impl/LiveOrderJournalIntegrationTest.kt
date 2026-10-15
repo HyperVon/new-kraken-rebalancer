@@ -378,6 +378,102 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 directory.toFile().deleteRecursively()
             }
         }
+
+        "startup blocks live orders when the legacy journal has an unresolved intent" {
+            val directory = Files.createTempDirectory("legacy-pending-order-intent-")
+            try {
+                val legacyPath = directory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("CREATE TABLE order_intents (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+                        statement.execute("INSERT INTO order_intents(state) VALUES ('PENDING')")
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "startup blocks live orders when the legacy trade has an unresolved submission" {
+            val directory = Files.createTempDirectory("legacy-pending-order-trade-")
+            try {
+                val legacyPath = directory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute(
+                            "CREATE TABLE trades (id INTEGER PRIMARY KEY, dry_run INTEGER NOT NULL, submission_state TEXT)",
+                        )
+                        statement.execute("INSERT INTO trades(dry_run, submission_state) VALUES (0, 'UNCERTAIN')")
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "startup blocks live orders when the legacy database path cannot be inspected" {
+            val directory = Files.createTempDirectory("legacy-order-database-path-")
+            try {
+                val legacyPath = Files.createDirectory(directory.resolve("legacy.db"))
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "startup allows resolved legacy intents and ignores dry-run submissions" {
+            val directory = Files.createTempDirectory("legacy-resolved-order-intents-")
+            try {
+                val legacyPath = directory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("CREATE TABLE order_intents (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+                        statement.execute("INSERT INTO order_intents(state) VALUES ('CONFIRMED'), ('REJECTED')")
+                        statement.execute(
+                            "CREATE TABLE trades (id INTEGER PRIMARY KEY, dry_run INTEGER NOT NULL, submission_state TEXT)",
+                        )
+                        statement.execute(
+                            "INSERT INTO trades(dry_run, submission_state) VALUES (1, 'PENDING'), (0, NULL)",
+                        )
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                runBlocking {
+                    ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                }
+                database.ensureReadyForSubmission()
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
     }
 
     private suspend fun openJournal(directory: Path, initialize: Boolean = true): LiveJournal {

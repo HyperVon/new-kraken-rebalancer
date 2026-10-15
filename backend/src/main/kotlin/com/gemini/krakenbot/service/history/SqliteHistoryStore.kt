@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.CANONICAL_BY_KRAKEN_ALIAS
+import com.gemini.krakenbot.model.EARN_ASSET_SUFFIXES
 import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
@@ -12,6 +14,7 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 
 class SqliteHistoryStore(
     private val database: HistoryDatabase,
@@ -867,9 +870,8 @@ class SqliteHistoryStore(
             conditions += "time_ns < ?"
             values += it.toEpochNanos()
         }
-        query.assetKey?.let {
-            conditions += "asset = ?"
-            values += it
+        query.assetKey?.let { assetKey ->
+            addLedgerAssetCondition("asset", assetKey, conditions, values)
         }
         query.type?.let {
             conditions += "type = ?"
@@ -893,11 +895,32 @@ class SqliteHistoryStore(
             conditions += "observed_at_ns < ?"
             values += it.toEpochNanos()
         }
-        query.assetKey?.let {
-            conditions += "raw_asset_key = ?"
-            values += it
+        query.assetKey?.let { assetKey ->
+            addLedgerAssetCondition("raw_asset_key", assetKey, conditions, values)
         }
         return SqlFilter(conditions, values)
+    }
+
+    private fun addLedgerAssetCondition(
+        column: String,
+        assetKey: String,
+        conditions: MutableList<String>,
+        values: MutableList<Any?>,
+    ) {
+        val rawAssetKeys = ledgerAssetAliases(assetKey)
+        conditions += "UPPER($column) IN (${rawAssetKeys.joinToString(", ") { "?" }})"
+        values.addAll(rawAssetKeys)
+    }
+
+    private fun ledgerAssetAliases(assetKey: String): List<String> {
+        val canonical = Asset.normalizeLedgerAsset(assetKey).uppercase(Locale.ROOT)
+        val aliases = buildSet {
+            add(canonical)
+            CANONICAL_BY_KRAKEN_ALIAS.forEach { (alias, canonicalSymbol) ->
+                if (canonicalSymbol.equals(canonical, ignoreCase = true)) add(alias.uppercase(Locale.ROOT))
+            }
+        }
+        return (aliases + aliases.flatMap { alias -> EARN_ASSET_SUFFIXES.map { suffix -> alias + suffix } }).sorted()
     }
 
     private fun countRows(connection: Connection, table: String, filter: SqlFilter): Long =

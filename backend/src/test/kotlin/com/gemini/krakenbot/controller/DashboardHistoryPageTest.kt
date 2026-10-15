@@ -1,8 +1,10 @@
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
+import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
@@ -58,6 +60,49 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
                 html shouldContain "Trade History"
                 html shouldContain "Transactions &amp; Ledgers"
             }
+        }
+
+        "GET /history all range fetches every checkpoint page for the selected asset" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns historyScope
+            coEvery { historyService.queryTrades(any()) } returns HistoryPage(emptyList(), 0L, 50, 0, false)
+            coEvery { historyService.queryLedgers(any()) } returns HistoryPage(emptyList(), 0L, 50, 0, false)
+            coEvery { historyService.getSyncStatus(any()) } returns emptyList()
+            val requestedQueries = mutableListOf<HistoryEventQuery>()
+            val firstPage = (2..(HISTORY_MAX_PAGE_LIMIT + 1)).reversed().map(::checkpoint)
+            coEvery { historyService.queryBalanceCheckpoints(any()) } coAnswers {
+                val query = firstArg<HistoryEventQuery>()
+                requestedQueries += query
+                if (query.offset == 0) {
+                    HistoryPage(firstPage, 2_001L, query.limit, query.offset, true)
+                } else {
+                    HistoryPage(listOf(checkpoint(1)), 2_001L, query.limit, query.offset, false)
+                }
+            }
+
+            testApplication {
+                application { configureTestEnv() }
+                val response = client.get("/history?range=all&asset=BTC")
+                response.status shouldBe HttpStatusCode.OK
+                val html = response.bodyAsText()
+                html shouldContain ">1</text>"
+                html shouldContain ">2001</text>"
+                val markerXCoordinates = Regex("""class="history-point" cx="([0-9.]+)""")
+                    .findAll(html)
+                    .map { it.groupValues[1] }
+                    .toList()
+                markerXCoordinates.size shouldBe 2_001
+                markerXCoordinates.first() shouldBe "32.00"
+                markerXCoordinates.last() shouldBe "768.00"
+                markerXCoordinates.zipWithNext().all { (left, right) ->
+                    left.toDouble() <= right.toDouble()
+                } shouldBe true
+            }
+
+            requestedQueries.map { it.offset } shouldBe listOf(0, HISTORY_MAX_PAGE_LIMIT)
+            requestedQueries.all {
+                it.assetKey == "BTC" && it.from == null && it.limit == HISTORY_MAX_PAGE_LIMIT
+            } shouldBe true
         }
 
         "GET /history renders history page with no asset selected and custom offsets" {
@@ -362,4 +407,17 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
             }
         }
     }
+
+    private fun checkpoint(quantity: Int) = HistoryBalanceCheckpoint(
+        accountIdentityDigest = validHash,
+        ledgerId = "ledger-$quantity",
+        observedAt = Instant.ofEpochSecond(quantity.toLong()),
+        rawAssetClass = "currency",
+        rawAssetKey = "XXBT",
+        rawAmount = quantity.toString(),
+        rawFee = "0",
+        rawBalance = quantity.toString(),
+        quantity = BigDecimal(quantity),
+        status = HistoryBalanceStatus.VALID,
+    )
 }

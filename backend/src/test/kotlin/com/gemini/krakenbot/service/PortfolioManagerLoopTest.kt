@@ -74,7 +74,7 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
-        "history pages share cycle admission and release it on cancellation" {
+        "history pages serialize and release page admission on cancellation" {
             runTest {
                 val entered = CompletableDeferred<Unit>()
                 val heldAdmission = launch {

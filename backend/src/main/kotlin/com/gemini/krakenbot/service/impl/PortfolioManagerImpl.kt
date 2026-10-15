@@ -58,6 +58,9 @@ class PortfolioManagerImpl(
     private val runLoopMutex = Mutex()
     private val cycleAdmissionMutex = Mutex()
 
+    // Serialize reporting pages without making an in-flight page hold up cycle admission.
+    private val historyPageMutex = Mutex()
+
     @Volatile
     private var isRunning = false
 
@@ -79,12 +82,15 @@ class PortfolioManagerImpl(
     override fun isCycleActive(): Boolean = cycleActive
 
     override suspend fun runHistoryPageIfAdmitted(block: suspend () -> Unit): Boolean {
-        if (!cycleAdmissionMutex.tryLock()) return false
+        if (cycleAdmissionMutex.isLocked) return false
+        if (!historyPageMutex.tryLock()) return false
         try {
+            // A cycle may start after this check; page work never owns its admission mutex.
+            if (cycleAdmissionMutex.isLocked) return false
             block()
             return true
         } finally {
-            cycleAdmissionMutex.unlock()
+            historyPageMutex.unlock()
         }
     }
 

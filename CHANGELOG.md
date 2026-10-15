@@ -10,6 +10,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **History checkpoint coverage and live-order startup safety**: asset charts in
+  the All range now include every checkpoint page, and startup blocks live
+  submissions when the prior database still contains an unresolved order.
 - **History chart coverage and gaps**: sample oversized ranges across the full
   time span, retain bucket endpoints, value extrema, and incomplete-cycle
   markers within the point limit, draw lines between adjacent complete samples,

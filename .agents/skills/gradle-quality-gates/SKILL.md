@@ -91,11 +91,12 @@ same `fileTree { exclude(coverageExcludes) }`.
 
 Current backend exclusions:
 
-- `**/config/DatabaseConfig*`, `**/config/MigrationBackupKt*`, `**/config/LegacyDataRepairKt*`, `**/config/KtorConfigKt*`
-- `**/repository/table/**`
-- `**/service/KrakenService*`, `**/service/ConfigService.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
-- `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
-- `**/KrakenRebalancerApplication*`
+- `**/config/KtorConfigKt*`, `**/config/ExecutionDatabase*`, `**/service/history/HistoryDatabase*`
+- `**/repository/table/**`, `**/service/KrakenService*`
+- `**/service/ConfigService.class`, `**/service/OrderExecutor.class`, `**/service/PortfolioManager.class`
+- `**/service/history/HistoryStore.class`, `**/service/history/HistoryService.class`, `**/service/history/HistoryCycleGate.class`, `**/service/history/HistoryCycleGate$*`
+- `**/repository/*Repository.class`, `**/*$DefaultImpls*`
+- `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`, `**/KrakenRebalancerApplication*`
 
 The engine exclusion is `**/api/*ApiMapperKt*`.
 
