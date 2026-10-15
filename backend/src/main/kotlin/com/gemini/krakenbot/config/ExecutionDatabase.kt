@@ -361,7 +361,7 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
             else -> "jdbc:sqlite:$dbPath"
         }
 
-        private fun isMemoryDatabase(dbPath: String): Boolean =
+        internal fun isMemoryDatabase(dbPath: String): Boolean =
             dbPath == ":memory:" || dbPath.contains("mode=memory") || dbPath.contains(":memory:")
 
         private fun writeJournalMarker(path: Path, contents: String) {

@@ -474,6 +474,18 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 directory.toFile().deleteRecursively()
             }
         }
+
+        "startup skips legacy filesystem inspection for a memory database" {
+            val database = ExecutionDatabase.initialize(":memory:")
+            val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+            runBlocking {
+                ExecutionJournalBootstrap(database, repository, ":memory:").initialize()
+            }
+
+            val error = shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            error.message shouldBe "Live order submission requires a file-backed execution journal."
+        }
     }
 
     private suspend fun openJournal(directory: Path, initialize: Boolean = true): LiveJournal {

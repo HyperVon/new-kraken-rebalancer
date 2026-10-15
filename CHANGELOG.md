@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.117] - 2026-10-15
+
+### Fixed
+
+- **Windows journal startup**: skip filesystem path parsing for SQLite memory
+  database names during legacy submission recovery, while continuing to require
+  a file-backed execution journal for live order submission.
+
 ## [6.17.116] - 2026-10-15
 
 ### Fixed
