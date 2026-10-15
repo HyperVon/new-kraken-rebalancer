@@ -5,10 +5,10 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.actual.ActualObservationPage
-import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.component.HistoryPageData
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.component.SettingsFormValues
 import com.gemini.krakenbot.view.util.CdnIntegrity
@@ -29,7 +29,7 @@ class DashboardView(
     private val shellComponent: DashboardShellComponent,
     private val settingsFormComponent: SettingsFormComponent,
     private val fragmentComponent: DashboardFragmentComponent,
-    private val actualObservationsPageComponent: ActualObservationsPageComponent = ActualObservationsPageComponent(),
+    private val historyPageComponent: HistoryPageComponent = HistoryPageComponent(),
 ) {
 
     context(html: HTML)
@@ -73,13 +73,13 @@ class DashboardView(
     }
 
     context(html: HTML)
-    fun renderActualObservationsPage(
+    fun renderHistoryPage(
         settings: Settings,
-        page: ActualObservationPage,
+        data: HistoryPageData,
         csrfToken: String? = null,
         paused: Boolean = false,
     ) {
-        actualObservationsPageComponent.render(settings, page, paused, csrfToken)
+        historyPageComponent.render(settings, data, csrfToken, paused)
     }
 
     context(div: DIV)

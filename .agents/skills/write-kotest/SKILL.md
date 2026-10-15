@@ -5,7 +5,7 @@ description: >-
   IsolationMode, TestFixtures, FakeKraken vs SimulatedKraken, BigDecimal
   shouldBeEqualComparingTo, in-memory SQLite, and advanceUntilIdle for Flow
   tests. Use when adding or changing JVM/JS tests for current cycle, order
-  safety, Dashboard, Settings, Actual, or prospective benchmark behavior.
+  safety, Dashboard, Settings, History capture, or account-history sync behavior.
 ---
 
 # Writing Kotest Unit Tests
@@ -34,9 +34,9 @@ reflection-based discovery does not require it on every spec.
 
 ## TestFixtures
 
-Use `backend/src/test/kotlin/com/gemini/krakenbot/TestFixtures.kt` for shared credentials, pair symbols
-(`XBTUSD`, `XXBTZUSD`), sync keys, and `DEFAULT_TEST_SETTINGS` /
-`DEFAULT_TEST_CONFIG`. Avoid duplicating magic test constants.
+Use the current test fixtures and configuration builders in the owning test
+module. Keep credentials and identifiers fake; avoid runtime config files and
+magic values unrelated to the test contract.
 
 ## BigDecimal comparisons
 
@@ -52,10 +52,11 @@ Never `.equals()`, `shouldBe` alone on `BigDecimal`, or
 ## In-memory SQLite
 
 ```kotlin
-private val db = DatabaseConfig.init(":memory:")
+private val historyDb = HistoryDatabase.inMemory()
 ```
 
-Never touch `kraken-rebalancer.db` from tests.
+Never touch an operator's configured data directory from tests. Use in-memory
+or temporary SQLite paths for both History and execution stores.
 
 ## FakeKrakenService vs SimulatedKrakenService
 
@@ -66,8 +67,8 @@ Never touch `kraken-rebalancer.db` from tests.
 
 Use `FakeKrakenService` for controlled cases and `SimulatedKrakenService` when
 the production emulator behavior itself is under test. Current focused test
-coverage is mapped in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md); there
-is no retrospective-history scenario suite.
+coverage is mapped in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md),
+including direct History capture, account sync, and rendering contracts.
 
 ```kotlin
 val fakeKraken = FakeKrakenService().apply {
@@ -82,8 +83,9 @@ val fakeKraken = FakeKrakenService().apply {
 - Use the constant
   `TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT`.
 - Always `unmockkStatic(...)` in `finally` or test teardown.
-- Prefer real `:memory:` SQLite via `DatabaseConfig.init(":memory:")` unless the
-  test targets failure mapping.
+- Prefer `HistoryDatabase.inMemory()` for History store tests and
+  `ExecutionDatabase.initialize(":memory:")` for execution journal tests unless
+  a test targets file lifecycle or failure mapping.
 - For services:
   `coEvery { kraken.withStableBackend(any()) } coAnswers { firstArg<suspend (KrakenService) -> Any>().invoke(fakeKraken) }`
 - **Mock contract fidelity:** Assert observable domain effects and returned contracts, not just invocation counts (`coVerify(exactly = 1)`). Do not construct deep mock hierarchies where a fake or in-memory instance is cleaner.
@@ -119,10 +121,10 @@ Add or update focused tests when a change affects:
 - `OrderExecutorImpl`, settled-cash limits, the 99% buy reserve, or live
   `cl_ord_id` intent safety
 - `DynamicKrakenService`, `dryRun` / `simulation`, or current Settings parsing
-- Dashboard's latest in-memory cycle snapshot, `/history` redirect, retired API
-  responses, health/readiness, or SSE
-- Actual direct observations, incomplete evidence, account/scope continuity, or
-  prospective Buy & Hold start eligibility
+- Dashboard's latest in-memory cycle snapshot, History page/APIs, sync status,
+  health/readiness, or SSE
+- Direct History observations, incomplete evidence, account/scope continuity,
+  pagination, cursor commits, or data-store initialization
 
 Use the focused tests listed in `docs/EVALUATION.md` as the starting point;
 update that coverage map when test ownership changes. Prefer `FakeKrakenService`

@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.node.ObjectNode
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -219,27 +218,7 @@ class ConfigServiceImpl internal constructor(
         )
     }
 
-    private fun parseConfig(content: String): AppConfig {
-        val normalized = normalizeLegacyKeys(content)
-        return objectMapper.readValue(normalized, AppConfig::class.java)
-    }
-
-    private fun normalizeLegacyKeys(content: String): String {
-        val tree = objectMapper.readTree(content)
-        val settings = tree.get("settings") as? ObjectNode ?: return content
-        RETIRED_SETTINGS_KEYS.forEach(settings::remove)
-        val legacy = settings.get(LEGACY_DUST_THRESHOLD_KEY)
-        val current = settings.get(NEW_MINIMUM_ORDER_SIZE_KEY)
-        when {
-            legacy != null && current != null -> settings.remove(LEGACY_DUST_THRESHOLD_KEY)
-
-            legacy != null -> {
-                settings.remove(LEGACY_DUST_THRESHOLD_KEY)
-                settings.set(NEW_MINIMUM_ORDER_SIZE_KEY, legacy)
-            }
-        }
-        return objectMapper.writeValueAsString(tree)
-    }
+    private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 
     private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->
         // A non-blank environment value wins, then the placeholder default, then an empty string.
@@ -444,15 +423,6 @@ class ConfigServiceImpl internal constructor(
     private companion object {
         private const val DEFAULT_CONFIG_FILE_PATH = "rebalancer-config.json"
         private const val ENV_VAR_DEFAULT_SEPARATOR = ":"
-        private const val LEGACY_DUST_THRESHOLD_KEY = "dustThresholdUSD"
-        private const val NEW_MINIMUM_ORDER_SIZE_KEY = "minimumOrderSizeUSD"
-        private val RETIRED_SETTINGS_KEYS = setOf(
-            "fiatMaxDrawdown",
-            "fiatDeploymentExponent",
-            "fiatDeploymentThresholdPercent",
-            "inceptionDate",
-            "comparisonStartDate",
-        )
         private const val MAX_TRIGGER_PERCENT = 100.0
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()

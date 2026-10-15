@@ -2,9 +2,7 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerRequest
 import io.kotest.core.spec.IsolationMode
@@ -185,1066 +183,180 @@ class KrakenParsersTest : StringSpec() {
             balances.containsKey("BAD").shouldBeFalse()
         }
 
-        "parses trade history golden response into API fills with stable identity" {
-            val (trades, count) = KrakenParsers.parseTradeHistory(
+        "parses native trade pages with exact raw values and retains malformed rows" {
+            val page = KrakenParsers.parseAccountTradePage(
                 objectMapper.readTree(
                     """
                     {
-                      "count": 2,
                       "trades": {
-                        "T1": {
+                        "T-NATIVE": {
                           "ordertxid": "O1",
-                          "pair": "XXBTZUSD",
-                          "time": 1700000000.1234,
-                          "type": "buy",
-                          "price": "50000.00",
-                          "cost": "5000.00",
-                          "fee": "10.00",
-                          "vol": "0.10000000"
-                        },
-                        "T2": {
-                          "pair": "XETHZUSD",
-                          "time": 1700000005.0000,
+                          "postxid": "P1",
+                          "pair": "SOLUSDT",
+                          "time": 1700000000.123456789,
                           "type": "sell",
-                          "price": "2000.00",
-                          "cost": "200.00",
-                          "fee": "1.00",
-                          "vol": "0.10000000"
-                        }
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                allocations = listOf("BTC", "ETH", "USD"),
-            )
-
-            count shouldBe 2
-            trades.size shouldBe 2
-            val bitcoin = trades.single { it.tradeId == "T1" }
-            bitcoin.symbol shouldBe "BTC"
-            bitcoin.side shouldBe "BUY"
-            bitcoin.timestamp.toEpochMilli() shouldBe 1700000000123L
-            bitcoin.volume.shouldBeEqualComparingTo(BigDecimal("0.1"))
-            bitcoin.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
-            bitcoin.source shouldBe TradeSource.API_FILL
-            bitcoin.orderTxid shouldBe "O1"
-
-            val ether = trades.single { it.tradeId == "T2" }
-            ether.symbol shouldBe "ETH"
-            ether.side shouldBe "SELL"
-            ether.orderTxid shouldBe null
-        }
-
-        "truncates fractional epoch seconds exactly at millisecond precision" {
-            val (trades, _) = KrakenParsers.parseTradeHistory(
-                objectMapper.readTree(
-                    """
-                    {
-                      "trades": {
-                        "T-FRACTIONAL": {
-                          "pair": "XXBTZUSD",
-                          "time": 1700000000.9999999,
+                          "ordertype": "limit",
+                          "price": "123.450000000000000001",
+                          "cost": "12.3450000000000000001",
+                          "fee": "0.01234500000000000001",
+                          "vol": "0.1000000000000000001",
+                          "margin": "0.00000000000000000001",
+                          "misc": "stp",
+                          "trade_id": "42",
+                          "maker": true,
+                          "ledgers": ["L1", "L2"]
+                        },
+                        "T-MALFORMED": {
+                          "pair": "ADAEUR",
+                          "time": "not-time",
                           "type": "buy",
-                          "price": "50000",
-                          "cost": "5000",
-                          "fee": "10",
-                          "vol": "0.1"
-                        }
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                allocations = listOf("BTC", "USD"),
-            )
-            val (ledgers, _) = KrakenParsers.parseLedgerPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "ledger": {
-                        "L-FRACTIONAL": {
-                          "aclass": "currency",
-                          "asset": "XXBT",
-                          "amount": "0.1",
+                          "price": "1.0",
+                          "cost": "not-a-number",
                           "fee": "0",
-                          "time": 1700000000.9999999,
-                          "type": "staking",
-                          "subtype": "reward"
+                          "vol": "1.0"
                         }
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                expectedTypes = null,
-            )
-
-            trades.single().timestamp.toEpochMilli() shouldBe 1700000000999L
-            ledgers.single().time.toEpochMilli() shouldBe 1700000000999L
-        }
-
-        "flags malformed supported-market trade economics without dropping the row" {
-            val (trades, _) = KrakenParsers.parseTradeHistory(
-                objectMapper.readTree(
-                    """
-                    {
+                      },
                       "count": 2,
-                      "trades": {
-                        "B1": {
-                          "pair": "XXBTZUSD",
-                          "time": 1700000000.0000,
-                          "type": "buy",
-                          "vol": "",
-                          "cost": "",
-                          "price": "",
-                          "fee": ""
-                        },
-                        "B2": {
-                          "pair": "XXBTZUSD",
-                          "time": 1700000005.0000,
-                          "type": "sell",
-                          "vol": "not-a-number",
-                          "cost": "-5",
-                          "price": "also-bad",
-                          "fee": "not-a-number"
-                        }
-                      }
+                      "cursor": {"next": "cursor-next"}
                     }
                     """.trimIndent(),
                 ),
-                allocations = listOf("BTC", "USD"),
+                startSec = 1_700_000_000L,
+                endSec = 1_700_000_100L,
+                requestedCursor = "cursor-current",
             )
 
-            trades.size shouldBe 2
-            val blankRow = trades.single { it.tradeId == "B1" }
-            blankRow.hasValidVolume.shouldBeFalse()
-            blankRow.hasValidCost.shouldBeFalse()
-            blankRow.hasValidPrice.shouldBeFalse()
-            // A blank fee is treated as absence, not invalidity.
-            blankRow.hasValidFee.shouldBeTrue()
+            page.valid shouldBe true
+            page.startSec shouldBe 1_700_000_000L
+            page.endSec shouldBe 1_700_000_100L
+            page.requestedCursor shouldBe "cursor-current"
+            page.nextCursor shouldBe "cursor-next"
+            page.count shouldBe 2L
+            page.rawSize shouldBe 2
+            page.entries.size shouldBe 2
 
-            val junkRow = trades.single { it.tradeId == "B2" }
-            junkRow.hasValidVolume.shouldBeFalse()
-            junkRow.hasValidCost.shouldBeFalse()
-            junkRow.hasValidPrice.shouldBeFalse()
-            junkRow.hasValidFee.shouldBeFalse()
+            val native = page.entries.first()
+            native.tradeId shouldBe "T-NATIVE"
+            native.orderTxid shouldBe "O1"
+            native.postTxid shouldBe "P1"
+            native.pair shouldBe "SOLUSDT"
+            native.baseAsset shouldBe "SOL"
+            native.quoteCurrency shouldBe "USDT"
+            native.feeCurrency shouldBe null
+            native.time shouldBe Instant.parse("2023-11-14T22:13:20.123456789Z")
+            native.rawTime shouldBe "1700000000.123456789"
+            native.price shouldBe "123.450000000000000001"
+            native.cost shouldBe "12.3450000000000000001"
+            native.fee shouldBe "0.01234500000000000001"
+            native.volume shouldBe "0.1000000000000000001"
+            native.margin shouldBe "0.00000000000000000001"
+            native.misc shouldBe "stp"
+            native.tradeSequenceId shouldBe "42"
+            native.maker shouldBe true
+            native.ledgerIds shouldBe listOf("L1", "L2")
+            native.isValidRecord shouldBe true
+
+            val malformed = page.entries.last()
+            malformed.pair shouldBe "ADAEUR"
+            malformed.time shouldBe null
+            malformed.rawTime shouldBe "not-time"
+            malformed.cost shouldBe "not-a-number"
+            malformed.hasValidTime shouldBe false
+            malformed.hasValidCost shouldBe false
+            malformed.isValidRecord shouldBe true
         }
 
-        "skips malformed and out-of-universe trade history entries" {
-            val (emptyTrades, emptyCount) = KrakenParsers.parseTradeHistory(
-                objectMapper.readTree("{\"count\": 4, \"trades\": []}"),
-                allocations = listOf("BTC", "USD"),
-            )
-            emptyTrades shouldBe emptyList()
-            emptyCount shouldBe 4
-
-            val (trades, count) = KrakenParsers.parseTradeHistory(
-                objectMapper.readTree(
-                    """
-                    {
-                      "count": 2,
-                      "trades": {
-                        "UNKNOWN": {
-                          "pair": "XRPZUSD",
-                          "time": 1700000000,
-                          "type": "buy",
-                          "price": "1",
-                          "cost": "1",
-                          "vol": "1",
-                          "fee": "0"
-                        },
-                        "BLANK-ORDER": {
-                          "ordertxid": "   ",
-                          "pair": "XXBTZUSD",
-                          "time": 1700000001,
-                          "type": "buy",
-                          "price": "1",
-                          "cost": "1",
-                          "vol": "1",
-                          "fee": "0"
-                        },
-                        "NULL-ORDER": {
-                          "ordertxid": null,
-                          "pair": "XXBTZUSD",
-                          "time": 1700000002,
-                          "type": "buy",
-                          "price": "1",
-                          "cost": "1",
-                          "vol": "1",
-                          "fee": "0"
-                        }
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                allocations = listOf("BTC", "USD"),
-            )
-
-            count shouldBe 2
-            trades.size shouldBe 2
-            trades.forEach { it.orderTxid shouldBe null }
-
-            val (blankIdTrades, _) = KrakenParsers.parseTradeHistory(
-                objectMapper.readTree(
-                    """
-                    {
-                      "trades": {
-                        "": {
-                          "pair": "XXBTZUSD",
-                          "time": 1700000003,
-                          "type": "buy",
-                          "price": "1",
-                          "cost": "1",
-                          "vol": "1",
-                          "fee": "0"
-                        }
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                allocations = listOf("BTC", "USD"),
-            )
-            blankIdTrades.single().tradeId shouldBe null
-        }
-
-        "retains zero and negative trade economics with explicit invalid flags" {
-            val response = objectMapper.readTree(
-                """
-                {
-                  "count": 4,
-                  "trades": {
-                    "ZERO-VOL": {
-                      "pair": "XXBTZUSD",
-                      "time": 1700000100,
-                      "type": "buy",
-                      "price": "100",
-                      "cost": "10",
-                      "vol": "0",
-                      "fee": "0.01"
-                    },
-                    "NEGATIVE-COST": {
-                      "pair": "XXBTZUSD",
-                      "time": 1700000101,
-                      "type": "buy",
-                      "price": "100",
-                      "cost": "-10",
-                      "vol": "1",
-                      "fee": "0.01"
-                    },
-                    "ZERO-PRICE": {
-                      "pair": "XXBTZUSD",
-                      "time": 1700000102,
-                      "type": "buy",
-                      "price": "0",
-                      "cost": "10",
-                      "vol": "1",
-                      "fee": "0.01"
-                    },
-                    "NEGATIVE-FEE": {
-                      "pair": "XXBTZUSD",
-                      "time": 1700000103,
-                      "type": "buy",
-                      "price": "100",
-                      "cost": "10",
-                      "vol": "1",
-                      "fee": "-0.01"
-                    }
-                  }
-                }
-                """.trimIndent(),
-            )
-
-            val (trades, _) = KrakenParsers.parseTradeHistory(response, allocations = listOf("BTC", "USD"))
-            val byId = trades.associateBy { it.tradeId }
-
-            byId.getValue("ZERO-VOL").hasValidVolume shouldBe false
-            byId.getValue("NEGATIVE-COST").hasValidCost shouldBe false
-            byId.getValue("ZERO-PRICE").hasValidPrice shouldBe false
-            byId.getValue("NEGATIVE-FEE").hasValidFee shouldBe false
-            byId.getValue("ZERO-VOL").hasValidCost shouldBe true
-            byId.getValue("NEGATIVE-COST").hasValidVolume shouldBe true
-        }
-
-        "parses filtered ledger golden response and retains the API total count" {
-            val response = objectMapper.readTree(
-                """
-                {
-                  "count": 2,
-                  "ledger": {
-                    "L1": {
-                      "refid": "R1",
-                      "time": 1700000100.0000,
-                      "type": "staking",
-                      "subtype": "reward",
-                      "aclass": "currency",
-                      "asset": "DOT.S",
-                      "amount": "1.25000000",
-                      "fee": "0.01001234",
-                      "balance": "10.50000000"
-                    },
-                    "L2": {
-                      "time": 1700000200.0000,
-                      "type": "dividend",
-                      "asset": "STRC",
-                      "amount": "2.00000000",
-                      "fee": "0.00000000",
-                      "balance": "2.00000000"
-                    }
-                  }
-                }
-                """.trimIndent(),
-            )
-
-            val (entries, count) = KrakenParsers.parseLedgerPage(
-                response,
-                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
-            )
-
-            count shouldBe 2
-            entries.size shouldBe 1
-            val staking = entries.single()
-            staking.ledgerId shouldBe "L1"
-            staking.refid shouldBe "R1"
-            staking.asset shouldBe "DOT"
-            staking.subtype shouldBe "reward"
-            staking.amount.shouldBeEqualComparingTo(BigDecimal("1.25"))
-            staking.fee.shouldBeEqualComparingTo(BigDecimal("0.01001234"))
-            staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
-            staking.hasAuthoritativeBalance shouldBe true
-            staking.hasValidFee shouldBe true
-            val parsedPage = KrakenParsers.parseLedgerPage(response, null)
-            parsedPage.hasTotalCount shouldBe true
-            parsedPage.hasLedgerContainer shouldBe true
-        }
-
-        "treats missing and malformed ledger totals as unknown" {
-            listOf(
-                "{}",
-                "{\"count\": null}",
-                "{\"count\": -1}",
-                "{\"count\": 1.5}",
-                "{\"count\": \"2\"}",
-                "{\"count\": 5000000000}",
-            ).forEach { response ->
-                val parsedPage = KrakenParsers.parseLedgerPage(objectMapper.readTree(response), null)
-
-                parsedPage.totalCount shouldBe 0
-                parsedPage.hasTotalCount shouldBe false
-            }
-
-            val explicitZero = KrakenParsers.parseLedgerPage(objectMapper.readTree("{\"count\": 0}"), null)
-            explicitZero.totalCount shouldBe 0
-            explicitZero.hasTotalCount shouldBe true
-            explicitZero.hasLedgerContainer shouldBe false
-        }
-
-        "retains blank fees, rejects negative fees, and accepts unfiltered ledger pages" {
-            val response = objectMapper.readTree(
-                """
-                {
-                  "count": 3,
-                  "ledger": {
-                    "BLANK-FEE": {
-                      "time": 1700000100,
-                      "type": "staking",
-                      "asset": "DOT",
-                      "amount": "1.0",
-                      "fee": "",
-                      "balance": ""
-                    },
-                    "NEGATIVE-FEE": {
-                      "time": 1700000200,
-                      "type": "dividend",
-                      "asset": "ETH",
-                      "amount": "2.0",
-                      "fee": "-0.1",
-                      "balance": "2.0"
-                    },
-                    "NO-FEE": {
-                      "time": 1700000300,
-                      "type": "receive",
-                      "asset": "USD",
-                      "amount": "3.0",
-                      "balance": "3.0"
-                    }
-                  }
-                }
-                """.trimIndent(),
-            )
-
-            val (entries, count) = KrakenParsers.parseLedgerPage(response, null)
-
-            count shouldBe 3
-            entries.map { it.ledgerId } shouldBe listOf("BLANK-FEE", "NEGATIVE-FEE", "NO-FEE")
-            entries[0].hasValidFee shouldBe true
-            entries[0].hasAuthoritativeFee shouldBe false
-            entries[0].hasAuthoritativeBalance shouldBe false
-            entries[1].hasValidFee shouldBe false
-            entries[1].fee shouldBe BigDecimal.ZERO
-            entries[2].hasValidFee shouldBe true
-            entries[2].hasAuthoritativeFee shouldBe false
-        }
-
-        "marks explicit zero ledger balances authoritative but rejects malformed balances" {
-            val response = objectMapper.readTree(
-                """
-                {
-                  "count": 2,
-                  "ledger": {
-                    "L1": {
-                      "time": 1700000100.0000,
-                      "type": "staking",
-                      "asset": "DOT",
-                      "amount": "1.25000000",
-                      "fee": "0.01001234",
-                      "balance": "not-a-number"
-                    },
-                    "L2": {
-                      "time": 1700000200.0000,
-                      "type": "staking",
-                      "asset": "ETH",
-                      "amount": "0.00000001",
-                      "fee": "0.00000000",
-                      "balance": "0.00000000"
-                    }
-                  }
-                }
-                """.trimIndent(),
-            )
-
-            val (entries, count) = KrakenParsers.parseLedgerPage(
-                response,
-                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
-            )
-
-            count shouldBe 2
-            entries.size shouldBe 2
-            entries.single { it.ledgerId == "L1" }.hasAuthoritativeBalance.shouldBeFalse()
-            entries.single { it.ledgerId == "L2" }.hasAuthoritativeBalance shouldBe true
-        }
-
-        "preserves malformed ledger amount validity instead of turning it into a zero flow" {
-            val response = objectMapper.readTree(
-                """
-                {
-                  "count": 2,
-                  "ledger": {
-                    "INVALID-AMOUNT": {
-                      "time": 1700000100.0000,
-                      "type": "receive",
-                      "asset": "USD",
-                      "amount": "not-a-number",
-                      "fee": "0.00000000",
-                      "balance": "0.00"
-                    },
-                    "BLANK-AMOUNT": {
-                      "time": 1700000200.0000,
-                      "type": "receive",
-                      "asset": "USD",
-                      "amount": "",
-                      "fee": "0.00000000",
-                      "balance": "0.00"
-                    }
-                  }
-                }
-                """.trimIndent(),
-            )
-
-            val (entries, count) = KrakenParsers.parseLedgerPage(response, null)
-
-            count shouldBe 2
-            entries.size shouldBe 2
-            entries.forEach { entry ->
-                entry.amount shouldBe BigDecimal.ZERO.setScale(8)
-                entry.hasValidAmount shouldBe false
-            }
-        }
-
-        "parses deposit and withdrawal status pages with cursor and explicit zero fee" {
-            val depositPage = KrakenParsers.parseDepositStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "error": [],
-                      "result": {
-                        "deposit": [
-                          {
-                            "method": "Bitcoin",
-                            "asset": "XXBT",
-                            "refid": "DEP-1",
-                            "txid": "0xabc",
-                            "amount": "0.50000000",
-                            "fee": "0.0000000000",
-                            "time": 1700000000.1234,
-                            "status": "Success"
-                          }
-                        ],
-                        "cursor": "next-deposit"
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-            )
-            val withdrawalPage = KrakenParsers.parseWithdrawStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "result": [
-                        {
-                          "method": "Bitcoin",
-                          "asset": "XXBT",
-                          "refid": "W-1",
-                          "txid": "0xdef",
-                          "amount": "0.25000000",
-                          "fee": "0.00020000",
-                          "time": 1700000100,
-                          "status": "Failure"
-                        }
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-            )
-
-            depositPage.nextCursor shouldBe "next-deposit"
-            depositPage.records.single().asset shouldBe "BTC"
-            depositPage.records.single().hasAuthoritativeFee shouldBe true
-            depositPage.records.single().fee.shouldBeEqualComparingTo(BigDecimal.ZERO)
-            depositPage.records.single().status shouldBe "Success"
-            withdrawalPage.nextCursor shouldBe null
-            withdrawalPage.records.single().asset shouldBe "BTC"
-            withdrawalPage.records.single().fee.shouldBeEqualComparingTo(BigDecimal("0.0002"))
-            withdrawalPage.records.single().status shouldBe "Failure"
-        }
-
-        "parses data-wrapped funding pages and skips malformed records" {
-            val page = KrakenParsers.parseWithdrawStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "data": [
-                        {
-                          "method": "Wire",
-                          "asset": "ZUSD",
-                          "refid": "GOOD-DATA",
-                          "amount": "10.00",
-                          "fee": "",
-                          "time": 1700000000.5,
-                          "status": "Settled"
-                        },
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "BAD-FEE",
-                          "amount": "10.00",
-                          "fee": "-0.01",
-                          "time": 1700000001,
-                          "status": "Success"
-                        },
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "BAD-AMOUNT",
-                          "amount": "not-a-number",
-                          "time": 1700000002,
-                          "status": "Success"
-                        },
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "BAD-TIME",
-                          "amount": "10.00",
-                          "time": -1,
-                          "status": "Success"
-                        },
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "",
-                          "amount": "10.00",
-                          "time": 1700000003,
-                          "status": "Success"
-                        },
-                        "not-an-object"
-                      ],
-                      "cursor": "next-data"
-                    }
-                    """.trimIndent(),
-                ),
-            )
-
-            page.nextCursor shouldBe "next-data"
-            page.records.size shouldBe 1
-            page.records.single().refid shouldBe "GOOD-DATA"
-            page.records.single().asset shouldBe "USD"
-            page.records.single().hasAuthoritativeFee shouldBe false
-            page.records.single().time.toEpochMilli() shouldBe 1700000000500L
-
-            KrakenParsers.parseDepositStatus(
-                objectMapper.readTree("{\"deposit\": {}}"),
-            ) shouldBe emptyList()
-        }
-
-        "handles root-array funding pages and blank optional ledger fields" {
-            val rootArray = KrakenParsers.parseDepositStatusPage(
-                objectMapper.readTree(
-                    """
-                    [
-                      {
-                        "method": "",
-                        "asset": "USD",
-                        "refid": "ROOT-ARRAY",
-                        "txid": "",
-                        "amount": "10.00",
-                        "time": 1700000000,
-                        "status": "Success"
-                      }
-                    ]
-                    """.trimIndent(),
-                ),
-            )
-            rootArray.records.single().refid shouldBe "ROOT-ARRAY"
-            rootArray.records.single().txid shouldBe null
-            rootArray.records.single().method shouldBe null
-            rootArray.records.single().hasAuthoritativeFee shouldBe false
-
-            val (entries, count) = KrakenParsers.parseLedgerPage(
+        "parses native ledger pages without normalizing raw asset suffixes" {
+            val page = KrakenParsers.parseAccountLedgerPage(
                 objectMapper.readTree(
                     """
                     {
                       "ledger": {
-                        "BLANK-FIELDS": {
-                          "refid": "",
-                          "subtype": "",
-                          "aclass": "",
-                          "time": 1700000000,
+                        "L-DOT": {
+                          "refid": "R1",
+                          "time": 1700000100.000000001,
                           "type": "staking",
-                          "asset": "USD",
-                          "amount": "1.00",
-                          "fee": "0.00",
-                          "balance": "1.00"
+                          "subtype": "reward",
+                          "aclass": "currency",
+                          "asset": "DOT.S",
+                          "amount": "1.234567890123456789",
+                          "fee": "0.000000000000000001",
+                          "balance": "10.234567890123456789"
                         },
-                        "NULL-FIELDS": {
-                          "refid": null,
-                          "subtype": null,
-                          "aclass": null,
-                          "time": 1700000001,
-                          "type": "staking",
-                          "asset": "USD",
-                          "amount": "2.00",
-                          "fee": "0.00",
-                          "balance": "2.00"
+                        "L-BAD": {
+                          "asset": "XBT.F",
+                          "time": "bad-time",
+                          "amount": "bad-amount",
+                          "fee": "0",
+                          "balance": "1"
                         }
-                      }
+                      },
+                      "cursor": {}
                     }
                     """.trimIndent(),
                 ),
-                null,
-            )
-            count shouldBe 0
-            entries.size shouldBe 2
-            entries.forEach {
-                it.refid shouldBe null
-                it.subtype shouldBe null
-                it.aclass shouldBe null
-            }
-
-            val (invalidFeeEntries, _) = KrakenParsers.parseLedgerPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "ledger": {
-                        "INVALID-FEE": {
-                          "time": 1700000002,
-                          "type": "staking",
-                          "asset": "USD",
-                          "amount": "1.00",
-                          "fee": "not-a-number",
-                          "balance": "1.00"
-                        }
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                null,
-            )
-            invalidFeeEntries.single().hasValidFee shouldBe false
-        }
-
-        "rejects non-finite funding timestamps" {
-            val page = KrakenParsers.parseDepositStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposit": [{
-                        "asset": "USD",
-                        "refid": "NON-FINITE-TIME",
-                        "amount": "10.00",
-                        "time": "NaN",
-                        "status": "Success"
-                      }]
-                    }
-                    """.trimIndent(),
-                ),
+                startSec = null,
+                endSec = 1_700_001_000L,
+                requestedCursor = null,
             )
 
-            page.records shouldBe emptyList()
-        }
-
-        "rejects malformed or negative funding fees at the parser boundary" {
-            val page = KrakenParsers.parseDepositStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposit": [
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "GOOD",
-                          "amount": "10.00",
-                          "fee": "0.00",
-                          "time": 1700000000,
-                          "status": "Success"
-                        },
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "BAD-TEXT",
-                          "amount": "10.00",
-                          "fee": "not-a-number",
-                          "time": 1700000001,
-                          "status": "Success"
-                        },
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "BAD-SIGN",
-                          "amount": "10.00",
-                          "fee": "-0.01",
-                          "time": 1700000002,
-                          "status": "Success"
-                        }
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-            )
-
-            page.records.map { it.refid } shouldBe listOf("GOOD")
-        }
-
-        "parses funding v1 pages with nested amounts and next cursor" {
-            val page = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposits": [{
-                        "deposit_id": "FTCQ4qW-fWGQbQwUfqdnZo4dsMn1ao",
-                        "method_id": "method-1",
-                        "status": "success",
-                        "amount": {"asset": {"class": "currency", "name": "USDC"}, "amount": "20.00000000"},
-                        "fee": {"asset": {"class": "currency", "name": "USDC"}, "amount": "0.10000000"},
-                        "create_time": "2026-07-01T08:31:33Z"
-                      }],
-                      "next_cursor": "abc"
-                    }
-                    """.trimIndent(),
-                ),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            val record = page.records.single()
-            record.id shouldBe "FTCQ4qW-fWGQbQwUfqdnZo4dsMn1ao"
-            record.methodId shouldBe "method-1"
-            record.status shouldBe "success"
-            record.asset shouldBe "USDC"
-            record.amount shouldBeEqualComparingTo BigDecimal("20.00000000")
-            record.fee shouldBeEqualComparingTo BigDecimal("0.10000000")
-            record.hasAuthoritativeFee shouldBe true
-            record.time shouldBe Instant.parse("2026-07-01T08:31:33Z")
-            page.nextCursor shouldBe "abc"
-            page.rawCount shouldBe 1
-        }
-
-        "drops malformed funding v1 entries but reports the raw count" {
-            val page = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposits": [
-                        {
-                          "deposit_id": "GOOD-V1",
-                          "status": "success",
-                          "amount": {"asset": {"name": "USDC"}, "amount": "5.00000000"},
-                          "fee": {"amount": "0.00000000"},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        },
-                        {
-                          "deposit_id": "NO-TIME",
-                          "status": "success",
-                          "amount": {"asset": {"name": "USDC"}, "amount": "5.00000000"},
-                          "fee": {"amount": "0.00000000"},
-                          "create_time": "not-a-time"
-                        },
-                        {
-                          "deposit_id": "NEGATIVE",
-                          "status": "success",
-                          "amount": {"asset": {"name": "USDC"}, "amount": "-5.00000000"},
-                          "fee": {"amount": "0.00000000"},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        }
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            page.records.single().id shouldBe "GOOD-V1"
-            page.rawCount shouldBe 3
-        }
-
-        "parses funding method pages" {
-            val page = KrakenParsers.parseFundingMethodsPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "methods": [
-                        {"method_id": "method-1", "method_name": "ACH (Plaid Transfer, via Plaid)"},
-                        {"method_id": "", "method_name": "ignored"},
-                        {"method_id": "method-2"}
-                      ],
-                      "next_cursor": "next"
-                    }
-                    """.trimIndent(),
-                ),
-            )
-
-            page.records.single().methodId shouldBe "method-1"
-            page.records.single().methodName shouldBe "ACH (Plaid Transfer, via Plaid)"
-            page.nextCursor shouldBe "next"
-            page.rawCount shouldBe 3
-        }
-
-        "parses result-wrapped funding v1 pages and ignores non-array containers" {
-            val wrapped = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree(
-                    """
-                    {
-                      "result": {
-                        "deposits": [{
-                          "deposit_id": "WRAPPED-1",
-                          "status": "success",
-                          "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
-                          "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        }],
-                        "next_cursor": "wrapped-next"
-                      }
-                    }
-                    """.trimIndent(),
-                ),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            wrapped.records.single().id shouldBe "WRAPPED-1"
-            wrapped.nextCursor shouldBe "wrapped-next"
-            wrapped.rawCount shouldBe 1
-
-            val notAnArray = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree("""{"result": {"deposits": {}}}"""),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            notAnArray.records shouldBe emptyList()
-            notAnArray.nextCursor shouldBe null
-            notAnArray.rawCount shouldBe 0
-        }
-
-        "drops malformed funding v1 entries and keeps blank-fee precision flags" {
-            val page = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposits": [
-                        "not-an-object",
-                        {
-                          "deposit_id": " ",
-                          "amount": {"asset": {"name": "USD"}, "amount": "5.00"},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        },
-                        {
-                          "deposit_id": "NO-AMOUNT",
-                          "create_time": "2026-07-01T08:31:33Z"
-                        },
-                        {
-                          "deposit_id": "NEGATIVE-FEE",
-                          "amount": {"asset": {"name": "USD"}, "amount": "5.00"},
-                          "fee": {"asset": {"name": "USD"}, "amount": "-0.01"},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        },
-                        {
-                          "deposit_id": "BLANK-FEE",
-                          "amount": {"asset": {"name": "USDC"}, "amount": "20.00000000"},
-                          "fee": {"asset": {"name": "USDC"}, "amount": ""},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        }
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            page.rawCount shouldBe 5
-            page.records.single().id shouldBe "BLANK-FEE"
-            page.records.single().methodId shouldBe null
-            page.records.single().hasAuthoritativeFee shouldBe false
-        }
-
-        "handles absent or incomplete funding method entries" {
-            val absent = KrakenParsers.parseFundingMethodsPage(objectMapper.readTree("{}"))
-
-            absent.records shouldBe emptyList()
-            absent.nextCursor shouldBe null
-            absent.rawCount shouldBe 0
-            absent.containerWellFormed shouldBe false
-
-            val malformedContainer = KrakenParsers.parseFundingMethodsPage(
-                objectMapper.readTree("""{"methods": {"method_id": "m-1"}}"""),
-            )
-
-            malformedContainer.records shouldBe emptyList()
-            malformedContainer.containerWellFormed shouldBe false
-
-            val incomplete = KrakenParsers.parseFundingMethodsPage(
-                objectMapper.readTree("""{"methods": [{"method_id": "m-1"}, {"method_name": "Wire"}]}"""),
-            )
-
-            incomplete.records shouldBe emptyList()
-            incomplete.rawCount shouldBe 2
-            incomplete.containerWellFormed shouldBe true
-        }
-
-        "parses withdrawal status pages from the withdrawal container" {
-            val page = KrakenParsers.parseWithdrawStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "withdrawal": [
-                        {
-                          "method": "Bitcoin",
-                          "asset": "XXBT",
-                          "refid": "W-GOOD",
-                          "amount": "0.25",
-                          "fee": "0.0002",
-                          "time": 1700000000,
-                          "status": "Success"
-                        },
-                        {
-                          "asset": "XXBT",
-                          "amount": "0.10",
-                          "time": 1700000001,
-                          "status": "Success"
-                        }
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-            )
-
-            page.records.single().refid shouldBe "W-GOOD"
-            page.rawCount shouldBe 2
-        }
-
-        "parses empty funding v1 pages from root arrays" {
-            val page = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree("[]"),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            page.records shouldBe emptyList()
-            page.rawCount shouldBe 0
+            page.valid shouldBe true
+            page.startSec shouldBe null
+            page.endSec shouldBe 1_700_001_000L
+            page.requestedCursor shouldBe null
             page.nextCursor shouldBe null
+            page.count shouldBe null
+            page.rawSize shouldBe 2
+
+            val staking = page.entries.first()
+            staking.ledgerId shouldBe "L-DOT"
+            staking.refid shouldBe "R1"
+            staking.time shouldBe Instant.parse("2023-11-14T22:15:00.000000001Z")
+            staking.assetClass shouldBe "currency"
+            staking.asset shouldBe "DOT.S"
+            staking.amount shouldBe "1.234567890123456789"
+            staking.fee shouldBe "0.000000000000000001"
+            staking.balance shouldBe "10.234567890123456789"
+            staking.hasValidAmount shouldBe true
+
+            val malformed = page.entries.last()
+            malformed.asset shouldBe "XBT.F"
+            malformed.rawTime shouldBe "bad-time"
+            malformed.time shouldBe null
+            malformed.hasValidTime shouldBe false
+            malformed.hasValidAmount shouldBe false
+            malformed.rawRecordJson!!.contains("XBT.F") shouldBe true
         }
 
-        "drops legacy funding entries with missing amounts" {
-            val depositPage = KrakenParsers.parseDepositStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposit": [
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "LEGACY-GOOD",
-                          "txid": "legacy-tx",
-                          "amount": "10.00",
-                          "fee": "0.00",
-                          "time": 1700000000,
-                          "status": "Success"
-                        },
-                        {"asset": "USD", "refid": "LEGACY-NO-AMOUNT", "time": 1700000000, "status": "Success"}
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
+        "validates native page containers, optional count, and cursor tokens" {
+            val validTerminalResponses = listOf(
+                """{"trades":{}}""",
+                """{"trades":{},"count":null,"cursor":{}}""",
+                """{"trades":{},"cursor":{"next":null}}""",
             )
-            val withdrawalPage = KrakenParsers.parseWithdrawStatusPage(
-                objectMapper.readTree(
-                    """
-                    {
-                      "withdrawal": [
-                        {
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "LEGACY-W-GOOD",
-                          "txid": "legacy-w-tx",
-                          "amount": "10.00",
-                          "fee": "0.00",
-                          "time": 1700000000,
-                          "status": "Success"
-                        },
-                        {"asset": "USD", "refid": "LEGACY-W-NO-AMOUNT", "time": 1700000000, "status": "Success"}
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-            )
+            validTerminalResponses.forEach { response ->
+                KrakenParsers.parseAccountTradePage(
+                    objectMapper.readTree(response),
+                    startSec = null,
+                    endSec = null,
+                    requestedCursor = null,
+                ).valid shouldBe true
+            }
 
-            depositPage.records.single().refid shouldBe "LEGACY-GOOD"
-            depositPage.rawCount shouldBe 2
-            withdrawalPage.records.single().refid shouldBe "LEGACY-W-GOOD"
-            withdrawalPage.rawCount shouldBe 2
-        }
-
-        "drops funding v1 entries with unparseable fees" {
-            val page = KrakenParsers.parseFundingV1Page(
-                objectMapper.readTree(
-                    """
-                    {
-                      "deposits": [
-                        {
-                          "deposit_id": "BAD-FEE",
-                          "status": "success",
-                          "amount": {"asset": {"class": "currency", "name": "USDC"}, "amount": "5.00"},
-                          "fee": {"asset": {"class": "currency", "name": "USDC"}, "amount": "not-a-number"},
-                          "create_time": "2026-07-01T08:31:33Z"
-                        }
-                      ]
-                    }
-                    """.trimIndent(),
-                ),
-                KrakenApiConstants.FIELD_DEPOSITS,
-                KrakenApiConstants.FIELD_DEPOSIT_ID,
-            )
-
-            page.records.size shouldBe 0
-            page.rawCount shouldBe 1
+            listOf(
+                """{"trades":[],"cursor":{}}""",
+                """{"trades":{},"count":-1}""",
+                """{"trades":{},"cursor":{"next":" "}}""",
+                """{"trades":{},"cursor":{"next":17}}""",
+                """{"ledger":[],"cursor":{}}""",
+            ).forEach { response ->
+                val root = objectMapper.readTree(response)
+                if (root.has("ledger")) {
+                    KrakenParsers.parseAccountLedgerPage(root, null, null, null).valid shouldBe false
+                } else {
+                    KrakenParsers.parseAccountTradePage(root, null, null, null).valid shouldBe false
+                }
+            }
         }
 
         "parses OHLC golden response while ignoring last and malformed rows" {
@@ -1287,122 +399,128 @@ class KrakenParsersTest : StringSpec() {
             ) shouldBe emptyList()
         }
 
-        "parseTradeHistoryPage preserves unsupported non-USD pairs with zero usd and diagnostic error" {
+        "parses account trade edge cases for single-element ledgers, zero/negative metrics, and invalid timestamps" {
             val json = objectMapper.readTree(
                 """
                 {
-                  "result": {
-                    "count": 3,
-                    "trades": {
-                      "T1": {
-                        "pair": "XBTUSD",
-                        "time": 1700000000.0,
-                        "type": "buy",
-                        "price": "50000.00",
-                        "cost": "5000.00",
-                        "vol": "0.10000000",
-                        "fee": "1.00"
-                      },
-                      "T2": {
-                        "pair": "SOLUSDT",
-                        "time": 1700000010.0,
-                        "type": "buy",
-                        "price": "150.00",
-                        "cost": "1500.00",
-                        "vol": "10.00000000",
-                        "fee": "2.00"
-                      },
-                      "T3": {
-                        "pair": "UNKNWNZZZ",
-                        "time": 1700000020.0,
-                        "type": "sell",
-                        "price": "1.00",
-                        "cost": "10.00",
-                        "vol": "10.00000000",
-                        "fee": "0.00"
-                      }
+                  "trades": {
+                    "T1": {
+                      "time": "-100",
+                      "pair": "XBTUSD",
+                      "price": "0",
+                      "cost": "-5",
+                      "fee": "-1",
+                      "vol": "0",
+                      "type": "buy",
+                      "ordertype": "limit",
+                      "ledgers": "L-SINGLE"
+                    },
+                    "T2": {
+                      "time": "1700000000.12345678901",
+                      "pair": "XBTUSD",
+                      "price": "not-a-number",
+                      "cost": "not-a-number",
+                      "fee": "not-a-number",
+                      "vol": "not-a-number",
+                      "type": "sell",
+                      "ordertype": "market"
                     }
                   }
                 }
                 """.trimIndent(),
             )
-            val parsed = KrakenParsers.parseTradeHistoryPage(
-                json.get("result"),
-                listOf("BTC", "SOL"),
-                preserveUnmapped = true,
-            )
-            parsed.hasTradeContainer shouldBe true
-            parsed.hasTotalCount shouldBe true
-            parsed.totalCount shouldBe 3
-            parsed.rawPageSize shouldBe 3
-            parsed.entries.size shouldBe 3
+            val page = KrakenParsers.parseAccountTradePage(json, null, null, null)
+            page.valid shouldBe true
+            page.entries.size shouldBe 2
 
-            val normal = parsed.entries.first { it.tradeId == "T1" }
-            normal.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
-            normal.errorMessage shouldBe null
+            val t1 = page.entries.first { it.tradeId == "T1" }
+            t1.hasValidTime shouldBe false
+            t1.time shouldBe null
+            t1.hasValidPrice shouldBe false
+            t1.hasValidCost shouldBe false
+            t1.hasValidFee shouldBe false
+            t1.hasValidVolume shouldBe false
+            t1.ledgerIds shouldBe listOf("L-SINGLE")
 
-            val unsupported = parsed.entries.first { it.tradeId == "T2" }
-            unsupported.usdAmount.shouldBeEqualComparingTo(BigDecimal.ZERO)
-            unsupported.errorMessage shouldBe "unsupported historical trade market: SOLUSDT"
-
-            val unparseable = parsed.entries.first { it.tradeId == "T3" }
-            unparseable.symbol shouldBe "UNKNWNZZZ"
-            unparseable.errorMessage shouldBe "unsupported historical trade market: UNKNWNZZZ"
+            val t2 = page.entries.first { it.tradeId == "T2" }
+            t2.hasValidTime shouldBe false
+            t2.hasValidPrice shouldBe false
+            t2.hasValidCost shouldBe false
+            t2.hasValidFee shouldBe false
+            t2.hasValidVolume shouldBe false
+            t2.ledgerIds shouldBe null
         }
 
-        "parseTradeHistoryPage validates envelope shape and count presence" {
-            // Missing count
-            val noCountJson = objectMapper.readTree(
+        "parses account ledger edge cases for malformed amount, negative fee, and invalid balance" {
+            val json = objectMapper.readTree(
                 """
                 {
-                  "result": {
-                    "trades": {}
-                  }
-                }
-                """.trimIndent(),
-            )
-            val parsedNoCount = KrakenParsers.parseTradeHistoryPage(noCountJson.get("result"), emptyList())
-            parsedNoCount.hasTradeContainer shouldBe true
-            parsedNoCount.hasTotalCount shouldBe false
-            parsedNoCount.totalCount shouldBe 0
-            parsedNoCount.rawPageSize shouldBe 0
-
-            // Fractional, out-of-int-range, and negative counts are all unknown totals
-            listOf("1.5", "5000000000", "-1").forEach { rawCount ->
-                val malformed = objectMapper.readTree(
-                    """
-                    {
-                      "result": {
-                        "count": $rawCount,
-                        "trades": {}
-                      }
+                  "ledger": {
+                    "L1": {
+                      "time": "1700000000",
+                      "type": "deposit",
+                      "asset": "USD",
+                      "amount": "not-a-number",
+                      "fee": "-0.5",
+                      "balance": "not-a-number"
                     }
-                    """.trimIndent(),
-                )
-                val parsedMalformed = KrakenParsers.parseTradeHistoryPage(malformed.get("result"), emptyList())
-                parsedMalformed.hasTradeContainer shouldBe true
-                parsedMalformed.hasTotalCount shouldBe false
-                parsedMalformed.totalCount shouldBe 0
-            }
-
-            // Trades is array instead of object -> invalid page shape
-            val arrayTradesJson = objectMapper.readTree(
-                """
-                {
-                  "result": {
-                    "count": 0,
-                    "trades": []
                   }
                 }
                 """.trimIndent(),
             )
-            val parsedArray = KrakenParsers.parseTradeHistoryPage(arrayTradesJson.get("result"), emptyList())
-            parsedArray.hasTradeContainer shouldBe false
+            val page = KrakenParsers.parseAccountLedgerPage(json, null, null, null)
+            page.valid shouldBe true
+            val entry = page.entries.single()
+            entry.hasValidAmount shouldBe false
+            entry.hasValidFee shouldBe false
+            entry.hasValidBalance shouldBe false
+        }
 
-            // Result content is empty (no trades node at all)
-            val emptyResultJson = objectMapper.readTree("{}")
-            val parsedMissing = KrakenParsers.parseTradeHistoryPage(emptyResultJson, emptyList())
-            parsedMissing.hasTradeContainer shouldBe false
+        "parses direct ticker capture edge cases including malformed root, missing, ambiguous, and non-positive marks" {
+            val now = Instant.now()
+            val requests = listOf(
+                DirectTickerRequest("BTC", "XXBTZUSD"),
+                DirectTickerRequest("ETH", "XETHZUSD"),
+                DirectTickerRequest("SOL", "SOLUSD"),
+            )
+
+            // Non-object root -> MALFORMED
+            val malformedCapture = KrakenParsers.parseDirectTickerCapture(
+                objectMapper.readTree("[]"),
+                requests,
+                now,
+                now,
+            )
+            malformedCapture.resultShapeValid shouldBe false
+            malformedCapture.marksBySymbol.getValue("BTC").status shouldBe DirectEvidenceStatus.MALFORMED
+
+            // Ticker with empty "c", non-array "c", non-positive "c", missing candidate, and ambiguous candidate
+            val tickerJson = objectMapper.readTree(
+                """
+                {
+                  "XXBTZUSD": { "c": [] },
+                  "XETHZUSD": { "c": "not-an-array" },
+                  "SOLUSD": { "c": ["0.00"] },
+                  "EXTRA_BTC_USD": { "c": ["50000"] },
+                  "XBTUSD": { "c": ["50000"] }
+                }
+                """.trimIndent(),
+            )
+            val capture = KrakenParsers.parseDirectTickerCapture(
+                tickerJson,
+                listOf(
+                    DirectTickerRequest("BTC", "XXBTZUSD"),
+                    DirectTickerRequest("ETH", "XETHZUSD"),
+                    DirectTickerRequest("SOL", "SOLUSD"),
+                    DirectTickerRequest("DOGE", "XDGUSD"),
+                ),
+                now,
+                now,
+            )
+            capture.marksBySymbol.getValue("BTC").status shouldBe DirectEvidenceStatus.AMBIGUOUS
+            capture.marksBySymbol.getValue("ETH").status shouldBe DirectEvidenceStatus.MALFORMED
+            capture.marksBySymbol.getValue("SOL").status shouldBe DirectEvidenceStatus.NON_POSITIVE
+            capture.marksBySymbol.getValue("DOGE").status shouldBe DirectEvidenceStatus.MISSING
         }
     }
 }

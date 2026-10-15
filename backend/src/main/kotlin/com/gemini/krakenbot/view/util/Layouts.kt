@@ -23,7 +23,7 @@ fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.()
 
 enum class ActiveNav {
     DASHBOARD,
-    ACTUAL,
+    HISTORY,
     SETTINGS,
 }
 
@@ -100,7 +100,7 @@ fun FlowContent.streamStatusPlaceholder() {
 fun FlowContent.brandWithMode(
     settings: Settings,
     includeStreamSlot: Boolean = false,
-    trailingContent: FlowContent.() -> Unit = {},
+    trailingContent: (FlowContent.() -> Unit)? = null,
 ) {
     val titleClass =
         CssClass.Layout.HeaderTitleSection +
@@ -113,7 +113,7 @@ fun FlowContent.brandWithMode(
         if (includeStreamSlot) {
             streamStatusPlaceholder()
         }
-        trailingContent()
+        trailingContent?.invoke(this)
     }
 }
 
@@ -155,40 +155,16 @@ fun FlowContent.primaryNav(active: ActiveNav) {
             +ViewText.NAV_DASHBOARD
         }
         a(
-            cssClass = if (active == ActiveNav.ACTUAL) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
-            href = Routes.ACTUAL,
+            cssClass = if (active == ActiveNav.HISTORY) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
+            href = Routes.HISTORY,
         ) {
-            +ViewText.ACTUAL_NAV
+            +ViewText.NAV_HISTORY
         }
         a(
             cssClass = if (active == ActiveNav.SETTINGS) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
             href = Routes.SETTINGS,
         ) {
             +ViewText.NAV_SETTINGS
-        }
-    }
-}
-
-fun FlowContent.statusCard(
-    title: String,
-    iconSvg: String,
-    value: String,
-    valueId: String? = null,
-    titleId: String? = null,
-) {
-    div(CssClass.StatusCard.Default) {
-        div(CssClass.StatusCard.Header) {
-            span(CssClass.StatusCard.Title) {
-                if (titleId != null) id = titleId
-                +title
-            }
-            div(CssClass.StatusCard.Icon) { icon(iconSvg) }
-        }
-        div(CssClass.StatusCard.Value) {
-            if (valueId != null) {
-                id = valueId
-            }
-            +value
         }
     }
 }

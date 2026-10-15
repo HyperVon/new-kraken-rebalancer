@@ -113,9 +113,7 @@ class ConfigServiceTest : StringSpec() {
                     "loopDelaySeconds": 60,
                     "deviationTriggerPercent": 2.0,
                     "minimumOrderSizeUSD": 5.0,
-                    "dryRun": true,
-                    "fiatMaxDrawdown": 0.0,
-                    "fiatDeploymentExponent": 1.0
+                    "dryRun": true
                   },
                   "allocations": [{"symbol": "USD", "targetPercent": 100.0}]
                 }
@@ -834,39 +832,6 @@ class ConfigServiceTest : StringSpec() {
             }
         }
 
-        "loadConfig ignores retired settings while preserving the configured allocation" {
-            runTest {
-                tempFile.writeText(
-                    """
-                    {
-                      "kraken": { "apiKey": "k", "privateKey": "s" },
-                      "settings": {
-                        "loopDelaySeconds": 60,
-                        "deviationTriggerPercent": 2.0,
-                        "minimumOrderSizeUSD": 5.0,
-                        "dryRun": true,
-                        "simulation": true,
-                        "fiatMaxDrawdown": 70.0,
-                        "fiatDeploymentExponent": 3.0,
-                        "fiatDeploymentThresholdPercent": 5.0,
-                        "inceptionDate": "not-a-date",
-                        "comparisonStartDate": "also-retired"
-                      },
-                      "allocations": [
-                        { "symbol": "BTC", "targetPercent": 60.0 },
-                        { "symbol": "USD", "targetPercent": 40.0 }
-                      ]
-                    }
-                    """.trimIndent(),
-                )
-                configService.loadConfig()
-                configService.getConfig().settings.loopDelaySeconds shouldBe 60L
-                configService.getConfig().allocations.map { it.symbol.value to it.targetPercent } shouldBe
-                    listOf("BTC" to 60.0, "USD" to 40.0)
-                tempFile.readText() shouldContain "fiatMaxDrawdown"
-            }
-        }
-
         "saveConfig_Exception" {
             runTest {
                 val mockMapper = mockk<ObjectMapper>(relaxed = true)
@@ -1194,56 +1159,6 @@ class ConfigServiceTest : StringSpec() {
                 service.getConfig().settings.loopDelaySeconds shouldBe 120L
             }
         }
-        "loadConfig renames legacy dustThresholdUSD to minimumOrderSizeUSD when only legacy exists" {
-            tempFile.writeText(
-                """
-                {
-                  "kraken": { "apiKey": "k", "privateKey": "s" },
-                  "settings": {
-                    "loopDelaySeconds": 60,
-                    "deviationTriggerPercent": 2.0,
-                    "dustThresholdUSD": 5.0,
-                    "dryRun": true
-                  },
-                  "allocations": [{"symbol": "USD", "targetPercent": 100.0}]
-                }
-                """.trimIndent(),
-            )
-
-            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
-        }
-
-        "loadConfig removes legacy dustThresholdUSD when minimumOrderSizeUSD already exists" {
-            tempFile.writeText(
-                """
-                {
-                  "kraken": { "apiKey": "k", "privateKey": "s" },
-                  "settings": {
-                    "loopDelaySeconds": 60,
-                    "deviationTriggerPercent": 2.0,
-                    "minimumOrderSizeUSD": 5.0,
-                    "dustThresholdUSD": 3.0,
-                    "dryRun": true
-                  },
-                  "allocations": [{"symbol": "USD", "targetPercent": 100.0}]
-                }
-                """.trimIndent(),
-            )
-
-            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
-        }
-
-        "loadConfig leaves config unchanged when no legacy dustThresholdUSD key is present" {
-            createValidConfig(tempFile)
-            val originalContent = tempFile.readText()
-
-            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
-            tempFile.readText() shouldBe originalContent
-        }
-
         "endExecutionSession completes while updateConfig is waiting on a slow atomic write" {
             runTest {
                 val lockHoldGate = CompletableDeferred<Unit>()

@@ -1,18 +1,43 @@
 package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentState
+import com.gemini.krakenbot.model.RebalancerOrderIdentities
+import java.math.BigDecimal
+import java.time.Instant
 
-data class PendingTradeProjection(
-    val journalId: String,
-    val eventId: Long,
-    val revision: Long,
-    val intent: OrderIntent,
-)
+interface ExecutionOrderIntentRepository {
+    suspend fun savePending(intent: OrderIntent): Int
 
-interface ExecutionOrderIntentRepository : OrderIntentRepository {
-    fun journalId(): String
+    suspend fun recordOutcome(
+        id: Int,
+        state: OrderIntentState,
+        orderTxid: String?,
+        errorMessage: String?,
+        resolvedAt: Instant?,
+        outcomeVolume: BigDecimal? = null,
+    ): Boolean
+
+    suspend fun ensureReadyForSubmission()
+
+    suspend fun hasUnresolvedIntents(): Boolean
+
+    suspend fun countUnresolvedIntents(): Long
+
+    suspend fun loadUnresolvedIntents(): List<OrderIntent>
+
+    suspend fun resolve(
+        id: Int,
+        state: OrderIntentState,
+        evidence: String,
+        resolvedAt: Instant,
+        orderTxid: String? = null,
+    ): Boolean
+
+    suspend fun getKnownRebalancerOrderIdentities(
+        orderTxids: Set<String>,
+        clientOrderIds: Set<String>,
+    ): RebalancerOrderIdentities
 
     suspend fun recoverInterruptedSubmissions()
-
-    suspend fun loadProjectionEvents(afterEventId: Long, limit: Int = 100): List<PendingTradeProjection>
 }

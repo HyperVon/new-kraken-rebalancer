@@ -34,7 +34,7 @@ which owns source edits and screenshot verification.
 | Skill | Owns |
 | :--- | :--- |
 | ui-visual-guidance-and-aesthetics | Design principles, hierarchy, aesthetics, decisions, acceptance criteria |
-| ui-visual-review | Actual UI boot, screenshots, visual critique |
+| ui-visual-review | Dashboard, Settings, and History boot, screenshots, visual critique |
 | ui-visual-implement | Approved visual implementation and screenshot verification |
 | ui-manual-qa | Functional interaction and browser QA |
 | ktor-html-views | SSR markup, HTMX, and CSS implementation |

@@ -7,12 +7,14 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
+import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistoryService
+import com.gemini.krakenbot.service.history.HistorySynchronizer
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
@@ -40,7 +42,9 @@ abstract class DashboardControllerTestBase : StringSpec() {
     protected val configService = mockk<ConfigService>(relaxed = true)
     protected val portfolioManager = mockk<PortfolioManager>(relaxed = true)
     protected val orderIntentService = mockk<OrderIntentService>(relaxed = true)
-    protected val actualObservationDispatcher = mockk<ActualObservationDispatcher>(relaxed = true)
+    protected val historyService = mockk<HistoryService>(relaxed = true)
+    protected val historyObservationRecorder = mockk<HistoryObservationRecorder>(relaxed = true)
+    protected val historySynchronizer = mockk<HistorySynchronizer>(relaxed = true)
     protected val currentPortfolioState = CurrentPortfolioState()
     protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
 
@@ -55,7 +59,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
                 performanceTableComponent = PerformanceTableComponent(),
                 recentActivityComponent = RecentActivityComponent(),
             ),
-            actualObservationsPageComponent = ActualObservationsPageComponent(),
+            historyPageComponent = HistoryPageComponent(),
         )
         val controller = DashboardController(
             configService = configService,
@@ -64,7 +68,9 @@ abstract class DashboardControllerTestBase : StringSpec() {
             portfolioManager = portfolioManager,
             currentPortfolioState = currentPortfolioState,
             orderIntentService = orderIntentService,
-            actualObservationDispatcher = actualObservationDispatcher,
+            historyService = historyService,
+            historyObservationRecorder = historyObservationRecorder,
+            historySynchronizer = historySynchronizer,
         )
         routing { controller.registerRoutes(this) }
     }

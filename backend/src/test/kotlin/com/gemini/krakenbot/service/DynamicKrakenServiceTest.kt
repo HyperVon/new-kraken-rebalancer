@@ -99,47 +99,30 @@ class DynamicKrakenServiceTest : StringSpec() {
                 realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
-            dynamicService.getTradeHistory(12345L, 10)
-            coVerify(exactly = 1) { simulatedService.getTradeHistory(12345L, 10) }
-            coVerify(exactly = 0) { realService.getTradeHistory(any(), any()) }
+            dynamicService.getAccountTradePage(12345L, null, null, 10)
+            coVerify(exactly = 1) { simulatedService.getAccountTradePage(12345L, null, null, 10) }
+            coVerify(exactly = 0) { realService.getAccountTradePage(any(), any(), any(), any()) }
 
             dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
             coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
         }
 
-        "forwards bounded trade history to the selected backend" {
+        "forwards cursor trade pages to the selected backend" {
             every { configService.getConfig() } returns appConfig(simulation = true)
             val dynamicService = createService()
 
-            dynamicService.getTradeHistoryUntil(12345L, 10, 12399L)
+            dynamicService.getAccountTradePage(12345L, 12399L, "cursor-a", 10)
 
-            coVerify(exactly = 1) { simulatedService.getTradeHistoryUntil(12345L, 10, 12399L) }
-            coVerify(exactly = 0) { realService.getTradeHistoryUntil(any(), any(), any()) }
-
-            every { configService.getConfig() } returns appConfig(simulation = false)
-
-            dynamicService.getTradeHistoryUntil(12345L, 10, 12399L)
-
-            coVerify(exactly = 1) { realService.getTradeHistoryUntil(12345L, 10, 12399L) }
-            coVerify(exactly = 1) { simulatedService.getTradeHistoryUntil(12345L, 10, 12399L) }
-        }
-
-        "forwards recovery trade history to the selected backend" {
-            every { configService.getConfig() } returns appConfig(simulation = true)
-            val dynamicService = createService()
-
-            dynamicService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L)
-
-            coVerify(exactly = 1) { simulatedService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L) }
-            coVerify(exactly = 0) { realService.getRecoveryTradeHistoryUntil(any(), any(), any()) }
+            coVerify(exactly = 1) { simulatedService.getAccountTradePage(12345L, 12399L, "cursor-a", 10) }
+            coVerify(exactly = 0) { realService.getAccountTradePage(any(), any(), any(), any()) }
 
             every { configService.getConfig() } returns appConfig(simulation = false)
 
-            dynamicService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L)
+            dynamicService.getAccountTradePage(12345L, 12399L, "cursor-a", 10)
 
-            coVerify(exactly = 1) { realService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L) }
-            coVerify(exactly = 1) { simulatedService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L) }
+            coVerify(exactly = 1) { realService.getAccountTradePage(12345L, 12399L, "cursor-a", 10) }
+            coVerify(exactly = 1) { simulatedService.getAccountTradePage(12345L, 12399L, "cursor-a", 10) }
         }
 
         "forwards clOrdId to the real backend when simulation is false" {
@@ -233,9 +216,9 @@ class DynamicKrakenServiceTest : StringSpec() {
                 simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
-            dynamicService.getTradeHistory(null, null)
-            coVerify(exactly = 1) { realService.getTradeHistory(null, null) }
-            coVerify(exactly = 0) { simulatedService.getTradeHistory(any(), any()) }
+            dynamicService.getAccountTradePage(null, null, null, null)
+            coVerify(exactly = 1) { realService.getAccountTradePage(null, null, null, null) }
+            coVerify(exactly = 0) { simulatedService.getAccountTradePage(any(), any(), any(), any()) }
 
             dynamicService.getOHLC(TestFixtures.BTCUSD, 60, 1L)
             coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 60, 1L) }
@@ -477,94 +460,37 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 1) { realService.getAssetMetadata() }
         }
 
-        "delegates ledger queries to the selected backend" {
+        "delegates cursor ledger pages to the selected backend" {
             every { configService.getConfig() } returns appConfig(simulation = false)
             val dynamicService = createService()
 
-            dynamicService.getLedgers(12345L, 10, 12399L, setOf("staking"))
-            coVerify(exactly = 1) { realService.getLedgers(12345L, 10, 12399L, setOf("staking")) }
-            coVerify(exactly = 0) { simulatedService.getLedgers(any(), any(), any(), any()) }
+            dynamicService.getAccountLedgerPage(12345L, 12399L, "cursor-a")
+            coVerify(exactly = 1) { realService.getAccountLedgerPage(12345L, 12399L, "cursor-a") }
+            coVerify(exactly = 0) { simulatedService.getAccountLedgerPage(any(), any(), any()) }
 
             every { configService.getConfig() } returns appConfig(simulation = true)
 
-            dynamicService.getLedgers(12345L, 10, 12399L, setOf("dividend"))
-            coVerify(exactly = 1) { simulatedService.getLedgers(12345L, 10, 12399L, setOf("dividend")) }
-            coVerify(exactly = 0) { realService.getLedgers(12345L, 10, 12399L, setOf("dividend")) }
+            dynamicService.getAccountLedgerPage(12345L, 12399L, "cursor-b")
+            coVerify(exactly = 1) { simulatedService.getAccountLedgerPage(12345L, 12399L, "cursor-b") }
+            coVerify(exactly = 0) { realService.getAccountLedgerPage(12345L, 12399L, "cursor-b") }
         }
 
-        "delegates funding evidence and API counter queries to the selected backend" {
+        "delegates API counter and credential scope queries to the selected backend" {
             every { configService.getConfig() } returns appConfig(simulation = false)
             val dynamicService = createService()
 
-            dynamicService.getDepositStatus(10L, 20L)
-            dynamicService.getWithdrawStatus(10L, 20L)
-            dynamicService.getInternalTransfers(10L, 20L)
             dynamicService.getFundingEvidenceScope()
             dynamicService.getApiCallCounter()
 
-            coVerify(exactly = 1) { realService.getDepositStatus(10L, 20L) }
-            coVerify(exactly = 1) { realService.getWithdrawStatus(10L, 20L) }
-            coVerify(exactly = 1) { realService.getInternalTransfers(10L, 20L) }
             coVerify(exactly = 1) { realService.getFundingEvidenceScope() }
             coVerify(exactly = 1) { realService.getApiCallCounter() }
-            coVerify(exactly = 0) { simulatedService.getDepositStatus(any(), any()) }
 
             every { configService.getConfig() } returns appConfig(simulation = true)
-            dynamicService.getDepositStatus(30L, 40L)
-            dynamicService.getWithdrawStatus(30L, 40L)
-            dynamicService.getInternalTransfers(30L, 40L)
             dynamicService.getFundingEvidenceScope()
             dynamicService.getApiCallCounter()
 
-            coVerify(exactly = 1) { simulatedService.getDepositStatus(30L, 40L) }
-            coVerify(exactly = 1) { simulatedService.getWithdrawStatus(30L, 40L) }
-            coVerify(exactly = 1) { simulatedService.getInternalTransfers(30L, 40L) }
             coVerify(exactly = 1) { simulatedService.getFundingEvidenceScope() }
             coVerify(exactly = 1) { simulatedService.getApiCallCounter() }
-        }
-
-        "caches the last ledger total count from the selected backend" {
-            every { configService.getConfig() } returns appConfig(simulation = false)
-            every { realService.getLastLedgerTotalCount() } returns 7
-            every { realService.hasLastLedgerTotalCount() } returns true
-            every { realService.hasLastLedgerPageShape() } returns true
-            val dynamicService = createService()
-
-            dynamicService.getLedgers()
-            dynamicService.getLastLedgerTotalCount() shouldBe 7
-            dynamicService.hasLastLedgerTotalCount() shouldBe true
-            dynamicService.hasLastLedgerPageShape() shouldBe true
-            coVerify(exactly = 1) { realService.getLastLedgerTotalCount() }
-            verify(exactly = 1) { realService.hasLastLedgerTotalCount() }
-            verify(exactly = 1) { realService.hasLastLedgerPageShape() }
-        }
-
-        "caches the last trade history total count, envelope shape, and raw page size from the selected backend" {
-            every { configService.getConfig() } returns appConfig(simulation = false)
-            every { realService.getLastTradeHistoryTotalCount() } returnsMany listOf(12, 34, 56)
-            every { realService.hasLastTradeHistoryTotalCount() } returns true
-            every { realService.hasLastTradeHistoryPageShape() } returns true
-            every { realService.getLastTradeHistoryRawPageSize() } returns 50
-            coEvery { realService.getTradeHistory(any(), any()) } returns emptyList()
-            val dynamicService = createService()
-
-            dynamicService.getTradeHistory()
-            dynamicService.getLastTradeHistoryTotalCount() shouldBe 12
-            dynamicService.hasLastTradeHistoryTotalCount() shouldBe true
-            dynamicService.hasLastTradeHistoryPageShape() shouldBe true
-            dynamicService.getLastTradeHistoryRawPageSize() shouldBe 50
-            verify(exactly = 1) { realService.getLastTradeHistoryTotalCount() }
-            verify(exactly = 1) { realService.hasLastTradeHistoryTotalCount() }
-            verify(exactly = 1) { realService.hasLastTradeHistoryPageShape() }
-            verify(exactly = 1) { realService.getLastTradeHistoryRawPageSize() }
-
-            coEvery { realService.getTradeHistoryUntil(any(), any(), any()) } returns emptyList()
-            dynamicService.getTradeHistoryUntil(100L, 0, 200L)
-            dynamicService.getLastTradeHistoryTotalCount() shouldBe 34
-
-            coEvery { realService.getRecoveryTradeHistoryUntil(any(), any(), any()) } returns emptyList()
-            dynamicService.getRecoveryTradeHistoryUntil(100L, 0, 200L)
-            dynamicService.getLastTradeHistoryTotalCount() shouldBe 56
         }
     }
 }

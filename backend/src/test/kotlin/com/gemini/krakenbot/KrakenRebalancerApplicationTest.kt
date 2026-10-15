@@ -36,10 +36,10 @@ class KrakenRebalancerApplicationTest :
 
     init {
         "verify koin modules" {
-            val previousDbPath = System.getProperty("kraken.db.path")
-            val previousExecutionDbPath = System.getProperty("kraken.execution.db.path")
-            System.setProperty("kraken.db.path", TestFixtures.MEMORY_)
-            System.setProperty("kraken.execution.db.path", TestFixtures.MEMORY_)
+            val previousDataDir = System.getProperty(com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY)
+            val tempDir = java.nio.file.Files.createTempDirectory("rebalancer-app-test-")
+            com.gemini.krakenbot.config.DataDirectoryConfig.initializeDataDirectory(tempDir)
+            System.setProperty(com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY, tempDir.toString())
             try {
                 stopKoin()
                 val config = mockk<ConfigService>(relaxed = true)
@@ -61,16 +61,15 @@ class KrakenRebalancerApplicationTest :
                 controller.shouldBeInstanceOf<DashboardController>()
             } finally {
                 stopKoin()
-                if (previousDbPath != null) {
-                    System.setProperty("kraken.db.path", previousDbPath)
+                if (previousDataDir != null) {
+                    System.setProperty(
+                        com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY,
+                        previousDataDir,
+                    )
                 } else {
-                    System.clearProperty("kraken.db.path")
+                    System.clearProperty(com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY)
                 }
-                if (previousExecutionDbPath != null) {
-                    System.setProperty("kraken.execution.db.path", previousExecutionDbPath)
-                } else {
-                    System.clearProperty("kraken.execution.db.path")
-                }
+                tempDir.toFile().deleteRecursively()
             }
         }
 

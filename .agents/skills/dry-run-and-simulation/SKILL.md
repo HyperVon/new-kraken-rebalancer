@@ -67,8 +67,9 @@ decision explicitly.
   `performCycleWithStableSession` (balance/price reads, planning, orders, and
   order-specific settlement); and top-level `OrderExecutor.executeOrders`
   (nested pins reuse the outer pin). Startup runs the execution-journal
-  migration, Actual dispatcher, and portfolio manager; it does not synchronize
-  account history or reconstruct retrospective reports.
+  recovery, History recorder, and portfolio manager. Simulation writes a
+  process-scoped History value series but does not authenticate an account or
+  synchronize Kraken trades and ledgers.
 - **Unpinned:** dashboard balance/price reads, health checks — each call
   re-resolves from config at invocation time.
 - Anti-patterns: assuming a mid-cycle config flip affects an already-pinned

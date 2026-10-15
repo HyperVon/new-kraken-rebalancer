@@ -144,70 +144,36 @@ For safe operation:
 - add authentication at a trusted reverse proxy before permitting access beyond
   a private single-operator environment.
 
-### Ambiguous live order submissions
+### Execution and account-history data protection
 
 #### Execution-journal storage and recovery
 
-Historical reporting uses `kraken-rebalancer.db`. Live order intents, outcomes,
-and the append-only reporting-projection outbox use a separate execution database,
-which defaults to the sibling file `kraken-rebalancer-execution.db`. Override
-its path with the JVM property `kraken.execution.db.path`; it must resolve to a
-different SQLite file from `kraken.db.path`.
+The live-order journal and account History use separate SQLite databases in
+one data directory: `execution.db` and `history.db`. The default directory is
+`rebalancer-data-v1`; select another with `KRAKEN_DATA_DIR` or the JVM property
+`kraken.data.dir`. Initialize a new directory explicitly with
+`--initialize-data` before starting the application. Initialization refuses to
+replace an existing execution database. Normal startup opens only existing,
+validated files and fails closed if a database or the execution journal's
+`execution.db.journal-id` marker is missing or inconsistent.
 
-For file-backed execution databases, keep the `.journal-id` identity sidecar
-beside the database. It binds the retained journal identity to that path so a
-missing or replaced journal fails closed instead of starting as an empty
-journal. A second witness is stored beside the reporting database (by default,
-`<reporting-database>.execution-journal-witness`) so loss of the whole
-execution-database bundle is detected while reporting-side evidence survives.
-Set `kraken.execution.witness.path` to relocate it. Back up the execution
-database, local identity sidecar, witness, and reporting database together.
-The reporting schema version alone does not indicate that execution-journal
-migration completed; a dedicated cutover record is written after legacy intents
-are imported. Stop the application before copying SQLite files so committed WAL
-contents are included.
+The `account-identity.sha256` file binds account-scoped History and execution
+state in that data directory to one authenticated Kraken account. It contains a
+SHA-256 digest rather than the raw account identity. Do not move the data files
+or identity marker independently or reuse them with another account. The new
+stores do not migrate the former reporting or Actual databases; retain any
+previous data separately if it is still needed.
 
-For an upgrade from a version that stored order intents in the reporting
-database, stop the old application process before starting the upgraded binary.
-The cutover marker fences a later restart of the old version; it cannot stop an
-old process that is already running. The upgraded process then starts autonomous
-fixed-USD-target rebalancing using the configured allocation. This strategy
-change does not require a persisted operator acknowledgement.
-
-The default reporting-adjacent witness is on the same filesystem as the
-reporting database, so it detects a missing execution bundle only while that
-witness or other reporting-side cutover evidence survives. To use a separate
-failure domain, set `kraken.execution.witness.path` to a protected location on
-another volume and include it in backups. The local identity marker does not
-provide protection from loss of the execution database's directory or volume.
-Live submission requires this file-backed journal; an in-memory execution
-database cannot authorize a real order. If the journal artifacts are missing,
-the reporting cutover marker and retained legacy backup are checked before any
-new execution journal can be created.
-
-On the first cutover, the application retains and integrity-checks a consistent
-snapshot of the legacy database as
-`<reporting-database>.pre-execution-journal.bak`. It imports the old order
-intents and submission guards into the execution journal in one transaction.
-Legacy `PENDING` intents become `UNCERTAIN` and require exchange verification;
-existing `UNCERTAIN`, confirmed, and rejected states retain their evidence.
-An unmatched or unsupported live submission guard blocks startup. The legacy
-reporting database is left intact and marked incompatible with the previous
-application schema.
-
-The reporting projector only reads execution events. It commits each trade
-projection and its cursor in the reporting database, so reporting locks and
-projection retries cannot write to or delay the execution journal.
-
-After cutover, do not restore a pre-cutover executable and reporting database
-backup if any live AddOrder could have been sent since cutover. That executable
-cannot read orders journaled only in the execution database. Preserve the
-execution database, its local identity sidecar, and witness on every recovery.
-If no live order was sent
-after cutover and rollback is necessary, stop the application, retain copies of
-the current files, restore the verified pre-cutover reporting backup, then run
-the compatible previous version. Do not delete the execution journal or its
-identity marker during rollback.
+Treat the History database as private financial data. Stop the application
+before copying SQLite files so committed WAL contents are included. Back up the
+entire configured data directory, including `execution.db`, its identity
+marker, `history.db`, and `account-identity.sha256`, together with the
+credential-protected `rebalancer-config.json`. Protect backups with the same
+access controls as the original files. Live order submission requires the
+file-backed execution journal; an in-memory database cannot authorize a real
+order. If an initialized database or marker is lost or corrupt, stop and
+restore a consistent backup of the full data directory. Do not run
+`--initialize-data` over the remaining files to create a replacement journal.
 
 #### Ambiguous live order submissions
 
@@ -220,9 +186,8 @@ An ambiguous result becomes `UNCERTAIN`, stops the current order batch, and
 blocks later live submissions. If this occurs:
 
 1. Stop automated live trading while investigating.
-2. Stop the application and back up the execution database, its local identity
-   sidecar, and witness before changing any stored state. Also retain the reporting database
-   for history and projection context.
+2. Stop the application and back up the complete configured data directory
+   before changing any stored state.
 3. Use the recorded local `client_order_id` as Kraken's `cl_ord_id` to locate the
    matching open or closed order and obtain its Kraken order transaction ID.
 4. Use that order transaction ID to check TradesHistory fills, which expose
@@ -231,17 +196,15 @@ blocks later live submissions. If this occurs:
    unresolved rows with `GET /api/order-intents`, then submit
    `POST /api/order-intents/{id}/resolve` with `state=CONFIRMED` or
    `state=REJECTED`, a concise evidence note, the optional `orderTxid`, and the
-   normal CSRF token.
-   A `PENDING` row remains protected while its AddOrder may still be in flight;
-   wait for it to become `UNCERTAIN` (or for restart recovery to mark it
-   uncertain) before resolving it.
+   normal CSRF token. A `PENDING` row remains protected while its AddOrder may
+   still be in flight; wait for it to become `UNCERTAIN` (or for restart
+   recovery to mark it uncertain) before resolving it.
 
 #### Operator recovery runbook
 
 Resolving an intent is a deliberate local-recovery action, not an order retry.
-The endpoint updates the execution journal and its durable reporting outbox; a
-background projection updates the reporting trade record. It does **not**
-submit, cancel, or change an order at Kraken.
+The endpoint updates the execution journal. It does **not** submit, cancel, or
+change an order at Kraken.
 Operators can inspect and resolve unresolved intents directly via the Dashboard
 Action Required banner and form or programmatically via the
 `POST /api/order-intents/{id}/resolve` endpoint.
@@ -249,8 +212,8 @@ Action Required banner and form or programmatically via the
 Before sending a resolution request:
 
 1. Pause the loop in the dashboard and leave it paused throughout the review.
-2. Back up the execution database, its local identity sidecar, and the
-   witness; retain the reporting database as well.
+2. Back up the complete configured data directory, including both SQLite
+   databases and their identity files.
 3. Fetch `GET /api/order-intents` and confirm the exact row is `UNCERTAIN`.
    Do not resolve a `PENDING` row: an AddOrder request may still be in flight.
 4. Match the row's `clientOrderId`, pair, side, volume, and timestamp to Kraken.

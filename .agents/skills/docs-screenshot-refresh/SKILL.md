@@ -2,15 +2,15 @@
 name: docs-screenshot-refresh
 description: >-
   Boot the rebalancer in isolated simulation mode and capture Dashboard,
-  Settings, and Actual screenshots for the README and User Guide. Use when
+  Settings, and History screenshots for the README and User Guide. Use when
   retained UI visuals change or current screenshots need refresh.
 ---
 
 # Documentation Screenshot Refresh
 
 Keep screenshots in `docs/images/` aligned with the retained Dashboard,
-Settings, and Actual pages. Do not keep captures or captions for the retired
-History/reporting UI.
+Settings, and History pages. Do not keep captures or captions for removed
+Actual or Buy & Hold UI.
 
 Related:
 
@@ -24,12 +24,12 @@ Related:
 
 ## When to run
 
-Run after changes that alter what users see on Dashboard, Settings, or Actual:
+Run after changes that alter what users see on Dashboard, Settings, or History:
 
 - `view/component/*`, `view/css/*`, `DashboardView`, or HTMX fragments
 - Dashboard SSE status or current-cycle snapshot rendering
 - Settings form controls or allocation preview
-- Actual evidence states, coverage gaps, or prospective Buy & Hold display
+- History value samples, account-sync state, or exchange activity display
 - Navigation, layout, or theme tokens shown in screenshots
 
 Skip pure backend/math/docs-text changes that do not affect a retained page.
@@ -46,10 +46,11 @@ file, route, readiness waits, and scroll position.
 | `dashboard-bottom.png` | `/` — actions from the latest current cycle |
 | `settings.png` | `/settings` — active settings controls and safety modes |
 | `settings-allocations.png` | `/settings` — allocations and quality-score preview |
-| `actual.png` | `/actual` — raw observation state, evidence, and optional prospective Buy & Hold section |
+| `history.png` | `/history` — portfolio-value samples, trade/ledger activity, and account sync state |
 
-The capture helper supports the retained routes and section anchors. Do not add
-`/history` targets: that route redirects to `/actual`.
+The capture helper supports the retained routes and section anchors. History
+captures in simulation should show the process-scoped value series and make the
+unavailable authenticated-account sync state clear.
 
 The default `desktop` profile produces canonical PNGs at **2880×1800**
 (1440×900 @2×). Other supported profiles are `phone` (390×844), `tablet`
@@ -60,8 +61,8 @@ keeps the flat `docs/images/<target>.png` layout.
 
 ### Documentation presentation
 
-- README: a short curated set for Dashboard, Settings, and Actual.
-- User Guide: page-specific captures for Dashboard, Settings, and Actual; add
+- README: a short curated set for Dashboard, Settings, and History.
+- User Guide: page-specific captures for Dashboard, Settings, and History; add
   responsive Dashboard images when they clarify layout.
 - Link each image to its full-resolution source and give the displayed image an
   explicit width suitable for a 2× capture.
@@ -91,9 +92,11 @@ RUN_DIR=$(mktemp -d)
 cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 ```
 
-Set `simulation: true` and a short `loopDelaySeconds` in the copied config.
-Simulation routes exchange calls to the offline emulator. `dryRun` is optional;
-keep placeholder API keys because simulation does not use them. A temporary run
+Set `simulation: true`, `dryRun: true`, and a short `loopDelaySeconds` in the
+copied config. Initialize the fresh data directory once with the Fat JAR's
+`--initialize-data` flag before normal startup. Simulation routes exchange calls
+to the offline emulator and writes only process-scoped History samples; it does
+not sync account trades or ledgers. Keep placeholder API keys. A temporary run
 directory keeps the active stores isolated from operator data.
 
 ### Step 2: Start and wait for a current-cycle snapshot
@@ -105,9 +108,9 @@ cd "$RUN_DIR" && java -Xshare:off --sun-misc-unsafe-memory-access=allow \
 ```
 
 Wait until `/api/health` reports the process as up and the Dashboard shows its
-first completed current-cycle snapshot. Simulation does not seed retrospective
-history or authenticated Actual observations. The Actual page should show its
-simulation-unavailable state; emulator balances are not Actual evidence.
+first completed current-cycle snapshot. History should show the process-scoped
+simulation value series and make unavailable authenticated-account sync state
+clear. Emulator balances are not presented as account history.
 
 ```bash
 curl -sf http://localhost:8080/api/health
@@ -124,7 +127,7 @@ python3 -m venv /tmp/kraken-screenshots
 
 Useful flags:
 
-- `--only dashboard.png,settings.png,actual.png` — capture retained page views
+- `--only dashboard.png,settings.png,history.png` — capture retained page views
 - `--out-dir /tmp/ui-review` — write elsewhere; leave canonical assets alone
 - `--profile laptop,tablet,phone` or `--profile all` — capture responsive views
 - `--list-profiles` — print profile dimensions without opening Chrome
@@ -142,8 +145,8 @@ Read every regenerated PNG and check:
 
 - Dashboard shows a completed latest snapshot and its current-cycle actions.
 - Settings shows active controls and clear Simulation / Dry Run states.
-- Actual does not present emulator balances as authenticated observations; its
-  current simulation-unavailable state is expected.
+- History shows simulation values in its separate process-scoped series and
+  identifies that authenticated account synchronization is unavailable.
 - No credentials, personal hostnames, clipping, or OS chrome appear.
 - Layout differences across profiles reflect responsive reflow.
 
@@ -158,8 +161,8 @@ Functional interaction checks belong in [ui-manual-qa](../ui-manual-qa/SKILL.md)
 Run `capture_screenshots.py --discover` when a retained page gains a major
 section. Add a target only when the helper can reach the page and wait for its
 content. Capture the target, link the image in the User Guide, and add it to
-README only when it fits the curated set. Do not retain targets for retired
-History pages or endpoints.
+README only when it fits the curated set. Do not retain targets for removed
+routes or endpoints.
 
 ### Step 6: Stop and clean up
 
@@ -174,7 +177,7 @@ History pages or endpoints.
 - [ ] Simulation enabled in copied config; real config/database untouched
 - [ ] First completed Dashboard cycle visible
 - [ ] Every requested image read and visually verified
-- [ ] Actual simulation state shown without emulator values as Actual evidence
+- [ ] History simulation samples are distinct from authenticated account data
 - [ ] `--discover` reviewed for retained routes/sections
 - [ ] README curated set and User Guide gallery use active targets only
 - [ ] App stopped and isolated run directory removed

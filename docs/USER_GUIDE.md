@@ -1,8 +1,8 @@
 # User Guide — Kraken Rebalancer
 
-This guide walks through the Dashboard, Actual observations, and Settings. It
-explains how to read the latest rebalance cycle, configure the bot, and interpret
-directly observed account evidence.
+This guide walks through the Dashboard, account History, and Settings. It
+explains how to read the latest rebalance cycle, review recorded portfolio and
+exchange activity, and configure the bot.
 
 For install and first launch, see the [README Getting Started](../README.md#getting-started)
 section. For rebalancing math internals, see [ALGORITHM.md](ALGORITHM.md).
@@ -52,7 +52,7 @@ safety on unless you intend to trade live.
 
 ## Navigation
 
-Dashboard, Actual, and Settings share the same top nav tabs (active page is
+Dashboard, History, and Settings share the same top nav tabs (active page is
 highlighted and centered below the header identity on wider screens). The header
 brand reads **Kraken** + **Rebalancer**. A **persistent mode plate** shows the
 current trading mode on **every** page: **SIMULATION** (blue), **DRY RUN** (amber), or
@@ -73,14 +73,13 @@ Live Trading settings.
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Latest completed cycle snapshot, allocation bars, performance table, current-cycle actions |
-| **Actual** | `/actual` | Forward-only observed managed value, evidence status, and asset balances |
+| **History** | `/history` | Recorded portfolio values, Kraken trades and ledgers, and balance checkpoints |
 | **Settings** | `/settings` | Loop timing, triggers, USD percentage target, safety modes, allocations |
 
-Legacy links to `/history` permanently redirect to `/actual`. Retired
-`/api/history/*` reporting endpoints return **410 Gone**. The application no
-longer offers retrospective trade reports, reconstructed historical
-comparisons, or history backfill. Actual retains forward-only raw observations
-and its optional prospective Buy & Hold comparison. Operator recovery for
+The History page synchronizes Kraken trade and ledger records for the verified
+account. Its portfolio-value chart uses direct per-cycle samples and leaves
+missing or incomplete intervals unfilled; it does not reconstruct historical
+portfolio values or calculate Buy & Hold performance. Operator recovery for
 unresolved live orders remains available through the separate safety workflow.
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
@@ -313,85 +312,42 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 
 ---
 
-## Actual observations
+## History
 
-<a href="images/actual.png"><img src="images/actual.png" alt="Actual raw observation and evidence status" width="960"></a>
-*Actual — forward-only observations, with simulation evidence unavailable in this capture.*
+<a href="images/history.png"><img src="images/history.png" alt="History with portfolio values, trades, and ledger activity" width="960"></a>
+*History — simulated portfolio samples and account-sync status in an isolated capture.*
 
-The **Actual** page shows a forward-only sequence of directly observed managed
-values. It starts when eligible observations begin; it does not reconstruct
-earlier balances or prices. Authenticated Actual observations are unavailable
-in simulation mode; emulator values are not shown as an account history.
+The **History** page combines directly recorded portfolio values with Kraken's
+trade and ledger records. It provides time-range controls and filters for asset,
+pair, and event type. Trade and ledger tables are independently paginated.
+Ledger balance checkpoints can be charted for a selected asset using the
+exchange-reported balances attached to ledger events.
 
-The latest panel emphasizes the most recent complete managed value, its
-observation time, the authenticated account reference, freshness, and the latest
-sample status. The asset table includes each configured asset's observed
-balance, direct USD mark, marked value, portfolio share, target percentage, and
-evidence status. On narrow screens, the table presents each row as a labeled
-card.
+The portfolio-value chart uses a completed per-cycle sample of the configured
+managed assets, priced from the cycle's direct balance and ticker evidence. It
+does not reconstruct a past portfolio from ledger events or substitute
+historical OHLC prices. Incomplete samples do not expose a total, and missing
+time periods are not interpolated. Deposits, withdrawals, manual trades, and
+other account activity can change the observed value, so the chart is not a
+profit or investment-return calculation.
 
-The page uses the configured allocation symbols, including configured USD,
-from Kraken's authenticated [Get Account Balance](https://docs.kraken.com/api-reference/account-data/get-account-balance)
-response for the authenticated user's default wallet. That endpoint describes
-its results as cash balances net of pending withdrawals and notes that
-staking/Earn asset extensions may appear. The Actual page is deliberately
-narrower than a full-wallet view: it lists the configured assets only, excludes
-other wallet balances, and does not merge unconfigured or extended balance keys
-into a configured base asset. An absent configured balance is unresolved, not
-assumed to be zero.
+For an authenticated account, History synchronization fetches Kraken Trades
+and Ledgers in bounded pages and commits each page before continuing. The page
+shows per-feed status and offers **Sync now** after the account identity has
+been verified. Records are scoped to that account and the value series is also
+scoped to the configured asset set. Changing accounts or the managed asset set
+does not combine those series. The local account reference is stored as a
+digest; the raw identity is not displayed.
 
-For non-USD assets, the mark comes directly from the public
-[Get Ticker Information](https://docs.kraken.com/api-reference/market-data/get-ticker-information)
-response's `c[0]` last-trade field. Kraken's Balance and Ticker requests are
-separate, so the page shows both request windows. The sample is incomplete when
-either interval is out of order, their combined window from the earliest
-request start to the latest response completion exceeds two minutes, or the gap
-between the intervals exceeds 60 seconds. A required balance or price that is
-missing or invalid also makes the sample incomplete. Source evidence and request
-timestamps remain available, but an incomplete sample has no total. The ticker
-field has no separate exchange event timestamp in this record; the displayed
-price window is the local request interval, not an asserted market-event time.
-No historical OHLC price is substituted.
+Simulation creates a separate process-scoped value series from emulator cycle
+snapshots. It cannot authenticate an account or import Kraken trades and
+ledgers, and those simulated values are not account history. A newly started
+simulation session begins a new series.
 
-The chart orders samples by observation time and spaces them by elapsed time.
-Lines break across intervals longer than twice the configured loop delay.
-Persisted incomplete observations have a separate marker; a line break without
-that marker indicates missing observation coverage, not an inferred exchange
-event. The chart does not interpolate missing values.
-
-Each complete sample is committed to a separate append-only observation store.
-The raw observation chart reports observed managed values, not investment
-returns, profit, or trading alpha. Deposits, withdrawals, manual trades,
-staking/Earn movements, and other account events can change observed value;
-this series does not identify those cash flows. A separate optional prospective
-Buy & Hold comparison can be started from an eligible complete observation when
-event continuity is verified. It compares forward observations from that
-baseline and does not reconstruct an earlier period or report a retrospective
-backtest. A change in configured asset membership starts a separate scope
-series, while changing allocation weights alone does not change the measured
-asset boundary. The observation scope comes from Kraken's authenticated account
-identity, normalized and hashed locally to keep each account's observations
-separate. Real-account Dry Run can use this read-only identity to display Actual
-without an existing execution-journal binding; live-order authorization still
-uses its separate binding checks.
-
-Observations are queued after the cycle's order execution returns and persisted
-asynchronously. If collection, account verification, or storage fails, the
-sample is skipped or shown incomplete; it does not block an otherwise safe
-order. Opening the Actual page reads bounded stored observations and does not
-run historical reconstruction. Simulation never contributes authenticated
-Actual observations. A real-account Dry Run can use Actual only when the
-account evidence is verified; Dry Run does not itself disable verified reads.
-
----
-
-## Legacy History URLs
-
-The retrospective History page and its reports have been retired. `/history`
-permanently redirects to `/actual`; former `/api/history/*` reporting endpoints
-return **410 Gone**. Actual is the supported place to review forward-only raw
-observations and, when continuity is verified, an optional prospective Buy &
-Hold comparison.
+History and live-order state use separate SQLite files under the configured
+data directory. Initialize the data directory before first launch; details and
+backup requirements are in the [README storage notes](../README.md#configuration-reference)
+and [SECURITY.md](../SECURITY.md#execution-journal-storage-and-recovery).
 
 ---
 
@@ -401,9 +357,9 @@ Hold comparison.
 
 1. Enable **Simulation Mode** (dry run optional).
 2. Explore Dashboard and Settings, then save a small allocation change and
-   watch the next completed cycle appear in **Recent Activity**.
-3. Actual observations are unavailable in simulation because they require
-   verified account evidence from Kraken.
+   watch the next completed cycle appear in **Recent Activity** and History.
+3. The simulated History value series is separate from authenticated account
+   trades, ledgers, and values.
 
 ### 2. Rehearse against live market data (no orders)
 

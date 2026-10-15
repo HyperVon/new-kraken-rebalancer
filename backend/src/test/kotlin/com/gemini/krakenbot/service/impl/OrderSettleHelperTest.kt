@@ -1,12 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.KrakenApiConstants
-import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.SpendableBalanceService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -15,98 +12,165 @@ import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 
 class OrderSettleHelperTest : StringSpec() {
-
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val backend = mockk<KrakenService>(relaxed = true)
 
     init {
-        "settleUsdAfterSells caps fill confirmed USD to balance peek when available" {
+        "settles only USD fee-denominated fills and caps to spendable USD" {
             runTest {
-                val txid = "tx-123"
-                val trade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.1"),
-                    usdAmount = BigDecimal("5000.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = txid,
-                    fee = BigDecimal("10.00"),
-                    tradeId = "t-1",
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-1", txid = "sell-1", cost = "5000.00", fee = "10.00", feeCurrency = Asset.USD),
                 )
-                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(trade)
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
-                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("4500.00"))
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4800.00"))
 
                 val settled = OrderSettleHelper.settleUsdAfterSells(
                     backend = backend,
-                    openingUsd = BigDecimal("0.00"),
+                    openingUsd = BigDecimal.ZERO,
                     projectedCash = BigDecimal("5000.00"),
-                    sellOrderTxids = listOf(txid),
+                    sellOrderTxids = listOf("sell-1"),
                 )
 
-                settled.shouldBeEqualComparingTo(BigDecimal("4500.00"))
+                settled.shouldBeEqualComparingTo(BigDecimal("4800.00"))
             }
         }
 
-        "settleUsdAfterSells caps fill confirmed USD to projectedCash when peekUsdBalance throws" {
+        "unknown nonzero fee denomination falls back to the observed USD balance" {
             runTest {
-                val txid = "tx-456"
-                val trade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.1"),
-                    usdAmount = BigDecimal("6000.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = txid,
-                    fee = BigDecimal("10.00"),
-                    tradeId = "t-2",
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-unknown-fee", txid = "sell-unknown-fee", cost = "5000.00", fee = "10.00"),
                 )
-                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(trade)
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
-                coEvery { backend.getBalances() } throws IOException("Balance peek network timeout")
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4700.00"))
 
                 val settled = OrderSettleHelper.settleUsdAfterSells(
                     backend = backend,
-                    openingUsd = BigDecimal("0.00"),
-                    projectedCash = BigDecimal("5500.00"),
-                    sellOrderTxids = listOf(txid),
+                    openingUsd = BigDecimal.ZERO,
+                    projectedCash = BigDecimal("5000.00"),
+                    sellOrderTxids = listOf("sell-unknown-fee"),
                 )
 
-                settled.shouldBeEqualComparingTo(BigDecimal("5500.00"))
+                settled.shouldBeEqualComparingTo(BigDecimal("4700.00"))
             }
         }
 
-        "settleUsdAfterSells propagates cancellation from the balance peek" {
+        "one unknown matched fee prevents a mixed page from claiming partial proceeds" {
             runTest {
-                val txid = "tx-cancelled-peek"
-                val trade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.1"),
-                    usdAmount = BigDecimal("505.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = txid,
-                    fee = BigDecimal("5.00"),
-                    tradeId = "t-cancelled-peek",
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-known", txid = "sell-mixed", cost = "2500.00", fee = "0.00"),
+                    trade(id = "fill-unknown", txid = "sell-mixed", cost = "2500.00", fee = "5.00"),
                 )
-                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(trade)
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4900.00"))
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal.ZERO,
+                    projectedCash = BigDecimal("5000.00"),
+                    sellOrderTxids = listOf("sell-mixed"),
+                )
+
+                settled.shouldBeEqualComparingTo(BigDecimal("4900.00"))
+            }
+        }
+
+        "continues native history at cursor and settles matching rows from the later page" {
+            runTest {
+                val requestedCursors = mutableListOf<String?>()
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } coAnswers {
+                    val cursor = thirdArg<String?>()
+                    requestedCursors += cursor
+                    if (cursor == null) {
+                        page(
+                            trade(id = "unrelated", txid = "other-order", cost = "500.00", fee = "0.00"),
+                            nextCursor = "cursor-2",
+                        )
+                    } else {
+                        page(
+                            trade(
+                                id = "fill-page-2",
+                                txid = "sell-page-2",
+                                cost = "505.00",
+                                fee = "5.00",
+                                feeCurrency = Asset.USD,
+                            ),
+                            requestedCursor = cursor,
+                        )
+                    }
+                }
+                coEvery { backend.getBalances() } throws IOException("balance peek unavailable")
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal.ZERO,
+                    projectedCash = BigDecimal("520.00"),
+                    sellOrderTxids = listOf("sell-page-2"),
+                )
+
+                requestedCursors shouldBe listOf(null, "cursor-2")
+                settled.shouldBeEqualComparingTo(BigDecimal("500.00"))
+            }
+        }
+
+        "concurrent settlements filter their own order IDs without shared page metadata" {
+            runTest {
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-a", txid = "sell-a", cost = "100.00", fee = "0.00"),
+                    trade(id = "fill-b", txid = "sell-b", cost = "200.00", fee = "0.00"),
+                )
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("1000.00"))
+
+                val first = async {
+                    OrderSettleHelper.settleUsdAfterSells(
+                        backend = backend,
+                        openingUsd = BigDecimal.ZERO,
+                        projectedCash = BigDecimal("100.00"),
+                        sellOrderTxids = listOf("sell-a"),
+                    )
+                }
+                val second = async {
+                    OrderSettleHelper.settleUsdAfterSells(
+                        backend = backend,
+                        openingUsd = BigDecimal.ZERO,
+                        projectedCash = BigDecimal("200.00"),
+                        sellOrderTxids = listOf("sell-b"),
+                    )
+                }
+
+                first.await().shouldBeEqualComparingTo(BigDecimal("100.00"))
+                second.await().shouldBeEqualComparingTo(BigDecimal("200.00"))
+            }
+        }
+
+        "invalid page cannot confirm fills and settlement uses balance polling" {
+            runTest {
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "untrusted", txid = "sell-untrusted", cost = "5000.00", fee = "0.00"),
+                    valid = false,
+                )
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4600.00"))
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal.ZERO,
+                    projectedCash = BigDecimal("5000.00"),
+                    sellOrderTxids = listOf("sell-untrusted"),
+                )
+
+                settled.shouldBeEqualComparingTo(BigDecimal("4600.00"))
+            }
+        }
+
+        "cancellation from spendable balance peek propagates" {
+            runTest {
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-cancel", txid = "sell-cancel", cost = "505.00", fee = "0.00"),
+                )
                 coEvery { backend.getBalances() } throws CancellationException("settlement cancelled")
 
                 val thrown = shouldThrow<CancellationException> {
@@ -114,7 +178,7 @@ class OrderSettleHelperTest : StringSpec() {
                         backend = backend,
                         openingUsd = BigDecimal.ZERO,
                         projectedCash = BigDecimal("520.00"),
-                        sellOrderTxids = listOf(txid),
+                        sellOrderTxids = listOf("sell-cancel"),
                     )
                 }
 
@@ -122,13 +186,13 @@ class OrderSettleHelperTest : StringSpec() {
             }
         }
 
-        "settleUsdAfterSells falls back to balance poll when sellOrderTxids is empty" {
+        "empty sell IDs use observed balance directly" {
             runTest {
-                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("3000.00"))
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("3000.00"))
 
                 val settled = OrderSettleHelper.settleUsdAfterSells(
                     backend = backend,
-                    openingUsd = BigDecimal("0.00"),
+                    openingUsd = BigDecimal.ZERO,
                     projectedCash = BigDecimal("3000.00"),
                     sellOrderTxids = emptyList(),
                 )
@@ -136,144 +200,52 @@ class OrderSettleHelperTest : StringSpec() {
                 settled.shouldBeEqualComparingTo(BigDecimal("3000.00"))
             }
         }
-
-        "settleUsdAfterSells falls back to balance poll when fill confirmation finds no matching proceeds" {
-            runTest {
-                coEvery { backend.getTradeHistory(any(), any()) } returns emptyList()
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 0
-                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("2000.00"))
-
-                val settled = OrderSettleHelper.settleUsdAfterSells(
-                    backend = backend,
-                    openingUsd = BigDecimal("0.00"),
-                    projectedCash = BigDecimal("2000.00"),
-                    sellOrderTxids = listOf("tx-nomatch"),
-                )
-
-                settled.shouldBeEqualComparingTo(BigDecimal("2000.00"))
-            }
-        }
-
-        "settleUsdAfterSells falls through to balance poll when fills are below the 95% threshold" {
-            runTest {
-                // Truncated trade-history view: only $3,000 of a $5,000 projected sell is visible.
-                val txid = "tx-truncated"
-                val partialTrade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.06"),
-                    usdAmount = BigDecimal("3000.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = txid,
-                    fee = BigDecimal("6.00"),
-                    tradeId = "t-3",
-                )
-                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(partialTrade)
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
-                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("4990.00"))
-
-                val settled = OrderSettleHelper.settleUsdAfterSells(
-                    backend = backend,
-                    openingUsd = BigDecimal("0.00"),
-                    projectedCash = BigDecimal("5000.00"),
-                    sellOrderTxids = listOf(txid),
-                )
-
-                // The balance poll sees the full ledger effect and outbids the truncated fill total.
-                settled.shouldBeEqualComparingTo(BigDecimal("4990.00"))
-            }
-        }
-
-        "settleUsdAfterSells caps fill proceeds to spendable USD when ordinary USD is higher" {
-            runTest {
-                val txid = "tx-spendable"
-                val trade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.1"),
-                    usdAmount = BigDecimal("5000.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = txid,
-                    fee = BigDecimal("10.00"),
-                    tradeId = "t-spendable",
-                )
-                val settlementBackend = object : KrakenService by backend, SpendableBalanceService {
-                    override suspend fun getSpendableBalances() = mapOf(TestFixtures.USD to BigDecimal("4800.00"))
-                }
-                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(trade)
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
-                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("9000.00"))
-
-                val settled = OrderSettleHelper.settleUsdAfterSells(
-                    backend = settlementBackend,
-                    openingUsd = BigDecimal("0.00"),
-                    projectedCash = BigDecimal("4990.00"),
-                    sellOrderTxids = listOf(txid),
-                )
-
-                settled.shouldBeEqualComparingTo(BigDecimal("4800.00"))
-            }
-        }
-
-        "settleUsdAfterSells continues a full unknown-total page at the next offset" {
-            runTest {
-                val pageSize = KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-                val txid = "tx-second-page"
-                val unrelatedTrade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.BUY.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.1"),
-                    usdAmount = BigDecimal("100.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = "tx-unrelated",
-                    fee = BigDecimal("0.00"),
-                    tradeId = "t-unrelated",
-                )
-                val matchingTrade = TradeRecord(
-                    timestamp = Instant.now(),
-                    pair = "XXBTZUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = BigDecimal("0.1"),
-                    usdAmount = BigDecimal("505.00"),
-                    success = true,
-                    dryRun = false,
-                    orderTxid = txid,
-                    fee = BigDecimal("5.00"),
-                    tradeId = "t-second-page",
-                )
-                val requestedOffsets = mutableListOf<Int?>()
-                coEvery { backend.getTradeHistory(any(), any()) } coAnswers {
-                    val offset = secondArg<Int?>()
-                    requestedOffsets += offset
-                    when (offset) {
-                        0 -> List(pageSize) { unrelatedTrade }
-                        pageSize -> listOf(matchingTrade)
-                        else -> emptyList()
-                    }
-                }
-                coEvery { backend.getLastTradeHistoryTotalCount() } returns 0
-                coEvery { backend.getBalances() } throws IOException("Balance peek unavailable")
-
-                val settled = OrderSettleHelper.settleUsdAfterSells(
-                    backend = backend,
-                    openingUsd = BigDecimal("0.00"),
-                    projectedCash = BigDecimal("520.00"),
-                    sellOrderTxids = listOf(txid),
-                )
-
-                requestedOffsets shouldBe listOf(0, pageSize)
-                settled.shouldBeEqualComparingTo(BigDecimal("500.00"))
-            }
-        }
     }
+
+    private fun page(
+        vararg entries: ExchangeTradeHistoryEntry,
+        nextCursor: String? = null,
+        requestedCursor: String? = null,
+        valid: Boolean = true,
+    ) = ExchangeHistoryPage(
+        entries = entries.toList(),
+        startSec = 1L,
+        endSec = 2L,
+        requestedCursor = requestedCursor,
+        nextCursor = nextCursor,
+        count = null,
+        rawSize = entries.size,
+        valid = valid,
+    )
+
+    private fun trade(id: String, txid: String, cost: String, fee: String, feeCurrency: String? = null) =
+        ExchangeTradeHistoryEntry(
+            tradeId = id,
+            orderTxid = txid,
+            postTxid = "post-$id",
+            pair = "XXBTZUSD",
+            baseAsset = Asset.BTC,
+            quoteCurrency = Asset.USD,
+            feeCurrency = feeCurrency,
+            time = Instant.parse("2026-10-13T12:00:00Z"),
+            rawTime = "1791892800.000000000",
+            type = "sell",
+            orderType = "market",
+            price = "50000.00",
+            cost = cost,
+            fee = fee,
+            volume = "0.10000000",
+            margin = "0.0",
+            misc = "",
+            tradeSequenceId = id,
+            maker = null,
+            ledgerIds = null,
+            rawRecordJson = null,
+            hasValidTime = true,
+            hasValidPrice = true,
+            hasValidCost = true,
+            hasValidFee = true,
+            hasValidVolume = true,
+            isValidRecord = true,
+        )
 }

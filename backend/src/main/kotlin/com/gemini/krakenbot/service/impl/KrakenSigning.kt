@@ -10,13 +10,6 @@ object KrakenSigning {
     fun sign(path: String, nonce: String, postData: String, base64Secret: String): String =
         signMessage(path.toByteArray(Charsets.UTF_8) + sha256(nonce + postData), base64Secret)
 
-    /**
-     * Funding (Beta) request signing: the signed path includes the query string and the nonce
-     * travels in the API-Nonce header instead of the request body.
-     */
-    fun signGet(signedPath: String, nonce: String, base64Secret: String): String =
-        signMessage(signedPath.toByteArray(Charsets.UTF_8) + sha256(nonce), base64Secret)
-
     private fun sha256(value: String): ByteArray = MessageDigest
         .getInstance(KrakenApiConstants.SHA_256)
         .digest(value.toByteArray(Charsets.UTF_8))

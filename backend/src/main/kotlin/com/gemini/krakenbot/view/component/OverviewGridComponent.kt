@@ -233,27 +233,25 @@ class OverviewGridComponent {
             span(CssClass.Hero.TileMeta) { +"${Formatter.formatPercent(percent)}%" }
         }
     }
-
-    private companion object {
-        const val MAX_TREND_SAMPLES = 24
-        const val SVG_WIDTH = 520.0
-        const val SVG_HEIGHT = 150.0
-        const val PLOT_LEFT = 66.0
-        const val PLOT_RIGHT = 514.0
-        const val PLOT_TOP = 10.0
-        const val PLOT_BOTTOM = 112.0
-        const val X_AXIS_LABEL_Y = 142.0
-        const val AXIS_LABEL_BASELINE = 4.0
-        const val COORDINATE_SCALE = 12
-        val TWO = BigDecimal("2")
-        val THOUSAND = BigDecimal("1000")
-        val MILLION = BigDecimal("1000000")
-        val TREND_PADDING_PERCENT = BigDecimal("0.08")
-        val FLAT_LINE_PADDING_PERCENT = BigDecimal("0.005")
-        val MINIMUM_TREND_PADDING = BigDecimal("1.00")
-        val DETAILED_TIME_WINDOW = Duration.ofMinutes(5)
-        val TREND_TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US).withZone(ZoneId.systemDefault())
-        val TREND_TIME_FORMATTER_WITH_SECONDS =
-            DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US).withZone(ZoneId.systemDefault())
-    }
 }
+
+private const val MAX_TREND_SAMPLES = 24
+private const val SVG_WIDTH = 520.0
+private const val SVG_HEIGHT = 150.0
+private const val PLOT_LEFT = 66.0
+private const val PLOT_RIGHT = 514.0
+private const val PLOT_TOP = 10.0
+private const val PLOT_BOTTOM = 112.0
+private const val X_AXIS_LABEL_Y = 142.0
+private const val AXIS_LABEL_BASELINE = 4.0
+private const val COORDINATE_SCALE = 12
+private val TWO = BigDecimal("2")
+private val THOUSAND = BigDecimal("1000")
+private val MILLION = BigDecimal("1000000")
+private val TREND_PADDING_PERCENT = BigDecimal("0.08")
+private val FLAT_LINE_PADDING_PERCENT = BigDecimal("0.005")
+private val MINIMUM_TREND_PADDING = BigDecimal("1.00")
+private val DETAILED_TIME_WINDOW = Duration.ofMinutes(5)
+private val TREND_TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US).withZone(ZoneId.systemDefault())
+private val TREND_TIME_FORMATTER_WITH_SECONDS =
+    DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US).withZone(ZoneId.systemDefault())

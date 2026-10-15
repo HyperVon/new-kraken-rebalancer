@@ -12,7 +12,8 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
-import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
+import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistorySampleSelection
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
@@ -42,7 +43,7 @@ class PortfolioManagerImpl(
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
     private val currentPortfolioState: CurrentPortfolioState = CurrentPortfolioState(),
-    private val actualObservationDispatcher: ActualObservationDispatcher? = null,
+    private val historyObservationRecorder: HistoryObservationRecorder? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -69,6 +70,11 @@ class PortfolioManagerImpl(
 
     @Volatile
     private var operationalStatus = RebalanceOperationalStatus()
+
+    @Volatile
+    private var cycleActive = false
+
+    override fun isCycleActive(): Boolean = cycleActive
 
     override fun stopRebalancingLoop(): Job? {
         // Capture and cancel the current worker under the lock so callers (the shutdown hook) join
@@ -220,19 +226,24 @@ class PortfolioManagerImpl(
     /** Pins settings and exchange session for the complete rebalance cycle. */
     private suspend fun performCycleWithStableSession() {
         val cycleId = UUID.randomUUID().toString()
-        configService.withExecutionSession {
-            val ks = krakenService
-            if (ks != null) {
-                ks.withStableBackend {
+        cycleActive = true
+        try {
+            configService.withExecutionSession {
+                val ks = krakenService
+                if (ks != null) {
+                    ks.withStableBackend {
+                        withCycleMdc(cycleId) {
+                            performRebalanceCycleForCycle(cycleId)
+                        }
+                    }
+                } else {
                     withCycleMdc(cycleId) {
                         performRebalanceCycleForCycle(cycleId)
                     }
                 }
-            } else {
-                withCycleMdc(cycleId) {
-                    performRebalanceCycleForCycle(cycleId)
-                }
             }
+        } finally {
+            cycleActive = false
         }
     }
 
@@ -297,7 +308,6 @@ class PortfolioManagerImpl(
                 onSuccess = { it },
                 onFailure = {
                     log.error("Failed to calculate portfolio values: {}", it.message)
-                    enqueueActualObservation(cycleId, config, observedBalances, observedPrices)
                     return null
                 },
             )
@@ -341,19 +351,32 @@ class PortfolioManagerImpl(
             actionLog.add(ViewText.ERROR_ORDER_EXECUTION_FAILED_PREFIX + (e.message ?: e.javaClass.simpleName))
         }
 
-        enqueueActualObservation(cycleId, config, observedBalances, observedPrices)
+        var finalBalances = observedBalances
+        var finalPrices = observedPrices
+        var sampleSelection = HistorySampleSelection.PRE_TRADE
+        val additionalReasons = mutableListOf<String>()
 
         val finalState =
             if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
                 try {
-                    val (postBalances, postObservedAt) = portfolioAnalyzer.fetchObservedBalances()
-                    val postPrices = portfolioAnalyzer.fetchPrices()
-                    portfolioAnalyzer.calculatePortfolioValues(postBalances, postPrices).fold(
+                    val postBalances = portfolioAnalyzer.fetchObservedBalances()
+                    val postPrices = portfolioAnalyzer.fetchObservedPrices()
+                    portfolioAnalyzer.calculatePortfolioValues(postBalances.balances, postPrices.prices).fold(
                         onSuccess = { (total, values) ->
-                            RebalanceState(postBalances, postPrices, values, total, postObservedAt)
+                            finalBalances = postBalances
+                            finalPrices = postPrices
+                            sampleSelection = HistorySampleSelection.POST_TRADE
+                            RebalanceState(
+                                postBalances.balances,
+                                postPrices.prices,
+                                values,
+                                total,
+                                postBalances.observedAt,
+                            )
                         },
                         onFailure = {
                             markCycleError("Post-trade valuation failed")
+                            additionalReasons.add("Post-trade valuation failed")
                             RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
                         },
                     )
@@ -365,6 +388,7 @@ class PortfolioManagerImpl(
                         e,
                     )
                     markCycleError("Post-trade state refresh failed")
+                    additionalReasons.add("Post-trade state refresh failed: ${e.message}")
                     RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
                 }
             } else {
@@ -384,6 +408,18 @@ class PortfolioManagerImpl(
             )
 
         currentPortfolioState.publish(snapshot, portfolioSourceScope(config, cycleId))
+
+        historyObservationRecorder?.captureFinalCycle(
+            cycleId = cycleId,
+            config = config,
+            balances = finalBalances,
+            prices = finalPrices,
+            snapshot = snapshot,
+            sampleSelection = sampleSelection,
+            additionalIncompleteReasons = additionalReasons,
+            actions = actionLog,
+            dryRun = config.settings.dryRun,
+        )
 
         log.info("--- Cycle Complete ---")
         return snapshot
@@ -406,21 +442,6 @@ class PortfolioManagerImpl(
             null
         }
         return "$source:${credentialScope ?: cycleId}"
-    }
-
-    private suspend fun enqueueActualObservation(
-        cycleId: String,
-        config: com.gemini.krakenbot.config.AppConfig,
-        balances: com.gemini.krakenbot.service.ObservedBalances,
-        prices: com.gemini.krakenbot.service.ObservedPrices,
-    ) {
-        try {
-            actualObservationDispatcher?.captureAfterCycle(cycleId, config, balances, prices)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Actual observation was skipped without affecting the rebalance cycle: {}", e.message)
-        }
     }
 }
 

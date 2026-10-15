@@ -5,21 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.DepositStatusRecord
-import com.gemini.krakenbot.model.InternalTransferRecord
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.service.BalanceRead
-import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
 import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenCredentialsUnavailableException
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.service.TickerRead
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -35,8 +31,6 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -49,9 +43,7 @@ class KrakenServiceImpl(
     private val publicRateLimiter: PublicRateLimiter = PublicRateLimiter(),
 ) : KrakenService,
     DirectKrakenEvidenceService,
-    SpendableBalanceService,
-    BoundedTradeHistoryService,
-    RecoveryTradeHistoryService {
+    SpendableBalanceService {
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
 
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
@@ -59,9 +51,7 @@ class KrakenServiceImpl(
     /** Bounds exception text persisted into order error rows / dashboard payloads. */
     private companion object {
         const val MAX_ERROR_MESSAGE_LENGTH = 500
-        const val FUNDING_V1_PAGE_SIZE = 500
-        const val LEGACY_FUNDING_ENRICHMENT_LIMIT = 500
-        const val MAX_FUNDING_PAGES = 20
+        const val MAX_TRADE_PAGE_LIMIT = 100
     }
 
     private val transport = KrakenTransport(
@@ -72,31 +62,6 @@ class KrakenServiceImpl(
         nonceGenerator = nonceGenerator,
         publicRateLimiter = publicRateLimiter,
     )
-
-    private val lastFetchedCount = AtomicInteger(0)
-    private val lastTradeHistoryCountPresent = AtomicBoolean(false)
-    private val lastTradeHistoryPageShapeValid = AtomicBoolean(false)
-    private val lastTradeHistoryRawPageSize = AtomicInteger(0)
-    private val lastLedgerCount = AtomicInteger(0)
-    private val lastLedgerCountPresent = AtomicBoolean(false)
-    private val lastLedgerPageShapeValid = AtomicBoolean(false)
-    private val lastLedgerRawPageSize = AtomicInteger(0)
-
-    override fun getLastTradeHistoryTotalCount(): Int = lastFetchedCount.get()
-
-    override fun hasLastTradeHistoryTotalCount(): Boolean = lastTradeHistoryCountPresent.get()
-
-    override fun hasLastTradeHistoryPageShape(): Boolean = lastTradeHistoryPageShapeValid.get()
-
-    override fun getLastTradeHistoryRawPageSize(): Int = lastTradeHistoryRawPageSize.get()
-
-    override fun getLastLedgerTotalCount(): Int = lastLedgerCount.get()
-
-    override fun hasLastLedgerTotalCount(): Boolean = lastLedgerCountPresent.get()
-
-    override fun hasLastLedgerPageShape(): Boolean = lastLedgerPageShapeValid.get()
-
-    override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
 
     override suspend fun getApiCallCounter(): Double = rateLimiter.getCurrentCounter()
 
@@ -365,14 +330,15 @@ class KrakenServiceImpl(
                 cause is ResponseException
         }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
-        getTradeHistoryUntil(startSec, offset, null)
-
-    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
-        lastFetchedCount.set(0)
-        lastTradeHistoryCountPresent.set(false)
-        lastTradeHistoryPageShapeValid.set(false)
-        lastTradeHistoryRawPageSize.set(0)
+    override suspend fun getAccountTradePage(
+        startSec: Long?,
+        endSec: Long?,
+        cursor: String?,
+        limit: Int?,
+    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> {
+        require(limit == null || limit in 1..MAX_TRADE_PAGE_LIMIT) {
+            "Trade history limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
+        }
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
         }
@@ -380,7 +346,12 @@ class KrakenServiceImpl(
         val params = mutableMapOf<String, String>()
         if (startSec != null) params[KrakenApiConstants.PARAM_START] = startSec.toString()
         if (endSec != null) params[KrakenApiConstants.PARAM_END] = endSec.toString()
-        if (offset != null) params[KrakenApiConstants.PARAM_OFS] = offset.toString()
+        params[KrakenApiConstants.PARAM_WITH_CURSOR] = "true"
+        params[KrakenApiConstants.PARAM_TRADES] = "true"
+        params[KrakenApiConstants.PARAM_CONSOLIDATE_TAKER] = "false"
+        params[KrakenApiConstants.PARAM_LEDGERS] = "true"
+        if (cursor != null) params[KrakenApiConstants.PARAM_CURSOR] = cursor
+        if (limit != null) params[KrakenApiConstants.PARAM_LIMIT] = limit.toString()
 
         val result =
             try {
@@ -392,61 +363,14 @@ class KrakenServiceImpl(
                 throw e
             }
 
-        val allocations = configService.getConfig().allocations.map { it.symbol.value }
-        val page = KrakenParsers.parseTradeHistoryPage(result, allocations)
-        lastFetchedCount.set(page.totalCount)
-        lastTradeHistoryCountPresent.set(page.hasTotalCount)
-        lastTradeHistoryPageShapeValid.set(page.hasTradeContainer)
-        lastTradeHistoryRawPageSize.set(page.rawPageSize)
-        return page.entries
+        return KrakenParsers.parseAccountTradePage(result, startSec, endSec, cursor)
     }
 
-    override suspend fun getRecoveryTradeHistoryUntil(
+    override suspend fun getAccountLedgerPage(
         startSec: Long?,
-        offset: Int?,
         endSec: Long?,
-    ): List<TradeRecord> {
-        lastFetchedCount.set(0)
-        lastTradeHistoryCountPresent.set(false)
-        lastTradeHistoryPageShapeValid.set(false)
-        lastTradeHistoryRawPageSize.set(0)
-        if (!configService.getConfig().kraken.hasValidCredentials()) {
-            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
-        }
-
-        val params = mutableMapOf<String, String>()
-        if (startSec != null) params[KrakenApiConstants.PARAM_START] = startSec.toString()
-        if (endSec != null) params[KrakenApiConstants.PARAM_END] = endSec.toString()
-        if (offset != null) params[KrakenApiConstants.PARAM_OFS] = offset.toString()
-
-        val result =
-            try {
-                queryPrivate(KrakenApiConstants.PATH_TRADES_HISTORY, params)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.error("Failed to query private TradesHistory endpoint for recovery", e)
-                throw e
-            }
-
-        val allocations = configService.getConfig().allocations.map { it.symbol.value }
-        val page = KrakenParsers.parseTradeHistoryPage(result, allocations, preserveUnmapped = true)
-        lastFetchedCount.set(page.totalCount)
-        lastTradeHistoryCountPresent.set(page.hasTotalCount)
-        lastTradeHistoryPageShapeValid.set(page.hasTradeContainer)
-        lastTradeHistoryRawPageSize.set(page.rawPageSize)
-        return page.entries
-    }
-
-    override suspend fun getLedgers(
-        startSec: Long?,
-        offset: Int?,
-        endSec: Long?,
-        types: Set<String>?,
-    ): List<LedgerEvent> {
-        lastLedgerCount.set(0)
-        lastLedgerCountPresent.set(false)
-        lastLedgerPageShapeValid.set(false)
+        cursor: String?,
+    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> {
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for ledgers.")
         }
@@ -454,324 +378,10 @@ class KrakenServiceImpl(
         val params = mutableMapOf<String, String>()
         if (startSec != null) params[KrakenApiConstants.PARAM_START] = startSec.toString()
         if (endSec != null) params[KrakenApiConstants.PARAM_END] = endSec.toString()
-        if (offset != null) params[KrakenApiConstants.PARAM_OFS] = offset.toString()
+        params[KrakenApiConstants.PARAM_TYPE] = KrakenApiConstants.LEDGER_TYPE_ALL
+        params[KrakenApiConstants.PARAM_WITH_CURSOR] = "true"
+        if (cursor != null) params[KrakenApiConstants.PARAM_CURSOR] = cursor
 
-        if (types != null && types.isEmpty()) return emptyList()
-
-        val queryTypes = types?.sorted()?.groupBy(::ledgerQueryType)
-        if (queryTypes != null && queryTypes.size > 1) {
-            val fanOutParams = params - KrakenApiConstants.PARAM_OFS
-            val pages = queryTypes.map { (queryType, responseTypes) ->
-                queryLedgerPage(
-                    fanOutParams + (KrakenApiConstants.PARAM_TYPE to queryType),
-                    responseTypes.toSet(),
-                )
-            }
-            lastLedgerCount.set(pages.sumOf { it.totalCount })
-            lastLedgerCountPresent.set(pages.all { it.hasTotalCount })
-            lastLedgerPageShapeValid.set(pages.all { it.hasLedgerContainer })
-            lastLedgerRawPageSize.set(pages.sumOf { it.rawPageSize })
-            return pages.flatMap { it.entries }
-        }
-
-        val pageParams = if (queryTypes != null) {
-            params + (KrakenApiConstants.PARAM_TYPE to queryTypes.keys.single())
-        } else {
-            params
-        }
-        val pageResult = queryLedgerPage(pageParams, types)
-        lastLedgerCount.set(pageResult.totalCount)
-        lastLedgerCountPresent.set(pageResult.hasTotalCount)
-        lastLedgerPageShapeValid.set(pageResult.hasLedgerContainer)
-        lastLedgerRawPageSize.set(pageResult.rawPageSize)
-        return pageResult.entries
-    }
-
-    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
-        val records = fetchV1FundingRecords(
-            path = KrakenApiConstants.PATH_FUNDING_DEPOSITS,
-            containerField = KrakenApiConstants.FIELD_DEPOSITS,
-            idField = KrakenApiConstants.FIELD_DEPOSIT_ID,
-            startSec = startSec,
-            endSec = endSec,
-        )
-        val metadata = fetchLegacyFundingMetadata(
-            path = KrakenApiConstants.PATH_DEPOSIT_STATUS,
-            startSec = startSec,
-            endSec = endSec,
-            parser = KrakenParsers::parseDepositStatusPage,
-            refid = { it.refid },
-            metadata = { FundingMetadata(method = it.method, txid = it.txid) },
-        )
-        val railResolver = FundingRailResolver(KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT)
-        return records.map { record ->
-            val legacy = metadata[record.id]
-            val rail = railResolver.resolve(legacy?.method, record.methodId)
-            DepositStatusRecord(
-                refid = record.id,
-                txid = legacy?.txid,
-                asset = record.asset,
-                amount = record.amount,
-                fee = record.fee,
-                time = record.time,
-                status = record.status,
-                method = rail.method,
-                hasAuthoritativeFee = record.hasAuthoritativeFee,
-                methodId = rail.methodId,
-            )
-        }
-    }
-
-    override suspend fun getWithdrawStatus(startSec: Long?, endSec: Long?): List<WithdrawStatusRecord> {
-        val records = fetchV1FundingRecords(
-            path = KrakenApiConstants.PATH_FUNDING_WITHDRAWALS,
-            containerField = KrakenApiConstants.FIELD_WITHDRAWALS,
-            idField = KrakenApiConstants.FIELD_WITHDRAWAL_ID,
-            startSec = startSec,
-            endSec = endSec,
-        )
-        val metadata = fetchLegacyFundingMetadata(
-            path = KrakenApiConstants.PATH_WITHDRAW_STATUS,
-            startSec = startSec,
-            endSec = endSec,
-            parser = KrakenParsers::parseWithdrawStatusPage,
-            refid = { it.refid },
-            metadata = { FundingMetadata(method = it.method, txid = it.txid) },
-        )
-        val railResolver = FundingRailResolver(KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW)
-        return records.map { record ->
-            val legacy = metadata[record.id]
-            val rail = railResolver.resolve(legacy?.method, record.methodId)
-            WithdrawStatusRecord(
-                refid = record.id,
-                txid = legacy?.txid,
-                asset = record.asset,
-                amount = record.amount,
-                fee = record.fee,
-                time = record.time,
-                status = record.status,
-                method = rail.method,
-                hasAuthoritativeFee = record.hasAuthoritativeFee,
-                methodId = rail.methodId,
-            )
-        }
-    }
-
-    /**
-     * Spot REST exposes no historical Futures/wallet-transfer query, so this backend cannot
-     * source internal-transfer evidence today. The consequence is one-sided and deliberate:
-     * `FundingEvidence.INTERNAL` is never produced here, so a funding row that fails the
-     * external test stays `UNRESOLVED` rather than being assumed internal. Keep the evidence
-     * type — a backend that can source these records should supply it and restore the balance.
-     */
-    override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> =
-        emptyList()
-
-    /**
-     * A funding-method registry read. [complete] is false when the fetch failed, an entry was
-     * unparseable, or the page budget truncated the read, so callers know an absent id is unknown
-     * rather than genuinely unknown to Kraken.
-     */
-    private data class FundingMethodNames(val names: Map<String, String>, val complete: Boolean)
-
-    private data class FundingMetadata(val method: String? = null, val txid: String? = null)
-
-    /**
-     * Resolves funding-rail names across one status page, issuing at most one registry request
-     * however many records the page holds. The lookup stays lazy: a page whose records all carry a
-     * legacy method name never issues it.
-     *
-     * The registry's completeness is part of the result, not an implementation detail. A fiat rail
-     * exposes neither a transaction id nor a resolvable name, so the raw rail id is the only
-     * external proof available and the resolver accepts it as such. That is only sound once the
-     * registry has been fully read and has not flagged the rail as internal — which is exactly the
-     * check that cannot run when the read failed, was truncated, or was never needed. So a rail id
-     * is surfaced only on a complete read, leaving the row UNRESOLVED otherwise. This backend
-     * cannot source internal-transfer evidence at all (see [getInternalTransfers]), so nothing
-     * downstream can correct a row classified on an unchecked id.
-     */
-    private inner class FundingRailResolver(private val path: String) {
-        private var registry: FundingMethodNames? = null
-        private var lookupAttempted = false
-
-        suspend fun resolve(legacyMethod: String?, recordMethodId: String?): FundingRail {
-            val name = legacyMethod ?: recordMethodId?.let { methodId ->
-                if (!lookupAttempted) {
-                    lookupAttempted = true
-                    registry = fetchFundingMethodNames(path)
-                }
-                registry?.names?.get(methodId)
-            }
-            val vouchable = registry?.complete == true
-            return FundingRail(method = name, methodId = recordMethodId.takeIf { vouchable })
-        }
-    }
-
-    private data class FundingRail(val method: String?, val methodId: String?)
-
-    private suspend fun fetchV1FundingRecords(
-        path: String,
-        containerField: String,
-        idField: String,
-        startSec: Long?,
-        endSec: Long?,
-    ): List<FundingV1Record> {
-        if (!configService.getConfig().kraken.hasValidCredentials()) {
-            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for funding history.")
-        }
-
-        val firstPageParams = mutableMapOf<String, String>()
-        startSec?.let { firstPageParams[KrakenApiConstants.PARAM_START_TIME] = Instant.ofEpochSecond(it).toString() }
-        endSec?.let { firstPageParams[KrakenApiConstants.PARAM_END_TIME] = Instant.ofEpochSecond(it).toString() }
-        firstPageParams[KrakenApiConstants.PARAM_LIMIT] = FUNDING_V1_PAGE_SIZE.toString()
-
-        val records = mutableListOf<FundingV1Record>()
-        val seenCursors = mutableSetOf<String>()
-        var cursor: String? = null
-        var pageIndex = 0
-        while (true) {
-            val params = cursor?.let { mapOf(KrakenApiConstants.PARAM_CURSOR to it) } ?: firstPageParams
-            val result = try {
-                queryPrivateGet(path, params)
-            } catch (e: KrakenApiPermissionDeniedException) {
-                log.error("Kraken denied funding-history endpoint {}. Funds: Query permission is required.", path, e)
-                throw e
-            }
-            val page = KrakenParsers.parseFundingV1Page(result, containerField, idField)
-            if (page.rawCount != page.records.size) {
-                throw IllegalStateException(
-                    "Kraken $path returned funding records that could not be parsed; funding history is incomplete.",
-                )
-            }
-            records += page.records
-            val nextCursor = page.nextCursor?.trim()?.takeIf(String::isNotEmpty) ?: break
-            if (!seenCursors.add(nextCursor)) {
-                throw IllegalStateException("Kraken funding history pagination repeated cursor for $path.")
-            }
-            cursor = nextCursor
-            pageIndex++
-            if (pageIndex >= MAX_FUNDING_PAGES) {
-                throw IllegalStateException(
-                    "Kraken funding history pagination exceeded $MAX_FUNDING_PAGES pages for $path.",
-                )
-            }
-        }
-        return records
-    }
-
-    private suspend fun <T> fetchLegacyFundingMetadata(
-        path: String,
-        startSec: Long?,
-        endSec: Long?,
-        parser: (JsonNode) -> FundingStatusPage<T>,
-        refid: (T) -> String,
-        metadata: (T) -> FundingMetadata,
-    ): Map<String, FundingMetadata> {
-        return try {
-            val params = mutableMapOf<String, String>()
-            startSec?.let { params[KrakenApiConstants.PARAM_START] = it.toString() }
-            endSec?.let { params[KrakenApiConstants.PARAM_END] = it.toString() }
-            params[KrakenApiConstants.PARAM_LIMIT] = LEGACY_FUNDING_ENRICHMENT_LIMIT.toString()
-            val page = parser(queryPrivate(path, params))
-            if (page.rawCount >= LEGACY_FUNDING_ENRICHMENT_LIMIT) {
-                log.warn(
-                    "Legacy funding metadata at {} reached the {} record limit; metadata is incomplete.",
-                    path,
-                    LEGACY_FUNDING_ENRICHMENT_LIMIT,
-                )
-                return emptyMap()
-            }
-            if (page.rawCount != page.records.size) {
-                log.warn(
-                    "Legacy funding metadata at {} dropped {} unparseable entries; metadata is incomplete.",
-                    path,
-                    page.rawCount - page.records.size,
-                )
-                return emptyMap()
-            }
-            page.records.associate { refid(it).trim() to metadata(it) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Legacy funding metadata fetch failed for {}; funding records may lack external proof.", path, e)
-            emptyMap()
-        }
-    }
-
-    /**
-     * Returns the registry and whether it was read in full. A `null` [FundingMethodNames.names] is
-     * never returned: a failed read is reported as an empty, incomplete registry so a page issues
-     * the request at most once rather than once per record.
-     */
-    private suspend fun fetchFundingMethodNames(path: String): FundingMethodNames {
-        return try {
-            val names = mutableMapOf<String, String>()
-            val seenCursors = mutableSetOf<String>()
-            var complete = true
-            var cursor: String? = null
-            var pageIndex = 0
-            while (pageIndex < MAX_FUNDING_PAGES) {
-                val params = cursor?.let { mapOf(KrakenApiConstants.PARAM_CURSOR to it) }
-                    ?: mapOf(KrakenApiConstants.PARAM_LIMIT to FUNDING_V1_PAGE_SIZE.toString())
-                val page = KrakenParsers.parseFundingMethodsPage(queryPrivateGet(path, params))
-                if (!page.containerWellFormed) {
-                    log.warn("Funding method list {} omitted its methods array; names may be incomplete.", path)
-                    complete = false
-                }
-                if (page.rawCount != page.records.size) {
-                    log.warn("Funding method list {} returned unparseable entries; names may be incomplete.", path)
-                    complete = false
-                }
-                page.records.forEach { names.putIfAbsent(it.methodId, it.methodName) }
-                val nextCursor = page.nextCursor?.trim()?.takeIf(String::isNotEmpty)
-                    ?: return FundingMethodNames(names, complete)
-                if (!seenCursors.add(nextCursor)) {
-                    log.warn("Funding method list {} repeated a cursor; names may be incomplete.", path)
-                    return FundingMethodNames(names, complete = false)
-                }
-                cursor = nextCursor
-                pageIndex++
-            }
-            // The page budget ran out with a cursor still outstanding, so the registry is a prefix:
-            // an internal rail beyond it would look absent. Not complete, so not vouchable.
-            if (cursor != null) {
-                log.warn("Funding method list {} exceeded the page budget; names may be incomplete.", path)
-                complete = false
-            }
-            FundingMethodNames(names, complete)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Funding method list fetch failed for {}; funding records may lack external proof.", path, e)
-            FundingMethodNames(emptyMap(), complete = false)
-        }
-    }
-
-    private suspend fun queryPrivateGet(path: String, query: Map<String, String>): JsonNode = retryWithFlow(
-        actionName = "queryPrivateGet($path)",
-        maxAttempts = 5,
-        maxLockoutAttempts = 9,
-    ) {
-        transport.queryPrivateGet(path, query)
-    }
-
-    private fun ledgerQueryType(type: String): String = when (type) {
-        KrakenApiConstants.LEDGER_TYPE_SPEND,
-        KrakenApiConstants.LEDGER_TYPE_RECEIVE,
-        -> KrakenApiConstants.LEDGER_TYPE_SALE
-
-        KrakenApiConstants.LEDGER_TYPE_EARN,
-        KrakenApiConstants.LEDGER_TYPE_REWARD,
-        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
-        -> KrakenApiConstants.LEDGER_TYPE_ALL
-
-        else -> type
-    }
-
-    private suspend fun queryLedgerPage(
-        params: Map<String, String>,
-        expectedTypes: Set<String>?,
-    ): KrakenParsers.LedgerPageResult {
         val result =
             try {
                 queryPrivate(KrakenApiConstants.PATH_LEDGERS, params)
@@ -782,7 +392,7 @@ class KrakenServiceImpl(
                 throw e
             }
 
-        return KrakenParsers.parseLedgerPage(result, expectedTypes)
+        return KrakenParsers.parseAccountLedgerPage(result, startSec, endSec, cursor)
     }
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {

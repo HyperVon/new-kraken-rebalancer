@@ -8,6 +8,8 @@ import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
+import com.gemini.krakenbot.service.history.HistorySourceMode
+import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
@@ -158,7 +160,100 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 )
                 rejected.status shouldBe HttpStatusCode.UnprocessableEntity
                 rejected.bodyAsText() shouldContain "allocation total"
-                coVerify(exactly = 1) { configService.updateConfig(any()) }
+
+                coEvery { configService.updateConfig(any()) } throws InvalidConfigurationException(null)
+                val fallback = client.postForm(
+                    Routes.SETTINGS,
+                    requestFields(
+                        csrf.value,
+                        mapOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5"),
+                            FormFields.SYMBOLS to listOf("BTC", "USD"),
+                            FormFields.TARGETS to listOf("60", "40"),
+                            FormFields.COLORS to listOf("#ff0000", "#0000ff"),
+                            FormFields.SCORES to listOf("8", ""),
+                        ),
+                    ),
+                    csrf.cookie,
+                )
+                fallback.status shouldBe HttpStatusCode.UnprocessableEntity
+                fallback.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK
+                coVerify(exactly = 2) { configService.updateConfig(any()) }
+            }
+        }
+
+        "settings parsing rejects invalid allocation rows and missing or duplicate required values" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val validValues = mapOf(
+                    FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                    FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2"),
+                    FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5"),
+                    FormFields.SYMBOLS to listOf("BTC", "ETH", "USD"),
+                    FormFields.TARGETS to listOf("50", "30", "20"),
+                    FormFields.COLORS to listOf("#ff0000", "#00ff00", "#0000ff"),
+                    FormFields.SCORES to listOf("9.5", "8.5", ""),
+                )
+                val invalidCases = listOf(
+                    (
+                        validValues + mapOf(
+                            FormFields.SYMBOLS to emptyList(),
+                            FormFields.TARGETS to emptyList(),
+                            FormFields.COLORS to emptyList(),
+                            FormFields.SCORES to emptyList(),
+                        )
+                        ) to ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues + (FormFields.SYMBOLS to listOf("BTC", "ETH", "BTC!"))) to
+                        ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues + (FormFields.TARGETS to listOf("50", "30"))) to
+                        ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues + (FormFields.SYMBOLS to listOf("BTC"))) to
+                        ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues + (FormFields.COLORS to listOf("#ff0000", "#00ff00"))) to
+                        ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues + (FormFields.SCORES to listOf("9.5", "8.5"))) to
+                        ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues + (FormFields.TARGETS to listOf("-5", "30", "75"))) to
+                        ViewText.INVALID_ALLOCATION_TARGET,
+                    (validValues + (FormFields.TARGETS to listOf("1e10000", "0", "0"))) to
+                        ViewText.INVALID_ALLOCATION_TARGET,
+                    (validValues + (FormFields.COLORS to listOf("#ff0000", "bad-color", "#0000ff"))) to
+                        ViewText.INVALID_ALLOCATION_COLOR,
+                    (validValues + (FormFields.SCORES to listOf("15.0", "8.5", ""))) to
+                        ViewText.INVALID_ALLOCATION_SCORE,
+                    (validValues + (FormFields.SCORES to listOf("-1", "8.5", ""))) to
+                        ViewText.INVALID_ALLOCATION_SCORE,
+                    (validValues + (FormFields.SCORES to listOf("1e10000", "8.5", ""))) to
+                        ViewText.INVALID_ALLOCATION_SCORE,
+                    (validValues + (FormFields.SYMBOLS to listOf("BTC", "BTC", "USD"))) to
+                        ViewText.INVALID_ALLOCATION_FIELDS,
+                    (validValues - FormFields.DEVIATION_TRIGGER_PERCENT) to ViewText.INVALID_DEVIATION_TRIGGER,
+                    (validValues + (FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2", "3"))) to
+                        ViewText.INVALID_DEVIATION_TRIGGER,
+                    (validValues + (FormFields.DEVIATION_TRIGGER_PERCENT to listOf("NaN"))) to
+                        ViewText.INVALID_DEVIATION_TRIGGER,
+                    (validValues + (FormFields.DEVIATION_TRIGGER_PERCENT to listOf("not-a-number"))) to
+                        ViewText.INVALID_DEVIATION_TRIGGER,
+                    (validValues + (FormFields.MINIMUM_ORDER_SIZE_USD to listOf("Infinity"))) to
+                        ViewText.INVALID_MINIMUM_ORDER_SIZE,
+                    (validValues + (FormFields.MINIMUM_ORDER_SIZE_USD to listOf("not-a-number"))) to
+                        ViewText.INVALID_MINIMUM_ORDER_SIZE,
+                    (validValues - FormFields.LOOP_DELAY_SECONDS) to ViewText.INVALID_LOOP_DELAY,
+                    (validValues + (FormFields.LOOP_DELAY_SECONDS to listOf("60", "90"))) to
+                        ViewText.INVALID_LOOP_DELAY,
+                )
+
+                invalidCases.forEach { (values, message) ->
+                    val response = client.postForm(Routes.SETTINGS, requestFields(csrf.value, values), csrf.cookie)
+                    response.status shouldBe HttpStatusCode.UnprocessableEntity
+                    response.bodyAsText() shouldContain message
+                }
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 
@@ -196,12 +291,14 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                         ViewText.INVALID_ALLOCATION_SCORE,
                     allocationFields(csrf.value, scores = listOf("11", "8.5", "")) to
                         ViewText.INVALID_ALLOCATION_SCORE,
-                    allocationFields(csrf.value, scores = listOf("", "0", "")) to
+                    allocationFields(csrf.value, scores = listOf("", "", "")) to
                         ViewText.ALLOCATION_SCORE_REQUIRED,
-                    allocationFields(csrf.value, emphasis = "abc") to ViewText.INVALID_ALLOCATION_EMPHASIS,
+                    allocationFields(csrf.value, emphasis = "not-int") to ViewText.INVALID_ALLOCATION_EMPHASIS,
+                    allocationFields(csrf.value, emphasis = "0") to ViewText.INVALID_ALLOCATION_EMPHASIS,
                     allocationFields(csrf.value, emphasis = "99") to ViewText.INVALID_ALLOCATION_EMPHASIS,
+                    allocationFields(csrf.value, sleeve = "-1") to ViewText.INVALID_ALLOCATION_TARGET,
                     allocationFields(csrf.value, sleeve = "0") to ViewText.INVALID_ALLOCATION_TARGET,
-                    allocationFields(csrf.value, sleeve = "101") to ViewText.INVALID_ALLOCATION_TARGET,
+                    allocationFields(csrf.value, sleeve = "150") to ViewText.INVALID_ALLOCATION_TARGET,
                     allocationFields(csrf.value, targets = listOf("25", "25", "50"), sleeve = "60") to
                         ViewText.INVALID_ALLOCATION_TARGET,
                     allocationFields(
@@ -231,6 +328,19 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 )
                 explicitSleeve.status shouldBe HttpStatusCode.OK
                 explicitSleeve.bodyAsText() shouldContain "value=\"27.77\""
+
+                val zeroWeightAndScore = client.postForm(
+                    Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW,
+                    allocationFields(
+                        csrf.value,
+                        targets = listOf("25", "0", "75"),
+                        scores = listOf("9", "0", ""),
+                        emphasis = null,
+                    ),
+                    csrf.cookie,
+                )
+                zeroWeightAndScore.status shouldBe HttpStatusCode.OK
+                zeroWeightAndScore.bodyAsText() shouldContain ViewText.ALLOCATION_QUALITY_SCORE
             }
         }
 
@@ -298,6 +408,26 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                         evidence = "operator confirmed no order",
                     )
                 }
+
+                val blankTxid = client.postForm(
+                    Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "12"),
+                    requestFields(
+                        csrf.value,
+                        mapOf(
+                            FormFields.ORDER_INTENT_STATE to listOf("CONFIRMED"),
+                            FormFields.ORDER_INTENT_ORDER_TXID to listOf("   "),
+                        ),
+                    ),
+                    csrf.cookie,
+                )
+                blankTxid.status shouldBe HttpStatusCode.OK
+                coVerify {
+                    orderIntentService.resolve(
+                        id = 12,
+                        state = OrderIntentState.CONFIRMED,
+                        evidence = "",
+                    )
+                }
             }
         }
 
@@ -340,6 +470,18 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 conflict.headers[HtmxHeaders.HX_RETARGET] shouldBe "#order-intent-feedback"
                 conflict.bodyAsText() shouldContain "intent was already resolved"
 
+                coEvery { orderIntentService.resolve(10, OrderIntentState.CONFIRMED, any(), null) } throws
+                    IllegalArgumentException()
+                val invalidWithoutMessage = resolve("10", "CONFIRMED")
+                invalidWithoutMessage.status shouldBe HttpStatusCode.UnprocessableEntity
+                invalidWithoutMessage.bodyAsText() shouldContain "Invalid order intent resolution."
+
+                coEvery { orderIntentService.resolve(11, OrderIntentState.CONFIRMED, any(), null) } throws
+                    IllegalStateException()
+                val conflictWithoutMessage = resolve("11", "CONFIRMED")
+                conflictWithoutMessage.status shouldBe HttpStatusCode.Conflict
+                conflictWithoutMessage.bodyAsText() shouldContain "Order intent could not be resolved."
+
                 val invalidCsrf = client.postForm(
                     Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "9"),
                     requestFields("stale-token", mapOf(FormFields.ORDER_INTENT_STATE to listOf("CONFIRMED"))),
@@ -356,6 +498,72 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
             }
         }
 
+        "order intent CSRF failures distinguish stale HTMX pairs, JSON errors, and missing origins" {
+            testApplication {
+                application { configureTestEnv() }
+                val path = Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "9")
+                val csrf = client.settingsCsrf()
+                val staleToken = "A".repeat(43) + "." + "B".repeat(43)
+
+                val staleHtmxPair = client.postForm(
+                    path,
+                    requestFields(staleToken),
+                    cookie = "rebalancer-csrf=$staleToken",
+                    htmx = true,
+                )
+                staleHtmxPair.status shouldBe HttpStatusCode.Forbidden
+                staleHtmxPair.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
+                staleHtmxPair.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+
+                val nativeFailure = client.postForm(
+                    path,
+                    requestFields("invalid-token"),
+                    cookie = csrf.cookie,
+                )
+                nativeFailure.status shouldBe HttpStatusCode.Forbidden
+                nativeFailure.headers[HttpHeaders.ContentType].orEmpty() shouldContain "application/json"
+                nativeFailure.bodyAsText() shouldContain "\"error\""
+                nativeFailure.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+
+                val noOrigin = client.post(path) {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, "rebalancer-csrf=$staleToken")
+                    setBody(requestFields(staleToken).formUrlEncode())
+                }
+                noOrigin.status shouldBe HttpStatusCode.Forbidden
+                noOrigin.bodyAsText() shouldBe ""
+                noOrigin.headers["X-Rebalancer-CSRF-Token"] shouldBe null
+                noOrigin.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe null
+            }
+        }
+
+        "history sync status returns no rows without a scope and queries a verified scope" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            val scope = HistorySourceScope(
+                mode = HistorySourceMode.SIMULATION,
+                managedScopeFingerprint = "a".repeat(64),
+                managedScopeSymbols = listOf("BTC"),
+                simulationSessionId = "test-session",
+            )
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns null
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val noScope = client.get(Routes.API_HISTORY_SYNC_STATUS)
+                noScope.status shouldBe HttpStatusCode.OK
+                noScope.bodyAsText() shouldBe "[]"
+
+                coEvery { historyObservationRecorder.currentSourceScope(any()) } returns scope
+                coEvery { historyService.getSyncStatus(scope) } returns emptyList()
+                val withScope = client.get(Routes.API_HISTORY_SYNC_STATUS)
+                withScope.status shouldBe HttpStatusCode.OK
+                withScope.bodyAsText() shouldBe "[]"
+                coVerify(exactly = 1) { historyService.getSyncStatus(scope) }
+            }
+        }
+
         "settings and preview reject stale CSRF tokens while returning safe recovery content" {
             every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
 
@@ -364,13 +572,45 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 val csrf = client.settingsCsrf()
                 val native = client.postForm(
                     Routes.SETTINGS,
-                    requestFields("stale-token", mapOf(FormFields.LOOP_DELAY_SECONDS to listOf("88"))),
+                    requestFields(
+                        "stale-token",
+                        mapOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("88"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("4.25"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("100"),
+                            FormFields.COLORS to listOf("#abcdef"),
+                            FormFields.SCORES to listOf("7.25"),
+                            FormFields.SIMULATION to listOf("on"),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SCORE_EMPHASIS to listOf("4"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("60"),
+                        ),
+                    ),
                     csrf.cookie,
                 )
                 native.status shouldBe HttpStatusCode.Forbidden
                 native.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
                 native.bodyAsText() shouldContain "value=\"88\""
+                native.bodyAsText() shouldContain "value=\"4.25\""
+                native.bodyAsText() shouldContain "value=\"BTC\""
+                native.bodyAsText() shouldContain "value=\"100\""
+                native.bodyAsText() shouldContain "value=\"#abcdef\""
+                native.bodyAsText() shouldContain "value=\"7.25\""
+                native.bodyAsText() shouldContain "name=\"simulation\" checked"
+                native.bodyAsText() shouldContain "name=\"dryRun\" checked"
+                native.bodyAsText() shouldContain "value=\"4\""
+                native.bodyAsText() shouldContain "value=\"60\""
                 native.headers["X-Rebalancer-Error-Fragment"] shouldBe "settings-form"
+
+                val noOrigin = client.post(Routes.SETTINGS) {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(requestFields("stale-token").formUrlEncode())
+                }
+                noOrigin.status shouldBe HttpStatusCode.Forbidden
+                noOrigin.bodyAsText() shouldBe ""
+                noOrigin.headers["X-Rebalancer-CSRF-Token"] shouldBe null
 
                 val htmx = client.postForm(
                     Routes.SETTINGS,
@@ -395,7 +635,9 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
         }
 
         "dashboard fragment renders waiting and current rows with unresolved-intent controls" {
-            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(qualityScores = mapOf("BTC" to 9.5)),
+            )
             val unresolved = listOf(
                 OrderIntent(
                     id = null,
@@ -454,6 +696,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 current shouldContain "exchange response was ambiguous"
                 current shouldContain "value=\"${csrfTokenFrom(current)}\"" // token is rendered into the resolver form
                 current shouldContain "BTC"
+                current shouldContain "9.5"
                 current shouldContain "sortTable(this"
             }
         }
@@ -560,6 +803,61 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 )
                 val live = client.get(Routes.API_HEALTH)
                 live.bodyAsText() shouldContain "\"activeMode\":\"LIVE\""
+            }
+        }
+
+        "pause and resume endpoints enforce CSRF and toggle loop pause state" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            every { portfolioManager.pauseLoop() } returns Unit
+            every { portfolioManager.resumeLoop() } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val csrf = client.settingsCsrf()
+
+                // Pause with authentic CSRF
+                val pauseResponse = client.postForm(
+                    Routes.API_PAUSE,
+                    requestFields(csrf.value),
+                    cookie = csrf.cookie,
+                )
+                pauseResponse.status shouldBe HttpStatusCode.OK
+                pauseResponse.headers[HtmxHeaders.HX_REFRESH] shouldBe HtmxValues.TRUE
+                pauseResponse.bodyAsText() shouldContain "\"paused\":true"
+                coVerify { portfolioManager.pauseLoop() }
+
+                // Resume with authentic CSRF
+                val resumeResponse = client.postForm(
+                    Routes.API_RESUME,
+                    requestFields(csrf.value),
+                    cookie = csrf.cookie,
+                )
+                resumeResponse.status shouldBe HttpStatusCode.OK
+                resumeResponse.headers[HtmxHeaders.HX_REFRESH] shouldBe HtmxValues.TRUE
+                resumeResponse.bodyAsText() shouldContain "\"paused\":false"
+                coVerify { portfolioManager.resumeLoop() }
+
+                // HTMX with stale token returns session expired headers
+                val staleToken = "A".repeat(43) + "." + "B".repeat(43)
+                val htmxStalePause = client.post(Routes.API_PAUSE) {
+                    header("HX-Request", "true")
+                    header(HttpHeaders.Host, "localhost")
+                    header(HttpHeaders.Origin, "http://localhost")
+                    header(HttpHeaders.Cookie, "rebalancer-csrf=$staleToken")
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    setBody(parametersOf(FormFields.CSRF_TOKEN, listOf(staleToken)).formUrlEncode())
+                }
+                htmxStalePause.status shouldBe HttpStatusCode.Forbidden
+                htmxStalePause.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
+                (htmxStalePause.headers["X-Rebalancer-CSRF-Token"] != null) shouldBe true
+
+                // Invalid CSRF without same origin returns 403 Forbidden
+                val invalidPause = client.post(Routes.API_PAUSE) {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    setBody(parametersOf(FormFields.CSRF_TOKEN, listOf("invalid")).formUrlEncode())
+                }
+                invalidPause.status shouldBe HttpStatusCode.Forbidden
             }
         }
     }

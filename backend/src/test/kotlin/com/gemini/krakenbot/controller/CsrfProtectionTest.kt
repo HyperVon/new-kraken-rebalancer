@@ -701,5 +701,100 @@ class CsrfProtectionTest : StringSpec() {
                 ).status shouldBe HttpStatusCode.Forbidden
             }
         }
+
+        "NormalizedOrigin equals and hashCode handle contract variants" {
+            val o1 = CsrfProtection.NormalizedOrigin("http", "localhost", 80)
+            val o2 = CsrfProtection.NormalizedOrigin("http", "localhost", 80)
+            val oDiffScheme = CsrfProtection.NormalizedOrigin("https", "localhost", 80)
+            val oDiffHost = CsrfProtection.NormalizedOrigin("http", "127.0.0.1", 80)
+            val oDiffPort = CsrfProtection.NormalizedOrigin("http", "localhost", 8080)
+
+            (o1 == o2) shouldBe true
+            o1.hashCode() shouldBe o2.hashCode()
+            (o1 == oDiffScheme) shouldBe false
+            (o1 == oDiffHost) shouldBe false
+            (o1 == oDiffPort) shouldBe false
+            (o1.equals(null)) shouldBe false
+            (o1.equals("not an origin")) shouldBe false
+        }
+
+        "request authority and origin normalization handles whitespace, malformed brackets, and ports" {
+            testApplication {
+                routing { csrfTestRoutes() }
+
+                val csrf = client.issueCsrf()
+
+                // Whitespace in authority
+                client.postCsrf(csrf = csrf, host = "localhost ", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+                client.postCsrf(csrf = csrf, host = "  ", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+
+                // Empty host in brackets
+                client.postCsrf(csrf = csrf, host = "[]", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+                client.postCsrf(csrf = csrf, host = "[]:8080", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+
+                // Invalid IPv6 or invalid IDN
+                client.postCsrf(csrf = csrf, host = "[bad::ipv6]:8080", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+                client.postCsrf(csrf = csrf, host = "bad..name..local", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+
+                // Non-numeric port in host
+                client.postCsrf(csrf = csrf, host = "localhost:abc", origin = "http://localhost").status shouldBe
+                    HttpStatusCode.Forbidden
+            }
+        }
+
+        "stale token detection rejects invalid segments and non-matching pairs" {
+            testApplication {
+                routing { csrfTestRoutes() }
+
+                // Token segment wrong length
+                val tooShort = "A".repeat(42) + "." + "B".repeat(43)
+                client.postStaleCsrf(token = tooShort).status shouldBe HttpStatusCode.Forbidden
+
+                val tooLong = "A".repeat(44) + "." + "B".repeat(43)
+                client.postStaleCsrf(token = tooLong).status shouldBe HttpStatusCode.Forbidden
+
+                val invalidBase64 = "A".repeat(42) + "!." + "B".repeat(43)
+                client.postStaleCsrf(token = invalidBase64).status shouldBe HttpStatusCode.Forbidden
+
+                // Legacy token wrong length
+                client.postStaleCsrf(token = "A".repeat(42)).status shouldBe HttpStatusCode.Forbidden
+                client.postStaleCsrf(token = "A".repeat(44)).status shouldBe HttpStatusCode.Forbidden
+                client.postStaleCsrf(token = "A".repeat(42) + "!").status shouldBe HttpStatusCode.Forbidden
+            }
+        }
+
+        "Referer header fallbacks handle both header spelling variants and comma-separated relative paths" {
+            testApplication {
+                routing { csrfTestRoutes() }
+
+                val csrf = client.issueCsrf()
+
+                // Using standard "Referer" header name without Origin
+                val responseReferer = client.post("/test-csrf") {
+                    header(HttpHeaders.Host, "localhost")
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header("Referer", "http://localhost/dashboard")
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    setBody(parametersOf(FormFields.CSRF_TOKEN, listOf(csrf.value)).formUrlEncode())
+                }
+                responseReferer.status shouldBe HttpStatusCode.OK
+
+                // Referer with comma followed by relative path (e.g. client path with comma)
+                val responseRelativeComma = client.post("/test-csrf") {
+                    header(HttpHeaders.Host, "localhost")
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header("Referer", "http://localhost/view,fragment")
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    setBody(parametersOf(FormFields.CSRF_TOKEN, listOf(csrf.value)).formUrlEncode())
+                }
+                responseRelativeComma.status shouldBe HttpStatusCode.OK
+            }
+        }
     }
 }

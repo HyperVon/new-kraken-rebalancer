@@ -1,7 +1,7 @@
 ---
 name: ktor-html-views
 description: >-
-  Server-side HTML/CSS for Dashboard, Settings, and Actual: view components,
+  Server-side HTML/CSS for Dashboard, Settings, and History: view components,
   DashboardController routes, kotlinx.html/CSS, HTMX, and SSE. Use when changing
   SSR templates, CSS modules, or Ktor UI routes.
 ---
@@ -11,21 +11,21 @@ description: >-
 ## Active layout
 
 1. `DashboardRoutes.dashboardRouting()` registers `DashboardController`.
-2. `DashboardController` serves Dashboard, Settings, Actual, fragments, health,
-   readiness, order-intent actions, and the current-cycle SSE stream.
+2. `DashboardController` serves Dashboard, Settings, History, fragments, health,
+   readiness, order-intent actions, account-history APIs, and current-cycle SSE.
 3. `DashboardView` coordinates page rendering.
 4. `view/component/` contains `DashboardShellComponent`,
    `DashboardFragmentComponent`, the Dashboard overview/allocation/performance/
    activity components, `SettingsFormComponent`, and
-   `ActualObservationsPageComponent`.
+   `HistoryPageComponent`.
 5. `view/css/` contains the theme and layout/component style modules.
 6. Shared `:common` catalogs define `Routes`, IDs, attributes, selectors,
    visible text, and CSS classes.
 
-The retained user pages are `/`, `/settings`, and `/actual`. `/history` is a
-compatibility route that permanently redirects to `/actual`; former
-`/api/history/*` routes return 410 Gone. The corresponding legacy route
-constants remain in `:common` for this response behavior.
+The retained user pages are `/`, `/settings`, and `/history`. History combines
+direct cycle samples with account-scoped Kraken trades, ledgers, and balance
+checkpoints. Its value chart does not reconstruct a historical portfolio or
+calculate Buy & Hold performance.
 
 ## Type-safe view helpers (`:common` + JVM `HtmlExtensions`)
 
@@ -69,7 +69,7 @@ fragment, and the fragment refreshes mode from current Settings while updating
 `#header-status` out-of-band.
 
 Pass current `Settings` to every page and fragment renderer that displays the
-header. For example, `DashboardView.renderActualObservationsPage(settings,
+header. For example, `DashboardView.renderHistoryPage(settings,
 page, ...)` and `renderDashboardFragment(settings, latest, ...)` both need the
 same persisted mode information.
 
@@ -89,10 +89,11 @@ and a source-scoped bounded window for the hero chart. The JS client updates
 age/freshness and preserves table sorting; it does not open `EventSource` or
 reconstruct reports.
 
-The Actual page uses `ActualObservationsPageComponent`. It presents directly
-observed raw values, evidence gaps, and an optional prospective Buy & Hold
-comparison after eligible evidence and continuity verification. It does not
-backfill or reconstruct earlier performance.
+The History page uses `HistoryPageComponent`. It presents direct cycle-value
+samples, per-feed synchronization status, time-range and event filters,
+paginated trade and ledger tables, and exchange-reported balance checkpoints.
+Incomplete samples have no total; gaps are not filled. Account synchronization
+is unavailable until the authenticated identity is verified.
 
 ## HTMX and static assets
 
@@ -118,16 +119,16 @@ of hostname-prefix lookalikes when editing the access boundary.
 
 ## Documentation and focused checks
 
-Visible changes to Dashboard, Settings, or Actual should refresh the retained
+Visible changes to Dashboard, Settings, or History should refresh the retained
 screenshots via [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md)
 and update the User Guide when user-facing behavior changes. Use
 [ui-manual-qa](../ui-manual-qa/SKILL.md) for interaction checks, and
 [ui-visual-review](../ui-visual-review/SKILL.md) followed by
 [ui-visual-implement](../ui-visual-implement/SKILL.md) for visual redesigns.
 
-Relevant backend checks include the focused Dashboard cutover/API and view
-component tests. Retired History pages, reporting APIs, retrospective chart
-sections, and reconstruction tests are not active UI surfaces.
+Relevant backend checks include the focused Dashboard and History route/API
+and view-component tests. Keep the History page and account sync routes aligned
+with their controller and service contracts.
 
 ## Checklist
 
@@ -136,7 +137,7 @@ sections, and reconstruction tests are not active UI surfaces.
 - [ ] Mode plate precedence remains Simulation, then Dry Run, then Live Trading
 - [ ] STREAM/STALE remains current-snapshot freshness only
 - [ ] Dashboard uses the latest current-cycle snapshot
-- [ ] Actual preserves raw observation gaps and prospective continuity rules
-- [ ] `/history` redirects and legacy history API routes return 410
+- [ ] History samples retain account and managed-asset scopes; incomplete values stay incomplete
+- [ ] Account-history sync requires same-origin / CSRF protection and verified identity
 - [ ] SSE refresh, out-of-band freshness swap, and static cache-busting remain intact
 - [ ] User-facing visual changes update active screenshots and guide text

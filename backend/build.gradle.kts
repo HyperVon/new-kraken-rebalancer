@@ -176,18 +176,20 @@ val coverageExcludes =
         // KrakenServiceImpl is NOT excluded — gateway signing/retry must stay covered.
         // Only the pure interface is excluded; synthetic HTML-DSL lambdas are handled
         // via `*Kt$*` in tight scopes if ever needed rather than whole-class excludes.
-        "**/config/DatabaseConfig*",
-        // Split out of DatabaseConfig; carries the same bootstrap/legacy-repair logic
-        // that remains impractical to exercise to the same bundle thresholds.
-        "**/config/MigrationBackupKt*",
-        "**/config/LegacyDataRepairKt*",
         "**/config/KtorConfigKt*",
+        "**/config/ExecutionDatabase*",
+        "**/service/history/HistoryDatabase*",
         "**/repository/table/**",
         "**/service/KrakenService*",
         // Thin interfaces are excluded at their actual package paths; implementations under
         // service/impl (including service/impl/history) remain measured by both JaCoCo tasks.
         "**/service/ConfigService.class",
         "**/service/OrderExecutor.class",
+        "**/service/PortfolioManager.class",
+        "**/service/history/HistoryStore.class",
+        "**/service/history/HistoryService.class",
+        "**/service/history/HistoryCycleGate.class",
+        "**/service/history/HistoryCycleGate$*",
         "**/repository/*Repository.class",
         "**/*\$DefaultImpls*",
         "**/view/util/HtmlExtensionsKt*",

@@ -23,6 +23,8 @@ interface PortfolioManager {
 
     fun isLoopRunning(): Boolean = false
 
+    fun isCycleActive(): Boolean = false
+
     fun getOperationalStatus(): RebalanceOperationalStatus = RebalanceOperationalStatus()
 
     fun pauseLoop()

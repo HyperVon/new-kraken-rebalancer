@@ -1,72 +1,132 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.model.KrakenApiConstants
-import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
-import java.math.BigDecimal
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 
-@Suppress("unused")
-class FakeKrakenServiceTest : StringSpec() {
-    init {
+class FakeKrakenServiceTest :
+    StringSpec({
         isolationMode = IsolationMode.InstancePerTest
 
-        val baseTime = Instant.parse("2026-06-01T00:00:00Z")
-
-        fun event(index: Int, type: String = KrakenApiConstants.LEDGER_TYPE_STAKING, asset: String = "XBT") =
-            LedgerEvent(
-                ledgerId = "ledger-$index",
-                time = baseTime.plus(index.toLong(), ChronoUnit.MINUTES),
-                type = type,
-                asset = asset,
-                amount = BigDecimal("0.1"),
-            )
-
-        "getLedgers returns empty until entries are seeded" {
+        "getAccountTradePage returns default empty page and tracks call count" {
             runTest {
                 val fake = FakeKrakenService()
 
-                fake.getLedgers(null, null, null, null) shouldBe emptyList()
-                fake.getLastLedgerTotalCount() shouldBe 0
+                val page = fake.getAccountTradePage(startSec = 100L, endSec = 200L, cursor = "cursor-1", limit = 50)
+
+                page.valid shouldBe true
+                page.entries shouldBe emptyList()
+                page.startSec shouldBe 100L
+                page.endSec shouldBe 200L
+                page.requestedCursor shouldBe "cursor-1"
+                fake.getTradePageCallCount shouldBe 1
             }
         }
 
-        "seedLedgerEntries filters by requested types and time window" {
+        "getAccountLedgerPage returns default empty page and tracks call count" {
             runTest {
                 val fake = FakeKrakenService()
-                fake.seedLedgerEntries(
-                    listOf(
-                        event(1),
-                        event(2, type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND, asset = "STRC"),
-                        event(3),
-                    ),
+
+                val page = fake.getAccountLedgerPage(startSec = 300L, endSec = 400L, cursor = "ledger-cursor")
+
+                page.valid shouldBe true
+                page.entries shouldBe emptyList()
+                page.startSec shouldBe 300L
+                page.endSec shouldBe 400L
+                page.requestedCursor shouldBe "ledger-cursor"
+                fake.getLedgerPageCallCount shouldBe 1
+            }
+        }
+
+        "tradePageSupplier and ledgerPageSupplier return custom configured pages" {
+            runTest {
+                val fake = FakeKrakenService()
+                val tradeEntry = ExchangeTradeHistoryEntry(
+                    tradeId = "T1",
+                    orderTxid = "O1",
+                    postTxid = null,
+                    pair = "XBTUSD",
+                    baseAsset = "XBT",
+                    quoteCurrency = "USD",
+                    feeCurrency = "USD",
+                    time = null,
+                    rawTime = null,
+                    type = "buy",
+                    orderType = "limit",
+                    price = "50000.0",
+                    cost = "5000.0",
+                    fee = "8.0",
+                    volume = "0.1",
+                    margin = null,
+                    misc = null,
+                    tradeSequenceId = null,
+                    maker = false,
+                    ledgerIds = null,
+                    rawRecordJson = null,
+                    hasValidTime = true,
+                    hasValidPrice = true,
+                    hasValidCost = true,
+                    hasValidFee = true,
+                    hasValidVolume = true,
+                    isValidRecord = true,
                 )
-                val windowStart = baseTime.plus(2, ChronoUnit.MINUTES).epochSecond
+                fake.tradePageSupplier = { start, end, cursor, _ ->
+                    ExchangeHistoryPage(
+                        entries = listOf(tradeEntry),
+                        startSec = start,
+                        endSec = end,
+                        requestedCursor = cursor,
+                        nextCursor = "next-cursor",
+                        count = 1L,
+                        rawSize = 1,
+                        valid = true,
+                    )
+                }
 
-                val staking = fake.getLedgers(windowStart, null, null, setOf(KrakenApiConstants.LEDGER_TYPE_STAKING))
+                val tradePage = fake.getAccountTradePage(null, null, null, null)
+                tradePage.entries shouldBe listOf(tradeEntry)
+                tradePage.nextCursor shouldBe "next-cursor"
+                tradePage.count shouldBe 1L
 
-                staking.map { it.ledgerId } shouldBe listOf("ledger-3")
-                fake.getLastLedgerTotalCount() shouldBe 1
+                val ledgerEntry = ExchangeLedgerHistoryEntry(
+                    ledgerId = "L1",
+                    refid = "ref-1",
+                    time = null,
+                    rawTime = null,
+                    type = "deposit",
+                    subtype = null,
+                    assetClass = "currency",
+                    asset = "USD",
+                    amount = "1000.0",
+                    fee = "0.0",
+                    balance = "1000.0",
+                    rawRecordJson = null,
+                    hasValidTime = true,
+                    hasValidAmount = true,
+                    hasValidFee = true,
+                    hasValidBalance = true,
+                    isValidRecord = true,
+                )
+                fake.ledgerPageSupplier = { start, end, cursor ->
+                    ExchangeHistoryPage(
+                        entries = listOf(ledgerEntry),
+                        startSec = start,
+                        endSec = end,
+                        requestedCursor = cursor,
+                        nextCursor = null,
+                        count = 1L,
+                        rawSize = 1,
+                        valid = true,
+                    )
+                }
+
+                val ledgerPage = fake.getAccountLedgerPage(null, null, null)
+                ledgerPage.entries shouldBe listOf(ledgerEntry)
+                ledgerPage.rawSize shouldBe 1
             }
         }
-
-        "seedLedgerEntries pages newest-first at the Kraken page size and tracks the total" {
-            runTest {
-                val fake = FakeKrakenService()
-                fake.seedLedgerEntries((1..KrakenApiConstants.LEDGER_PAGE_SIZE + 1).map { event(it) })
-
-                val firstPage = fake.getLedgers(null, 0, null, null)
-                val secondPage = fake.getLedgers(null, KrakenApiConstants.LEDGER_PAGE_SIZE, null, null)
-
-                firstPage.size shouldBe KrakenApiConstants.LEDGER_PAGE_SIZE
-                firstPage.first().ledgerId shouldBe "ledger-51"
-                secondPage.map { it.ledgerId } shouldBe listOf("ledger-1")
-                fake.getLastLedgerTotalCount() shouldBe 51
-            }
-        }
-    }
-}
+    })

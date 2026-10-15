@@ -101,14 +101,13 @@ Rules:
 
 | Invariant | Owned by | Regression looks like |
 | :--- | :--- | :--- |
-| Mode plate on every page | `view/util/Layouts.kt` (`brandWithMode`) | Settings or Actual header renders `brandMark()` alone |
+| Mode plate on every page | `view/util/Layouts.kt` (`brandWithMode`) | Settings or History header renders `brandMark()` alone |
 | Stream chip separate from mode | `Layouts.streamStatusPlaceholder` + `DashboardFragmentComponent` OOB swap, `frontend-js` `Dashboard.kt` | Chip labelled `LIVE` again (reads as live trading) instead of `STREAM` / `STALE`; chip back on a separate right-aligned row |
 | Latest current-cycle snapshot | `OverviewGridComponent` + `CurrentPortfolioState` | Snapshot missing, stale-looking, or paired with actions from another cycle |
 | Cash / Crypto tile progress bars | `OverviewGridComponent.renderTileBar` | Bar width detached from the stated percentage |
 | Current-cycle actions | `RecentActivityComponent` | Actions detached from the latest snapshot or presented as a persistent timeline |
 | Safety toggle cards + ON/OFF pill | `SettingsFormComponent` | Bare checkbox labels; pill not tracking checked state |
-| Actual raw evidence and coverage gaps | `ActualObservationsPageComponent` | Incomplete samples joined as complete observations, or missing coverage hidden |
-| Prospective Buy & Hold | `ActualObservationsPageComponent` + benchmark service | Comparison shown without eligible baseline and verified continuity |
+| History values and exchange evidence | `HistoryPageComponent` + `HistoryStyles` | Missing value intervals are joined or emulator activity appears as account trades/ledgers |
 
 ### Step 3: Gates before verify
 
@@ -160,7 +159,7 @@ and fakes a regression.
 Cheap to read off the same after-PNGs, and it catches redesign regressions the
 approved IDs did not cover:
 
-- [ ] Dashboard, Settings, **and** Actual headers each show the mode plate, and
+- [ ] Dashboard, Settings, **and** History headers each show the mode plate, and
       it matches the verify run (`simulation: true` → `SIMULATION`)
 - [ ] Stream chip (Dashboard only) reads `STREAM` / `STALE`, one line with
       relative age/time at ~1280–1440px
@@ -168,12 +167,12 @@ approved IDs did not cover:
       tiles, and actions from that same cycle
 - [ ] Settings safety cards show `ON` / `OFF` pills matching checkbox state
 - [ ] Settings exposes active controls and omits retired history-only controls
-- [ ] Actual keeps incomplete evidence and coverage gaps visibly distinct
-- [ ] Prospective Buy & Hold is tied to an eligible baseline with verified
-      continuity
+- [ ] History shows direct value observations without filling missing intervals
+- [ ] Simulation values remain process-scoped and emulator activity is not shown
+      as authenticated exchange history
 
 Use [ui-manual-qa](../ui-manual-qa/SKILL.md) for functional checks of the
-retained Dashboard, Settings, and Actual controls.
+retained Dashboard, Settings, and History controls.
 
 ### Step 7: Iteration cap
 
@@ -238,7 +237,7 @@ artifacts. Final message:
 - [ ] spotless + relevant tests green
 - [ ] Isolated sim verify; after PNGs read against acceptance
 - [ ] Retained-page regression sweep clean (mode plate, stream chip, latest
-      Dashboard snapshot/actions, Settings safety controls, Actual evidence)
+      Dashboard snapshot/actions, Settings safety controls, and History evidence)
 - [ ] Iterations capped; regressions noted
 - [ ] docs-screenshot-refresh + USER_GUIDE/CHANGELOG when shipping
 - [ ] App stopped; real config/DB untouched

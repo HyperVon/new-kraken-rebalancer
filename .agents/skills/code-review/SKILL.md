@@ -126,10 +126,11 @@ not treat this skill’s checklist as a substitute.
 - Dashboard age and STREAM/STALE freshness describe the latest snapshot, not
   trading mode; active table sorting survives fragment refresh.
 - Settings retains active controls and removes retired history-only keys on save.
-- Actual keeps incomplete raw evidence visible; prospective Buy & Hold requires
-  an eligible baseline and verified continuity.
-- Hot `SharedFlow`, latest-value `StateFlow`, and bounded Actual channel usage
-  match `docs/FLOWS.md`.
+- History portfolio values come from direct cycle observations; exchange trades
+  and ledgers remain separate evidence and are not used to reconstruct earlier
+  portfolio values.
+- Hot `SharedFlow`, latest-value `StateFlow`, and bounded History recorder usage
+  match `docs/FLOWS.md`; account synchronization stays outside order execution.
 
 #### Flow / SSE diff checks
 

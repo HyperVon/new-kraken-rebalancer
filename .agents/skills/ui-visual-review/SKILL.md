@@ -1,7 +1,7 @@
 ---
 name: ui-visual-review
 description: >-
-  Visually review the live Dashboard / Settings / Actual UI in simulation mode
+  Visually review the live Dashboard / Settings / History UI in simulation mode
   and recommend redesigns, removals, additions, or polish. Use when the user
   asks for a UI review, visual audit, design critique, or screenshot-based UX
   improvements — recommend only; do not implement (use ui-visual-implement).
@@ -32,11 +32,11 @@ Review every primary surface users see:
 | :--- | :--- | :--- |
 | Dashboard | `/` | top (cards/allocation) + bottom (table/activity) |
 | Settings | `/settings` | full form |
-| Actual | `/actual` | raw observation evidence, coverage gaps, optional prospective Buy & Hold |
+| History | `/history` | recorded portfolio values, account-sync state, exchange trade and ledger evidence |
 
 Also note empty/error/loading states if you can trigger them safely in simulation
 (e.g. before the first cycle snapshot exists — usually skip; prefer a completed
-current-cycle snapshot and the explicit simulation-unavailable Actual state).
+current-cycle snapshot and the simulation-scoped History state).
 
 Capture through the shared screenshot helper at **desktop**, **laptop**, and
 **phone** profiles (add **tablet** and **wide** when the layout is a focus).
@@ -53,7 +53,7 @@ math, rewriting docs (except quoting findings).
 
 See [refined-glass-baseline.md](refined-glass-baseline.md) for the shipped
 baseline table (mode plate, STREAM/STALE chip, latest Dashboard snapshot,
-current-cycle actions, safety cards, and Actual evidence). Treat missing/broken
+current-cycle actions, safety cards, and History evidence). Treat missing/broken
 baseline items as **P0/P1**; do not re-propose them as new ideas.
 
 ---
@@ -133,7 +133,7 @@ Present findings to the user **before** any implementation. Use this structure:
 
 ### [P0|P1|P2|P3] SHORT-ID — Title
 - **Type**: redesign | add | remove | restyle | layout | typography | chart | a11y | motion
-- **Page**: Dashboard | Settings | Actual | Global
+- **Page**: Dashboard | Settings | History | Global
 - **Evidence**: which screenshot / region (and what you saw)
 - **Problem**: what’s wrong or weak
 - **Recommendation**: concrete change (can be ambitious)
@@ -173,7 +173,7 @@ pixel tweaks. Cover at least:
    language (`CssTheme` / `CssClass`).
 6. **Information architecture** — Duplicate stats? Missing empty states? Settings
    field grouping / labels?
-7. **Actual chart** — Raw observed values, incomplete-sample markers, visible coverage gaps, and the optional prospective comparison when verified.
+7. **History charts and evidence** — Directly recorded portfolio values, visible data gaps, and separate exchange-reported trades, ledgers, and balance checkpoints.
 8. **Current-cycle actions** — Scanability of the latest cycle activity and BUY/SELL/DRY RUN labels without implying a persistent activity timeline.
 9. **Responsive risk** — Does `80rem` max-width leave awkward margins; would
    narrow viewports collapse badly?
@@ -184,7 +184,7 @@ pixel tweaks. Cover at least:
 Judge each from the PNGs; report any miss as a finding rather than assuming the
 implementation is fine:
 
-1. **Mode plate** — Present beside the brand on Dashboard, Settings, and Actual;
+1. **Mode plate** — Present beside the brand on Dashboard, Settings, and History;
    label matches the run settings (`simulation: true` → `SIMULATION`) and is
    visually distinct from stream health.
 2. **Stream chip** — On Dashboard only: reads `STREAM` / `STALE` (never `LIVE`)
@@ -199,15 +199,15 @@ implementation is fine:
    readable as current-cycle BUY/SELL/DRY RUN outcomes.
 6. **Safety cards** — Checked vs unchecked is obvious from the `ON`/`OFF` pill
    and card treatment; consequence prose is readable, not truncated.
-7. **Actual evidence** — Incomplete samples and missing coverage remain visibly
-   distinct from complete observations; the chart does not bridge evidence gaps.
-8. **Prospective Buy & Hold** — Show it only from an eligible complete baseline
-   after continuity verification; do not present a retrospective backtest.
+7. **History evidence** — Missing or incomplete direct observations remain
+   visible as gaps; the chart does not interpolate across missing evidence.
+8. **Account sync** — Simulation values remain process-scoped, while emulator
+   activity is not presented as authenticated Kraken trades or ledgers.
 
 ### Production regression smells (mandatory on full reviews)
 
 Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*`,
-`REGRESSION-*`, Dashboard, Settings, and Actual cases:
+`REGRESSION-*`, Dashboard, Settings, and History cases:
 
 1. **Stale CSS after deploy** — controls render as default white native buttons
    or selects because `/static/style.css` was cached; verify the `?v=` cache-bust
@@ -220,9 +220,8 @@ Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*`,
    or detached from its own actions; retired trend metrics reappear.
 5. **Settings controls** — Retired drawdown, deployment, inception, or
    comparison-start controls return to the active form.
-6. **Actual evidence** — Incomplete observations or missing coverage appear as a
-   continuous measured line, or prospective Buy & Hold is shown without verified
-   continuity.
+6. **History evidence** — Missing observations are joined by an inferred line,
+   or emulator activity is presented as authenticated account history.
 
 ### Design-system stance
 
@@ -328,7 +327,7 @@ Then wait for the user’s selection before running ui-visual-implement.
 - [ ] Every capture PNG read with vision
 - [ ] Refined Glass baseline evaluated ([refined-glass-baseline.md](refined-glass-baseline.md))
       and checks 1–8 (mode plate, stream chip, latest Dashboard snapshot, tiles,
-      current-cycle actions, safety cards, Actual evidence, prospective B&H)
+      current-cycle actions, safety cards, and History evidence)
 - [ ] Findings use SHORT-IDs, severity, acceptance criteria
 - [ ] `findings.json` written under `$REVIEW_DIR`
 - [ ] Interactive canvas picker created + linked (checkboxes + Implement selected)

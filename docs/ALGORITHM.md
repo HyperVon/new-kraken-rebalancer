@@ -3,8 +3,9 @@
 This document describes the active rebalance cycle and the current portfolio
 surfaces. The cycle uses the configured allocation directly, including its
 configured USD percentage target. Its dollar target scales with the current
-portfolio total. Retrospective History reporting, history reconstruction,
-and retrospective comparisons are retired. Current planning does not use
+portfolio total. The History page reports direct cycle samples and synchronized
+Kraken trade and ledger records; it does not reconstruct historical portfolio
+values or calculate Buy & Hold performance. Current planning does not use
 ATH/drawdown deployment.
 
 ## Overview
@@ -25,10 +26,10 @@ flowchart TD
     SELL --> SETTLE[Confirm post-sell USD for non-dry-run cycles]
     SETTLE --> BUY[Execute eligible buys within the cash reserve]
     BUY --> SNAP[Build the completed current-cycle snapshot]
-    STOP --> ACTUAL[Queue eligible direct Actual observation]
+    STOP --> HISTORY[Queue direct History sample and cycle activity]
     SNAP --> PUBLISH[Publish latest in-memory Dashboard snapshot]
-    PUBLISH --> ACTUAL
-    ACTUAL --> WAIT[Wait configured loop delay]
+    PUBLISH --> HISTORY
+    HISTORY --> WAIT[Wait configured loop delay]
     WAIT --> START
 ```
 
@@ -122,8 +123,9 @@ volume is submitted.
    valuation, configured targets, and deviations. Publish it to in-memory
    `CurrentPortfolioState` as the latest Dashboard and SSE snapshot; the state
    also maintains the bounded, source-scoped hero trend window.
-7. **Observe Actual.** Queue direct balance and ticker evidence for asynchronous
-   Actual capture. Observation storage is separate from the order path.
+7. **Record History.** Queue the selected direct cycle sample and activity for
+   asynchronous persistence. History storage and exchange synchronization are
+   separate from the order path.
 8. **Wait.** Sleep for `loopDelaySeconds`, unless a settings update replaces the
    idle delay after the active cycle session exits.
 
@@ -132,7 +134,8 @@ volume is submitted.
 `simulation` and `dryRun` are distinct settings:
 
 - `simulation: true` routes exchange operations to the offline emulator and
-  cannot create authenticated Actual observations.
+  records cycle values in a process-scoped simulation History series; it cannot
+  authenticate an account or synchronize Kraken trades and ledgers.
 - `dryRun: true` calculates and logs intended orders on the selected backend
   without placing orders.
 - A live order is possible only when simulation and dry run are both off.
@@ -147,14 +150,13 @@ and makes readiness unavailable until an operator verifies Kraken and resolves
 the intent with evidence. AddOrder is attempted once; an ambiguous result is
 not retried automatically.
 
-Order intents and account binding are stored in the separate execution
-database. The legacy `kraken-rebalancer.db` file remains for safe execution
-journal migration and account-history continuity during binding. It is not an
-active reporting destination; retired report synchronization, reconstruction,
-and writes do not run, and existing files and tables are left untouched. Actual
-observations use their separate append-only store. See the [execution-journal
-recovery runbook](../SECURITY.md#execution-journal-storage-and-recovery) for
-storage and migration procedures.
+Order intents and account binding are stored in `execution.db`; History samples
+and synchronized exchange records use a separate `history.db`. Both files live
+in the configured data directory, whose `account-identity.sha256` pins
+account-scoped data to one verified Kraken account. The new stores are
+initialized explicitly and do not migrate the former reporting or Actual
+databases. See the [execution-journal storage notes](../SECURITY.md#execution-journal-storage-and-recovery)
+for initialization and backup requirements.
 
 ## Dashboard, health, and readiness
 
@@ -173,28 +175,33 @@ unavailable while the loop is paused/stopped or unhealthy, configuration or
 diagnostics are unavailable, there is no current-cycle snapshot, the latest
 cycle has an operational error, or an unresolved live-order intent remains.
 
-The former `/history` page permanently redirects to `/actual`. Former
-`/api/history/*` reporting endpoints return **410 Gone**.
+The Dashboard remains a latest-cycle view with a separate process-local trend.
+The `/history` page reads persisted cycle observations and Kraken trade, ledger,
+and balance-checkpoint records from the account-scoped History store.
 
-## Actual raw observations and prospective Buy & Hold
+## Account History values and exchange records
 
-Actual records direct observations for configured managed assets. It stores the
-Balance response, direct USD ticker marks, local request windows, account/scope
-evidence, and incomplete samples in a separate append-only database. It does
-not fill gaps or substitute historical prices. The dispatcher authenticates the
-current Kraken account identity and checks that credentials have not changed
-since cycle capture before writing asynchronously. Dry-run observations do not
-require an existing execution binding; live-order authorization keeps its
-separate binding checks. Collection or storage problems can skip a sample
-without changing an order decision. Simulation does not contribute authenticated
-Actual observations.
+The bounded History writer records the cycle's selected direct balances,
+direct ticker marks, request windows, account or simulation scope, and
+completeness status. It persists asynchronously after the cycle has captured
+its data, so History storage failure does not block rebalance execution. An
+incomplete sample has no total value; the chart does not fill missing periods
+or substitute historical prices. Simulation samples use a separate process
+session and are not authenticated account observations.
 
-An optional prospective Buy & Hold comparison remains available when an
-eligible complete observation and verified event continuity provide a safe
-starting point. It compares values moving forward from that baseline. It does
-not backdate a baseline, reconstruct an earlier period, or influence the
-rebalance plan. See the [Actual section in the User Guide](USER_GUIDE.md#actual-observations)
-for evidence scope, limitations, and display behavior.
+For an authenticated account, `/api/history/sync/start` starts bounded,
+cursor-based Kraken Trades and Ledgers scans. A page is committed before the
+next is requested. The synchronizer checks the authenticated account and
+credential scope around each page and verifies the active data-directory
+account binding before storing data. A changed account or managed-asset scope
+cannot be joined to another value series. The History page provides time
+ranges, event filters, paginated trade and ledger tables, and exchange-reported
+balance checkpoints. It displays evidence; it does not reconstruct a complete
+historical portfolio value from those events or compute retrospective
+performance.
+
+See the [History section in the User Guide](USER_GUIDE.md#history) for the
+operator-facing behavior and limitations.
 
 ## Active settings and compatibility
 

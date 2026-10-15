@@ -20,9 +20,9 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
    including current CSRF token updates.
 
 The retained browser pages are Dashboard (`/`), Settings (`/settings`), and
-Actual (`/actual`). Dashboard reports the latest current cycle only. Actual
-renders raw observations and an optional prospective Buy & Hold comparison;
-the client does not reconstruct past performance.
+History (`/history`). Dashboard reports the latest current cycle only. History
+is rendered by the server; the client does not fetch exchange history, build
+its charts, or reconstruct past portfolio values.
 
 ## SSE ownership and status semantics
 
@@ -59,9 +59,9 @@ literal for the contract instead of the catalog value used by production code.
 Dashboard sorting preserves the selected column and direction when current
 cycle rows are replaced. Asset symbols sort as strings; numeric columns prefer
 the server-rendered `data-sort-value`, then parse visible text after removing
-currency, percent, and whitespace decoration. Do not reintroduce client-side
-History tables, trade formatting, chart setup, or retrospective timeframe
-controls.
+currency, percent, and whitespace decoration. Keep History tables, trade
+formatting, charts, time ranges, and filters server-rendered rather than moving
+them into Kotlin/JS.
 
 ## Settings allocation controls
 
@@ -86,7 +86,7 @@ configured in `frontend-js/karma.config.d/coverage.js`.
 
 When a retained page changes visually, follow
 [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md). Its targets
-cover Dashboard, Settings, and Actual only. Use
+cover Dashboard, Settings, and History. Use
 [ui-manual-qa](../ui-manual-qa/SKILL.md) for interaction checks and the visual
 review/implementation skills for design changes.
 

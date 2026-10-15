@@ -387,8 +387,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coVerify(exactly = 0) {
                     realBackend.executeOrder(any(), any(), any(), any(), any(), any())
                 }
-                coVerify(exactly = 0) { realBackend.getLedgers(any(), any(), any(), any()) }
-                coVerify(exactly = 0) { realBackend.getTradeHistory(any(), any()) }
+                coVerify(exactly = 0) { realBackend.getAccountLedgerPage(any(), any(), any()) }
+                coVerify(exactly = 0) { realBackend.getAccountTradePage(any(), any(), any(), any()) }
 
                 realConfigService.getConfig() shouldBe publishedConfig
                 configEvents shouldBe listOf(initialSettings, publishedSettings)
@@ -590,6 +590,373 @@ class PortfolioManagerLoopTest : StringSpec() {
                 dependenciesReleased shouldBe true
                 a.join()
                 stoppedWorker.join()
+            }
+        }
+
+        "reports cycleActive and loop status correctly" {
+            portfolioManager.isCycleActive() shouldBe false
+            portfolioManager.isLoopRunning() shouldBe false
+            portfolioManager.getOperationalStatus().shouldNotBeNull()
+        }
+
+        "resumeLoop throws when application scope is null" {
+            shouldThrow<IllegalStateException> {
+                portfolioManager.resumeLoop()
+            }
+        }
+
+        "runLoop returns immediately when isRunning is false" {
+            runTest {
+                portfolioManager.runLoop()
+                portfolioManager.isLoopRunning() shouldBe false
+            }
+        }
+
+        "performRebalanceCycle handles order execution failure and continues with snapshot" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
+                val failingExecutor = mockk<OrderExecutor>()
+                coEvery { failingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any()) } throws
+                    RuntimeException("exchange rejected")
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = failingExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+                snapshot.actions.any { it.contains("exchange rejected") } shouldBe true
+                manager.getOperationalStatus().lastCycleError shouldBe "Order execution failed"
+            }
+        }
+
+        "performRebalanceCycle handles calculation failure and reports no snapshot" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val failingAnalyzer = mockk<PortfolioAnalyzer>()
+                coEvery { failingAnalyzer.fetchObservedBalances() } returns
+                    ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                coEvery { failingAnalyzer.fetchObservedPrices() } returns ObservedPrices(emptyMap())
+                coEvery { failingAnalyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Failure(IllegalArgumentException("Missing ticker"))
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = failingAnalyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot shouldBe null
+                manager.getOperationalStatus().lastCycleError shouldBe "Cycle produced no snapshot"
+            }
+        }
+
+        "performRebalanceCycle works when krakenService is null" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = null,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+            }
+        }
+
+        "performRebalanceCycle handles post-trade valuation failure and falls back to pre-trade values" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returnsMany listOf(
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00")))),
+                    Result.Failure(IllegalArgumentException("Post-trade valuation failed")),
+                )
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = mapOf(Asset.USD to BigDecimal("10.00")),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+
+                val mockExecutor = mockk<OrderExecutor>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = mockExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+                manager.getOperationalStatus().lastCycleError shouldBe "Post-trade valuation failed"
+            }
+        }
+
+        "performRebalanceCycle handles post-trade state refresh exception and falls back to pre-trade values" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved andThenThrows
+                    RuntimeException("Network timeout during post-trade fetch")
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = mapOf(Asset.USD to BigDecimal("10.00")),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+
+                val mockExecutor = mockk<OrderExecutor>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = mockExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+                manager.getOperationalStatus().lastCycleError shouldBe "Post-trade state refresh failed"
+            }
+        }
+
+        "startRebalancingLoop works and executes cycles when krakenService is null" {
+            runTest {
+                val settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
+                    settings = settings,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                every { configService.watchConfigChanges() } returns flowOf(settings)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = null,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val job = manager.startRebalancingLoop(this)
+                runCurrent()
+                manager.isLoopRunning() shouldBe true
+                manager.stopRebalancingLoop()
+                runCurrent()
+                job.join()
+                manager.isLoopRunning() shouldBe false
+            }
+        }
+
+        "runLoop catches unexpected exception in cycle and continues running" {
+            runTest {
+                val settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
+                    settings = settings,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                every { configService.watchConfigChanges() } returns flowOf(settings)
+
+                val failingAnalyzer = mockk<PortfolioAnalyzer>()
+                coEvery { failingAnalyzer.fetchObservedBalances() } throws RuntimeException("Unexpected fatal crash")
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = failingAnalyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val job = manager.startRebalancingLoop(this)
+                runCurrent()
+                manager.isLoopRunning() shouldBe true
+                manager.stopRebalancingLoop()
+                runCurrent()
+                job.join()
+                manager.isLoopRunning() shouldBe false
+            }
+        }
+
+        "performRebalanceCycle handles order executor failure and records cycle error" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = mapOf(Asset.USD to BigDecimal("10.00")),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+
+                val failingExecutor = mockk<OrderExecutor>()
+                coEvery { failingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any()) } throws
+                    RuntimeException("Kraken API error during order placement")
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = failingExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+                manager.getOperationalStatus().lastCycleError shouldBe "Order execution failed"
+            }
+        }
+
+        "performRebalanceCycle notifies historyObservationRecorder when non-null" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = emptyMap(),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                val mockSnapshot = mockk<com.gemini.krakenbot.model.PortfolioSnapshot>(relaxed = true)
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockSnapshot
+
+                val mockRecorder =
+                    mockk<com.gemini.krakenbot.service.history.HistoryObservationRecorder>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                    historyObservationRecorder = mockRecorder,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+
+                coVerify(exactly = 1) {
+                    mockRecorder.captureFinalCycle(
+                        cycleId = any(),
+                        config = config,
+                        balances = preObserved,
+                        prices = prePrices,
+                        snapshot = mockSnapshot,
+                        sampleSelection = any(),
+                        additionalIncompleteReasons = any(),
+                        actions = any(),
+                        dryRun = true,
+                    )
+                }
+            }
+        }
+
+        "portfolioSourceScope handles exceptions from krakenService gracefully" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = false, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = emptyMap(),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+
+                val throwingExchange = FakeKrakenService().apply {
+                    fundingEvidenceScopeSupplier = { throw RuntimeException("Network down") }
+                }
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = throwingExchange,
+                    currentPortfolioState = currentPortfolioState,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
             }
         }
     }
