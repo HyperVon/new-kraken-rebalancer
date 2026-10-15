@@ -53,6 +53,22 @@ class ExecutionDatabaseLifecycleTest : StringSpec() {
             }
         }
 
+        "normal startup refuses an incomplete paired data directory without changing the execution journal" {
+            withTempDirectory { directory ->
+                val path = directory.resolve("execution.db")
+                val initialized = ExecutionDatabase.initialize(path.toString())
+                val journalId = initialized.journalId()
+                val initializationMarker = directory.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)
+                Files.createFile(initializationMarker)
+
+                shouldThrow<IOException> { ExecutionDatabase.init(path.toString()) }
+
+                Files.exists(path) shouldBe true
+                Files.readString(path.resolveSibling("execution.db.journal-id")) shouldBe "$journalId\n"
+                Files.exists(initializationMarker) shouldBe true
+            }
+        }
+
         "normal startup refuses a journal marker for a different database identity" {
             withTempDirectory { directory ->
                 val path = directory.resolve("execution.db")

@@ -170,15 +170,17 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderValueChart(data: HistoryPageData) {
-        val points = data.observations.mapNotNull { o -> o.totalUsd?.let { o.observedAt to it } }
+        val points = data.observations.mapNotNull { observation ->
+            observation.totalUsd?.let { observation.observedAt to it }
+        }.sortedBy { it.first }
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) { +ViewText.HISTORY_PORTFOLIO_VALUE }
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                if (points.size < 2) {
+                if (points.isEmpty()) {
                     p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_NO_DATA }
                 } else {
-                    unsafe { +lineSvg(points) }
+                    unsafe { +pointSvg(points) }
                 }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
@@ -187,9 +189,9 @@ class HistoryPageComponent {
 
     private fun DIV.renderCheckpointChart(data: HistoryPageData) {
         val asset = data.filters.assetKey
-        val points = data.checkpoints.items.asReversed().mapNotNull { c ->
-            val at = c.observedAt
-            val quantity = c.quantity
+        val points = data.checkpoints.items.asReversed().mapNotNull { checkpoint ->
+            val at = checkpoint.observedAt
+            val quantity = checkpoint.quantity
             if (at != null && quantity != null) at to quantity else null
         }
         div(CssClass.Layout.GlassPanel) {
@@ -200,8 +202,8 @@ class HistoryPageComponent {
                 id = HtmlIds.HISTORY_ASSET_CHART
                 when {
                     asset.isNullOrBlank() -> p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_SELECT_ASSET }
-                    points.size < 2 -> p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_NO_DATA }
-                    else -> unsafe { +lineSvg(points) }
+                    points.isEmpty() -> p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_NO_DATA }
+                    else -> unsafe { +pointSvg(points) }
                 }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHECKPOINT_CAPTION }
@@ -349,22 +351,28 @@ class HistoryPageComponent {
         return url
     }
 
-    /** Time-proportional SVG polyline; values are plotted as given, never inferred across gaps. */
-    private fun lineSvg(points: List<Pair<Instant, BigDecimal>>): String {
+    /** Time-proportional SVG markers show direct samples without implying values between them. */
+    private fun pointSvg(points: List<Pair<Instant, BigDecimal>>): String {
         val minT = points.minOf { it.first.epochSecond }
         val maxT = points.maxOf { it.first.epochSecond }
         val minV = points.minOf { it.second }
         val maxV = points.maxOf { it.second }
         val spanT = (maxT - minT).coerceAtLeast(1).toDouble()
         val spanV = maxV.subtract(minV).takeIf { it.signum() != 0 } ?: BigDecimal.ONE
-        val coordinates = points.joinToString(" ") { (time, value) ->
+        fun coordinate(point: Pair<Instant, BigDecimal>): Pair<Double, Double> {
+            val (time, value) = point
             val x = (time.epochSecond - minT) / spanT * (SVG_WIDTH - 2 * SVG_PAD) + SVG_PAD
             val ratio = value.subtract(minV).divide(spanV, 6, RoundingMode.HALF_UP).toDouble()
             val y = SVG_HEIGHT - SVG_PAD - ratio * (SVG_HEIGHT - 2 * SVG_PAD)
-            "%.2f,%.2f".format(java.util.Locale.US, x, y)
+            return x to y
+        }
+        val markers = points.joinToString("") { point ->
+            val (x, y) = coordinate(point)
+            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4"/>"""
+                .format(java.util.Locale.US, x, y)
         }
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
-            """preserveAspectRatio="none"><polyline class="${CssClass.History.Line.value}" points="$coordinates"/>""" +
+            """preserveAspectRatio="none">$markers""" +
             """<text class="${CssClass.History.AxisLabel.value}" x="4" y="12">${minV.max(
                 maxV,
             ).stripTrailingZeros().toPlainString()}</text>""" +

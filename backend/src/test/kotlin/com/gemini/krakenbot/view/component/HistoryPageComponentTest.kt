@@ -19,6 +19,7 @@ import com.gemini.krakenbot.service.history.HistorySyncStatus
 import com.gemini.krakenbot.service.history.HistoryTrade
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
@@ -232,9 +233,57 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html shouldContain "<polyline"
+            html shouldContain "<circle"
             html shouldContain "Portfolio Value"
             html shouldContain "Asset Holdings Over Time (BTC)"
+        }
+
+        "keeps incomplete observations as gaps in the value chart" {
+            val now = Instant.ofEpochSecond(1_700_000_000)
+            val observation = HistoryObservation(
+                observationId = "before-gap",
+                cycleId = "cycle-before-gap",
+                sourceScope = historyScope,
+                observedAt = now.minusSeconds(60),
+                balanceRequestStartedAt = now.minusSeconds(60),
+                balanceResponseEndedAt = now.minusSeconds(60),
+                priceRequestStartedAt = now.minusSeconds(60),
+                priceResponseEndedAt = now.minusSeconds(60),
+                status = HistoryObservationStatus.COMPLETE,
+                totalUsd = BigDecimal("50000"),
+                incompleteReasons = emptyList(),
+                assets = emptyList(),
+            )
+            val incomplete = observation.copy(
+                observationId = "incomplete",
+                cycleId = "cycle-incomplete",
+                observedAt = now,
+                status = HistoryObservationStatus.INCOMPLETE,
+                totalUsd = null,
+                incompleteReasons = listOf("missing price"),
+            )
+            val afterGap = observation.copy(
+                observationId = "after-gap",
+                cycleId = "cycle-after-gap",
+                observedAt = now.plusSeconds(60),
+                totalUsd = BigDecimal("55000"),
+            )
+            val data = HistoryPageData(
+                range = "24h",
+                filters = HistoryEventQuery(),
+                tradesOffset = 0,
+                ledgersOffset = 0,
+                observations = listOf(observation, incomplete, afterGap),
+                checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
+                trades = HistoryPage(emptyList(), 0L, 50, 0, false),
+                ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
+                syncStatuses = emptyList(),
+                accountAvailable = true,
+            )
+
+            val html = render(data)
+            html.countOccurrences("<polyline") shouldBe 0
+            html.countOccurrences("<circle") shouldBe 2
         }
 
         "renders trades, ledgers, and pagination buttons" {
@@ -379,7 +428,7 @@ class HistoryPageComponentTest : StringSpec() {
                 accountAvailable = true,
             )
             val html = render(data)
-            html shouldContain "<polyline"
+            html shouldContain "<circle"
         }
 
         "renders trades and ledgers with null fields and pagination without total" {
@@ -450,4 +499,6 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "1–1"
         }
     }
+
+    private fun String.countOccurrences(value: String): Int = split(value).size - 1
 }

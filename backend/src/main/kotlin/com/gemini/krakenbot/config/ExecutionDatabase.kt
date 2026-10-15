@@ -208,6 +208,7 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
     companion object {
         private const val BUSY_TIMEOUT_MILLIS = 5_000
         private const val SQLITE_SYNCHRONOUS_FULL = 2
+        const val JOURNAL_MARKER_SUFFIX = ".journal-id"
         private val log = LoggerFactory.getLogger(ExecutionDatabase::class.java)
         private val keepAliveConnections = ConcurrentHashMap<String, Connection>()
         private val REQUIRED_TABLES = setOf(
@@ -246,11 +247,28 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
             return database
         }
 
+        /** Resumes a fresh paired-store initialization whose outer marker proves this path began empty. */
+        fun resumeFreshInitialization(executionDbPath: String): ExecutionDatabase {
+            val databasePath = filePath(executionDbPath)
+            val markerPath = journalMarkerPath(databasePath)
+            val database = ExecutionDatabase(executionDbPath, buildSqliteUrl(executionDbPath))
+            val schemaComplete = runCatching { database.verifyInitializedSchema() }.isSuccess
+            if (schemaComplete) {
+                database.verifyOrWriteJournalMarker(markerPath, createIfMissing = !Files.exists(markerPath))
+                return database
+            }
+
+            deleteSqliteArtifacts(databasePath)
+            Files.deleteIfExists(markerPath)
+            return initialize(executionDbPath)
+        }
+
         /** Opens an explicitly initialized journal and never creates or upgrades a file-backed store. */
         fun init(executionDbPath: String): ExecutionDatabase {
             if (isMemoryDatabase(executionDbPath)) return initializeMemory(executionDbPath)
 
             val databasePath = filePath(executionDbPath)
+            requirePairedInitializationComplete(databasePath)
             val markerPath = journalMarkerPath(databasePath)
             if (!Files.isRegularFile(databasePath)) {
                 throw IOException(
@@ -263,8 +281,15 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
             val database = ExecutionDatabase(executionDbPath, buildSqliteUrl(executionDbPath))
             database.verifyInitializedSchema()
             database.verifyOrWriteJournalMarker(markerPath, createIfMissing = false)
+            requirePairedInitializationComplete(databasePath)
             log.info("Opened execution journal at {}", executionDbPath)
             return database
+        }
+
+        private fun requirePairedInitializationComplete(databasePath: Path) {
+            if (Files.exists(databasePath.resolveSibling(DataDirectoryConfig.INITIALIZATION_MARKER_FILE))) {
+                throw IOException("Data directory initialization is incomplete; refusing normal startup.")
+            }
         }
 
         private fun initializeMemory(executionDbPath: String): ExecutionDatabase {
@@ -309,7 +334,7 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
         }
 
         private fun journalMarkerPath(databasePath: Path): Path =
-            databasePath.resolveSibling("${databasePath.fileName}.journal-id")
+            databasePath.resolveSibling("${databasePath.fileName}$JOURNAL_MARKER_SUFFIX")
 
         private fun buildSqliteUrl(dbPath: String): String = when {
             dbPath.startsWith("jdbc:sqlite:") -> dbPath

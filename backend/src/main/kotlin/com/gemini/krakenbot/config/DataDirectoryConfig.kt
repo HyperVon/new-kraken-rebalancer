@@ -10,6 +10,7 @@ object DataDirectoryConfig {
     const val DEFAULT_DATA_DIR = "rebalancer-data-v1"
     const val EXECUTION_DB_FILE = "execution.db"
     const val HISTORY_DB_FILE = "history.db"
+    const val INITIALIZATION_MARKER_FILE = ".initialization-in-progress"
 
     private val log = LoggerFactory.getLogger(DataDirectoryConfig::class.java)
 
@@ -28,9 +29,29 @@ object DataDirectoryConfig {
         Files.createDirectories(dataDir)
         val executionDb = executionDatabasePath(dataDir)
         val historyDb = historyDatabasePath(dataDir)
-        ExecutionDatabase.initialize(executionDb.toString())
+        val initializationMarker = dataDir.resolve(INITIALIZATION_MARKER_FILE)
+        val resuming = Files.exists(initializationMarker)
+        if (!resuming) {
+            val executionMarker = executionDb.resolveSibling(
+                "${executionDb.fileName}${ExecutionDatabase.JOURNAL_MARKER_SUFFIX}",
+            )
+            check(!Files.exists(executionDb) && !Files.exists(executionMarker)) {
+                "Execution database or its identity marker already exists; refusing to replace it."
+            }
+            check(!Files.exists(historyDb)) {
+                "History database already exists; refusing to initialize a partial data directory."
+            }
+            Files.createFile(initializationMarker)
+        }
+
+        if (resuming) {
+            ExecutionDatabase.resumeFreshInitialization(executionDb.toString())
+        } else {
+            ExecutionDatabase.initialize(executionDb.toString())
+        }
         val historyDatabase = HistoryDatabase(historyDb)
         historyDatabase.initializeFreshSchema()
+        Files.delete(initializationMarker)
         log.info("Initialized fresh execution and history databases in {}", dataDir)
     }
 }

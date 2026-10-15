@@ -77,6 +77,9 @@ object HistoryStyles {
             strokeLinejoinRaw("round")
             strokeLinecapRaw("round")
         }
+        CssClass.History.Point.querySelector {
+            fillRaw(ChartProps.COLOR_BLUE)
+        }
         CssClass.History.AxisLabel.querySelector {
             fillRaw(CssTheme.colorTextSecondary.value)
             fontSize = 0.6875.rem

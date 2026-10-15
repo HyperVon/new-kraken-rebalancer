@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.config
 
+import com.gemini.krakenbot.service.history.HistoryDatabase
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -56,6 +58,61 @@ class DataDirectoryConfigTest : StringSpec() {
                 DataDirectoryConfig.initializeDataDirectory(tempDir)
                 Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe true
                 Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe true
+                Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initializeDataDirectory resumes after execution database creation" {
+            val tempDir = Files.createTempDirectory("data-dir-resume-test-")
+            val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            try {
+                Files.createFile(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE))
+                ExecutionDatabase.initialize(executionDb.toString())
+                Files.createFile(historyDb)
+
+                DataDirectoryConfig.initializeDataDirectory(tempDir)
+
+                ExecutionDatabase.init(executionDb.toString()).journalId().isNotBlank() shouldBe true
+                HistoryDatabase(historyDb).connect().use { }
+                Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initializeDataDirectory recovers an incomplete execution database under its initialization marker" {
+            val tempDir = Files.createTempDirectory("data-dir-incomplete-execution-test-")
+            val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            try {
+                Files.createFile(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE))
+                Files.createFile(executionDb)
+                Files.createFile(historyDb)
+
+                DataDirectoryConfig.initializeDataDirectory(tempDir)
+
+                ExecutionDatabase.init(executionDb.toString()).journalId().isNotBlank() shouldBe true
+                HistoryDatabase(historyDb).connect().use { }
+                Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initializeDataDirectory leaves an existing history database untouched before creating execution state" {
+            val tempDir = Files.createTempDirectory("data-dir-partial-init-test-")
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            val original = "preserve existing history data"
+            try {
+                Files.writeString(historyDb, original)
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.initializeDataDirectory(tempDir) }
+
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe false
+                Files.readString(historyDb) shouldBe original
             } finally {
                 tempDir.toFile().deleteRecursively()
             }
