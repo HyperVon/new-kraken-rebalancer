@@ -98,6 +98,12 @@ class ExecutionDatabaseLifecycleTest : StringSpec() {
             db.journalId().shouldNotBeBlank()
         }
 
+        "memory database detection recognizes SQLite memory URIs without matching file paths" {
+            ExecutionDatabase.isMemoryDatabase(":memory:") shouldBe true
+            ExecutionDatabase.isMemoryDatabase("jdbc:sqlite:file:execution?mode=memory&cache=shared") shouldBe true
+            ExecutionDatabase.isMemoryDatabase("C:\\data\\mode=memory\\legacy.db") shouldBe false
+        }
+
         "ensureReadyForSubmission enforces readiness and file-backed storage" {
             withTempDirectory { directory ->
                 val path = directory.resolve("execution.db")
