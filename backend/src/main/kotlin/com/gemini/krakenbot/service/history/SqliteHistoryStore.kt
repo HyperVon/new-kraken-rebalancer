@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.history
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
@@ -15,7 +16,11 @@ import java.time.Instant
 class SqliteHistoryStore(
     private val database: HistoryDatabase,
     private val nowProvider: () -> Instant = Instant::now,
+    private val maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,
 ) : HistoryStore {
+    init {
+        require(maxPagesPerScan > 0)
+    }
     override suspend fun appendObservation(observation: HistoryObservation): Boolean = withContext(Dispatchers.IO) {
         database.connect().use { connection -> connection.inTransaction { insertObservation(connection, observation) } }
     }
@@ -41,6 +46,83 @@ class SqliteHistoryStore(
         withContext(Dispatchers.IO) {
             database.connect().use { connection -> queryObservations(connection, query) }
         }
+
+    override suspend fun queryChartObservations(
+        sourceScope: HistorySourceScope,
+        from: Instant?,
+        until: Instant?,
+        maxPoints: Int,
+    ): List<HistoryObservation> = withContext(Dispatchers.IO) {
+        require(from == null || until == null || from <= until)
+        require(maxPoints in 2..HISTORY_MAX_CHART_POINTS)
+        val perBucketSamples = if (maxPoints >= 6) 6 else 5
+        val bucketCount = (maxPoints / perBucketSamples).coerceAtLeast(1)
+        val includeIncompleteSamples = maxPoints >= 3
+        val includeLastIncompleteSample = maxPoints >= 6
+        val includeExtrema = maxPoints >= 5
+        val incompleteClause = if (includeIncompleteSamples) {
+            "OR (status = 'INCOMPLETE' AND first_incomplete_in_bucket = 1) " +
+                if (includeLastIncompleteSample) {
+                    "OR (status = 'INCOMPLETE' AND last_incomplete_in_bucket = 1) "
+                } else {
+                    ""
+                }
+        } else {
+            ""
+        }
+        val extremaClause = if (includeExtrema) {
+            "OR min_value_in_bucket = 1 OR max_value_in_bucket = 1 "
+        } else {
+            ""
+        }
+        val filter = observationFilter(
+            HistoryRangeQuery(from = from, until = until, sourceScope = sourceScope, limit = HISTORY_MAX_PAGE_LIMIT),
+        )
+        database.connect().use { connection ->
+            connection.prepareStatement(
+                "WITH filtered AS (" +
+                    "SELECT history_observations.*, ROW_NUMBER() OVER " +
+                    "(ORDER BY observed_at_ns, observation_id) AS sample_order, COUNT(*) OVER () AS row_count, " +
+                    "MIN(observed_at_ns) OVER () AS first_time_ns, MAX(observed_at_ns) OVER () AS last_time_ns " +
+                    "FROM history_observations ${filter.where}" +
+                    "), bucketed AS (" +
+                    "SELECT filtered.*, CASE WHEN row_count <= ? THEN sample_order " +
+                    "WHEN last_time_ns = first_time_ns THEN " +
+                    "CAST((sample_order - 1) * ? / row_count AS INTEGER) ELSE " +
+                    "CAST((observed_at_ns - first_time_ns) * 1.0 * ? / " +
+                    "(last_time_ns - first_time_ns + 1) AS INTEGER) END AS bucket_id " +
+                    "FROM filtered WHERE row_count > 0" +
+                    "), ranked AS (" +
+                    "SELECT bucketed.*, ROW_NUMBER() OVER (PARTITION BY bucket_id " +
+                    "ORDER BY sample_order) AS first_in_bucket, " +
+                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY sample_order DESC) AS last_in_bucket, " +
+                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                    "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, sample_order) AS first_incomplete_in_bucket, " +
+                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                    "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, " +
+                    "sample_order DESC) AS last_incomplete_in_bucket, " +
+                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                    "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
+                    "CAST(total_usd AS NUMERIC), sample_order) AS min_value_in_bucket, " +
+                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                    "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
+                    "CAST(total_usd AS NUMERIC) DESC, sample_order) AS max_value_in_bucket " +
+                    "FROM bucketed" +
+                    ") SELECT * FROM ranked WHERE first_in_bucket = 1 OR last_in_bucket = 1 " +
+                    incompleteClause + extremaClause +
+                    "ORDER BY observed_at_ns, observation_id",
+            ).use { statement ->
+                bindValues(statement, filter.values)
+                statement.setInt(filter.values.size + 1, maxPoints)
+                statement.setInt(filter.values.size + 2, bucketCount)
+                statement.setInt(filter.values.size + 3, bucketCount)
+                val headers = statement.executeQuery().use { resultSet ->
+                    buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
+                }
+                headers.loadObservationAssets(connection)
+            }
+        }
+    }
 
     override suspend fun queryAssetValues(query: HistoryRangeQuery): HistoryPage<HistoryAssetValue> =
         withContext(Dispatchers.IO) {
@@ -110,6 +192,32 @@ class SqliteHistoryStore(
         withContext(Dispatchers.IO) {
             database.connect().use { connection -> queryBalanceCheckpoints(connection, query) }
         }
+
+    override suspend fun queryFilterOptions(query: HistoryEventQuery): HistoryEventFilterOptions {
+        if (query.accountIdentityDigest == null) return HistoryEventFilterOptions()
+        return withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                val assets = listOf(
+                    queryDistinctOptionValues(connection, "history_trades", "base_asset", "time_ns", query),
+                    queryDistinctOptionValues(connection, "history_trades", "quote_currency", "time_ns", query),
+                    queryDistinctOptionValues(connection, "history_ledgers", "asset", "time_ns", query),
+                    queryDistinctOptionValues(
+                        connection,
+                        "history_balance_checkpoints",
+                        "raw_asset_key",
+                        "observed_at_ns",
+                        query,
+                    ),
+                ).flatten().distinct().sorted()
+                val pairs = queryDistinctOptionValues(connection, "history_trades", "pair", "time_ns", query)
+                val types = listOf(
+                    queryDistinctOptionValues(connection, "history_trades", "type", "time_ns", query),
+                    queryDistinctOptionValues(connection, "history_ledgers", "type", "time_ns", query),
+                ).flatten().distinct().sorted()
+                HistoryEventFilterOptions(assets = assets, pairs = pairs, types = types)
+            }
+        }
+    }
 
     override suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus = withContext(Dispatchers.IO) {
         requireDigest(window.accountIdentityDigest)
@@ -198,8 +306,8 @@ class SqliteHistoryStore(
                         "Exchange trade page was invalid.",
                     )
                 }
-                if (page.nextCursor != null && page.nextCursor == page.requestedCursor) {
-                    return@inTransaction markPageFailed(connection, request, "Exchange trade cursor did not advance.")
+                cursorProgressFailure(connection, request, page.nextCursor, "trade")?.let { reason ->
+                    return@inTransaction markPageFailed(connection, request, reason)
                 }
                 var inserted = 0L
                 page.entries.forEach { entry ->
@@ -226,8 +334,8 @@ class SqliteHistoryStore(
                         "Exchange ledger page was invalid.",
                     )
                 }
-                if (page.nextCursor != null && page.nextCursor == page.requestedCursor) {
-                    return@inTransaction markPageFailed(connection, request, "Exchange ledger cursor did not advance.")
+                cursorProgressFailure(connection, request, page.nextCursor, "ledger")?.let { reason ->
+                    return@inTransaction markPageFailed(connection, request, reason)
                 }
                 var inserted = 0L
                 page.entries.forEach { entry ->
@@ -665,6 +773,35 @@ class SqliteHistoryStore(
         return HistoryPage(rows, total, query.limit, query.offset, query.offset + rows.size < total)
     }
 
+    private fun queryDistinctOptionValues(
+        connection: Connection,
+        table: String,
+        column: String,
+        timeColumn: String,
+        query: HistoryEventQuery,
+    ): List<String> {
+        val digest = query.accountIdentityDigest ?: return emptyList()
+        val conditions = mutableListOf("account_identity_digest = ?", "$column IS NOT NULL", "TRIM($column) != ''")
+        val values = mutableListOf<Any?>(digest)
+        query.from?.let {
+            conditions += "$timeColumn >= ?"
+            values += it.toEpochNanos()
+        }
+        query.until?.let {
+            conditions += "$timeColumn < ?"
+            values += it.toEpochNanos()
+        }
+        val where = "WHERE ${conditions.joinToString(" AND ")}"
+        return connection.prepareStatement(
+            "SELECT DISTINCT $column AS option_value FROM $table $where ORDER BY option_value COLLATE NOCASE",
+        ).use { statement ->
+            bindValues(statement, values)
+            statement.executeQuery().use { resultSet ->
+                buildList { while (resultSet.next()) add(resultSet.getString("option_value")) }
+            }
+        }
+    }
+
     private fun observationFilter(query: HistoryRangeQuery, headerAlias: String = "history_observations"): SqlFilter {
         val conditions = mutableListOf<String>()
         val values = mutableListOf<Any?>()
@@ -697,6 +834,12 @@ class SqliteHistoryStore(
         query.until?.let {
             conditions += "time_ns < ?"
             values += it.toEpochNanos()
+        }
+        query.assetKey?.let { rawAsset ->
+            val asset = Asset.normalizeLedgerAsset(rawAsset).uppercase()
+            conditions += "(UPPER(base_asset) = ? OR UPPER(quote_currency) = ?)"
+            values += asset
+            values += asset
         }
         query.pair?.let {
             conditions += "pair = ?"
@@ -848,6 +991,65 @@ class SqliteHistoryStore(
         }
         return null
     }
+
+    /** Persists the current cursor before page rows and status advance in the same transaction. */
+    private fun cursorProgressFailure(
+        connection: Connection,
+        request: HistoryPageRequest,
+        nextCursor: String?,
+        feedLabel: String,
+    ): String? {
+        if (nextCursor != null && nextCursor == request.requestedCursor) {
+            return "Exchange $feedLabel cursor did not advance."
+        }
+        val pageCount = connection.prepareStatement(
+            "SELECT COUNT(*) FROM history_sync_seen_cursors WHERE account_identity_digest = ? AND feed = ? " +
+                "AND scan_id = ?",
+        ).use { statement ->
+            statement.setString(1, request.accountIdentityDigest)
+            statement.setString(2, request.feed.name)
+            statement.setString(3, request.scanId)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt(1)
+            }
+        }
+        if (pageCount >= maxPagesPerScan) {
+            return "History $feedLabel scan exceeded the $maxPagesPerScan page limit."
+        }
+        if (nextCursor != null && cursorWasSeen(connection, request, cursorKey(nextCursor))) {
+            return "Exchange $feedLabel cursor repeated within the current scan."
+        }
+        val requestedCursorKey = cursorKey(request.requestedCursor)
+        if (cursorWasSeen(connection, request, requestedCursorKey)) {
+            return "Exchange $feedLabel cursor was already processed within the current scan."
+        }
+        connection.prepareStatement(
+            "INSERT INTO history_sync_seen_cursors(account_identity_digest, feed, scan_id, cursor) " +
+                "VALUES (?, ?, ?, ?)",
+        ).use { statement ->
+            statement.setString(1, request.accountIdentityDigest)
+            statement.setString(2, request.feed.name)
+            statement.setString(3, request.scanId)
+            statement.setString(4, requestedCursorKey)
+            statement.executeUpdate()
+        }
+        return null
+    }
+
+    private fun cursorWasSeen(connection: Connection, request: HistoryPageRequest, cursor: String): Boolean =
+        connection.prepareStatement(
+            "SELECT 1 FROM history_sync_seen_cursors WHERE account_identity_digest = ? AND feed = ? " +
+                "AND scan_id = ? AND cursor = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, request.accountIdentityDigest)
+            statement.setString(2, request.feed.name)
+            statement.setString(3, request.scanId)
+            statement.setString(4, cursor)
+            statement.executeQuery().use(ResultSet::next)
+        }
+
+    private fun cursorKey(cursor: String?): String = if (cursor == null) "N" else "V$cursor"
 
     private fun updatePageStatus(
         connection: Connection,

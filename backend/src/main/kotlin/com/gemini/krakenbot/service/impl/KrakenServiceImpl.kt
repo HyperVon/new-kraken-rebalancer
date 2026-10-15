@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
+import com.gemini.krakenbot.service.AuthenticatedAccountInfo
 import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
@@ -74,14 +75,45 @@ class KrakenServiceImpl(
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
-    override suspend fun getAuthenticatedAccountIdentity(): String? {
-        val accountIdentity = queryPrivate(KrakenApiConstants.PATH_API_KEY_INFO, emptyMap())
-            .path(KrakenApiConstants.FIELD_IBAN)
-        return accountIdentity.takeIf { it.isTextual }
+    override suspend fun getAuthenticatedAccountIdentity(): String? =
+        readApiKeyInfo().path(KrakenApiConstants.FIELD_IBAN).takeIf {
+            it.isTextual
+        }
             ?.asText()
             ?.trim()
             ?.takeIf(String::isNotBlank)
+
+    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? {
+        val result = readApiKeyInfo()
+        val identity = result.path(KrakenApiConstants.FIELD_IBAN).takeIf { it.isTextual }
+            ?.asText()?.trim()?.takeIf(String::isNotBlank) ?: return null
+        val from = parseQueryBound(result, "queryFrom")
+        val to = parseQueryBound(result, "queryTo")
+        val boundsVerified = from.valid && to.valid &&
+            (from.value == null || to.value == null || from.value <= to.value)
+        return AuthenticatedAccountInfo(
+            identity = identity,
+            queryFromSec = from.value.takeIf { boundsVerified },
+            queryToSec = to.value.takeIf { boundsVerified },
+            queryBoundsVerified = boundsVerified,
+        )
     }
+
+    private suspend fun readApiKeyInfo(): JsonNode = queryPrivate(KrakenApiConstants.PATH_API_KEY_INFO, emptyMap())
+
+    private fun parseQueryBound(result: JsonNode, name: String): ParsedQueryBound {
+        if (!result.has(name)) return ParsedQueryBound(null, valid = false)
+        val node = result.path(name)
+        val raw = when {
+            node.isTextual -> node.asText()
+            node.isIntegralNumber -> node.asText()
+            else -> return ParsedQueryBound(null, valid = false)
+        }
+        val value = raw.toLongOrNull()?.takeIf { it >= 0 } ?: return ParsedQueryBound(null, valid = false)
+        return ParsedQueryBound(value.takeIf { it > 0 }, valid = true)
+    }
+
+    private data class ParsedQueryBound(val value: Long?, val valid: Boolean)
 
     private suspend fun <T> retryWithFlow(
         actionName: String,

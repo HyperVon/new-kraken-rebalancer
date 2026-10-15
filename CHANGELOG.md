@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.116] - 2026-10-15
+
+### Fixed
+
+- **History chart coverage and gaps**: sample oversized ranges across the full
+  time span, retain bucket endpoints, value extrema, and incomplete-cycle
+  markers within the point limit, draw lines between adjacent complete samples,
+  and preserve breaks at incomplete cycles. Populate asset, pair, and type
+  dropdowns from the selected account and time range.
+- **History observation accuracy**: timestamp incomplete cycles using the latest
+  available balance or price observation, and label the sync panel neutrally
+  when no synchronization is active.
+
 ## [6.17.115] - 2026-10-14
 
 ### Added

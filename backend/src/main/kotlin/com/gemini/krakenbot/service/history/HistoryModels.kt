@@ -70,6 +70,7 @@ enum class HistoryAssetValueStatus {
     INVALID_PRICE,
     INVALID_TIME_WINDOW,
     SIMULATED,
+    UNAVAILABLE_CYCLE_EVIDENCE,
 }
 
 data class HistoryAssetValue(
@@ -161,6 +162,13 @@ data class HistoryEventQuery(
         require(accountIdentityDigest == null || accountIdentityDigest.matches(Regex("[0-9a-f]{64}")))
     }
 }
+
+/** Distinct choices visible to the current account and selected time range in the History filters. */
+data class HistoryEventFilterOptions(
+    val assets: List<String> = emptyList(),
+    val pairs: List<String> = emptyList(),
+    val types: List<String> = emptyList(),
+)
 
 data class HistoryPage<out T>(
     val items: List<T>,
@@ -317,6 +325,8 @@ data class HistorySyncWindow(
     val endSec: Long,
     val cursor: String? = null,
 )
+
+const val HISTORY_MAX_SYNC_PAGES = 5_000
 
 data class HistoryLedgerCoverageWindow(val startSec: Long, val endSec: Long) {
     init {

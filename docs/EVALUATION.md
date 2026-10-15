@@ -45,6 +45,8 @@ account trades or ledgers.
   verified account identity. A page failure or scope change cannot silently
   merge data from another account.
 - History value samples preserve incomplete evidence and do not infer missing
-  values or periods. Simulation values are scoped separately from account data.
+  values or periods. Oversized charts sample the full time range within the
+  point cap while retaining bucket endpoints, extrema, and incomplete-cycle
+  boundaries. Simulation values are scoped separately from account data.
 - Saving Settings retains active controls and removes retired drawdown,
   deployment, inception, and comparison-start keys from the saved JSON.

@@ -36,6 +36,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -70,6 +71,26 @@ class PortfolioManagerLoopTest : StringSpec() {
             )
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)
+            }
+        }
+
+        "history pages share cycle admission and release it on cancellation" {
+            runTest {
+                val entered = CompletableDeferred<Unit>()
+                val heldAdmission = launch {
+                    portfolioManager.runHistoryPageIfAdmitted {
+                        entered.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+                entered.await()
+
+                portfolioManager.runHistoryPageIfAdmitted {} shouldBe false
+
+                heldAdmission.cancelAndJoin()
+                var pageRan = false
+                portfolioManager.runHistoryPageIfAdmitted { pageRan = true } shouldBe true
+                pageRan shouldBe true
             }
         }
 
@@ -652,18 +673,36 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coEvery { failingAnalyzer.fetchObservedPrices() } returns ObservedPrices(emptyMap())
                 coEvery { failingAnalyzer.calculatePortfolioValues(any(), any()) } returns
                     Result.Failure(IllegalArgumentException("Missing ticker"))
+                val mockRecorder =
+                    mockk<com.gemini.krakenbot.service.history.HistoryObservationRecorder>(relaxed = true)
+                val mockExecutor = mockk<OrderExecutor>(relaxed = true)
 
                 val manager = PortfolioManagerImpl(
                     configService = configService,
                     portfolioAnalyzer = failingAnalyzer,
-                    orderExecutor = orderExecutor,
+                    orderExecutor = mockExecutor,
                     krakenService = krakenService,
                     currentPortfolioState = currentPortfolioState,
+                    historyObservationRecorder = mockRecorder,
                 )
 
                 val snapshot = manager.performRebalanceCycle()
                 snapshot shouldBe null
                 manager.getOperationalStatus().lastCycleError shouldBe "Cycle produced no snapshot"
+                coVerify(exactly = 1) {
+                    mockRecorder.captureIncompleteCycle(
+                        cycleId = any(),
+                        config = config,
+                        balances = any(),
+                        prices = any(),
+                        reason = "Portfolio valuation failed before a snapshot could be built.",
+                        actions = any(),
+                        dryRun = true,
+                    )
+                }
+                coVerify(exactly = 0) {
+                    mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                }
             }
         }
 

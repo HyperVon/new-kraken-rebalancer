@@ -80,6 +80,9 @@ object HistoryStyles {
         CssClass.History.Point.querySelector {
             fillRaw(ChartProps.COLOR_BLUE)
         }
+        CssClass.History.GapMarker.querySelector {
+            fillRaw(CssTheme.colorWarning.value)
+        }
         CssClass.History.AxisLabel.querySelector {
             fillRaw(CssTheme.colorTextSecondary.value)
             fontSize = 0.6875.rem
@@ -107,6 +110,7 @@ object HistoryStyles {
         ".${CssClass.History.FilterInput}" {
             padding = Padding(0.375.rem, 0.625.rem)
             fontSize = 0.8125.rem
+            width = 12.rem
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorSurface2.value
             solidBorder(CssTheme.colorSurface2Border)

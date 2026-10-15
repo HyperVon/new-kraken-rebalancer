@@ -16,8 +16,8 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import java.time.Instant
 
@@ -30,10 +30,26 @@ class HistorySynchronizerTest : StringSpec() {
     private val dataDirectoryIdentity = mockk<DataDirectoryIdentity>(relaxed = true)
     private val store = mockk<HistoryStore>(relaxed = true)
 
+    private fun runningStatus(window: HistorySyncWindow) = HistorySyncStatus(
+        accountIdentityDigest = window.accountIdentityDigest,
+        feed = window.feed,
+        scanId = window.scanId,
+        state = HistorySyncState.RUNNING,
+        windowStart = Instant.ofEpochSecond(window.startSec),
+        windowEnd = Instant.ofEpochSecond(window.endSec),
+        nextCursor = window.cursor,
+        fetchedCount = 0L,
+        storedCount = 0L,
+        knownTotal = null,
+        lastPageAt = null,
+        lastError = null,
+    )
+
     init {
         "syncs trades feed to completion" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
@@ -131,9 +147,172 @@ class HistorySynchronizerTest : StringSpec() {
             }
         }
 
+        "intersects requested history windows with verified API-key dates" {
+            val allowedStart = 1_700_000_100L
+            val allowedEnd = 1_700_000_200L
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo(
+                    "ACCOUNT_1",
+                    queryFromSec = allowedStart,
+                    queryToSec = allowedEnd,
+                    queryBoundsVerified = true,
+                )
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                val block = firstArg<suspend (KrakenService) -> Any?>()
+                block(krakenService)
+            }
+            var begunWindow: HistorySyncWindow? = null
+            coEvery { store.beginSyncWindow(any()) } answers {
+                val window = firstArg<HistorySyncWindow>()
+                begunWindow = window
+                runningStatus(window)
+            }
+            coEvery { krakenService.getAccountTradePage(any(), any(), any(), any()) } returns
+                ExchangeHistoryPage(
+                    entries = emptyList(),
+                    startSec = allowedStart,
+                    endSec = allowedEnd,
+                    requestedCursor = null,
+                    nextCursor = null,
+                    count = 0L,
+                    rawSize = 0,
+                    valid = true,
+                )
+            coEvery { store.commitTradePage(any(), any()) } answers {
+                val request = firstArg<HistoryPageRequest>()
+                runningStatus(
+                    HistorySyncWindow(
+                        accountIdentityDigest = request.accountIdentityDigest,
+                        feed = request.feed,
+                        scanId = request.scanId,
+                        startSec = request.startSec,
+                        endSec = request.endSec,
+                    ),
+                ).copy(state = HistorySyncState.COMPLETE)
+            }
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+                val status = synchronizer.syncWindow(HistoryFeed.TRADES, allowedStart - 100, allowedEnd + 100)
+                begunWindow?.startSec shouldBe allowedStart
+                begunWindow?.endSec shouldBe allowedEnd
+                status.state shouldBe HistorySyncState.COMPLETE
+                coVerify { krakenService.getAccountTradePage(allowedStart, allowedEnd, null, any()) }
+            }
+        }
+
+        "fails without fetching when the requested history range misses API-key dates" {
+            val allowedStart = 1_700_000_200L
+            val allowedEnd = 1_700_000_300L
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo(
+                    "ACCOUNT_1",
+                    queryFromSec = allowedStart,
+                    queryToSec = allowedEnd,
+                    queryBoundsVerified = true,
+                )
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                val block = firstArg<suspend (KrakenService) -> Any?>()
+                block(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { store.failSync(any(), any(), any(), any()) } just runs
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+                val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+                status.state shouldBe HistorySyncState.FAILED
+                status.lastError shouldBe
+                    "History sync window does not overlap this Kraken API key's allowed query dates."
+                coVerify(exactly = 0) { krakenService.getAccountTradePage(any(), any(), any(), any()) }
+                coVerify {
+                    store.failSync(
+                        any(),
+                        HistoryFeed.TRADES,
+                        any(),
+                        "History sync window does not overlap this Kraken API key's allowed query dates.",
+                    )
+                }
+            }
+        }
+
+        "fails closed when API-key query date restrictions cannot be verified" {
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = false)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { store.failSync(any(), any(), any(), any()) } just runs
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+                val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+
+                status.state shouldBe HistorySyncState.FAILED
+                status.lastError shouldBe
+                    "History sync stopped because Kraken API-key time restrictions could not be verified."
+                coVerify(exactly = 0) { krakenService.getAccountTradePage(any(), any(), any(), any()) }
+            }
+        }
+
+        "stops before fetching if API-key query date restrictions change during a scan" {
+            val allowed = com.gemini.krakenbot.service.AuthenticatedAccountInfo(
+                "ACCOUNT_1",
+                queryFromSec = 1_700_000_000,
+                queryToSec = 1_700_000_100,
+                queryBoundsVerified = true,
+            )
+            val narrowed = allowed.copy(queryFromSec = 1_700_000_050)
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returnsMany listOf(allowed, allowed, narrowed)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { store.failSync(any(), any(), any(), any()) } just runs
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+                val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+
+                status.state shouldBe HistorySyncState.FAILED
+                status.lastError shouldBe "History sync stopped because Kraken API-key query restrictions changed."
+                coVerify(exactly = 0) { krakenService.getAccountTradePage(any(), any(), any(), any()) }
+            }
+        }
+
         "syncs ledgers feed to completion" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
@@ -252,9 +431,46 @@ class HistorySynchronizerTest : StringSpec() {
             }
         }
 
+        "does not create a scan when account identity, credentials, or directory binding is unavailable" {
+            val account = com.gemini.krakenbot.service.AuthenticatedAccountInfo(
+                "ACCOUNT_1",
+                queryBoundsVerified = true,
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returnsMany
+                listOf("scope-1", "scope-unavailable", "scope-1")
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returnsMany listOf(null, account)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { dataDirectoryIdentity.bindOrVerify(any()) } throws
+                IllegalStateException("The account marker could not be verified.")
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+
+                repeat(3) {
+                    shouldThrow<IllegalStateException> {
+                        synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+                    }
+                }
+                coVerify(exactly = 0) { store.beginSyncWindow(any()) }
+                coVerify(exactly = 1) { dataDirectoryIdentity.bindOrVerify(any()) }
+            }
+        }
+
         "fails sync when account identity scope changes during page fetch" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returnsMany listOf("ACCOUNT_1", "ACCOUNT_2")
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returnsMany listOf(
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true),
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_2", queryBoundsVerified = true),
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_2", queryBoundsVerified = true),
+            )
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
@@ -295,17 +511,22 @@ class HistorySynchronizerTest : StringSpec() {
 
         "pauses and resumes when cycle gate is active" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
             }
 
-            var cycleActive = true
-            val cycleGate = HistoryCycleGate {
-                val current = cycleActive
-                cycleActive = false
-                current
+            var firstAttempt = true
+            val cycleGate = HistoryCycleGate { block ->
+                if (firstAttempt) {
+                    firstAttempt = false
+                    false
+                } else {
+                    block()
+                    true
+                }
             }
 
             coEvery { store.pauseSync(any(), any(), any()) } just runs
@@ -373,7 +594,8 @@ class HistorySynchronizerTest : StringSpec() {
 
         "retries page once on exception and fails on second exception" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
@@ -416,7 +638,8 @@ class HistorySynchronizerTest : StringSpec() {
 
         "startSync returns already active job when sync is in progress" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
@@ -483,7 +706,8 @@ class HistorySynchronizerTest : StringSpec() {
 
         "syncWindow restarts when committed status returns FAILED" {
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
-            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
                 val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(krakenService)
@@ -547,6 +771,147 @@ class HistorySynchronizerTest : StringSpec() {
                 val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_010_000)
                 status.state shouldBe HistorySyncState.COMPLETE
                 commitCount shouldBe 2
+            }
+        }
+
+        "does not restart a scan after a repeated-cursor failure" {
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { krakenService.getAccountTradePage(any(), any(), any(), any()) } returns ExchangeHistoryPage(
+                entries = emptyList(),
+                startSec = 1_700_000_000,
+                endSec = 1_700_000_100,
+                requestedCursor = null,
+                nextCursor = "cycle-cursor",
+                count = 0L,
+                rawSize = 0,
+                valid = true,
+            )
+            coEvery { store.commitTradePage(any(), any()) } answers {
+                val request = firstArg<HistoryPageRequest>()
+                runningStatus(
+                    HistorySyncWindow(
+                        accountIdentityDigest = request.accountIdentityDigest,
+                        feed = request.feed,
+                        scanId = request.scanId,
+                        startSec = request.startSec,
+                        endSec = request.endSec,
+                    ),
+                ).copy(
+                    state = HistorySyncState.FAILED,
+                    lastError = "Exchange trade cursor repeated within the current scan.",
+                )
+            }
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+                val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+
+                status.state shouldBe HistorySyncState.FAILED
+                coVerify(exactly = 1) { store.beginSyncWindow(any()) }
+                coVerify(exactly = 1) { store.commitTradePage(any(), any()) }
+            }
+        }
+
+        "commits each trade cursor before fetching the next page" {
+            val startSec = 1_700_000_000L
+            val endSec = startSec + 100L
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { krakenService.getAccountTradePage(startSec, endSec, any(), any()) } returnsMany listOf(
+                ExchangeHistoryPage(
+                    entries = emptyList(),
+                    startSec = startSec,
+                    endSec = endSec,
+                    requestedCursor = null,
+                    nextCursor = "cursor-next",
+                    count = 0L,
+                    rawSize = 0,
+                    valid = true,
+                ),
+                ExchangeHistoryPage(
+                    entries = emptyList(),
+                    startSec = startSec,
+                    endSec = endSec,
+                    requestedCursor = "cursor-next",
+                    nextCursor = null,
+                    count = 0L,
+                    rawSize = 0,
+                    valid = true,
+                ),
+            )
+            coEvery { store.commitTradePage(any(), any()) } answers {
+                val request = firstArg<HistoryPageRequest>()
+                val nextCursor = if (request.requestedCursor == null) "cursor-next" else null
+                runningStatus(
+                    HistorySyncWindow(
+                        accountIdentityDigest = request.accountIdentityDigest,
+                        feed = request.feed,
+                        scanId = request.scanId,
+                        startSec = request.startSec,
+                        endSec = request.endSec,
+                        cursor = nextCursor,
+                    ),
+                ).copy(state = if (nextCursor == null) HistorySyncState.COMPLETE else HistorySyncState.RUNNING)
+            }
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+                val status = synchronizer.syncWindow(HistoryFeed.TRADES, startSec, endSec)
+
+                status.state shouldBe HistorySyncState.COMPLETE
+                coVerify(exactly = 2) { store.commitTradePage(any(), any()) }
+                coVerify { krakenService.getAccountTradePage(startSec, endSec, null, any()) }
+                coVerify { krakenService.getAccountTradePage(startSec, endSec, "cursor-next", any()) }
+            }
+        }
+
+        "propagates cancellation without recording a page failure" {
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                com.gemini.krakenbot.service.AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { krakenService.getAccountTradePage(any(), any(), any(), any()) } throws
+                CancellationException("test cancellation")
+
+            runTest {
+                val synchronizer = HistorySynchronizer(
+                    applicationScope = backgroundScope,
+                    krakenService = krakenService,
+                    configService = configService,
+                    dataDirectoryIdentity = dataDirectoryIdentity,
+                    store = store,
+                )
+
+                shouldThrow<CancellationException> {
+                    synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+                }
+                coVerify(exactly = 0) { store.failSync(any(), any(), any(), any()) }
             }
         }
 

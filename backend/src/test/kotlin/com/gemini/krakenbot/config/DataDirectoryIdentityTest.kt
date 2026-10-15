@@ -18,11 +18,11 @@ class DataDirectoryIdentityTest : StringSpec() {
             runTest {
                 val directory = Files.createTempDirectory("data-directory-identity-")
                 try {
-                    val identity = DataDirectoryIdentity(directory)
+                    val identity = DataDirectoryIdentity(directory) { false }
                     identity.bindOrVerify(digest(ACCOUNT_A))
                     val competingBinds = List(8) {
                         async(Dispatchers.IO) {
-                            runCatching { DataDirectoryIdentity(directory).bindOrVerify(digest(ACCOUNT_B)) }
+                            runCatching { DataDirectoryIdentity(directory) { false }.bindOrVerify(digest(ACCOUNT_B)) }
                         }
                     }.awaitAll()
 
@@ -38,7 +38,7 @@ class DataDirectoryIdentityTest : StringSpec() {
         "rejects non-digest account identity" {
             val directory = Files.createTempDirectory("data-dir-invalid-digest-")
             try {
-                val identity = DataDirectoryIdentity(directory)
+                val identity = DataDirectoryIdentity(directory) { false }
                 io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
                     identity.bindOrVerify("not-a-valid-sha256-hex-digest")
                 }
@@ -50,7 +50,7 @@ class DataDirectoryIdentityTest : StringSpec() {
         "boundAccountIdentity returns null when identity file does not exist" {
             val directory = Files.createTempDirectory("data-dir-no-identity-")
             try {
-                val identity = DataDirectoryIdentity(directory)
+                val identity = DataDirectoryIdentity(directory) { false }
                 identity.boundAccountIdentity() shouldBe null
             } finally {
                 directory.toFile().deleteRecursively()
@@ -61,7 +61,7 @@ class DataDirectoryIdentityTest : StringSpec() {
             val directory = Files.createTempDirectory("data-dir-corrupt-identity-")
             try {
                 Files.writeString(directory.resolve("account-identity.sha256"), "corrupted-content")
-                val identity = DataDirectoryIdentity(directory)
+                val identity = DataDirectoryIdentity(directory) { false }
                 io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
                     identity.boundAccountIdentity()
                 }
@@ -73,7 +73,7 @@ class DataDirectoryIdentityTest : StringSpec() {
         "bindOrVerify succeeds idempotently when called repeatedly with the same digest" {
             val directory = Files.createTempDirectory("data-dir-idempotent-")
             try {
-                val identity = DataDirectoryIdentity(directory)
+                val identity = DataDirectoryIdentity(directory) { false }
                 val d = digest(ACCOUNT_A)
                 identity.bindOrVerify(d)
                 identity.bindOrVerify(d)
@@ -86,11 +86,24 @@ class DataDirectoryIdentityTest : StringSpec() {
         "bindOrVerify throws IllegalStateException when existing identity file has a different digest" {
             val directory = Files.createTempDirectory("data-dir-mismatch-")
             try {
-                val identity = DataDirectoryIdentity(directory)
+                val identity = DataDirectoryIdentity(directory) { false }
                 identity.bindOrVerify(digest(ACCOUNT_A))
                 io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
                     identity.bindOrVerify(digest(ACCOUNT_B))
                 }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "refuses to write an identity marker when account evidence exists without one" {
+            val directory = Files.createTempDirectory("data-dir-unmarked-evidence-")
+            try {
+                val identity = DataDirectoryIdentity(directory) { true }
+                io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+                    identity.bindOrVerify(digest(ACCOUNT_A))
+                }
+                Files.exists(directory.resolve("account-identity.sha256")) shouldBe false
             } finally {
                 directory.toFile().deleteRecursively()
             }

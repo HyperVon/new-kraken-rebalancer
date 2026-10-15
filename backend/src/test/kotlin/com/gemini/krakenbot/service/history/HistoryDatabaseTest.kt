@@ -26,10 +26,11 @@ class HistoryDatabaseTest : StringSpec() {
                     conn.createStatement().use { stmt ->
                         stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
                             rs.next() shouldBe true
-                            rs.getInt(1) shouldBe 1
+                            rs.getInt(1) shouldBe 2
                         }
                     }
                 }
+                db.verifyInitialized()
                 db.close()
             }
         }
@@ -92,6 +93,41 @@ class HistoryDatabaseTest : StringSpec() {
                 shouldThrow<IllegalStateException> {
                     db.connect()
                 }
+            }
+        }
+
+        "startup validation rejects a missing required table" {
+            withTempDirectory { dir ->
+                val database = HistoryDatabase(dir.resolve("history.db"))
+                database.initializeFreshSchema()
+                database.connect().use { connection ->
+                    connection.createStatement().use { it.execute("DROP TABLE history_sync_status") }
+                }
+                shouldThrow<IllegalStateException> { database.verifyInitialized() }
+            }
+        }
+
+        "account evidence check distinguishes empty and populated History stores" {
+            withTempDirectory { dir ->
+                val database = HistoryDatabase(dir.resolve("history.db"))
+                database.initializeFreshSchema()
+                database.hasAccountEvidence() shouldBe false
+                database.connect().use { connection ->
+                    connection.prepareStatement(
+                        "INSERT INTO history_daily_prices(account_identity_digest, raw_asset_key, candle_open_sec, " +
+                            "candle_end_sec, pair, close_usd, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ).use { statement ->
+                        statement.setString(1, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+                        statement.setString(2, "XXBT")
+                        statement.setLong(3, 1L)
+                        statement.setLong(4, 2L)
+                        statement.setString(5, "XXBTZUSD")
+                        statement.setString(6, "100")
+                        statement.setString(7, "test")
+                        statement.executeUpdate()
+                    }
+                }
+                database.hasAccountEvidence() shouldBe true
             }
         }
     }

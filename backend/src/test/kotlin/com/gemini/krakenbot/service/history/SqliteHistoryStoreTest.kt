@@ -532,6 +532,248 @@ class SqliteHistoryStoreTest : StringSpec() {
             }
         }
 
+        "trade asset filter matches normalized base or quote assets and combines with other filters" {
+            withStore { store, _ ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 500L
+                store.beginSyncWindow(
+                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "asset-filter", startSec, endSec),
+                )
+                val request = HistoryPageRequest(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.TRADES,
+                    scanId = "asset-filter",
+                    startSec = startSec,
+                    endSec = endSec,
+                    requestedCursor = null,
+                    committedAt = Instant.ofEpochSecond(endSec),
+                )
+                val entries = listOf(
+                    tradeEntry("BTC-USD", Instant.ofEpochSecond(startSec + 1)),
+                    tradeEntry("ETH-USD", Instant.ofEpochSecond(startSec + 2)).copy(
+                        pair = "XETHZUSD",
+                        baseAsset = "ETH",
+                    ),
+                    tradeEntry("BTC-USDT", Instant.ofEpochSecond(startSec + 3)).copy(
+                        pair = "XBTUSDT",
+                        quoteCurrency = "USDT",
+                    ),
+                )
+                store.commitTradePage(
+                    request,
+                    ExchangeHistoryPage(
+                        entries = entries,
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        nextCursor = null,
+                        count = entries.size.toLong(),
+                        rawSize = entries.size,
+                        valid = true,
+                    ),
+                ).state shouldBe HistorySyncState.COMPLETE
+
+                val btc = store.queryTrades(HistoryEventQuery(accountIdentityDigest = accountDigest, assetKey = "BTC"))
+                btc.items.map { it.tradeId }.toSet() shouldBe setOf("BTC-USD", "BTC-USDT")
+                btc.total shouldBe 2L
+                btc.hasMore shouldBe false
+                val btcAlias = store.queryTrades(
+                    HistoryEventQuery(accountIdentityDigest = accountDigest, assetKey = "XXBT"),
+                )
+                btcAlias.total shouldBe 2L
+                val usd = store.queryTrades(HistoryEventQuery(accountIdentityDigest = accountDigest, assetKey = "USD"))
+                usd.items.map { it.tradeId }.toSet() shouldBe setOf("BTC-USD", "ETH-USD")
+                val combined = store.queryTrades(
+                    HistoryEventQuery(
+                        accountIdentityDigest = accountDigest,
+                        assetKey = "BTC",
+                        pair = "XBTUSDT",
+                        type = "buy",
+                    ),
+                )
+                combined.items.map { it.tradeId } shouldBe listOf("BTC-USDT")
+            }
+        }
+
+        "filter options are account scoped and limited to the selected time range" {
+            withStore { store, _ ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 1_000L
+                val from = Instant.ofEpochSecond(startSec + 400)
+                val until = Instant.ofEpochSecond(startSec + 800)
+
+                store.beginSyncWindow(
+                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "filter-options-trades", startSec, endSec),
+                )
+                val tradeRequest = HistoryPageRequest(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.TRADES,
+                    scanId = "filter-options-trades",
+                    startSec = startSec,
+                    endSec = endSec,
+                    requestedCursor = null,
+                    committedAt = Instant.ofEpochSecond(endSec),
+                )
+                val trades = listOf(
+                    tradeEntry("inside", Instant.ofEpochSecond(startSec + 500)).copy(
+                        pair = "XXBTZUSD",
+                        baseAsset = "BTC",
+                        quoteCurrency = "USD",
+                        type = "buy",
+                    ),
+                    tradeEntry("outside", Instant.ofEpochSecond(startSec + 300)).copy(
+                        pair = "XETHZUSD",
+                        baseAsset = "ETH",
+                        quoteCurrency = "EUR",
+                        type = "sell",
+                    ),
+                )
+                store.commitTradePage(
+                    tradeRequest,
+                    ExchangeHistoryPage(trades, startSec, endSec, null, null, trades.size.toLong(), trades.size, true),
+                )
+
+                store.beginSyncWindow(
+                    HistorySyncWindow(accountDigest, HistoryFeed.LEDGERS, "filter-options-ledgers", startSec, endSec),
+                )
+                val ledgerRequest = HistoryPageRequest(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.LEDGERS,
+                    scanId = "filter-options-ledgers",
+                    startSec = startSec,
+                    endSec = endSec,
+                    requestedCursor = null,
+                    committedAt = Instant.ofEpochSecond(endSec),
+                )
+                val ledgers = listOf(
+                    ledgerEntry("inside-ledger", Instant.ofEpochSecond(startSec + 600), asset = "XXBT")
+                        .copy(type = "deposit"),
+                    ledgerEntry("outside-ledger", Instant.ofEpochSecond(startSec + 300), asset = "DOT.F")
+                        .copy(type = "withdrawal"),
+                )
+                store.commitLedgerPage(
+                    ledgerRequest,
+                    ExchangeHistoryPage(
+                        ledgers,
+                        startSec,
+                        endSec,
+                        null,
+                        null,
+                        ledgers.size.toLong(),
+                        ledgers.size,
+                        true,
+                    ),
+                )
+
+                store.queryFilterOptions(
+                    HistoryEventQuery(accountIdentityDigest = accountDigest, from = from, until = until),
+                ) shouldBe HistoryEventFilterOptions(
+                    assets = listOf("BTC", "USD", "XXBT"),
+                    pairs = listOf("XXBTZUSD"),
+                    types = listOf("buy", "deposit"),
+                )
+                store.queryFilterOptions(HistoryEventQuery()) shouldBe HistoryEventFilterOptions()
+            }
+        }
+
+        "chart observation sampling covers the full range within its point bound" {
+            withStore { store, directory ->
+                val database = HistoryDatabase(directory.resolve("history.db"))
+                database.connect().use { connection ->
+                    connection.autoCommit = false
+                    connection.prepareStatement(
+                        "INSERT INTO history_observations(" +
+                            "observation_id, cycle_id, source_key, source_mode, account_identity_digest, " +
+                            "simulation_session_id, managed_scope_fingerprint, managed_scope_symbols, wallet_scope, " +
+                            "balance_source, price_source, valuation_currency, sample_selection, observed_at_ns, " +
+                            "balance_request_started_at_ns, balance_response_ended_at_ns, " +
+                            "price_request_started_at_ns, " +
+                            "price_response_ended_at_ns, persisted_at_ns, status, total_usd, incomplete_reasons, " +
+                            "payload_hash" +
+                            ") VALUES (?, ?, ?, 'ACCOUNT', ?, NULL, ?, ?, ?, ?, ?, 'USD', 'FINAL', " +
+                            "?, ?, ?, ?, ?, ?, ?, ?, " +
+                            "'', ?)",
+                    ).use { statement ->
+                        repeat(2_501) { index ->
+                            val baseEpochSecond = 1_700_000_000L
+                            val epochSecond = if (index < 2_400) {
+                                baseEpochSecond + index
+                            } else {
+                                baseEpochSecond + 1_800_000_000L + (index - 2_400) * 7_776_000L
+                            }
+                            val at = Instant.ofEpochSecond(epochSecond)
+                            val incomplete = index in setOf(100, 2_450, 2_490)
+                            statement.setString(1, "chart-$index")
+                            statement.setString(2, "chart-cycle-$index")
+                            statement.setString(3, testScope().sourceKey)
+                            statement.setString(4, accountDigest)
+                            statement.setString(5, fingerprint)
+                            statement.setString(6, "QlRD\nVVNE")
+                            statement.setString(7, HISTORY_WALLET_SCOPE)
+                            statement.setString(8, HISTORY_BALANCE_SOURCE)
+                            statement.setString(9, HISTORY_PRICE_SOURCE)
+                            statement.setLong(10, at.toEpochNanos())
+                            statement.setLong(11, at.toEpochNanos())
+                            statement.setLong(12, at.toEpochNanos())
+                            statement.setLong(13, at.toEpochNanos())
+                            statement.setLong(14, at.toEpochNanos())
+                            statement.setLong(15, at.toEpochNanos())
+                            statement.setString(16, if (incomplete) "INCOMPLETE" else "COMPLETE")
+                            val totalUsd = when (index) {
+                                1_200 -> "999999.00"
+                                1_201 -> "0.01"
+                                else -> (index + 1).toString()
+                            }
+                            if (incomplete) {
+                                statement.setNull(17, java.sql.Types.VARCHAR)
+                            } else {
+                                statement.setString(17, totalUsd)
+                            }
+                            statement.setString(18, "chart-hash-$index")
+                            statement.addBatch()
+                        }
+                        statement.executeBatch()
+                    }
+                    connection.commit()
+                }
+
+                val base = Instant.ofEpochSecond(1_700_000_000L)
+                val otherScope = testScope(listOf("BTC", "ETH", "USD")).copy(
+                    managedScopeFingerprint = "a".repeat(64),
+                )
+                listOf("other-managed-0", "other-managed-1", "other-managed-2").forEach { id ->
+                    store.appendObservation(
+                        createObservation(
+                            id = id,
+                            time = base.plusSeconds(3_000_000_000L),
+                            scope = otherScope,
+                        ),
+                    ) shouldBe true
+                }
+
+                val points = store.queryChartObservations(testScope())
+                (points.size <= HISTORY_MAX_CHART_POINTS) shouldBe true
+                points.first().observationId shouldBe "chart-0"
+                points.last().observationId shouldBe "chart-2500"
+                points.zipWithNext().all { (first, second) -> first.observedAt <= second.observedAt } shouldBe true
+                points.all { it.sourceScope == testScope() } shouldBe true
+                points.map { it.observationId }.containsAll(
+                    listOf("chart-100", "chart-1200", "chart-1201", "chart-2450", "chart-2490"),
+                ) shouldBe true
+
+                val shortRange = store.queryChartObservations(
+                    sourceScope = testScope(),
+                    from = base,
+                    until = base.plusSeconds(10),
+                )
+                shortRange.map { it.observationId } shouldBe (0..9).map { "chart-$it" }
+                val sameTimeScope = store.queryChartObservations(otherScope, maxPoints = 2)
+                (sameTimeScope.size <= 2) shouldBe true
+                sameTimeScope.first().observationId shouldBe "other-managed-0"
+                sameTimeScope.last().observationId shouldBe "other-managed-2"
+            }
+        }
+
         "queryDailyCheckpointInputs filters and partitions balance checkpoints correctly" {
             withStore { store, _ ->
                 val scanWindow = HistorySyncWindow(
@@ -1054,6 +1296,98 @@ class SqliteHistoryStoreTest : StringSpec() {
                 )
                 statusStall.state shouldBe HistorySyncState.FAILED
                 statusStall.lastError shouldBe "Exchange trade cursor did not advance."
+            }
+        }
+
+        "detects a multi-step cursor cycle after reopening the store" {
+            withStore { store, directory ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 100L
+                val window = HistorySyncWindow(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.TRADES,
+                    scanId = "cursor-cycle",
+                    startSec = startSec,
+                    endSec = endSec,
+                )
+                store.beginSyncWindow(window)
+
+                suspend fun commitPage(
+                    targetStore: SqliteHistoryStore,
+                    cursor: String?,
+                    next: String?,
+                ): HistorySyncStatus {
+                    val request = HistoryPageRequest(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.TRADES,
+                        scanId = window.scanId,
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = cursor,
+                        committedAt = Instant.ofEpochSecond(endSec),
+                    )
+                    return targetStore.commitTradePage(
+                        request,
+                        ExchangeHistoryPage(
+                            entries = emptyList(),
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = cursor,
+                            nextCursor = next,
+                            count = 0L,
+                            rawSize = 0,
+                            valid = true,
+                        ),
+                    )
+                }
+
+                commitPage(store, cursor = null, next = "A").nextCursor shouldBe "A"
+                val reopened = SqliteHistoryStore(HistoryDatabase(directory.resolve("history.db")))
+                reopened.beginSyncWindow(window).nextCursor shouldBe "A"
+                commitPage(reopened, cursor = "A", next = "B").nextCursor shouldBe "B"
+                val resumedAgain = SqliteHistoryStore(HistoryDatabase(directory.resolve("history.db")))
+                resumedAgain.beginSyncWindow(window).nextCursor shouldBe "B"
+                val cycle = commitPage(resumedAgain, cursor = "B", next = "A")
+                cycle.state shouldBe HistorySyncState.FAILED
+                cycle.lastError shouldBe "Exchange trade cursor repeated within the current scan."
+            }
+        }
+
+        "limits the number of pages committed by one sync scan" {
+            withStore(maxPagesPerScan = 2) { store, _ ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 100L
+                val window = HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "page-limit", startSec, endSec)
+                store.beginSyncWindow(window)
+                suspend fun commit(cursor: String?, next: String?): HistorySyncStatus {
+                    val request = HistoryPageRequest(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.TRADES,
+                        scanId = window.scanId,
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = cursor,
+                        committedAt = Instant.ofEpochSecond(endSec),
+                    )
+                    return store.commitTradePage(
+                        request,
+                        ExchangeHistoryPage(
+                            entries = emptyList(),
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = cursor,
+                            nextCursor = next,
+                            count = 0L,
+                            rawSize = 0,
+                            valid = true,
+                        ),
+                    )
+                }
+                commit(null, "A").state shouldBe HistorySyncState.RUNNING
+                commit("A", "B").state shouldBe HistorySyncState.RUNNING
+                val beyondLimit = commit("B", null)
+                beyondLimit.state shouldBe HistorySyncState.FAILED
+                beyondLimit.lastError shouldBe "History trade scan exceeded the 2 page limit."
             }
         }
 
@@ -1664,13 +1998,16 @@ class SqliteHistoryStoreTest : StringSpec() {
             isValidRecord = true,
         )
 
-    private fun withStore(block: suspend (SqliteHistoryStore, Path) -> Unit) = runTest {
+    private fun withStore(
+        maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,
+        block: suspend (SqliteHistoryStore, Path) -> Unit,
+    ) = runTest {
         val directory = Files.createTempDirectory("sqlite-history-store-test-")
         try {
             val dbPath = directory.resolve("history.db")
             val database = HistoryDatabase(dbPath)
             database.initializeFreshSchema()
-            val store = SqliteHistoryStore(database)
+            val store = SqliteHistoryStore(database, maxPagesPerScan = maxPagesPerScan)
             block(store, directory)
             database.close()
         } finally {

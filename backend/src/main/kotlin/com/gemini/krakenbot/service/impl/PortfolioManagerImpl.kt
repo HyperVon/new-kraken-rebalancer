@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -55,6 +56,7 @@ class PortfolioManagerImpl(
     // The monitor covers synchronous start/stop Job ownership; the Mutex rejects duplicate coroutine callers.
     private val lifecycleLock = Any()
     private val runLoopMutex = Mutex()
+    private val cycleAdmissionMutex = Mutex()
 
     @Volatile
     private var isRunning = false
@@ -75,6 +77,16 @@ class PortfolioManagerImpl(
     private var cycleActive = false
 
     override fun isCycleActive(): Boolean = cycleActive
+
+    override suspend fun runHistoryPageIfAdmitted(block: suspend () -> Unit): Boolean {
+        if (!cycleAdmissionMutex.tryLock()) return false
+        try {
+            block()
+            return true
+        } finally {
+            cycleAdmissionMutex.unlock()
+        }
+    }
 
     override fun stopRebalancingLoop(): Job? {
         // Capture and cancel the current worker under the lock so callers (the shutdown hook) join
@@ -226,24 +238,26 @@ class PortfolioManagerImpl(
     /** Pins settings and exchange session for the complete rebalance cycle. */
     private suspend fun performCycleWithStableSession() {
         val cycleId = UUID.randomUUID().toString()
-        cycleActive = true
-        try {
-            configService.withExecutionSession {
-                val ks = krakenService
-                if (ks != null) {
-                    ks.withStableBackend {
+        cycleAdmissionMutex.withLock {
+            cycleActive = true
+            try {
+                configService.withExecutionSession {
+                    val ks = krakenService
+                    if (ks != null) {
+                        ks.withStableBackend {
+                            withCycleMdc(cycleId) {
+                                performRebalanceCycleForCycle(cycleId)
+                            }
+                        }
+                    } else {
                         withCycleMdc(cycleId) {
                             performRebalanceCycleForCycle(cycleId)
                         }
                     }
-                } else {
-                    withCycleMdc(cycleId) {
-                        performRebalanceCycleForCycle(cycleId)
-                    }
                 }
+            } finally {
+                cycleActive = false
             }
-        } finally {
-            cycleActive = false
         }
     }
 
@@ -308,6 +322,15 @@ class PortfolioManagerImpl(
                 onSuccess = { it },
                 onFailure = {
                     log.error("Failed to calculate portfolio values: {}", it.message)
+                    historyObservationRecorder?.captureIncompleteCycle(
+                        cycleId = cycleId,
+                        config = config,
+                        balances = observedBalances,
+                        prices = observedPrices,
+                        reason = "Portfolio valuation failed before a snapshot could be built.",
+                        actions = actionLog,
+                        dryRun = config.settings.dryRun,
+                    )
                     return null
                 },
             )

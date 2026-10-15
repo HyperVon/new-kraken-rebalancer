@@ -189,6 +189,49 @@ class HistoryObservationValuatorTest : StringSpec() {
             obs.assets.any { it.status == HistoryAssetValueStatus.INVALID_TIME_WINDOW } shouldBe true
         }
 
+        "buildDirect rejects fractional durations beyond both evidence cutoffs" {
+            val now = Instant.parse("2026-10-15T12:00:00Z")
+            val scope = HistoryObservationValuator.accountScope(config, accountDigest)
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusSeconds(90).minusMillis(500),
+                responseEndedAt = now.minusSeconds(60).minusMillis(500),
+                resultShapeValid = true,
+                valuesByAssetId = emptyMap(),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                marksBySymbol = emptyMap(),
+            )
+            val excessiveGap = HistoryObservationValuator.buildDirect(
+                "fractional-gap",
+                "fractional-gap-cycle",
+                scope,
+                balances,
+                prices,
+                now = now,
+            )
+            excessiveGap.status shouldBe HistoryObservationStatus.INCOMPLETE
+            excessiveGap.incompleteReasons.any { it.contains("more than 60 seconds") } shouldBe true
+
+            val longWindowBalances = balances.copy(
+                requestStartedAt = now.minusSeconds(120).minusMillis(500),
+                responseEndedAt = now.minusSeconds(110),
+            )
+            val closePrices = prices.copy(requestStartedAt = now.minusSeconds(100))
+            val excessiveWindow = HistoryObservationValuator.buildDirect(
+                "fractional-window",
+                "fractional-window-cycle",
+                scope,
+                longWindowBalances,
+                closePrices,
+                now = now,
+            )
+            excessiveWindow.status shouldBe HistoryObservationStatus.INCOMPLETE
+            excessiveWindow.incompleteReasons.any { it.contains("exceeds 120 seconds") } shouldBe true
+        }
+
         "buildDirect rejects simulation mode or future timestamps" {
             val now = Instant.now()
             val simScope = HistoryObservationValuator.simulationScope(config, "sim-1")
@@ -329,6 +372,92 @@ class HistoryObservationValuatorTest : StringSpec() {
             btcAsset.status shouldBe HistoryAssetValueStatus.AMBIGUOUS_BALANCE
             val ethAsset = obs.assets.single { it.symbol == "ETH" }
             ethAsset.status shouldBe HistoryAssetValueStatus.INVALID_BALANCE
+        }
+
+        "buildDirect distinguishes missing and invalid ticker evidence from valid balances" {
+            val now = Instant.now()
+            val scope = HistoryObservationValuator.accountScope(config, accountDigest)
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                    "XETH" to DirectValueEvidence("2", BigDecimal("2"), DirectEvidenceStatus.VALID),
+                    "ZUSD" to DirectValueEvidence("100", BigDecimal("100"), DirectEvidenceStatus.VALID),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                marksBySymbol = mapOf(
+                    "ETH" to DirectTickerMark(
+                        symbol = "ETH",
+                        requestedPair = "XETHZUSD",
+                        responsePair = "XETHZUSD",
+                        candidateResponsePairs = emptyList(),
+                        status = DirectEvidenceStatus.MALFORMED,
+                        price = null,
+                        rawPrice = "invalid",
+                    ),
+                ),
+            )
+
+            val observation = HistoryObservationValuator.buildDirect(
+                observationId = "invalid-prices",
+                cycleId = "invalid-prices-cycle",
+                sourceScope = scope,
+                balances = balances,
+                prices = prices,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.single { it.symbol == "BTC" }.status shouldBe HistoryAssetValueStatus.MISSING_PRICE
+            observation.assets.single { it.symbol == "ETH" }.status shouldBe HistoryAssetValueStatus.INVALID_PRICE
+            observation.assets.single { it.symbol == "USD" }.status shouldBe HistoryAssetValueStatus.COMPLETE
+        }
+
+        "buildIncompleteSimulation rejects an authenticated account scope" {
+            shouldThrow<IllegalArgumentException> {
+                HistoryObservationValuator.buildIncompleteSimulation(
+                    cycleId = "account-scope",
+                    sourceScope = HistoryObservationValuator.accountScope(config, accountDigest),
+                    observedAt = Instant.now(),
+                    reason = "simulation evidence unavailable",
+                )
+            }
+        }
+
+        "direct valuation rejects a simulation scope and simulation valuation rejects an account scope" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(now, now, true, emptyMap())
+            val prices = DirectTickerCapture(now, now, true, emptyMap())
+
+            shouldThrow<IllegalArgumentException> {
+                HistoryObservationValuator.buildDirect(
+                    observationId = "simulation-scope",
+                    cycleId = "simulation-scope-cycle",
+                    sourceScope = HistoryObservationValuator.simulationScope(config, "sim-session"),
+                    balances = balances,
+                    prices = prices,
+                )
+            }
+            shouldThrow<IllegalArgumentException> {
+                HistoryObservationValuator.buildSimulation(
+                    cycleId = "account-scope-cycle",
+                    sourceScope = HistoryObservationValuator.accountScope(config, accountDigest),
+                    snapshot = PortfolioSnapshot(
+                        timestamp = now,
+                        totalValueUSD = BigDecimal.ZERO,
+                        assets = emptyMap(),
+                        actions = emptyList(),
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+            }
         }
 
         "buildDirect detects inverted timestamps, oversized window, and invalid result shape" {

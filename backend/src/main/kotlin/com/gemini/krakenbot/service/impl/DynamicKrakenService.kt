@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenAssetMetadata
+import com.gemini.krakenbot.service.AuthenticatedAccountInfo
 import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
@@ -115,6 +116,11 @@ class DynamicKrakenService(
         currentBackend().getOHLC(pair, interval, since)
 
     override suspend fun getFundingEvidenceScope(): String = currentBackend().getFundingEvidenceScope()
+
+    override suspend fun getAuthenticatedAccountIdentity(): String? = currentBackend().getAuthenticatedAccountIdentity()
+
+    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
+        currentBackend().getAuthenticatedAccountInfo()
 
     override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

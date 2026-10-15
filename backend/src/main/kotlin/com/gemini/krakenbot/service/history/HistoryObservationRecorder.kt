@@ -63,23 +63,50 @@ class HistoryObservationRecorder(
         }
     }
 
-    /** Returns only a source verified in this process; this performs no authenticated identity call. */
+    /** Resolves the current account through the authenticated API-key identity before exposing its scope. */
     suspend fun currentSourceScope(config: AppConfig): HistorySourceScope? {
         if (config.settings.simulation) {
             return HistoryObservationValuator.simulationScope(config, simulationSessionId)
         }
-        val credentialScope = currentCredentialScope() ?: run {
-            verifiedAccountScope = null
-            return null
-        }
         val managedSymbols = HistoryObservationValuator.scopeSymbols(config)
         val fingerprint = HistoryObservationValuator.scopeFingerprint(managedSymbols)
-        val verified = verifiedAccountScope ?: return null
-        if (verified.credentialScope != credentialScope || verified.managedScopeFingerprint != fingerprint) {
+        val resolved = try {
+            withTimeout(identityLookupTimeoutMs) {
+                configService.withExecutionSession {
+                    krakenService.withStableBackend { backend ->
+                        val credentialScope = backend.getFundingEvidenceScope().trim()
+                            .takeIf { it.isNotBlank() && it != "scope-unavailable" }
+                            ?: return@withStableBackend null
+                        val cached = verifiedAccountScope
+                        if (cached != null && cached.credentialScope == credentialScope &&
+                            cached.managedScopeFingerprint == fingerprint
+                        ) {
+                            dataDirectoryIdentity.bindOrVerify(cached.accountIdentityDigest)
+                            return@withStableBackend HistoryObservationValuator.accountScope(
+                                config,
+                                cached.accountIdentityDigest,
+                            )
+                        }
+                        val identity = backend.getAuthenticatedAccountIdentity()
+                            ?.filterNot(Char::isWhitespace)
+                            ?.uppercase(Locale.ROOT)
+                            ?.takeIf(String::isNotBlank)
+                            ?: return@withStableBackend null
+                        val digest = sha256(identity)
+                        dataDirectoryIdentity.bindOrVerify(digest)
+                        verifiedAccountScope = VerifiedAccountScope(digest, credentialScope, fingerprint)
+                        HistoryObservationValuator.accountScope(config, digest)
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
             verifiedAccountScope = null
             return null
         }
-        return HistoryObservationValuator.accountScope(config, verified.accountIdentityDigest)
+        if (resolved == null) verifiedAccountScope = null
+        return resolved
     }
 
     /** Captures final values and activity in memory; SQLite and account authentication run off-cycle. */
@@ -92,6 +119,58 @@ class HistoryObservationRecorder(
         sampleSelection: HistorySampleSelection,
         additionalIncompleteReasons: List<String> = emptyList(),
         actions: List<String> = emptyList(),
+        dryRun: Boolean,
+    ): Boolean = queueCycleCapture(
+        cycleId = cycleId,
+        config = config,
+        balances = balances,
+        prices = prices,
+        snapshot = snapshot,
+        observedAt = snapshot.timestamp,
+        sampleSelection = sampleSelection,
+        additionalIncompleteReasons = additionalIncompleteReasons,
+        actions = actions,
+        dryRun = dryRun,
+    )
+
+    /** Queues direct evidence and cycle activity when valuation fails before a snapshot exists. */
+    suspend fun captureIncompleteCycle(
+        cycleId: String,
+        config: AppConfig,
+        balances: ObservedBalances,
+        prices: ObservedPrices,
+        reason: String,
+        actions: List<String> = emptyList(),
+        dryRun: Boolean,
+    ): Boolean {
+        val observedAt = maxOf(
+            balances.directCapture?.responseEndedAt ?: balances.observedAt,
+            prices.directCapture?.responseEndedAt ?: prices.observedAt,
+        )
+        return queueCycleCapture(
+            cycleId = cycleId,
+            config = config,
+            balances = balances,
+            prices = prices,
+            snapshot = null,
+            observedAt = observedAt,
+            sampleSelection = HistorySampleSelection.PRE_TRADE,
+            additionalIncompleteReasons = listOf(reason),
+            actions = actions,
+            dryRun = dryRun,
+        )
+    }
+
+    private suspend fun queueCycleCapture(
+        cycleId: String,
+        config: AppConfig,
+        balances: ObservedBalances,
+        prices: ObservedPrices,
+        snapshot: PortfolioSnapshot?,
+        observedAt: Instant,
+        sampleSelection: HistorySampleSelection,
+        additionalIncompleteReasons: List<String>,
+        actions: List<String>,
         dryRun: Boolean,
     ): Boolean {
         val credentialScope = if (config.settings.simulation) {
@@ -111,6 +190,7 @@ class HistoryObservationRecorder(
                 balances = balances,
                 prices = prices,
                 snapshot = snapshot,
+                observedAt = observedAt,
                 sampleSelection = sampleSelection,
                 additionalIncompleteReasons = additionalIncompleteReasons,
                 actions = actions,
@@ -155,7 +235,14 @@ class HistoryObservationRecorder(
                 candidateScope
             }
             val observation = if (pending.config.settings.simulation) {
-                HistoryObservationValuator.buildSimulation(pending.cycleId, scope, pending.snapshot)
+                pending.snapshot?.let { HistoryObservationValuator.buildSimulation(pending.cycleId, scope, it) }
+                    ?: HistoryObservationValuator.buildIncompleteSimulation(
+                        pending.cycleId,
+                        scope,
+                        pending.observedAt,
+                        pending.additionalIncompleteReasons.joinToString(" ")
+                            .ifBlank { "The rebalance cycle could not produce a valuation." },
+                    )
             } else {
                 val balanceCapture = pending.balances.directCapture
                 val tickerCapture = pending.prices.directCapture
@@ -168,16 +255,21 @@ class HistoryObservationRecorder(
                     cycleId = pending.cycleId,
                     sourceScope = scope,
                     balances = balanceCapture ?: unavailableBalanceCapture(pending.balances.observedAt),
-                    prices = tickerCapture ?: unavailableTickerCapture(pending.balances.observedAt),
+                    prices = tickerCapture ?: unavailableTickerCapture(pending.prices.observedAt),
                     sampleSelection = pending.sampleSelection,
-                    additionalIncompleteReasons = pending.additionalIncompleteReasons + missingReason,
+                    additionalIncompleteReasons = pending.additionalIncompleteReasons + missingReason +
+                        if (pending.snapshot == null) {
+                            listOf("The rebalance cycle could not produce a valuation.")
+                        } else {
+                            emptyList()
+                        },
                     now = nowProvider(),
                 )
             }
             val activity = HistoryCycleActivity(
                 cycleId = pending.cycleId,
                 sourceScope = scope,
-                occurredAt = pending.snapshot.timestamp,
+                occurredAt = pending.snapshot?.timestamp ?: pending.observedAt,
                 dryRun = pending.dryRun,
                 actions = pending.actions,
             )
@@ -203,7 +295,7 @@ class HistoryObservationRecorder(
             krakenService.withStableBackend { backend ->
                 val credentialScope = backend.getFundingEvidenceScope().trim()
                 if (credentialScope.isBlank() || credentialScope == "scope-unavailable" ||
-                    credentialScope != expectedCredentialScope
+                    (expectedCredentialScope != null && credentialScope != expectedCredentialScope)
                 ) {
                     return@withStableBackend null
                 }
@@ -240,7 +332,8 @@ class HistoryObservationRecorder(
         val config: AppConfig,
         val balances: ObservedBalances,
         val prices: ObservedPrices,
-        val snapshot: PortfolioSnapshot,
+        val snapshot: PortfolioSnapshot?,
+        val observedAt: Instant,
         val sampleSelection: HistorySampleSelection,
         val additionalIncompleteReasons: List<String>,
         val actions: List<String>,

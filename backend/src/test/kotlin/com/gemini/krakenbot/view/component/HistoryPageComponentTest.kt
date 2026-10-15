@@ -6,6 +6,7 @@ import com.gemini.krakenbot.service.history.HistoryAssetValue
 import com.gemini.krakenbot.service.history.HistoryAssetValueStatus
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
+import com.gemini.krakenbot.service.history.HistoryEventFilterOptions
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
@@ -21,6 +22,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
@@ -64,6 +66,10 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "Enter an asset (for example XXBT) in the filter to chart its exchange-reported balance."
             html shouldContain
                 "No historical data available yet. Synchronize account history to populate trades and ledger records."
+            html shouldContain
+                "No portfolio observations are available for this range yet. Portfolio values are captured during rebalance cycles."
+            html shouldContain "Exchange History Sync"
+            html shouldNotContain "Synchronizing Exchange History"
         }
 
         "renders sync banner with all sync states" {
@@ -163,6 +169,35 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "Sync now"
         }
 
+        "renders account filters as dropdowns and keeps the selected options" {
+            val data = HistoryPageData(
+                range = "7d",
+                filters = HistoryEventQuery(assetKey = "BTC", pair = "XXBTZUSD", type = "buy"),
+                tradesOffset = 0,
+                ledgersOffset = 0,
+                observations = emptyList(),
+                checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
+                trades = HistoryPage(emptyList(), 0L, 50, 0, false),
+                ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
+                syncStatuses = emptyList(),
+                accountAvailable = true,
+                filterOptions = HistoryEventFilterOptions(
+                    assets = listOf("BTC", "XXBT"),
+                    pairs = listOf("XXBTZUSD"),
+                    types = listOf("buy"),
+                ),
+            )
+
+            val html = render(data)
+            html.countOccurrences("<select") shouldBe 3
+            html shouldContain "name=\"asset\""
+            html shouldContain "name=\"pair\""
+            html shouldContain "name=\"type\""
+            html shouldContain "XXBT (BTC)"
+            html shouldContain "selected"
+            html shouldNotContain "type=\"text\""
+        }
+
         "renders value chart and checkpoint chart with SVG lines" {
             val now = Instant.ofEpochSecond(1_700_000_000)
             val obs1 = HistoryObservation(
@@ -218,6 +253,18 @@ class HistoryPageComponentTest : StringSpec() {
                 quantity = BigDecimal("1.5"),
                 status = HistoryBalanceStatus.VALID,
             )
+            val invalidCp = HistoryBalanceCheckpoint(
+                accountIdentityDigest = validHash,
+                ledgerId = "L-invalid",
+                observedAt = now.minusSeconds(50),
+                rawAssetClass = "currency",
+                rawAssetKey = "XXBT",
+                rawAmount = "0.1",
+                rawFee = "0.0",
+                quantity = BigDecimal("99.0"),
+                rawBalance = "malformed",
+                status = HistoryBalanceStatus.INVALID,
+            )
 
             val data = HistoryPageData(
                 range = "24h",
@@ -225,7 +272,7 @@ class HistoryPageComponentTest : StringSpec() {
                 tradesOffset = 0,
                 ledgersOffset = 0,
                 observations = listOf(obs1, obs2),
-                checkpoints = HistoryPage(listOf(cp2, cp1), 2L, 50, 0, false),
+                checkpoints = HistoryPage(listOf(cp2, invalidCp, cp1), 3L, 50, 0, false),
                 trades = HistoryPage(emptyList(), 0L, 50, 0, false),
                 ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
                 syncStatuses = emptyList(),
@@ -233,31 +280,38 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html shouldContain "<circle"
+            html.countOccurrences("<circle") shouldBe 4
             html shouldContain "Portfolio Value"
             html shouldContain "Asset Holdings Over Time (BTC)"
+            html shouldContain "/static/rebalancer.js?v="
         }
 
-        "keeps incomplete observations as gaps in the value chart" {
+        "connects complete observations and breaks the value chart at incomplete cycles" {
             val now = Instant.ofEpochSecond(1_700_000_000)
             val observation = HistoryObservation(
                 observationId = "before-gap",
                 cycleId = "cycle-before-gap",
                 sourceScope = historyScope,
-                observedAt = now.minusSeconds(60),
-                balanceRequestStartedAt = now.minusSeconds(60),
-                balanceResponseEndedAt = now.minusSeconds(60),
-                priceRequestStartedAt = now.minusSeconds(60),
-                priceResponseEndedAt = now.minusSeconds(60),
+                observedAt = now.minusSeconds(180),
+                balanceRequestStartedAt = now.minusSeconds(180),
+                balanceResponseEndedAt = now.minusSeconds(180),
+                priceRequestStartedAt = now.minusSeconds(180),
+                priceResponseEndedAt = now.minusSeconds(180),
                 status = HistoryObservationStatus.COMPLETE,
                 totalUsd = BigDecimal("50000"),
                 incompleteReasons = emptyList(),
                 assets = emptyList(),
             )
+            val secondBeforeGap = observation.copy(
+                observationId = "second-before-gap",
+                cycleId = "cycle-second-before-gap",
+                observedAt = now.minusSeconds(120),
+                totalUsd = BigDecimal("51000"),
+            )
             val incomplete = observation.copy(
                 observationId = "incomplete",
                 cycleId = "cycle-incomplete",
-                observedAt = now,
+                observedAt = now.minusSeconds(60),
                 status = HistoryObservationStatus.INCOMPLETE,
                 totalUsd = null,
                 incompleteReasons = listOf("missing price"),
@@ -265,15 +319,21 @@ class HistoryPageComponentTest : StringSpec() {
             val afterGap = observation.copy(
                 observationId = "after-gap",
                 cycleId = "cycle-after-gap",
-                observedAt = now.plusSeconds(60),
+                observedAt = now,
                 totalUsd = BigDecimal("55000"),
+            )
+            val secondAfterGap = observation.copy(
+                observationId = "second-after-gap",
+                cycleId = "cycle-second-after-gap",
+                observedAt = now.plusSeconds(60),
+                totalUsd = BigDecimal("56000"),
             )
             val data = HistoryPageData(
                 range = "24h",
                 filters = HistoryEventQuery(),
                 tradesOffset = 0,
                 ledgersOffset = 0,
-                observations = listOf(observation, incomplete, afterGap),
+                observations = listOf(observation, secondBeforeGap, incomplete, afterGap, secondAfterGap),
                 checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
                 trades = HistoryPage(emptyList(), 0L, 50, 0, false),
                 ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
@@ -282,8 +342,11 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html.countOccurrences("<polyline") shouldBe 0
-            html.countOccurrences("<circle") shouldBe 2
+            html.countOccurrences("<polyline") shouldBe 2
+            html.countOccurrences("<circle") shouldBe 5
+            html.countOccurrences("class=\"history-gap-marker\"") shouldBe 1
+            html shouldContain "Lines connect complete cycle samples; incomplete cycles break the line."
+            html shouldContain "No values are inferred between samples."
         }
 
         "renders trades, ledgers, and pagination buttons" {

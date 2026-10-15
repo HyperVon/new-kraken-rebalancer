@@ -117,5 +117,38 @@ class DataDirectoryConfigTest : StringSpec() {
                 tempDir.toFile().deleteRecursively()
             }
         }
+
+        "initializeDataDirectory refuses to replace an existing execution database" {
+            val tempDir = Files.createTempDirectory("data-dir-existing-execution-test-")
+            val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+            val original = "existing execution journal"
+            try {
+                Files.writeString(executionDb, original)
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.initializeDataDirectory(tempDir) }
+
+                Files.readString(executionDb) shouldBe original
+                Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initializeDataDirectory refuses an orphaned active journal identity marker" {
+            val tempDir = Files.createTempDirectory("data-dir-orphan-marker-test-")
+            val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+            val marker = executionDb.resolveSibling("${executionDb.fileName}${ExecutionDatabase.JOURNAL_MARKER_SUFFIX}")
+            try {
+                Files.writeString(marker, "orphaned identity")
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.initializeDataDirectory(tempDir) }
+
+                Files.exists(executionDb) shouldBe false
+                Files.readString(marker) shouldBe "orphaned identity"
+                Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
     }
 }

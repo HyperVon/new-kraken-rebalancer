@@ -188,7 +188,12 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
         }
 
         "POST /api/history/sync/start starts sync with valid CSRF" {
-            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            val liveConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(simulation = false),
+            )
+            every { configService.getConfig() } returns liveConfig
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns historyScope
+            coEvery { historyService.getSyncStatus(historyScope) } returns emptyList()
             testApplication {
                 application { configureTestEnv() }
                 val csrf = client.settingsCsrf()
@@ -200,6 +205,102 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
                 }
                 response.status shouldBe HttpStatusCode.SeeOther
                 verify { historySynchronizer.startSync(any(), any(), any()) }
+            }
+        }
+
+        "POST /api/history/sync/start refuses simulation and unavailable account scope" {
+            val simulationConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(simulation = true),
+            )
+            val simulationScope = HistorySourceScope(
+                mode = HistorySourceMode.SIMULATION,
+                managedScopeFingerprint = validHash,
+                managedScopeSymbols = listOf("BTC", "USD"),
+                simulationSessionId = "sim-session",
+            )
+            every { configService.getConfig() } returns simulationConfig
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns simulationScope
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.submitForm(
+                    url = "/api/history/sync/start",
+                    formParameters = parameters { append("csrfToken", csrf.value) },
+                ) { header(HttpHeaders.Cookie, csrf.cookie) }
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+                verify(exactly = 0) { historySynchronizer.startSync(any(), any(), any()) }
+            }
+
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(simulation = false),
+            )
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns null
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.submitForm(
+                    url = "/api/history/sync/start",
+                    formParameters = parameters { append("csrfToken", csrf.value) },
+                ) { header(HttpHeaders.Cookie, csrf.cookie) }
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+                verify(exactly = 0) { historySynchronizer.startSync(any(), any(), any()) }
+            }
+        }
+
+        "POST /api/history/sync/start resumes persisted bounds and cursors" {
+            val liveConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(simulation = false),
+            )
+            every { configService.getConfig() } returns liveConfig
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns historyScope
+            val start = Instant.ofEpochSecond(1_700_000_000)
+            val end = Instant.ofEpochSecond(1_700_010_000)
+            coEvery { historyService.getSyncStatus(historyScope) } returns listOf(
+                HistorySyncStatus(
+                    validHash,
+                    HistoryFeed.TRADES,
+                    "running-scan",
+                    HistorySyncState.RUNNING,
+                    start,
+                    end,
+                    "cursor-5",
+                    500,
+                    500,
+                    1000,
+                    end,
+                    null,
+                ),
+                HistorySyncStatus(
+                    validHash,
+                    HistoryFeed.LEDGERS,
+                    "paused-scan",
+                    HistorySyncState.PAUSED,
+                    start.minusSeconds(10),
+                    end.minusSeconds(10),
+                    "cursor-9",
+                    900,
+                    890,
+                    1200,
+                    end,
+                    null,
+                ),
+            )
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.submitForm(
+                    url = "/api/history/sync/start",
+                    formParameters = parameters { append("csrfToken", csrf.value) },
+                ) { header(HttpHeaders.Cookie, csrf.cookie) }
+                response.status shouldBe HttpStatusCode.SeeOther
+                verify { historySynchronizer.startSync(HistoryFeed.TRADES, start.epochSecond, end.epochSecond) }
+                verify {
+                    historySynchronizer.startSync(
+                        HistoryFeed.LEDGERS,
+                        start.minusSeconds(10).epochSecond,
+                        end.minusSeconds(10).epochSecond,
+                    )
+                }
             }
         }
 

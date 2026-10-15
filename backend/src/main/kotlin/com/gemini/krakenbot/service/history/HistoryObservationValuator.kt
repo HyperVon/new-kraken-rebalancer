@@ -85,18 +85,19 @@ object HistoryObservationValuator {
         } else {
             Duration.ZERO
         }
+        val maxObservationWindow = Duration.ofSeconds(MAX_HISTORY_OBSERVATION_WINDOW_SECONDS)
+        val maxBalancePriceGap = Duration.ofSeconds(MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS)
         val windowValid = timestampsOrdered && balances.resultShapeValid && prices.resultShapeValid &&
-            observationWindow?.seconds?.let { it <= MAX_HISTORY_OBSERVATION_WINDOW_SECONDS } == true &&
-            gap.seconds <= MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS
+            observationWindow?.let { it <= maxObservationWindow } == true && gap <= maxBalancePriceGap
         val invalidWindowReason = when {
             !timestampsOrdered -> "Balance or ticker request timestamps are invalid."
 
             !balances.resultShapeValid || !prices.resultShapeValid -> "Balance or ticker response data is invalid."
 
-            observationWindow?.seconds?.let { it > MAX_HISTORY_OBSERVATION_WINDOW_SECONDS } == true ->
+            observationWindow?.let { it > maxObservationWindow } == true ->
                 "The combined balance and ticker request window exceeds $MAX_HISTORY_OBSERVATION_WINDOW_SECONDS seconds."
 
-            gap.seconds > MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS ->
+            gap > maxBalancePriceGap ->
                 "Balance and ticker observations are more than $MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS seconds apart."
 
             else -> null
@@ -239,6 +240,39 @@ object HistoryObservationValuator {
         )
     }
 
+    fun buildIncompleteSimulation(
+        cycleId: String,
+        sourceScope: HistorySourceScope,
+        observedAt: Instant,
+        reason: String,
+    ): HistoryObservation {
+        require(sourceScope.mode == HistorySourceMode.SIMULATION)
+        return HistoryObservation(
+            observationId = cycleId,
+            cycleId = cycleId,
+            sourceScope = sourceScope,
+            balanceSource = "SIMULATED_CYCLE_STATE_UNAVAILABLE",
+            priceSource = "SIMULATED_CYCLE_STATE_UNAVAILABLE",
+            sampleSelection = HistorySampleSelection.PRE_TRADE,
+            observedAt = observedAt,
+            balanceRequestStartedAt = observedAt,
+            balanceResponseEndedAt = observedAt,
+            priceRequestStartedAt = observedAt,
+            priceResponseEndedAt = observedAt,
+            status = HistoryObservationStatus.INCOMPLETE,
+            totalUsd = null,
+            incompleteReasons = listOf(reason),
+            assets = sourceScope.managedScopeSymbols.map { symbol ->
+                HistoryAssetValue(
+                    symbol = symbol,
+                    status = HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE,
+                    quantity = null,
+                    reason = reason,
+                )
+            },
+        )
+    }
+
     fun directCaptureFromBalances(balances: RawBalances, observedAt: Instant) =
         com.gemini.krakenbot.service.DirectBalanceCapture(
             requestStartedAt = observedAt,
@@ -267,6 +301,7 @@ object HistoryObservationValuator {
         HistoryAssetValueStatus.MISSING_PRICE -> "No USD ticker mark for configured asset."
         HistoryAssetValueStatus.INVALID_PRICE -> "USD ticker mark is invalid ($priceStatus)."
         HistoryAssetValueStatus.SIMULATED -> null
+        HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE -> "Cycle balance or price evidence is unavailable."
     }
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")

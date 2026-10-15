@@ -6,6 +6,13 @@ import java.time.Instant
 interface HistoryService {
     suspend fun queryValues(query: HistoryRangeQuery): HistoryPage<HistoryObservation>
 
+    suspend fun queryChartObservations(
+        sourceScope: HistorySourceScope,
+        from: Instant? = null,
+        until: Instant? = null,
+        maxPoints: Int = HISTORY_MAX_CHART_POINTS,
+    ): List<HistoryObservation>
+
     suspend fun queryAssetValues(query: HistoryRangeQuery): HistoryPage<HistoryAssetValue>
 
     suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade>
@@ -13,6 +20,8 @@ interface HistoryService {
     suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger>
 
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>
+
+    suspend fun queryFilterOptions(query: HistoryEventQuery): HistoryEventFilterOptions
 
     suspend fun queryDailyValues(
         accountIdentityDigest: String,
@@ -65,6 +74,13 @@ class HistoryServiceImpl(private val store: HistoryStore) : HistoryService {
     override suspend fun queryValues(query: HistoryRangeQuery): HistoryPage<HistoryObservation> =
         store.queryObservations(query)
 
+    override suspend fun queryChartObservations(
+        sourceScope: HistorySourceScope,
+        from: Instant?,
+        until: Instant?,
+        maxPoints: Int,
+    ): List<HistoryObservation> = store.queryChartObservations(sourceScope, from, until, maxPoints)
+
     override suspend fun queryAssetValues(query: HistoryRangeQuery): HistoryPage<HistoryAssetValue> =
         store.queryAssetValues(query)
 
@@ -74,6 +90,9 @@ class HistoryServiceImpl(private val store: HistoryStore) : HistoryService {
 
     override suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint> =
         store.queryBalanceCheckpoints(query)
+
+    override suspend fun queryFilterOptions(query: HistoryEventQuery): HistoryEventFilterOptions =
+        store.queryFilterOptions(query)
 
     override suspend fun queryDailyValues(
         accountIdentityDigest: String,

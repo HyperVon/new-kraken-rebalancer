@@ -60,6 +60,48 @@ class OrderSettleHelperTest : StringSpec() {
             }
         }
 
+        "positive non-USD fees cannot confirm USD proceeds" {
+            runTest {
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(
+                        id = "fill-bitcoin-fee",
+                        txid = "sell-bitcoin-fee",
+                        cost = "5000.00",
+                        fee = "0.0001",
+                        feeCurrency = Asset.BTC,
+                    ),
+                )
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4700.00"))
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal.ZERO,
+                    projectedCash = BigDecimal("5000.00"),
+                    sellOrderTxids = listOf("sell-bitcoin-fee"),
+                )
+
+                settled.shouldBeEqualComparingTo(BigDecimal("4700.00"))
+            }
+        }
+
+        "zero fee without a denomination may confirm proceeds subject to the balance cap" {
+            runTest {
+                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-zero-fee", txid = "sell-zero-fee", cost = "5000.00", fee = "0.00"),
+                )
+                coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4800.00"))
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal.ZERO,
+                    projectedCash = BigDecimal("5000.00"),
+                    sellOrderTxids = listOf("sell-zero-fee"),
+                )
+
+                settled.shouldBeEqualComparingTo(BigDecimal("4800.00"))
+            }
+        }
+
         "one unknown matched fee prevents a mixed page from claiming partial proceeds" {
             runTest {
                 coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(

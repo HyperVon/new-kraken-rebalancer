@@ -72,6 +72,25 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
         }
     }
 
+    /** Prevents an unmarked populated directory from being rebound to a newly authenticated account. */
+    fun hasAccountEvidence(): Boolean = connect().use { connection ->
+        val bindingInitialized = connection.createStatement().use { statement ->
+            statement.executeQuery(
+                "SELECT account_binding_initialized FROM execution_journal_metadata WHERE singleton_id = 1",
+            ).use { resultSet ->
+                check(resultSet.next()) { "Execution journal account marker is missing." }
+                resultSet.getInt(1) != 0
+            }
+        }
+        bindingInitialized || connection.createStatement().use { statement ->
+            statement.executeQuery(
+                "SELECT EXISTS(SELECT 1 FROM execution_account_binding LIMIT 1) OR " +
+                    "EXISTS(SELECT 1 FROM execution_account_binding_audit LIMIT 1) OR " +
+                    "EXISTS(SELECT 1 FROM execution_order_intents LIMIT 1)",
+            ).use { resultSet -> resultSet.next() && resultSet.getInt(1) != 0 }
+        }
+    }
+
     fun markReadyForSubmission() {
         synchronized(readinessLock) { readyForSubmission = true }
     }

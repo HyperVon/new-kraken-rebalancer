@@ -102,6 +102,12 @@ class FakeKrakenService : KrakenService {
         return authenticatedAccountIdentitySupplier()
     }
 
+    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
+        authenticatedAccountIdentitySupplier()?.let { identity ->
+            getAuthenticatedAccountIdentityCallCount++
+            AuthenticatedAccountInfo(identity, queryBoundsVerified = true)
+        }
+
     override suspend fun executeOrder(
         pair: String,
         type: String,

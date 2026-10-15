@@ -276,8 +276,13 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   and ledger activity, and balance checkpoints for the authenticated account.
   Historical trades and ledgers sync in bounded pages and remain scoped to the
   verified account; changes in configured assets create separate value series.
-  Incomplete direct observations remain visible as gaps. The value chart does
-  not reconstruct earlier balances or calculate Buy & Hold performance. See
+  Asset, pair, and event-type dropdowns show choices from the selected account
+  and time range.
+  The value chart returns every observation up to 2,000 points; larger ranges
+  are sampled across the full time span while retaining bucket endpoints,
+  complete-value extrema, and incomplete-cycle markers. It connects adjacent
+  complete samples and breaks at incomplete cycles. The chart does not
+  reconstruct earlier balances or calculate Buy & Hold performance. See
   the [History section in the User Guide](docs/USER_GUIDE.md#history) for
   sources, scope, and limitations.
 
@@ -492,7 +497,10 @@ This creates `execution.db`, `execution.db.journal-id`, and `history.db` under
 `rebalancer-data-v1` by default. Set `KRAKEN_DATA_DIR` or pass
 `-Dkraken.data.dir=<path>` to select another directory for both initialization
 and normal startup. Initialization refuses to replace an existing execution
-database; normal startup also refuses to recreate missing data files.
+or History database; normal startup also refuses to recreate missing data
+files. Database files at older locations are left untouched and are not
+imported or migrated. To reopen existing data, configure the directory that
+contains the active `execution.db` and `history.db` files.
 
 ### 2. Start the Application
 
@@ -619,8 +627,11 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 
 The History value chart uses directly captured cycle samples for configured
-assets. It does not infer earlier portfolio values or calculate Buy & Hold
-performance; incomplete samples and gaps are not converted to values.
+assets. For ranges over 2,000 observations, it samples each time bucket's first
+and last observations, complete-value extrema, and incomplete-cycle boundary
+markers. It connects adjacent complete samples and breaks the line at
+incomplete cycles; the line does not infer values between samples or earlier
+portfolio values, or calculate Buy & Hold performance.
 
 ---
 

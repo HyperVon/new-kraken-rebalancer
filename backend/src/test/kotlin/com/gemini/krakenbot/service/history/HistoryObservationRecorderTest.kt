@@ -4,6 +4,11 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DataDirectoryIdentity
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.DirectBalanceCapture
+import com.gemini.krakenbot.service.DirectEvidenceStatus
+import com.gemini.krakenbot.service.DirectTickerCapture
+import com.gemini.krakenbot.service.DirectTickerMark
+import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
@@ -48,6 +53,229 @@ class HistoryObservationRecorderTest : StringSpec() {
                 scope shouldNotBe null
                 scope!!.mode shouldBe HistorySourceMode.SIMULATION
                 scope.simulationSessionId shouldNotBe null
+            }
+        }
+
+        "currentSourceScope resolves the authenticated account after recorder restart" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "restart-credential-scope"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "RESTARTED_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                val block = firstArg<suspend (KrakenService) -> Any?>()
+                block(krakenService)
+            }
+            val restartedRecorder = HistoryObservationRecorder(
+                store = store,
+                krakenService = krakenService,
+                configService = configService,
+                dataDirectoryIdentity = dataDirectoryIdentity,
+            )
+
+            val scope = restartedRecorder.currentSourceScope(config)
+
+            scope?.mode shouldBe HistorySourceMode.ACCOUNT
+            scope?.accountIdentityDigest shouldBe
+                java.security.MessageDigest.getInstance("SHA-256")
+                    .digest("RESTARTED_ACCOUNT".toByteArray(Charsets.UTF_8))
+                    .joinToString("") { byte -> "%02x".format(byte) }
+            coVerify { dataDirectoryIdentity.bindOrVerify(any()) }
+        }
+
+        "currentSourceScope revalidates credential rotation and managed-asset changes" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val changedConfig = config.copy(allocations = config.allocations.take(1))
+            coEvery { krakenService.getFundingEvidenceScope() } returnsMany
+                listOf("credential-v1", "credential-v2", "credential-v2")
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "SAME_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+
+            runTest {
+                val originalScope = recorder.currentSourceScope(config)
+                val rotatedCredentialScope = recorder.currentSourceScope(config)
+                val changedAssetScope = recorder.currentSourceScope(changedConfig)
+                val cachedChangedAssetScope = recorder.currentSourceScope(changedConfig)
+
+                originalScope?.accountIdentityDigest shouldBe rotatedCredentialScope?.accountIdentityDigest
+                rotatedCredentialScope?.accountIdentityDigest shouldBe changedAssetScope?.accountIdentityDigest
+                changedAssetScope?.managedScopeSymbols shouldBe HistoryObservationValuator.scopeSymbols(changedConfig)
+                cachedChangedAssetScope shouldBe changedAssetScope
+                coVerify(exactly = 3) { krakenService.getAuthenticatedAccountIdentity() }
+                coVerify(exactly = 4) { dataDirectoryIdentity.bindOrVerify(any()) }
+            }
+        }
+
+        "currentSourceScope remains unavailable when the data directory cannot be bound" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "verified-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "VERIFIED_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { dataDirectoryIdentity.bindOrVerify(any()) } throws
+                IllegalStateException("The populated directory is missing its account marker.")
+
+            runTest {
+                recorder.currentSourceScope(config) shouldBe null
+                coVerify { dataDirectoryIdentity.bindOrVerify(any()) }
+            }
+        }
+
+        "captureIncompleteCycle persists direct evidence without publishing a total" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balances = ObservedBalances(
+                balances = emptyMap(),
+                observedAt = now,
+                directCapture = DirectBalanceCapture(
+                    requestStartedAt = now,
+                    responseEndedAt = now,
+                    resultShapeValid = true,
+                    valuesByAssetId = mapOf(
+                        "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                        "XETH" to DirectValueEvidence("2", BigDecimal("2"), DirectEvidenceStatus.VALID),
+                        "ZUSD" to DirectValueEvidence("100", BigDecimal("100"), DirectEvidenceStatus.VALID),
+                    ),
+                ),
+            )
+            val prices = ObservedPrices(
+                prices = emptyMap(),
+                directCapture = DirectTickerCapture(
+                    requestStartedAt = now,
+                    responseEndedAt = now,
+                    resultShapeValid = true,
+                    marksBySymbol = mapOf(
+                        "BTC" to directMark("BTC", "50000"),
+                        "ETH" to directMark("ETH", "3000"),
+                    ),
+                ),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "incomplete-credential-scope"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "INCOMPLETE_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                val block = firstArg<suspend (KrakenService) -> Any?>()
+                block(krakenService)
+            }
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureIncompleteCycle(
+                        cycleId = "failed-valuation-cycle",
+                        config = config,
+                        balances = balances,
+                        prices = prices,
+                        reason = "Portfolio valuation failed before a snapshot could be built.",
+                        actions = listOf("valuation failed"),
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+                    coVerify {
+                        store.appendCycle(
+                            match {
+                                it.status == HistoryObservationStatus.INCOMPLETE && it.totalUsd == null &&
+                                    it.incompleteReasons.contains(
+                                        "Portfolio valuation failed before a snapshot could be built.",
+                                    ) &&
+                                    it.assets.all { asset -> asset.status == HistoryAssetValueStatus.COMPLETE }
+                            },
+                            match {
+                                it.cycleId == "failed-valuation-cycle" && it.actions == listOf("valuation failed")
+                            },
+                        )
+                    }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "captureIncompleteCycle records unavailable simulation evidence without inventing values" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = true, dryRun = true),
+            )
+            val now = Instant.now()
+            val priceObservedAt = now.plusSeconds(5)
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureIncompleteCycle(
+                        cycleId = "failed-simulation-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now),
+                        prices = ObservedPrices(emptyMap(), observedAt = priceObservedAt),
+                        reason = "Simulated portfolio valuation failed.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+                    coVerify {
+                        store.appendCycle(
+                            match {
+                                it.observedAt == priceObservedAt &&
+                                    it.status == HistoryObservationStatus.INCOMPLETE && it.totalUsd == null &&
+                                    it.incompleteReasons == listOf("Simulated portfolio valuation failed.") &&
+                                    it.assets.all { asset ->
+                                        asset.status == HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE &&
+                                            asset.quantity == null
+                                    }
+                            },
+                            match { it.cycleId == "failed-simulation-cycle" },
+                        )
+                    }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "queued account observations are discarded if credentials rotate before persistence" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            coEvery { krakenService.getFundingEvidenceScope() } returnsMany
+                listOf("credential-before-queue", "credential-after-queue")
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "SAME_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+
+            runTest {
+                val snapshot = PortfolioSnapshot(
+                    timestamp = now,
+                    totalValueUSD = BigDecimal("100"),
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                recorder.captureFinalCycle(
+                    cycleId = "credential-rotation-cycle",
+                    config = config,
+                    balances = ObservedBalances(emptyMap(), now),
+                    prices = ObservedPrices(emptyMap()),
+                    snapshot = snapshot,
+                    sampleSelection = HistorySampleSelection.FINAL,
+                    dryRun = true,
+                ) shouldBe true
+
+                recorder.start(this)
+                try {
+                    advanceUntilIdle()
+                    recorder.captureIssue() shouldBe "History account identity is unavailable or changed."
+                    coVerify(exactly = 0) { store.appendCycle(any(), any()) }
+                } finally {
+                    recorder.stop()
+                }
             }
         }
 
@@ -354,6 +582,8 @@ class HistoryObservationRecorderTest : StringSpec() {
             val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
                 settings = TestFixtures.settings(simulation = false, dryRun = true),
             )
+            val balanceObservedAt = Instant.now().minusSeconds(10)
+            val priceObservedAt = balanceObservedAt.plusSeconds(5)
             coEvery { krakenService.getFundingEvidenceScope() } returns "scope-evidence"
             coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "ACCOUNT_OK"
             coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
@@ -364,7 +594,7 @@ class HistoryObservationRecorderTest : StringSpec() {
                 recorder.start(this)
                 try {
                     val snapshot = PortfolioSnapshot(
-                        timestamp = Instant.now(),
+                        timestamp = balanceObservedAt,
                         totalValueUSD = BigDecimal("50000.00"),
                         assets = emptyMap(),
                         actions = emptyList(),
@@ -373,8 +603,12 @@ class HistoryObservationRecorderTest : StringSpec() {
                     recorder.captureFinalCycle(
                         cycleId = "c-no-direct",
                         config = config,
-                        balances = ObservedBalances(emptyMap(), Instant.now(), directCapture = null),
-                        prices = ObservedPrices(emptyMap(), directCapture = null),
+                        balances = ObservedBalances(emptyMap(), balanceObservedAt, directCapture = null),
+                        prices = ObservedPrices(
+                            emptyMap(),
+                            directCapture = null,
+                            observedAt = priceObservedAt,
+                        ),
                         snapshot = snapshot,
                         sampleSelection = HistorySampleSelection.FINAL,
                         dryRun = true,
@@ -383,7 +617,8 @@ class HistoryObservationRecorderTest : StringSpec() {
                     coVerify {
                         store.appendCycle(
                             match {
-                                it.incompleteReasons.contains("Direct balance evidence is unavailable.") &&
+                                it.observedAt == priceObservedAt &&
+                                    it.incompleteReasons.contains("Direct balance evidence is unavailable.") &&
                                     it.incompleteReasons.contains("Direct ticker evidence is unavailable.")
                             },
                             any(),
@@ -395,4 +630,17 @@ class HistoryObservationRecorderTest : StringSpec() {
             }
         }
     }
+
+    private fun directMark(symbol: String, price: String) = DirectTickerMark(
+        symbol = symbol,
+        requestedPair = "${symbol}USD",
+        responsePair = "${symbol}USD",
+        candidateResponsePairs = listOf("${symbol}USD"),
+        rawPrice = price,
+        price = BigDecimal(price),
+        status = DirectEvidenceStatus.VALID,
+        candidateValuesByPair = mapOf(
+            "${symbol}USD" to DirectValueEvidence(price, BigDecimal(price), DirectEvidenceStatus.VALID),
+        ),
+    )
 }

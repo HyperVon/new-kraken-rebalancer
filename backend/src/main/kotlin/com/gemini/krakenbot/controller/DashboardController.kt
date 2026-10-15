@@ -14,15 +14,16 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.history.HISTORY_MAX_CHART_POINTS
 import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HISTORY_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryPage
-import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistoryService
+import com.gemini.krakenbot.service.history.HistorySourceMode
+import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySynchronizer
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
@@ -179,7 +180,16 @@ class DashboardController(
 
             post(Routes.API_HISTORY_SYNC_START) {
                 if (!requireCsrf()) return@post
-                startHistorySync()
+                val config = configService.getConfig()
+                val scope = historyObservationRecorder?.currentSourceScope(config)
+                    ?.takeIf { it.mode == HistorySourceMode.ACCOUNT && !it.accountIdentityDigest.isNullOrBlank() }
+                val service = historyService
+                val synchronizer = historySynchronizer
+                if (config.settings.simulation || scope == null || service == null || synchronizer == null) {
+                    respondJson(mapOf("error" to ViewText.HISTORY_SYNC_UNAVAILABLE), HttpStatusCode.ServiceUnavailable)
+                    return@post
+                }
+                startHistorySync(synchronizer, service, scope)
                 call.response.header("Location", Routes.HISTORY)
                 call.respond(HttpStatusCode.SeeOther)
             }
@@ -697,15 +707,12 @@ class DashboardController(
         fun empty(offset: Int = 0) = HistoryPage<Nothing>(emptyList(), 0L, HISTORY_PAGE_LIMIT, offset, false)
         if (service == null || digest == null) {
             val observations = if (service != null && scope != null) {
-                service.queryValues(
-                    HistoryRangeQuery(from = from, sourceScope = scope, limit = HISTORY_MAX_CHART_POINTS),
-                )
-                    .items
+                service.queryChartObservations(sourceScope = scope, from = from)
             } else {
                 emptyList()
             }
             return HistoryPageData(
-                range, filters, tradesOffset, ledgersOffset, observations.sortedBy { it.observedAt },
+                range, filters, tradesOffset, ledgersOffset, observations,
                 empty(), empty(tradesOffset), empty(ledgersOffset), emptyList(), accountAvailable = false,
             )
         }
@@ -714,20 +721,19 @@ class DashboardController(
             filters = filters,
             tradesOffset = tradesOffset,
             ledgersOffset = ledgersOffset,
-            observations = service.queryValues(
-                HistoryRangeQuery(from = from, sourceScope = scope, limit = HISTORY_MAX_CHART_POINTS),
-            ).items.sortedBy { it.observedAt },
+            observations = service.queryChartObservations(sourceScope = scope, from = from),
             checkpoints = if (filters.assetKey == null) {
                 empty()
             } else {
                 service.queryBalanceCheckpoints(
-                    filters.copy(pair = null, type = null, limit = HISTORY_MAX_CHART_POINTS),
+                    filters.copy(pair = null, type = null, limit = HISTORY_MAX_PAGE_LIMIT),
                 )
             },
             trades = service.queryTrades(filters.copy(offset = tradesOffset)),
             ledgers = service.queryLedgers(filters.copy(offset = ledgersOffset)),
             syncStatuses = service.getSyncStatus(scope),
             accountAvailable = true,
+            filterOptions = service.queryFilterOptions(filters),
         )
     }
 
@@ -758,10 +764,25 @@ class DashboardController(
         )
     }
 
-    private fun startHistorySync() {
-        val synchronizer = historySynchronizer ?: return
+    private suspend fun startHistorySync(
+        synchronizer: HistorySynchronizer,
+        service: HistoryService,
+        scope: HistorySourceScope,
+    ) {
+        val existing = service.getSyncStatus(scope).associateBy { it.feed }
         val now = Instant.now().epochSecond
-        HistoryFeed.entries.forEach { synchronizer.startSync(it, 0L, now) }
+        HistoryFeed.entries.forEach { feed ->
+            val status = existing[feed]
+            val resumeWindow = status?.takeIf {
+                it.state in setOf(
+                    HistorySyncState.RUNNING,
+                    HistorySyncState.PAUSED,
+                ) && it.windowStart != null && it.windowEnd != null
+            }
+            val start = resumeWindow?.windowStart?.epochSecond ?: 0L
+            val end = resumeWindow?.windowEnd?.epochSecond ?: now
+            synchronizer.startSync(feed, start, end)
+        }
     }
 
     private suspend fun RoutingContext.respondJson(data: Any, status: HttpStatusCode = HttpStatusCode.OK) {

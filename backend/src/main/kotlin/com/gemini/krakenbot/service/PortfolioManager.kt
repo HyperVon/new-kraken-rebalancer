@@ -25,6 +25,13 @@ interface PortfolioManager {
 
     fun isCycleActive(): Boolean = false
 
+    /** Runs one bounded History fetch/commit only when no rebalance cycle owns admission. */
+    suspend fun runHistoryPageIfAdmitted(block: suspend () -> Unit): Boolean {
+        if (isCycleActive()) return false
+        block()
+        return true
+    }
+
     fun getOperationalStatus(): RebalanceOperationalStatus = RebalanceOperationalStatus()
 
     fun pauseLoop()

@@ -59,6 +59,11 @@ interface KrakenService {
     /** Authenticated stable account identity (Kraken Spot IIBAN); never use a credential hash here. */
     suspend fun getAuthenticatedAccountIdentity(): String? = null
 
+    /** Authenticated API-key account identity and verified private-history time restrictions. */
+    suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? = getAuthenticatedAccountIdentity()?.let {
+        AuthenticatedAccountInfo(identity = it, queryBoundsVerified = false)
+    }
+
     /** Current private-API call-counter load; 0 for backends without a rate limiter. */
     suspend fun getApiCallCounter(): Double = 0.0
 
@@ -70,6 +75,22 @@ interface KrakenService {
      * calls each capture their own entry-time backend.
      */
     suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
+}
+
+data class AuthenticatedAccountInfo(
+    val identity: String,
+    /** Inclusive earliest allowed query second; null means Kraken reports no lower restriction. */
+    val queryFromSec: Long? = null,
+    /** Inclusive latest allowed query second; null means Kraken reports no upper restriction. */
+    val queryToSec: Long? = null,
+    val queryBoundsVerified: Boolean,
+) {
+    init {
+        require(identity.isNotBlank())
+        require(queryFromSec == null || queryFromSec >= 0)
+        require(queryToSec == null || queryToSec >= 0)
+        require(queryFromSec == null || queryToSec == null || queryFromSec <= queryToSec)
+    }
 }
 
 /** Optional capability for account balances reduced to amounts currently available for trading. */

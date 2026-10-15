@@ -103,7 +103,7 @@ class ProductionDiSmokeTest :
                 get<HistoryObservationRecorder>().shouldNotBeNull()
                 val synchronizer = get<HistorySynchronizer>()
                 synchronizer.shouldNotBeNull()
-                synchronizer.cycleGate.isCycleActive() shouldBe false
+                get<PortfolioManager>().isCycleActive() shouldBe false
 
                 com.gemini.krakenbot.config.coreModule.shouldNotBeNull()
                 com.gemini.krakenbot.config.webModule.shouldNotBeNull()

@@ -76,6 +76,43 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         }
     }
 
+    /** Validates the complete fresh schema and SQLite health before the trading loop can start. */
+    fun verifyInitialized() {
+        connect().use { connection ->
+            val actualTables = connection.createStatement().use { statement ->
+                statement.executeQuery(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+                ).use { resultSet -> buildSet { while (resultSet.next()) add(resultSet.getString(1)) } }
+            }
+            check(actualTables == REQUIRED_TABLES) { "History database schema is incomplete or unrecognized." }
+            connection.createStatement().use { statement ->
+                statement.executeQuery("PRAGMA quick_check").use { resultSet ->
+                    check(resultSet.next() && resultSet.getString(1) == "ok") {
+                        "History database integrity check failed."
+                    }
+                }
+            }
+        }
+    }
+
+    /** Whether this initialized store contains evidence belonging to a Kraken account. */
+    fun hasAccountEvidence(): Boolean {
+        if (filePath == null || !Files.exists(filePath)) return false
+        return connect().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery(
+                    ACCOUNT_EVIDENCE_TABLES.joinToString(" UNION ALL ") { table ->
+                        "SELECT EXISTS(SELECT 1 FROM $table WHERE account_identity_digest IS NOT NULL)"
+                    },
+                ).use { resultSet ->
+                    var evidenceFound = false
+                    while (resultSet.next()) evidenceFound = evidenceFound || resultSet.getInt(1) != 0
+                    evidenceFound
+                }
+            }
+        }
+    }
+
     override fun close() {
         inMemoryKeepalive?.close()
     }
@@ -293,6 +330,18 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             )
             statement.execute(
                 """
+                CREATE TABLE history_sync_seen_cursors (
+                    account_identity_digest TEXT NOT NULL,
+                    feed TEXT NOT NULL CHECK(feed IN ('TRADES', 'LEDGERS')),
+                    scan_id TEXT NOT NULL,
+                    cursor TEXT NOT NULL,
+                    PRIMARY KEY(account_identity_digest, feed, scan_id, cursor),
+                    FOREIGN KEY(scan_id) REFERENCES history_sync_windows(scan_id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            statement.execute(
+                """
                 CREATE TABLE history_daily_prices (
                     account_identity_digest TEXT NOT NULL,
                     raw_asset_key TEXT NOT NULL,
@@ -398,7 +447,35 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
     }
 
     companion object {
-        private const val HISTORY_SCHEMA_VERSION = 1
+        private const val HISTORY_SCHEMA_VERSION = 2
+        private val REQUIRED_TABLES = setOf(
+            "history_schema_meta",
+            "history_observations",
+            "history_observation_assets",
+            "history_cycle_activity",
+            "history_trades",
+            "history_ledgers",
+            "history_balance_checkpoints",
+            "history_sync_status",
+            "history_sync_windows",
+            "history_sync_seen_cursors",
+            "history_daily_prices",
+            "history_daily_values",
+            "history_daily_assets",
+        )
+        private val ACCOUNT_EVIDENCE_TABLES = listOf(
+            "history_observations",
+            "history_cycle_activity",
+            "history_trades",
+            "history_ledgers",
+            "history_balance_checkpoints",
+            "history_sync_status",
+            "history_sync_windows",
+            "history_sync_seen_cursors",
+            "history_daily_prices",
+            "history_daily_values",
+            "history_daily_assets",
+        )
 
         fun inMemory(): HistoryDatabase {
             val url = "jdbc:sqlite:file:history-${UUID.randomUUID()}?mode=memory&cache=shared"

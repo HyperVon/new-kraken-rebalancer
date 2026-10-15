@@ -1,10 +1,14 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
+import com.gemini.krakenbot.service.history.HistoryBalanceStatus
+import com.gemini.krakenbot.service.history.HistoryEventFilterOptions
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
+import com.gemini.krakenbot.service.history.HistoryObservationStatus
 import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySyncStatus
@@ -25,6 +29,7 @@ import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.loopControl
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
+import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.withQuery
 import kotlinx.html.ButtonType
@@ -40,6 +45,10 @@ import kotlinx.html.head
 import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.input
+import kotlinx.html.label
+import kotlinx.html.option
+import kotlinx.html.script
+import kotlinx.html.select
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.td
@@ -66,6 +75,7 @@ data class HistoryPageData(
     val ledgers: HistoryPage<HistoryLedger>,
     val syncStatuses: List<HistorySyncStatus>,
     val accountAvailable: Boolean,
+    val filterOptions: HistoryEventFilterOptions = HistoryEventFilterOptions(),
 )
 
 class HistoryPageComponent {
@@ -91,6 +101,7 @@ class HistoryPageComponent {
                 renderTrades(data)
                 renderLedgers(data)
             }
+            script(src = rebalancerJsSrc()) {}
         }
     }
 
@@ -153,35 +164,82 @@ class HistoryPageComponent {
             }
             form(action = Routes.HISTORY, method = FormMethod.get, classes = CssClass.History.FilterRow.value) {
                 input(type = InputType.hidden, name = "range") { value = data.range }
-                filterInput(HtmlIds.HISTORY_FILTER_ASSET, "asset", ViewText.HISTORY_FILTER_ASSET, data.filters.assetKey)
-                filterInput(HtmlIds.HISTORY_FILTER_PAIR, "pair", ViewText.HISTORY_FILTER_PAIR, data.filters.pair)
-                filterInput(HtmlIds.HISTORY_FILTER_TYPE, "type", ViewText.HISTORY_FILTER_TYPE, data.filters.type)
+                filterSelect(
+                    HtmlIds.HISTORY_FILTER_ASSET,
+                    "asset",
+                    ViewText.HISTORY_FILTER_ASSET,
+                    ViewText.HISTORY_FILTER_ALL_ASSETS,
+                    data.filters.assetKey,
+                    data.filterOptions.assets,
+                ) { asset ->
+                    val normalized = Asset.normalizeLedgerAsset(asset)
+                    if (normalized.equals(asset, ignoreCase = true)) asset else "$asset ($normalized)"
+                }
+                filterSelect(
+                    HtmlIds.HISTORY_FILTER_PAIR,
+                    "pair",
+                    ViewText.HISTORY_FILTER_PAIR,
+                    ViewText.HISTORY_FILTER_ALL_PAIRS,
+                    data.filters.pair,
+                    data.filterOptions.pairs,
+                )
+                filterSelect(
+                    HtmlIds.HISTORY_FILTER_TYPE,
+                    "type",
+                    ViewText.HISTORY_FILTER_TYPE,
+                    ViewText.HISTORY_FILTER_ALL_TYPES,
+                    data.filters.type,
+                    data.filterOptions.types,
+                )
                 button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) { +"Apply" }
             }
         }
     }
 
-    private fun kotlinx.html.FORM.filterInput(inputId: String, name: String, placeholder: String, current: String?) {
-        input(type = InputType.text, name = name, classes = CssClass.History.FilterInput.value) {
+    private fun kotlinx.html.FORM.filterSelect(
+        inputId: String,
+        name: String,
+        labelText: String,
+        allLabel: String,
+        current: String?,
+        options: List<String>,
+        display: (String) -> String = { it },
+    ) {
+        label {
+            htmlFor = inputId
+            +labelText
+        }
+        select(classes = CssClass.History.FilterInput.value) {
+            this.name = name
             id = inputId
-            this.placeholder = placeholder
-            value = current.orEmpty()
+            option {
+                value = ""
+                selected = current.isNullOrEmpty()
+                +allLabel
+            }
+            (options + listOfNotNull(current)).filter(String::isNotBlank).distinct().sorted().forEach { value ->
+                option {
+                    this.value = value
+                    selected = current == value
+                    +display(value)
+                }
+            }
         }
     }
 
     private fun DIV.renderValueChart(data: HistoryPageData) {
-        val points = data.observations.mapNotNull { observation ->
-            observation.totalUsd?.let { observation.observedAt to it }
-        }.sortedBy { it.first }
+        val observations = data.observations.sortedBy { it.observedAt }
+        val hasCompleteValue = observations.any {
+            it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null
+        }
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) { +ViewText.HISTORY_PORTFOLIO_VALUE }
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                if (points.isEmpty()) {
-                    p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_NO_DATA }
-                } else {
-                    unsafe { +pointSvg(points) }
+                if (observations.isEmpty() || !hasCompleteValue) {
+                    p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
                 }
+                if (observations.isNotEmpty()) unsafe { +valuePointSvg(observations) }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
         }
@@ -192,7 +250,11 @@ class HistoryPageComponent {
         val points = data.checkpoints.items.asReversed().mapNotNull { checkpoint ->
             val at = checkpoint.observedAt
             val quantity = checkpoint.quantity
-            if (at != null && quantity != null) at to quantity else null
+            if (checkpoint.status == HistoryBalanceStatus.VALID && at != null && quantity != null) {
+                at to quantity
+            } else {
+                null
+            }
         }
         div(CssClass.Layout.GlassPanel) {
             h2(CssClass.Utility.GlassPanelTitle) {
@@ -377,6 +439,76 @@ class HistoryPageComponent {
                 maxV,
             ).stripTrailingZeros().toPlainString()}</text>""" +
             """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - 4}">${minV.stripTrailingZeros().toPlainString()}</text></svg>"""
+    }
+
+    /** Connect adjacent complete values and leave a visible break wherever an incomplete cycle occurs. */
+    private fun valuePointSvg(observations: List<HistoryObservation>): String {
+        val completePoints = observations.mapNotNull { observation ->
+            if (observation.status == HistoryObservationStatus.COMPLETE) {
+                observation.totalUsd?.let { observation.observedAt to it }
+            } else {
+                null
+            }
+        }
+        val minT = observations.minOf { it.observedAt.epochSecond }
+        val maxT = observations.maxOf { it.observedAt.epochSecond }
+        val spanT = (maxT - minT).coerceAtLeast(1).toDouble()
+        val minV = completePoints.minOfOrNull { it.second }
+        val maxV = completePoints.maxOfOrNull { it.second }
+        val spanV = if (minV != null && maxV != null) {
+            maxV.subtract(minV).takeIf { it.signum() != 0 } ?: BigDecimal.ONE
+        } else {
+            BigDecimal.ONE
+        }
+        fun xCoordinate(time: Instant): Double = (time.epochSecond - minT) / spanT * (SVG_WIDTH - 2 * SVG_PAD) + SVG_PAD
+        fun coordinate(time: Instant, value: BigDecimal): Pair<Double, Double> {
+            val x = xCoordinate(time)
+            val ratio = value.subtract(minV!!).divide(spanV, 6, RoundingMode.HALF_UP).toDouble()
+            val y = SVG_HEIGHT - SVG_PAD - ratio * (SVG_HEIGHT - 2 * SVG_PAD)
+            return x to y
+        }
+
+        val lineSegments = mutableListOf<List<Pair<Double, Double>>>()
+        var currentSegment = mutableListOf<Pair<Double, Double>>()
+        observations.forEach { observation ->
+            val value = observation.totalUsd.takeIf { observation.status == HistoryObservationStatus.COMPLETE }
+            if (value == null) {
+                if (currentSegment.size > 1) lineSegments += currentSegment
+                currentSegment = mutableListOf()
+            } else {
+                currentSegment += coordinate(observation.observedAt, value)
+            }
+        }
+        if (currentSegment.size > 1) lineSegments += currentSegment
+        val lines = lineSegments.joinToString("") { segment ->
+            val coordinates = segment.joinToString(" ") { (x, y) ->
+                "%.2f,%.2f".format(java.util.Locale.US, x, y)
+            }
+            """<polyline class="${CssClass.History.Line.value}" points="$coordinates"/>"""
+        }
+
+        val markers = completePoints.joinToString("") { (time, value) ->
+            val (x, y) = coordinate(time, value)
+            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4"/>"""
+                .format(java.util.Locale.US, x, y)
+        }
+        val gapMarkers = observations.filter { it.status == HistoryObservationStatus.INCOMPLETE }.joinToString("") {
+            val x = xCoordinate(it.observedAt)
+            """<circle class="${CssClass.History.GapMarker.value}" cx="%.2f" cy="${SVG_HEIGHT - SVG_PAD + 8}" r="4">"""
+                .format(java.util.Locale.US, x) +
+                """<title>Incomplete observation; no portfolio value is plotted</title></circle>"""
+        }
+        val axisLabels = if (minV != null && maxV != null) {
+            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="12">""" +
+                maxV.stripTrailingZeros().toPlainString() + "</text>" +
+                """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - 4}">""" +
+                minV.stripTrailingZeros().toPlainString() + "</text>"
+        } else {
+            ""
+        }
+        return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
+            """preserveAspectRatio="none"><title>Portfolio samples; gaps mark incomplete cycles</title>""" +
+            lines + markers + gapMarkers + axisLabels + "</svg>"
     }
 
     private companion object {

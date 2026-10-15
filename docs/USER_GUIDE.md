@@ -318,8 +318,9 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 *History — simulated portfolio samples and account-sync status in an isolated capture.*
 
 The **History** page combines directly recorded portfolio values with Kraken's
-trade and ledger records. It provides time-range controls and filters for asset,
-pair, and event type. Trade and ledger tables are independently paginated.
+trade and ledger records. It provides time-range controls and dropdown filters
+for asset, pair, and event type, populated from the selected account and range.
+Trade and ledger tables are independently paginated.
 Ledger balance checkpoints can be charted for a selected asset using the
 exchange-reported balances attached to ledger events.
 
@@ -330,6 +331,13 @@ historical OHLC prices. Incomplete samples do not expose a total, and missing
 time periods are not interpolated. Deposits, withdrawals, manual trades, and
 other account activity can change the observed value, so the chart is not a
 profit or investment-return calculation.
+
+Ranges with at most 2,000 observations show every sample. Larger ranges are
+sampled across the full time span: each time bucket retains its first and last
+observations, complete-value extrema, and incomplete-cycle boundary markers.
+The chart connects adjacent complete samples with lines. An incomplete cycle
+breaks the line, so the chart never bridges a missing observation. The line
+joins recorded endpoints only; it does not infer values between samples.
 
 For an authenticated account, History synchronization fetches Kraken Trades
 and Ledgers in bounded pages and commits each page before continuing. The page

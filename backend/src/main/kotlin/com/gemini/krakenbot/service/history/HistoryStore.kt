@@ -13,6 +13,14 @@ interface HistoryStore {
 
     suspend fun queryObservations(query: HistoryRangeQuery): HistoryPage<HistoryObservation>
 
+    /** Bounded representative samples from the complete selected time range, oldest to newest. */
+    suspend fun queryChartObservations(
+        sourceScope: HistorySourceScope,
+        from: Instant? = null,
+        until: Instant? = null,
+        maxPoints: Int = HISTORY_MAX_CHART_POINTS,
+    ): List<HistoryObservation>
+
     suspend fun queryAssetValues(query: HistoryRangeQuery): HistoryPage<HistoryAssetValue>
 
     suspend fun latestObservation(sourceScope: HistorySourceScope): HistoryObservation?
@@ -30,6 +38,8 @@ interface HistoryStore {
     suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger>
 
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>
+
+    suspend fun queryFilterOptions(query: HistoryEventQuery): HistoryEventFilterOptions
 
     suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus
 

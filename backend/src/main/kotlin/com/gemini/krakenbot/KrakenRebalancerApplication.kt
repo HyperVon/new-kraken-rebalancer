@@ -14,6 +14,7 @@ import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.history.HistoryDatabase
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistorySynchronizer
@@ -73,6 +74,7 @@ fun main(args: Array<String>) {
     }
 
     val koin = GlobalContext.get()
+    koin.get<HistoryDatabase>().verifyInitialized()
     val executionJournalBootstrap = koin.get<ExecutionJournalBootstrap>()
     runBlocking { executionJournalBootstrap.initialize() }
     val portfolioManager = koin.get<PortfolioManager>()

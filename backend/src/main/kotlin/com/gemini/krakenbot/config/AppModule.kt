@@ -77,7 +77,11 @@ val coreModule =
             }
         }
 
-        single { DataDirectoryIdentity(DataDirectoryConfig.resolveDataDirectory()) }
+        single {
+            DataDirectoryIdentity(DataDirectoryConfig.resolveDataDirectory()) {
+                get<ExecutionDatabase>().hasAccountEvidence() || get<HistoryDatabase>().hasAccountEvidence()
+            }
+        }
         single { ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath().toString()) }
         single { HistoryDatabase(DataDirectoryConfig.historyDatabasePath()) }
 
@@ -121,7 +125,7 @@ val coreModule =
                 configService = get(),
                 dataDirectoryIdentity = get(),
                 store = get(),
-                cycleGate = HistoryCycleGate { get<PortfolioManager>().isCycleActive() },
+                cycleGate = HistoryCycleGate { block -> get<PortfolioManager>().runHistoryPageIfAdmitted(block) },
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:

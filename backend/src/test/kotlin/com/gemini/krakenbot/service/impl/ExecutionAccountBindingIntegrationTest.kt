@@ -48,7 +48,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
 
         "directory identity captured by History prevents execution from binding another account" {
             withTempDirectory { directory ->
-                val identity = DataDirectoryIdentity(directory)
+                val identity = DataDirectoryIdentity(directory) { false }
                 identity.bindOrVerify(identityDigest(ACCOUNT_A))
                 val environment = openEnvironment(directory, exchange(ACCOUNT_B, GENERATION_B), identity)
 
@@ -527,7 +527,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
     private suspend fun openEnvironment(
         directory: Path,
         exchange: FakeKrakenService,
-        dataDirectoryIdentity: DataDirectoryIdentity = DataDirectoryIdentity(directory),
+        dataDirectoryIdentity: DataDirectoryIdentity = DataDirectoryIdentity(directory) { false },
         customConfig: com.gemini.krakenbot.config.AppConfig? = null,
     ): Environment {
         val executionPath = directory.resolve("execution.db")

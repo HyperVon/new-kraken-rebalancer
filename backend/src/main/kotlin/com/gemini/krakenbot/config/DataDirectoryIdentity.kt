@@ -9,7 +9,7 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 
 /** Pins all account-scoped stores in one active data directory to the same authenticated account. */
-class DataDirectoryIdentity(dataDirectory: Path) {
+class DataDirectoryIdentity(dataDirectory: Path, private val hasAccountEvidence: () -> Boolean) {
     private val directory = dataDirectory.toAbsolutePath().normalize()
     private val identityFile = directory.resolve(IDENTITY_FILE_NAME)
     private val lock = directoryLocks.computeIfAbsent(identityFile) { Any() }
@@ -25,6 +25,9 @@ class DataDirectoryIdentity(dataDirectory: Path) {
                         "The active data directory is already bound to a different Kraken account."
                     }
                 } else {
+                    check(!hasAccountEvidence()) {
+                        "The active data directory contains account evidence but has no identity marker."
+                    }
                     writeIdentity(accountIdentityDigest)
                 }
             } catch (e: IOException) {
