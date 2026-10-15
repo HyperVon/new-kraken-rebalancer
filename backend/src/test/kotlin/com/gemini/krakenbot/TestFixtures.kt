@@ -5,10 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.test.TestConstants
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -176,49 +173,5 @@ object TestFixtures {
         currentPercent = currentPercent,
         deviationPercent = deviationPercent,
         deviationUSD = deviationUSD,
-    )
-
-    fun tradeRecord(
-        timestamp: Instant,
-        pair: String,
-        side: String,
-        symbol: String,
-        volume: BigDecimal,
-        usdAmount: BigDecimal,
-        success: Boolean = true,
-        dryRun: Boolean = false,
-        errorMessage: String? = null,
-        price: BigDecimal = BigDecimal.ZERO,
-        fee: BigDecimal = BigDecimal.ZERO,
-        slippagePercent: BigDecimal? = null,
-        expectedPrice: BigDecimal? = null,
-        source: TradeSource? = null,
-        id: Int? = null,
-        cycleId: String? = null,
-        orderTxid: String? = null,
-        tradeId: String? = null,
-        clientOrderId: String? = null,
-        submissionState: OrderSubmissionState? = null,
-    ): TradeRecord = TradeRecord(
-        timestamp = timestamp,
-        pair = pair,
-        side = side,
-        symbol = symbol,
-        volume = volume,
-        usdAmount = usdAmount,
-        success = success,
-        dryRun = dryRun,
-        errorMessage = errorMessage,
-        price = price,
-        fee = fee,
-        slippagePercent = slippagePercent,
-        expectedPrice = expectedPrice,
-        source = source,
-        id = id,
-        cycleId = cycleId,
-        orderTxid = orderTxid,
-        tradeId = tradeId,
-        clientOrderId = clientOrderId,
-        submissionState = submissionState,
     )
 }

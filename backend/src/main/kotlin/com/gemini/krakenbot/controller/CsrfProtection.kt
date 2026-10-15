@@ -14,6 +14,7 @@ import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.Objects
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -107,7 +108,12 @@ internal object CsrfProtection {
 
     fun currentToken(call: ApplicationCall): String = issueToken(call)
 
-    private data class NormalizedOrigin(val scheme: String, val host: String, val port: Int)
+    internal class NormalizedOrigin(val scheme: String, val host: String, val port: Int) {
+        override fun equals(other: Any?): Boolean =
+            other is NormalizedOrigin && scheme == other.scheme && host == other.host && port == other.port
+
+        override fun hashCode(): Int = Objects.hash(scheme, host, port)
+    }
 
     private fun matchesRequestOrigin(call: ApplicationCall, candidate: String): Boolean {
         if (!isLocalOrPrivateOrigin(candidate)) return false

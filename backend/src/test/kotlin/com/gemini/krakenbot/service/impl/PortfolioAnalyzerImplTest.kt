@@ -2,7 +2,15 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.AssetPrices
+import com.gemini.krakenbot.domain.AssetValues
+import com.gemini.krakenbot.domain.PortfolioValues
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectBalanceCapture
@@ -13,6 +21,8 @@ import com.gemini.krakenbot.service.DirectTickerMark
 import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
+import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.TickerRead
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -34,6 +44,52 @@ class PortfolioAnalyzerImplTest : StringSpec() {
     private val krakenService = mockk<KrakenService>(relaxed = true)
 
     init {
+        "default observed price read wraps the analyzer price read" {
+            val prices = mapOf("BTC" to BigDecimal("20000"))
+            val analyzer = object : PortfolioAnalyzer {
+                override suspend fun fetchBalances(): RawBalances = error("not used")
+
+                override suspend fun fetchObservedBalances(): ObservedBalances = error("not used")
+
+                override suspend fun fetchPrices(): AssetPrices = prices
+
+                override fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal =
+                    error("not used")
+
+                override fun calculatePortfolioValues(
+                    balances: RawBalances,
+                    prices: AssetPrices,
+                ): Result<PortfolioValues> = error("not used")
+
+                override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal = error("not used")
+
+                override fun analyzeDeviations(
+                    totalPortfolioValueUSD: BigDecimal,
+                    currentValuesUSD: AssetValues,
+                    effectiveUsdTarget: BigDecimal,
+                    cryptoScaleFactor: BigDecimal,
+                ): RebalancePlan = error("not used")
+
+                override fun buildSnapshot(
+                    balances: RawBalances,
+                    prices: AssetPrices,
+                    currentValuesUSD: AssetValues,
+                    totalPortfolioValueUSD: BigDecimal,
+                    effectiveUsdTarget: BigDecimal,
+                    cryptoScaleFactor: BigDecimal,
+                    actionLog: List<String>,
+                    balancesObservedAt: Instant,
+                ): PortfolioSnapshot = error("not used")
+            }
+
+            runTest {
+                val observed = analyzer.fetchObservedPrices()
+
+                observed.prices shouldBe prices
+                observed.directCapture shouldBe null
+            }
+        }
+
         "snapshot uses a unit price for USD and the direct ticker mark for crypto" {
             every { configService.getConfig() } returns TestFixtures.config(
                 settings = TestFixtures.settings(),

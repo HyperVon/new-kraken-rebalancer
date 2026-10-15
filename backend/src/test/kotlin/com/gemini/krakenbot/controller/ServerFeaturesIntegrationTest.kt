@@ -64,6 +64,12 @@ class ServerFeaturesIntegrationTest : DashboardControllerTestBase() {
                 val response = client.get("/static/style.css")
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.CacheControl] shouldContain "max-age=86400"
+                val stylesheet = response.bodyAsText()
+                stylesheet shouldContain ".history-chart-svg"
+                stylesheet shouldContain ".history-line"
+                stylesheet shouldContain "fill: none"
+                stylesheet shouldContain "stroke: rgba(96, 165, 250, 1)"
+                stylesheet shouldContain ".history-axis-label"
             }
         }
 

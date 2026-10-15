@@ -2,7 +2,7 @@
 name: user-guide
 description: >-
   Author and maintain docs/USER_GUIDE.md — end-user walkthrough of Dashboard,
-  Settings, and Actual with retained-page screenshots. Use when adding
+  Settings, and History with retained-page screenshots. Use when adding
   user-facing features, changing settings semantics, or updating the manual.
 ---
 
@@ -24,7 +24,7 @@ Agent how-to for screenshots → [docs-screenshot-refresh](../docs-screenshot-re
 | Header mode plate or STREAM/STALE stream chip | Clarify trading mode vs stream health; never call the chip “live trading” |
 | Dashboard hero / Cash·Crypto tiles / cycle activity feed | Update Dashboard sections; refresh overview + bottom screenshots |
 | New Settings field or safety-mode cards (ON/OFF) | Update Settings table; clarify dryRun vs simulation |
-| Actual observations, incomplete evidence, or prospective Buy & Hold | Update the Actual section; refresh the retained Actual capture when visuals changed |
+| History values, exchange synchronization, or activity filters | Update the History section; refresh its capture when visuals changed |
 | New primary page/route | Add a guide section **and** a capture target in `docs-screenshot-refresh` |
 | Removed UI | Delete the section and README/guide image references |
 
@@ -61,7 +61,7 @@ Suggested section order (match the live nav):
 2. Navigation overview
 3. Dashboard (latest cycle snapshot + current-cycle actions)
 4. Settings (active controls + allocations)
-5. Actual observations (raw evidence + optional prospective Buy & Hold)
+5. History (direct cycle values + synchronized exchange records)
 6. Suggested workflows
 7. Links to README / ALGORITHM / FLOWS / SECURITY
 
@@ -75,7 +75,7 @@ Suggested section order (match the live nav):
 | `docs/images/dashboard-performance.png` | Dashboard Asset Performance table and deviation legend |
 | `docs/images/dashboard-bottom.png` | Cycle-grouped activity feed |
 | `docs/images/settings.png` | Global parameters + allocations + safety cards |
-| `docs/images/actual.png` | Forward-only Actual page and explicit simulation-unavailable state |
+| `docs/images/history.png` | Portfolio values, exchange activity, and account-sync state |
 | `docs/images/settings-allocations.png` | Target Allocations and quality-score preview |
 
 When `docs-screenshot-refresh` gains a new target file, add it here **and**
@@ -85,7 +85,7 @@ embed it in USER_GUIDE (and README Screenshots if appropriate).
 
 ## Checklist
 
-- [ ] USER_GUIDE sections match current Dashboard / Settings / Actual UI
+- [ ] USER_GUIDE sections match current Dashboard / Settings / History UI
 - [ ] Every major section embeds a current screenshot under `docs/images/`
 - [ ] DPR 2 screenshots use explicit linked display widths
 - [ ] Responsive gallery is complete in the User Guide and curated in README

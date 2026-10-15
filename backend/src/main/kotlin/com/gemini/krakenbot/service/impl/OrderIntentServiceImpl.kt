@@ -3,13 +3,13 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.repository.OrderIntentRepository
+import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
 import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.OrderIntentService
 import java.time.Instant
 
 class OrderIntentServiceImpl(
-    private val repository: OrderIntentRepository,
+    private val repository: ExecutionOrderIntentRepository,
     private val accountBindingVerifier: ExecutionAccountBindingVerifier? = null,
 ) : OrderIntentService {
     private companion object {

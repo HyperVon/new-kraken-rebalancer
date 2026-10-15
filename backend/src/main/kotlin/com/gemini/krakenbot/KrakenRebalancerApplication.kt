@@ -2,6 +2,7 @@ package com.gemini.krakenbot
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.APPLICATION_SCOPE_QUALIFIER
+import com.gemini.krakenbot.config.DataDirectoryConfig
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.config.ServerConfig
@@ -13,7 +14,10 @@ import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
+import com.gemini.krakenbot.service.history.HistoryDatabase
+import com.gemini.krakenbot.service.history.HistoryFeed
+import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistorySynchronizer
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -32,6 +36,7 @@ import org.koin.logger.slf4jLogger
 import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.milliseconds
 
+private const val INITIALIZE_DATA_FLAG = "--initialize-data"
 private const val REBALANCING_SHUTDOWN_TIMEOUT_MILLIS = 5_000L
 
 private val log = LoggerFactory.getLogger("KrakenRebalancerApplication")
@@ -58,25 +63,30 @@ internal suspend fun joinRebalancingWorker(
     return false
 }
 
-fun main() {
+fun main(args: Array<String>) {
+    if (INITIALIZE_DATA_FLAG in args) {
+        DataDirectoryConfig.initializeDataDirectory()
+        return
+    }
     startKoin {
         slf4jLogger()
         modules(appModule)
     }
 
     val koin = GlobalContext.get()
+    koin.get<HistoryDatabase>().verifyInitialized()
     val executionJournalBootstrap = koin.get<ExecutionJournalBootstrap>()
     runBlocking { executionJournalBootstrap.initialize() }
     val portfolioManager = koin.get<PortfolioManager>()
     val orderIntentService = koin.get<OrderIntentService>()
-    val actualObservationDispatcher = koin.get<ActualObservationDispatcher>()
+    val historyObservationRecorder = koin.get<HistoryObservationRecorder>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
 
     val applicationScope: CoroutineScope = koin.get(
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
-    actualObservationDispatcher.start(applicationScope)
+    historyObservationRecorder.start(applicationScope)
     portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(

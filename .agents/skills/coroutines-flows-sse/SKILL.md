@@ -2,7 +2,7 @@
 name: coroutines-flows-sse
 description: >-
   Kotlin Flow architecture for saved Settings, the latest current-cycle
-  Dashboard snapshot, SSE, bounded Actual observation capture, and
+  Dashboard snapshot, SSE, bounded History capture and account sync, and
   order-specific USD sell settlement. Use when changing reactive pipelines,
   startup, SSE, or PortfolioManager config watching. See docs/FLOWS.md.
 ---
@@ -18,13 +18,12 @@ Canonical runtime map: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 | Cold `Flow` | Exchange retries and sell-settlement polling | Starts its request/poll work when collected. |
 | Hot `SharedFlow` | Saved Settings | Replays current Settings and publishes later updates. |
 | Hot `StateFlow` + bounded deque | `CurrentPortfolioState` | Exposes the latest completed snapshot and keeps up to 24 in-memory snapshots for the hero trend; clears the trend when simulation mode or credential scope changes. |
-| Bounded `Channel` | `ActualObservationDispatcher` | Passes eligible direct observation candidates to an off-cycle writer; a full queue can skip a sample. |
+| Bounded `Channel` | `HistoryObservationRecorder` | Passes selected cycle samples and activity to an off-cycle writer; a full queue can skip a sample. |
 
-Retrospective trade/ledger synchronization, report reconstruction, and
-historical reporting flows are retired. The legacy database remains available
-only for safe migration and account-history continuity checks during binding;
-it is not an active reporting destination. Order-specific Kraken
-`TradesHistory` reads used to confirm sells are still part of execution safety.
+The History page uses a separate store for direct cycle samples and bounded,
+account-scoped Kraken trade and ledger synchronization. It does not reconstruct
+portfolio values from exchange events. Order-specific Kraken `TradesHistory`
+reads used to confirm sells remain a separate execution-safety path.
 
 ## Settings changes and the rebalance loop
 
@@ -58,21 +57,25 @@ bounded hero trend remains process-local and source-scoped.
 Per-client SSE failures stay local to that session, and cancellation must
 propagate.
 
-## Actual observations
+## History capture and account synchronization
 
-At startup, the application starts `ActualObservationDispatcher` and the
-portfolio manager. Eligible direct balance and price evidence from a completed
-live cycle is placed on the dispatcher's bounded channel. A worker verifies
-account binding and credential scope, then appends the raw observation to the
-Actual store outside the order path. Simulation does not create authenticated
-Actual observations. Queue, binding, or storage problems can skip a sample
-without blocking rebalancing.
+At startup, the application starts `HistoryObservationRecorder` and the
+portfolio manager. The loop queues its selected cycle sample and activity to a
+bounded channel; a worker persists them asynchronously in `history.db`. Missing
+or incomplete direct evidence has no total value, and History storage failure
+must not block the rebalance cycle. Simulation values use a separate
+process-session scope and are not authenticated account data.
 
-`/actual` reads raw evidence and gaps for the current account/configured asset
-scope. An optional prospective Buy & Hold segment can start from eligible
-complete evidence after continuity verification and proceeds forward. It does
-not require or trigger retrospective reconstruction. Preserve cancellation in
-the dispatcher worker and benchmark evaluation.
+The History page reads values only for the current account and configured
+managed-asset scope. An operator-triggered sync fetches Kraken Trades and
+Ledgers one bounded page at a time. Each page and cursor commit before the next
+request. The synchronizer pins a ConfigService execution session, checks the
+account identity around each exchange read, and verifies the data-directory
+account binding before commit. Sync status reports failures rather than
+combining a changed account or scope with prior data.
+
+Preserve cancellation in the recorder worker and synchronizer. Keep database
+writes and page calls off the order path.
 
 ## Cold USD sell settlement
 
@@ -100,7 +103,7 @@ must not be turned into an account-history sync or reporting path.
 
 - Use `withContext(Dispatchers.IO)` for blocking database or network work.
 - Do not use `GlobalScope`; use component-bound application or request scopes.
-- Keep the Actual queue bounded and non-blocking for the rebalance cycle.
+- Keep the History queue bounded and non-blocking for the rebalance cycle.
 - Catch ordinary client/session failures locally where appropriate, but always
   rethrow `CancellationException`.
 
@@ -109,9 +112,10 @@ must not be turned into an account-history sync or reporting path.
 - [ ] Saved Settings use the replaying hot flow and `collectLatest`
 - [ ] Execution sessions defer Settings publication until the cycle completes
 - [ ] Dashboard state exposes the latest snapshot plus a source-scoped bounded hero trend; SSE carries current-cycle snapshots
-- [ ] Actual capture is bounded, direct-evidence based, and off the order path
-- [ ] Prospective Buy & Hold requires verified continuity and moves forward only
-- [ ] Sell fill checks remain scoped to returned order IDs; no history sync returns
+- [ ] History capture is bounded, direct-evidence based, and off the order path
+- [ ] Trade and ledger pages verify account scope and commit cursors before continuing
+- [ ] Simulation values remain distinct from account-scoped History
+- [ ] Sell fill checks remain scoped to returned order IDs and separate from History sync
 - [ ] Cold settlement polls remain bounded and stop buys when cash is uncertain
 - [ ] SSE, worker, and poll cancellation continues to propagate
 - [ ] `docs/FLOWS.md` remains the canonical runtime diagram and path description

@@ -31,17 +31,15 @@ class SqliteExecutionAccountBindingRepositoryImpl(private val database: Executio
                     return@inTransaction ExecutionAccountBindingWriteResult.BLOCKED_BY_PRIOR_BINDING_EVIDENCE
                 }
                 if (
-                    exists(connection, "SELECT 1 FROM execution_order_intents WHERE legacy_source_id IS NULL LIMIT 1")
-                ) {
-                    return@inTransaction ExecutionAccountBindingWriteResult.BLOCKED_BY_LIVE_ORDER_HISTORY
-                }
-                if (
                     exists(
                         connection,
                         "SELECT 1 FROM execution_order_intents WHERE state IN ('PENDING', 'UNCERTAIN') LIMIT 1",
                     )
                 ) {
                     return@inTransaction ExecutionAccountBindingWriteResult.BLOCKED_BY_UNRESOLVED_INTENT
+                }
+                if (exists(connection, "SELECT 1 FROM execution_order_intents LIMIT 1")) {
+                    return@inTransaction ExecutionAccountBindingWriteResult.BLOCKED_BY_PRIOR_ORDER_HISTORY
                 }
                 connection.prepareStatement(
                     """

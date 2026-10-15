@@ -4,11 +4,11 @@ import com.gemini.krakenbot.domain.resolveBalance
 import com.gemini.krakenbot.domain.resolveBalanceOrNull
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SpendableBalanceService
-import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -132,7 +132,7 @@ internal object OrderSettleHelper {
                 noneLog = "No fill-confirmed USD observed after sell refresh",
                 resolve = { attempt ->
                     val matchedProceeds = sumMatchedSellProceeds(backend, startSec, endSec, txidSet)
-                    if (matchedProceeds > BigDecimal.ZERO) {
+                    if (matchedProceeds != null && matchedProceeds > BigDecimal.ZERO) {
                         val cash = openingUsd.add(matchedProceeds).toUsdScale()
                         log.info(
                             "Fill-confirmed USD after sells (attempt {}): {} (proceeds {})",
@@ -154,49 +154,84 @@ internal object OrderSettleHelper {
         startSec: Long,
         endSec: Long,
         txidSet: Set<String>,
-    ): BigDecimal {
-        var offset = 0
+    ): BigDecimal? {
+        var cursor: String? = null
         var matchedProceeds = BigDecimal.ZERO
         val seenTradeIds = mutableSetOf<String>()
+        val seenCursors = mutableSetOf<String>()
 
         repeat(MAX_FILL_HISTORY_PAGES) {
-            val fills = backend.getTradeHistoryUntil(
+            val page = backend.getAccountTradePage(
                 startSec = startSec,
-                offset = offset,
                 endSec = endSec,
+                cursor = cursor,
+                limit = KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE,
             )
-            val totalCount = backend.getLastTradeHistoryTotalCount()
+            if (!page.valid) return null
 
-            for (fill in fills) {
-                val txid = fill.orderTxid ?: continue
-                if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
+            for (fill in page.entries) {
+                val settlementFill = when (val match = fill.matchSettlementFill(txidSet)) {
+                    SettlementFillMatch.Unmatched -> continue
+                    SettlementFillMatch.Incomplete -> return null
+                    is SettlementFillMatch.Confirmed -> match.fill
+                }
 
-                val tradeId = fill.tradeId?.takeIf { it.isNotBlank() }
+                val tradeId = settlementFill.tradeId
                 if (tradeId != null && !seenTradeIds.add(tradeId)) continue
 
-                val netProceeds = fill.usdAmount
-                    .subtract(fill.fee)
+                val netProceeds = settlementFill.cost
+                    .subtract(settlementFill.fee)
                     .max(BigDecimal.ZERO)
 
                 matchedProceeds = matchedProceeds.add(netProceeds)
             }
 
-            val nextOffset = offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-            val hasMorePages =
-                if (totalCount > 0) {
-                    nextOffset < totalCount
-                } else {
-                    fills.size >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-                }
-
-            if (!hasMorePages) {
-                return matchedProceeds
+            val nextCursor = page.nextCursor ?: return matchedProceeds
+            if (!seenCursors.add(nextCursor)) {
+                return null
             }
-
-            offset = nextOffset
+            cursor = nextCursor
         }
 
-        return matchedProceeds
+        // A remaining cursor means the bounded page budget did not prove completeness.
+        return null
+    }
+
+    private data class SettlementFill(
+        val orderTxid: String,
+        val tradeId: String?,
+        val cost: BigDecimal,
+        val fee: BigDecimal,
+    )
+
+    private sealed class SettlementFillMatch {
+        object Unmatched : SettlementFillMatch()
+        object Incomplete : SettlementFillMatch()
+        data class Confirmed(val fill: SettlementFill) : SettlementFillMatch()
+    }
+
+    /** Confirms only matching USD sells whose fee can safely be expressed in USD. */
+    private fun ExchangeTradeHistoryEntry.matchSettlementFill(txidSet: Set<String>): SettlementFillMatch {
+        val txid = orderTxid?.takeIf(String::isNotBlank) ?: return SettlementFillMatch.Unmatched
+        if (txid !in txidSet) return SettlementFillMatch.Unmatched
+        if (!isValidRecord || !hasValidTime || !hasValidPrice || !hasValidCost || !hasValidFee || !hasValidVolume) {
+            return SettlementFillMatch.Incomplete
+        }
+        if (baseAsset.isNullOrBlank() || quoteCurrency != Asset.USD || !OrderSide.isSell(type.orEmpty())) {
+            return SettlementFillMatch.Incomplete
+        }
+        val costAmount = cost?.toBigDecimalOrNull() ?: return SettlementFillMatch.Incomplete
+        val feeAmount = fee?.toBigDecimalOrNull() ?: return SettlementFillMatch.Incomplete
+        if (costAmount.signum() <= 0 || feeAmount.signum() < 0) return SettlementFillMatch.Incomplete
+        if (feeAmount.signum() > 0 && feeCurrency != Asset.USD) return SettlementFillMatch.Incomplete
+        return SettlementFillMatch.Confirmed(
+            SettlementFill(
+                orderTxid = txid,
+                tradeId = tradeId.takeIf(String::isNotBlank),
+                cost = costAmount,
+                fee = feeAmount,
+            ),
+        )
     }
 
     private fun pollUsdBalanceAfterSells(

@@ -1,8 +1,8 @@
 # Kotlin Flow and Runtime Data Paths
 
 This document describes the active runtime paths for configuration, the current
-Dashboard snapshot, live-order safety, and Actual observations. Retrospective
-History reporting and reconstruction are retired.
+Dashboard snapshot, account History capture and synchronization, and live-order
+safety.
 
 ## Flow types in use
 
@@ -11,7 +11,7 @@ History reporting and reconstruction are retired.
 | Cold `Flow` | Kraken API retries and sell-settlement polling | Runs when collected; each collection performs its own request/poll sequence. |
 | Hot `SharedFlow` | Configuration changes | Publishes saved settings to the running portfolio loop. |
 | Hot `StateFlow` + bounded memory | `CurrentPortfolioState` | Exposes the latest completed cycle and retains up to 24 same-source snapshots in process memory for the Dashboard hero chart; clears the window when simulation mode or credential scope changes. |
-| Bounded channel | Actual observation writer | Buffers a small number of observation candidates so persistence stays outside the order path. |
+| Bounded channel | History cycle recorder | Buffers selected cycle samples and activity so persistence stays outside the order path. |
 
 ## System map
 
@@ -21,7 +21,7 @@ flowchart TB
         Settings[Settings form]
         Dashboard[Dashboard]
         SSE[SSE client]
-        Actual[Actual page]
+        History[History page]
     end
 
     subgraph Server
@@ -31,10 +31,12 @@ flowchart TB
         Analyzer[PortfolioAnalyzer]
         Executor[OrderExecutor]
         Current[CurrentPortfolioState StateFlow]
-        ActualDispatcher[ActualObservationDispatcher]
-        ActualStore[ActualObservationStore]
+        Recorder[HistoryObservationRecorder]
+        Synchronizer[HistorySynchronizer]
+        HistoryService[HistoryService]
+        HistoryStore[HistoryStore]
         OrderIntent[Order intent service]
-        Binding[Account binding verifier]
+        Identity[DataDirectoryIdentity]
         Health[Health and readiness]
     end
 
@@ -44,8 +46,8 @@ flowchart TB
 
     subgraph Stores
         ExecutionDB[(Execution SQLite)]
-        ActualDB[(Actual SQLite)]
-        LegacyDB[(Preserved legacy database)]
+        HistoryDB[(History SQLite)]
+        IdentityFile[(Account identity digest)]
     end
 
     Settings -->|POST settings| Controller
@@ -57,25 +59,32 @@ flowchart TB
     Executor -->|orders and settlement reads| Exchange
     Executor --> OrderIntent
     OrderIntent --> ExecutionDB
+    Manager -->|queue selected cycle sample and activity| Recorder
+    Recorder --> HistoryStore
+    HistoryService --> HistoryStore
+    HistoryStore --> HistoryDB
+    History -->|page and JSON queries| Controller
+    Controller --> HistoryService
+    Controller -->|CSRF-protected sync request| Synchronizer
+    Synchronizer -->|bounded trade and ledger pages| Exchange
+    Synchronizer --> HistoryStore
+    Synchronizer --> Identity
+    Identity --> IdentityFile
     Manager -->|publish latest completed snapshot| Current
-Current -->|latest snapshot + recent in-memory window| Controller
+    Current -->|latest snapshot + recent in-memory window| Controller
     Current -->|snapshot JSON| SSE
     SSE --> Dashboard
-    Manager -->|enqueue direct observation| ActualDispatcher
-    ActualDispatcher --> ActualStore
-    ActualStore --> ActualDB
-    Actual -->|bounded read and optional prospective comparison| Controller
-    Controller --> ActualStore
     Controller --> Health
-    LegacyDB -.->|continuity checks during safe migration or binding| Binding
-    Binding --> ExecutionDB
+    Identity --> ExecutionDB
 ```
 
-The legacy database shown here is retained for safe migration and account-history
-continuity checks during binding. It is not an active reporting destination.
-The application does not synchronize historical trades or ledgers, reconstruct
-retrospective reports, or write new retrospective report data. Existing files
-and tables remain untouched.
+The account identity digest binds the active data directory's History and
+execution stores to one verified Kraken account. The application uses explicit
+fresh-schema initialization and normal startup refuses to recreate missing
+stores. It does not read or migrate the former reporting or Actual databases.
+The History value series contains direct cycle observations; synchronized
+trades, ledgers, and ledger balances are displayed as exchange evidence rather
+than used to reconstruct an earlier portfolio value.
 
 ## Configuration changes
 
@@ -144,7 +153,7 @@ and retains up to 24 recent snapshots from the same portfolio source in a
 bounded in-memory window for the Dashboard hero chart. The source combines
 simulation mode with the adapter's non-secret credential scope, and a change
 clears the window. The window starts empty on process startup and is never
-loaded from the reporting database. The chart appears after two comparable
+loaded from `history.db`. The chart appears after two comparable
 cycles and resets when the process restarts or the source changes. The Dashboard
 also shows activity from the latest cycle. Its STREAM/STALE chip reports SSE
 freshness; the persistent mode plate reports Simulation, Dry Run, or Live
@@ -167,9 +176,9 @@ application unready until an operator verifies the exchange state and resolves
 the journal entry with evidence.
 
 The execution journal and its account binding are part of the live-order safety
-path. The preserved legacy store may be consulted for account-history
-continuity during a safe migration or initial binding; it is not used to
-reconstruct or publish retrospective reports.
+path. `DataDirectoryIdentity` pins the active execution and History stores to
+one verified Kraken account. Account binding does not consult a legacy reporting
+store or reconstruct portfolio values from exchange events.
 
 ## USD settlement after sells
 
@@ -188,36 +197,34 @@ normal coroutine cancellation stops it. The cycle-wide execution session keeps
 the settings and selected live/simulation backend stable during planning,
 orders, and this settlement.
 
-## Actual observations and prospective Buy & Hold
+## Account History capture and synchronization
 
-**Raw observation path:** current cycle direct balance and ticker evidence →
-bounded `ActualObservationDispatcher` queue → append-only `ActualObservationStore`
+**Cycle sample path:** completed cycle balance and ticker evidence → bounded
+`HistoryObservationRecorder` queue → `HistoryStore` → `history.db`
 
-Application startup starts the Actual dispatcher and portfolio manager. The
-first completed cycle publishes Dashboard state; startup does not reconstruct
-retrospective reports.
+The portfolio loop submits its selected cycle sample and activity after the
+cycle work. The recorder performs account verification and SQLite persistence
+asynchronously, so missing direct evidence, a full queue, or storage failure
+cannot block order execution. Each sample stores its account or simulation
+scope, managed-asset scope, observation time, request windows, and completeness
+status. Incomplete samples do not have a total value; the chart does not infer
+values across them.
 
-The loop enqueues the direct pre-trade balance and price observations after
-order execution returns. The dispatcher obtains Kraken's authenticated account
-identity, checks that credentials have not changed since the cycle captured its
-evidence, values the configured managed assets, and appends the sample
-asynchronously. Dry-run observations do not require an existing execution
-binding; live-order authorization retains its separate binding checks. A full
-queue, verification failure, or storage failure can skip an observation; it
-does not block a safe rebalance cycle. Simulation does not add authenticated
-Actual observations.
+**Exchange history path:** History page → CSRF-protected
+`POST /api/history/sync/start` → `HistorySynchronizer` → Kraken Trades or
+Ledgers page → `HistoryStore`
 
-`GET /actual` reads the current account and configured-asset scope from the
-Actual store. It returns forward-only raw observations, including incomplete
-evidence and gaps. An optional prospective Buy & Hold comparison can start
-from an eligible complete observation after event continuity is verified. It
-uses observations moving forward from that baseline; it does not reconstruct an
-earlier period. Changing allocation weights alone does not change the observed
-asset scope, while changing configured assets does.
+The synchronizer processes one bounded page at a time and commits its cursor
+and records before requesting the next page. It pins the current account and
+execution session across identity verification, page fetch, and commit, and
+checks that the authenticated identity remains stable around the exchange read.
+The shared data-directory identity digest must match before account-scoped data
+is written. A failed page gets one bounded restart; further failures remain
+visible in the feed's sync status. The History UI exposes per-feed progress,
+time ranges, event filters, paginated trade and ledger tables, a portfolio-value
+chart, and ledger-reported balance checkpoints.
 
-## Retired History routes
-
-The former `/history` page permanently redirects to `/actual`. Former
-`/api/history/*` reporting endpoints return **410 Gone**. Historical sync,
-reconstruction, and retrospective report writes no longer run. Existing legacy
-database files and tables are left in place for migration and continuity needs.
+Simulation cycle samples use an independent process-session scope. Simulation
+does not authenticate an account or synchronize Kraken trades and ledgers, so
+its values are not represented as account history. The Dashboard's latest
+snapshot and in-memory trend remain separate from the persisted History series.

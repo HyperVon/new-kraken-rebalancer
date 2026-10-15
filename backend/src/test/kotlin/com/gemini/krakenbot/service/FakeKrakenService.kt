@@ -3,13 +3,11 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.DepositStatusRecord
-import com.gemini.krakenbot.model.InternalTransferRecord
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.WithdrawStatusRecord
 import java.math.BigDecimal
 
 /**
@@ -20,23 +18,17 @@ import java.math.BigDecimal
  * emulator used when `settings.simulation=true` (seeded portfolio, drifted prices).
  *
  * Suppliers and [executeOrderAction] / [orderResultFactory] may be reassigned between tests.
- * [seedLedgerEntries] pre-seeds ledger entries served like the Kraken Ledgers endpoint
- * (type/time filtered, offset-paged at [KrakenApiConstants.LEDGER_PAGE_SIZE], matching total
- * via [getLastLedgerTotalCount]).
+ * [tradePageSupplier] and [ledgerPageSupplier] serve raw cursor pages; the default is one empty valid page.
  */
-class FakeKrakenService :
-    KrakenService,
-    BoundedTradeHistoryService,
-    RecoveryTradeHistoryService {
+class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var assetMetadataSupplier: () -> List<KrakenAssetMetadata> = { DEFAULT_ASSET_METADATA }
-    var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
-    var ledgerSupplier: (Long?, Int?, Long?, Set<String>?) -> List<LedgerEvent> = { _, _, _, _ -> emptyList() }
+    var tradePageSupplier: (Long?, Long?, String?, Int?) -> ExchangeHistoryPage<ExchangeTradeHistoryEntry> =
+        { startSec, endSec, cursor, _ -> emptyPage(startSec, endSec, cursor) }
+    var ledgerPageSupplier: (Long?, Long?, String?) -> ExchangeHistoryPage<ExchangeLedgerHistoryEntry> =
+        { startSec, endSec, cursor -> emptyPage(startSec, endSec, cursor) }
     var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
-    var depositStatusSupplier: (Long?, Long?) -> List<DepositStatusRecord> = { _, _ -> emptyList() }
-    var withdrawStatusSupplier: (Long?, Long?) -> List<WithdrawStatusRecord> = { _, _ -> emptyList() }
-    var internalTransfersSupplier: (Long?, Long?) -> List<InternalTransferRecord> = { _, _ -> emptyList() }
     var fundingEvidenceScopeSupplier: () -> String = { "fake-account" }
     var authenticatedAccountIdentitySupplier: () -> String? = { "AA00 TEST TEST TEST" }
 
@@ -50,25 +42,10 @@ class FakeKrakenService :
 
     var executedOrders = mutableListOf<OrderCall>()
     var getBalancesCallCount = 0
-    var getTradeHistoryCallCount = 0
-    var tradeHistoryTotalCountOverride = 0
-    var tradeHistoryTotalCountAvailable = false
-    var tradeHistoryPageShapeValid = true
-    var tradeHistoryRawPageSizeOverride: Int? = null
-    private var lastRecordedTradeHistoryRawPageSize = 0
-    var getLedgersCallCount = 0
-    var ledgerTotalCountOverride = 0
-    var ledgerTotalCountAvailable = false
-    var ledgerPageShapeValid = true
-    var ledgerRawPageSizeOverride: Int? = null
-    private var lastRecordedLedgerRawPageSize = 0
-    var getDepositStatusCallCount = 0
-    var getWithdrawStatusCallCount = 0
-    var getInternalTransfersCallCount = 0
+    var getTradePageCallCount = 0
+    var getLedgerPageCallCount = 0
     var getOHLCCallCount = 0
     var getAuthenticatedAccountIdentityCallCount = 0
-
-    private var seededLedgerEntries: List<LedgerEvent> = emptyList()
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
@@ -99,73 +76,23 @@ class FakeKrakenService :
         return assetMetadataSupplier()
     }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        getTradeHistoryCallCount++
-        val entries = tradeHistorySupplier(startSec, offset)
-        lastRecordedTradeHistoryRawPageSize = entries.size
-        return entries
-    }
-
-    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
-        getTradeHistoryCallCount++
-        val entries = tradeHistorySupplier(startSec, offset)
-        lastRecordedTradeHistoryRawPageSize = entries.size
-        return entries
-    }
-
-    override suspend fun getRecoveryTradeHistoryUntil(
+    override suspend fun getAccountTradePage(
         startSec: Long?,
-        offset: Int?,
         endSec: Long?,
-    ): List<TradeRecord> {
-        getTradeHistoryCallCount++
-        val entries = tradeHistorySupplier(startSec, offset)
-        lastRecordedTradeHistoryRawPageSize = entries.size
-        return entries
+        cursor: String?,
+        limit: Int?,
+    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> {
+        getTradePageCallCount++
+        return tradePageSupplier(startSec, endSec, cursor, limit)
     }
 
-    override fun getLastTradeHistoryTotalCount(): Int = tradeHistoryTotalCountOverride
-
-    override fun hasLastTradeHistoryTotalCount(): Boolean = tradeHistoryTotalCountAvailable
-
-    override fun hasLastTradeHistoryPageShape(): Boolean = tradeHistoryPageShapeValid
-
-    override fun getLastTradeHistoryRawPageSize(): Int =
-        tradeHistoryRawPageSizeOverride ?: lastRecordedTradeHistoryRawPageSize
-
-    override suspend fun getLedgers(
+    override suspend fun getAccountLedgerPage(
         startSec: Long?,
-        offset: Int?,
         endSec: Long?,
-        types: Set<String>?,
-    ): List<LedgerEvent> {
-        getLedgersCallCount++
-        val entries = ledgerSupplier(startSec, offset, endSec, types)
-        lastRecordedLedgerRawPageSize = entries.size
-        return entries
-    }
-
-    override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
-
-    override fun hasLastLedgerTotalCount(): Boolean = ledgerTotalCountAvailable
-
-    override fun hasLastLedgerPageShape(): Boolean = ledgerPageShapeValid
-
-    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride ?: lastRecordedLedgerRawPageSize
-
-    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
-        getDepositStatusCallCount++
-        return depositStatusSupplier(startSec, endSec)
-    }
-
-    override suspend fun getWithdrawStatus(startSec: Long?, endSec: Long?): List<WithdrawStatusRecord> {
-        getWithdrawStatusCallCount++
-        return withdrawStatusSupplier(startSec, endSec)
-    }
-
-    override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> {
-        getInternalTransfersCallCount++
-        return internalTransfersSupplier(startSec, endSec)
+        cursor: String?,
+    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> {
+        getLedgerPageCallCount++
+        return ledgerPageSupplier(startSec, endSec, cursor)
     }
 
     override suspend fun getFundingEvidenceScope(): String = fundingEvidenceScopeSupplier()
@@ -175,25 +102,11 @@ class FakeKrakenService :
         return authenticatedAccountIdentitySupplier()
     }
 
-    /**
-     * Pre-seeds ledger entries (e.g. staking rewards or consumer spend/receive legs) and serves them like the Kraken
-     * Ledgers endpoint: filtered by requested types and the start/end time window,
-     * newest-first, paged at [KrakenApiConstants.LEDGER_PAGE_SIZE] from [offset], with
-     * [getLastLedgerTotalCount] reporting the matching (unpaged) total.
-     */
-    fun seedLedgerEntries(entries: List<LedgerEvent>) {
-        seededLedgerEntries = entries
-        ledgerSupplier = { startSec, offset, endSec, types ->
-            val matching = seededLedgerEntries.filter { entry ->
-                (types == null || entry.type in types) &&
-                    (startSec == null || entry.time.epochSecond >= startSec) &&
-                    (endSec == null || entry.time.epochSecond <= endSec)
-            }.sortedByDescending { it.time }
-            ledgerTotalCountOverride = matching.size
-            ledgerTotalCountAvailable = true
-            matching.drop((offset ?: 0).coerceAtLeast(0)).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
+        authenticatedAccountIdentitySupplier()?.let { identity ->
+            getAuthenticatedAccountIdentityCallCount++
+            AuthenticatedAccountInfo(identity, queryBoundsVerified = true)
         }
-    }
 
     override suspend fun executeOrder(
         pair: String,
@@ -222,6 +135,17 @@ class FakeKrakenService :
     }
 
     private companion object {
+        fun <T> emptyPage(startSec: Long?, endSec: Long?, cursor: String?) = ExchangeHistoryPage<T>(
+            entries = emptyList(),
+            startSec = startSec,
+            endSec = endSec,
+            requestedCursor = cursor,
+            nextCursor = null,
+            count = null,
+            rawSize = 0,
+            valid = true,
+        )
+
         val DEFAULT_ASSET_METADATA =
             listOf(
                 "USD",

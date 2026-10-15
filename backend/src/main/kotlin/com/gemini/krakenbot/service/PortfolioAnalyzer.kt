@@ -17,7 +17,11 @@ data class ObservedBalances(
     val directCapture: DirectBalanceCapture? = null,
 )
 
-data class ObservedPrices(val prices: AssetPrices, val directCapture: DirectTickerCapture? = null)
+data class ObservedPrices(
+    val prices: AssetPrices,
+    val directCapture: DirectTickerCapture? = null,
+    val observedAt: Instant = directCapture?.responseEndedAt ?: Instant.now(),
+)
 
 interface PortfolioAnalyzer {
     suspend fun fetchBalances(): RawBalances

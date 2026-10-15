@@ -14,12 +14,21 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
-import com.gemini.krakenbot.service.actual.ActualObservationPage
-import com.gemini.krakenbot.service.actual.ActualObservationValuator
-import com.gemini.krakenbot.service.actual.ActualPageState
+import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
+import com.gemini.krakenbot.service.history.HISTORY_PAGE_LIMIT
+import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
+import com.gemini.krakenbot.service.history.HistoryEventQuery
+import com.gemini.krakenbot.service.history.HistoryFeed
+import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistoryPage
+import com.gemini.krakenbot.service.history.HistoryService
+import com.gemini.krakenbot.service.history.HistorySourceMode
+import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncState
+import com.gemini.krakenbot.service.history.HistorySynchronizer
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.component.HistoryPageData
 import com.gemini.krakenbot.view.component.SettingsAllocationFormValue
 import com.gemini.krakenbot.view.component.SettingsFormValues
 import com.gemini.krakenbot.view.css.CssStyles
@@ -39,6 +48,7 @@ import com.gemini.krakenbot.view.util.symbolColorMap
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.html.respondHtml
 import io.ktor.server.http.content.staticResources
 import io.ktor.server.request.receiveParameters
@@ -68,23 +78,23 @@ import kotlinx.html.unsafe
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 
+private const val DEFAULT_HISTORY_RANGE = "30d"
+private val HISTORY_RANGE_WINDOWS: Map<String, Duration?> = mapOf(
+    "24h" to Duration.ofHours(24),
+    "7d" to Duration.ofDays(7),
+    "30d" to Duration.ofDays(30),
+    "90d" to Duration.ofDays(90),
+    "all" to null,
+)
 private const val HX_REQUEST_HEADER = "HX-Request"
 private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
 private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
 private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
 private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
 private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
-private val RETIRED_HISTORY_API_PATHS = listOf(
-    Routes.API_HISTORY_SNAPSHOTS,
-    Routes.API_HISTORY_TRADES,
-    Routes.API_HISTORY_STATS,
-    Routes.API_HISTORY_SYNC_PROGRESS,
-    Routes.API_HISTORY_COMPARISON,
-    Routes.API_HISTORY_REWARDS,
-)
-
 class DashboardController(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
@@ -92,7 +102,9 @@ class DashboardController(
     private val portfolioManager: PortfolioManager,
     private val currentPortfolioState: CurrentPortfolioState = CurrentPortfolioState(),
     private val orderIntentService: OrderIntentService,
-    private val actualObservationDispatcher: ActualObservationDispatcher? = null,
+    private val historyService: HistoryService? = null,
+    private val historyObservationRecorder: HistoryObservationRecorder? = null,
+    private val historySynchronizer: HistorySynchronizer? = null,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -141,58 +153,46 @@ class DashboardController(
             }
 
             get(Routes.HISTORY) {
-                call.response.header("Location", Routes.ACTUAL)
-                call.respond(HttpStatusCode.MovedPermanently)
+                handleGetHistoryPage()
             }
 
-            get(Routes.ACTUAL) {
-                val config = configService.getConfig()
-                val page = actualObservationDispatcher?.readCurrent(config)
-                    ?: ActualObservationValuator.scopeSymbols(config).let { scope ->
-                        ActualObservationPage(
-                            state = ActualPageState.STORAGE_UNAVAILABLE,
-                            scopeSymbols = scope,
-                            scopeFingerprint = ActualObservationValuator.scopeFingerprint(scope),
-                            accountReference = null,
-                            observations = emptyList(),
-                            stale = false,
-                            lastCaptureIssue = null,
-                        )
-                    }
-                val csrfToken = CsrfProtection.issueToken(call)
-                call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderActualObservationsPage(
-                        settings = config.settings,
-                        page = page,
-                        csrfToken = csrfToken,
-                        paused = portfolioManager.isLoopPaused(),
-                    )
+            get(Routes.API_HISTORY_TRADES) {
+                respondHistoryPage { service, digest ->
+                    service.queryTrades(call.historyEventQuery(digest))
                 }
             }
 
-            post(Routes.ACTUAL_BENCHMARK_START) {
+            get(Routes.API_HISTORY_LEDGERS) {
+                respondHistoryPage { service, digest ->
+                    service.queryLedgers(call.historyEventQuery(digest))
+                }
+            }
+
+            get(Routes.API_HISTORY_CHECKPOINTS) {
+                respondHistoryPage { service, digest ->
+                    service.queryBalanceCheckpoints(call.historyEventQuery(digest))
+                }
+            }
+
+            get(Routes.API_HISTORY_SYNC_STATUS) {
+                val scope = historyObservationRecorder?.currentSourceScope(configService.getConfig())
+                respondJson(historyService?.let { scope?.let { s -> it.getSyncStatus(s) } }.orEmpty())
+            }
+
+            post(Routes.API_HISTORY_SYNC_START) {
                 if (!requireCsrf()) return@post
                 val config = configService.getConfig()
-                actualObservationDispatcher?.startBenchmark(config)
-                val isHtmxRequest = call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)
-                if (isHtmxRequest) {
-                    call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
-                    call.respond(HttpStatusCode.OK)
-                } else {
-                    call.response.header("Location", Routes.ACTUAL)
-                    call.respond(HttpStatusCode.SeeOther)
+                val scope = historyObservationRecorder?.currentSourceScope(config)
+                    ?.takeIf { it.mode == HistorySourceMode.ACCOUNT && !it.accountIdentityDigest.isNullOrBlank() }
+                val service = historyService
+                val synchronizer = historySynchronizer
+                if (config.settings.simulation || scope == null || service == null || synchronizer == null) {
+                    respondJson(mapOf("error" to ViewText.HISTORY_SYNC_UNAVAILABLE), HttpStatusCode.ServiceUnavailable)
+                    return@post
                 }
-            }
-
-            RETIRED_HISTORY_API_PATHS.forEach { path ->
-                get(path) {
-                    respondJson(
-                        mapOf(
-                            "error" to "Historical reporting was retired; use /actual for forward-only observations.",
-                        ),
-                        HttpStatusCode.Gone,
-                    )
-                }
+                startHistorySync(synchronizer, service, scope)
+                call.response.header("Location", Routes.HISTORY)
+                call.respond(HttpStatusCode.SeeOther)
             }
 
             get(Routes.API_HEALTH) {
@@ -441,7 +441,7 @@ class DashboardController(
         )
     }
 
-    private data class AllocationPreview(
+    private class AllocationPreview(
         val symbols: List<String>,
         val targets: List<String>,
         val colors: List<String>,
@@ -453,7 +453,7 @@ class DashboardController(
         val combined: Map<String, BigDecimal>,
     )
 
-    private data class AllocationRows(
+    private class AllocationRows(
         val symbols: List<String>,
         val targets: List<String>,
         val colors: List<String>,
@@ -500,7 +500,6 @@ class DashboardController(
             ViewText.INVALID_ALLOCATION_SCORE
         }
         val persistedValue = value.toDouble()
-        require(persistedValue.isFinite()) { ViewText.INVALID_ALLOCATION_SCORE }
         return value.takeIf { persistedValue > 0.0 }
     }
 
@@ -674,6 +673,140 @@ class DashboardController(
                 )
             }
         call.respondText(html, ContentType.Text.Html)
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryPage() {
+        val config = configService.getConfig()
+        val csrfToken = CsrfProtection.issueToken(call)
+        val data = buildHistoryPageData(config)
+        call.respondHtml(HttpStatusCode.OK) {
+            dashboardView.renderHistoryPage(
+                settings = config.settings,
+                data = data,
+                csrfToken = csrfToken,
+                paused = portfolioManager.isLoopPaused(),
+            )
+        }
+    }
+
+    private suspend fun RoutingContext.buildHistoryPageData(config: AppConfig): HistoryPageData {
+        val params = call.request.queryParameters
+        val range = params["range"]?.takeIf { it in HISTORY_RANGE_WINDOWS } ?: DEFAULT_HISTORY_RANGE
+        val tradesOffset = params["tradesOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val ledgersOffset = params["ledgersOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val scope = historyObservationRecorder?.currentSourceScope(config)
+        val digest = scope?.accountIdentityDigest?.takeIf { it.isNotBlank() }
+        val from = HISTORY_RANGE_WINDOWS.getValue(range)?.let { Instant.now().minus(it) }
+        val filters = HistoryEventQuery(
+            from = from,
+            accountIdentityDigest = digest,
+            assetKey = params["asset"]?.trim()?.takeIf(String::isNotEmpty),
+            pair = params["pair"]?.trim()?.takeIf(String::isNotEmpty),
+            type = params["type"]?.trim()?.takeIf(String::isNotEmpty),
+        )
+        val service = historyService
+        fun empty(offset: Int = 0) = HistoryPage<Nothing>(emptyList(), 0L, HISTORY_PAGE_LIMIT, offset, false)
+        if (service == null || digest == null) {
+            val observations = if (service != null && scope != null) {
+                service.queryChartObservations(sourceScope = scope, from = from)
+            } else {
+                emptyList()
+            }
+            return HistoryPageData(
+                range, filters, tradesOffset, ledgersOffset, observations,
+                empty(), empty(tradesOffset), empty(ledgersOffset), emptyList(), accountAvailable = false,
+            )
+        }
+        return HistoryPageData(
+            range = range,
+            filters = filters,
+            tradesOffset = tradesOffset,
+            ledgersOffset = ledgersOffset,
+            observations = service.queryChartObservations(sourceScope = scope, from = from),
+            checkpoints = if (filters.assetKey == null) {
+                empty()
+            } else {
+                service.queryAllBalanceCheckpoints(filters.copy(pair = null, type = null))
+            },
+            trades = service.queryTrades(filters.copy(offset = tradesOffset)),
+            ledgers = service.queryLedgers(filters.copy(offset = ledgersOffset)),
+            syncStatuses = service.getSyncStatus(scope),
+            accountAvailable = true,
+            filterOptions = service.queryFilterOptions(filters),
+        )
+    }
+
+    private suspend fun HistoryService.queryAllBalanceCheckpoints(
+        query: HistoryEventQuery,
+    ): HistoryPage<HistoryBalanceCheckpoint> {
+        val checkpoints = mutableListOf<HistoryBalanceCheckpoint>()
+        var total: Long? = null
+        var offset = 0
+        while (true) {
+            val page = queryBalanceCheckpoints(
+                query.copy(limit = HISTORY_MAX_PAGE_LIMIT, offset = offset),
+            )
+            if (total == null) total = page.total
+            checkpoints.addAll(page.items)
+            if (!page.hasMore || page.items.isEmpty()) {
+                return HistoryPage(
+                    items = checkpoints,
+                    total = total ?: checkpoints.size.toLong(),
+                    limit = HISTORY_MAX_PAGE_LIMIT,
+                    offset = 0,
+                    hasMore = false,
+                )
+            }
+            offset += page.items.size
+        }
+    }
+
+    private suspend fun RoutingContext.respondHistoryPage(query: suspend (HistoryService, String) -> HistoryPage<*>) {
+        val service = historyService
+        val digest = historyObservationRecorder?.currentSourceScope(configService.getConfig())
+            ?.accountIdentityDigest
+            ?.takeIf { it.isNotBlank() }
+        if (service == null || digest == null) {
+            respondJson(mapOf("error" to ViewText.HISTORY_ACCOUNT_UNAVAILABLE), HttpStatusCode.ServiceUnavailable)
+            return
+        }
+        respondJson(query(service, digest))
+    }
+
+    private fun ApplicationCall.historyEventQuery(digest: String): HistoryEventQuery {
+        val params = request.queryParameters
+        fun instant(name: String) = params[name]?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        return HistoryEventQuery(
+            from = instant("from"),
+            until = instant("until"),
+            accountIdentityDigest = digest,
+            assetKey = params["asset"]?.trim()?.takeIf(String::isNotEmpty),
+            pair = params["pair"]?.trim()?.takeIf(String::isNotEmpty),
+            type = params["type"]?.trim()?.takeIf(String::isNotEmpty),
+            limit = (params["limit"]?.toIntOrNull() ?: HISTORY_PAGE_LIMIT).coerceIn(1, HISTORY_MAX_PAGE_LIMIT),
+            offset = params["offset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+        )
+    }
+
+    private suspend fun startHistorySync(
+        synchronizer: HistorySynchronizer,
+        service: HistoryService,
+        scope: HistorySourceScope,
+    ) {
+        val existing = service.getSyncStatus(scope).associateBy { it.feed }
+        val now = Instant.now().epochSecond
+        HistoryFeed.entries.forEach { feed ->
+            val status = existing[feed]
+            val resumeWindow = status?.takeIf {
+                it.state in setOf(
+                    HistorySyncState.RUNNING,
+                    HistorySyncState.PAUSED,
+                ) && it.windowStart != null && it.windowEnd != null
+            }
+            val start = resumeWindow?.windowStart?.epochSecond ?: 0L
+            val end = resumeWindow?.windowEnd?.epochSecond ?: now
+            synchronizer.startSync(feed, start, end)
+        }
     }
 
     private suspend fun RoutingContext.respondJson(data: Any, status: HttpStatusCode = HttpStatusCode.OK) {

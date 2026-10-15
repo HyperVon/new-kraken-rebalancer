@@ -89,7 +89,7 @@ the settings flow publish the new values. File reload follows the same
 transactional rule: parse and validate both representations before assigning
 runtime or raw-credential state.
 
-### Active execution sessions and migration
+### Active execution sessions and data-store lifecycle
 
 `PortfolioManagerImpl.performCycleWithStableSession()` owns the outer,
 cycle-wide `beginExecutionSession()` / `endExecutionSession()` boundary. It
@@ -105,13 +105,16 @@ or emit `_configFlow`. The outermost `endExecutionSession()` publishes the
 last staged config and emits its settings. This keeps one money-moving cycle
 on one coherent config and credential version.
 
-`ExecutionJournalBootstrap` still runs before the live loop for safe legacy
-intent migration and restart recovery. The legacy `kraken-rebalancer.db` path
-is preserved for journal migration and account-history continuity during
-binding; it is not a reporting destination. Existing legacy files and tables
-are left untouched by the retired history-sync/reconstruction paths. Startup
-then starts `ActualObservationDispatcher` and the portfolio manager; it does
-not rebuild retrospective reports.
+`ExecutionJournalBootstrap` runs before the portfolio loop to recover
+interrupted submissions in the active execution journal. The application also
+starts `HistoryObservationRecorder` before the loop. `DataDirectoryConfig`
+locates separate `execution.db` and `history.db` files under
+`KRAKEN_DATA_DIR`, `-Dkraken.data.dir`, or the default
+`rebalancer-data-v1` directory. Initialize fresh files explicitly with
+`--initialize-data`; normal startup refuses to create or migrate missing
+file-backed stores. `DataDirectoryIdentity` binds account-scoped stores to one
+verified account with `account-identity.sha256`. The application does not
+migrate the former reporting or Actual stores.
 
 Older settings JSON may include retired history-only drawdown, deployment,
 inception, or comparison-start keys. The parser drops these keys before model

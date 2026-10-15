@@ -8,13 +8,8 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
 import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
-import com.gemini.krakenbot.repository.LedgerRepository
-import com.gemini.krakenbot.repository.OrderIntentRepository
-import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqliteExecutionAccountBindingRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
-import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
@@ -23,11 +18,14 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.actual.ActualObservationDispatcher
-import com.gemini.krakenbot.service.actual.ActualObservationStore
-import com.gemini.krakenbot.service.actual.benchmark.BenchmarkStore
-import com.gemini.krakenbot.service.actual.benchmark.ProspectiveBenchmarkService
-import com.gemini.krakenbot.service.actual.benchmark.ProspectiveEventContinuityVerifier
+import com.gemini.krakenbot.service.history.HistoryCycleGate
+import com.gemini.krakenbot.service.history.HistoryDatabase
+import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistoryService
+import com.gemini.krakenbot.service.history.HistoryServiceImpl
+import com.gemini.krakenbot.service.history.HistoryStore
+import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.history.SqliteHistoryStore
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
@@ -37,12 +35,11 @@ import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.component.ActualObservationsPageComponent
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
@@ -53,7 +50,6 @@ import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import org.jetbrains.exposed.v1.jdbc.Database
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.core.qualifier.named
@@ -81,22 +77,25 @@ val coreModule =
             }
         }
 
-        single<Database> { DatabaseConfig.init() }
-        single { ExecutionDatabase.init() }
+        single {
+            DataDirectoryIdentity(DataDirectoryConfig.resolveDataDirectory()) {
+                get<ExecutionDatabase>().hasAccountEvidence() || get<HistoryDatabase>().hasAccountEvidence()
+            }
+        }
+        single { ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath().toString()) }
+        single { HistoryDatabase(DataDirectoryConfig.historyDatabasePath()) }
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         single { CurrentPortfolioState() }
-        singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
         single<ExecutionOrderIntentRepository> { SqliteExecutionOrderIntentRepositoryImpl(database = get()) }
         single<ExecutionAccountBindingRepository> { SqliteExecutionAccountBindingRepositoryImpl(database = get()) }
-        single<OrderIntentRepository> { get<ExecutionOrderIntentRepository>() }
         single<ExecutionAccountBindingService> {
             ExecutionAccountBindingService(
                 database = get(),
                 bindingRepository = get(),
                 krakenService = get(),
                 configService = get(),
-                accountHistoryScopeGuard = get(),
+                dataDirectoryIdentity = get(),
             )
         }
         single<ExecutionAccountBindingVerifier> { get<ExecutionAccountBindingService>() }
@@ -109,35 +108,24 @@ val coreModule =
         single<ExecutionJournalBootstrap> {
             ExecutionJournalBootstrap(database = get(), repository = get())
         }
-        single { ActualObservationStore() }
-        single { BenchmarkStore(observationStore = get()) }
+        single<HistoryStore> { SqliteHistoryStore(get()) }
+        single<HistoryService> { HistoryServiceImpl(get()) }
         single {
-            ProspectiveEventContinuityVerifier(
-                krakenService = get(),
-                orderIntentRepository = getOrNull(),
-            )
-        }
-        single {
-            ProspectiveBenchmarkService(
-                benchmarkStore = get(),
-                continuityVerifier = get(),
-            )
-        }
-        single {
-            ActualObservationDispatcher(
+            HistoryObservationRecorder(
                 store = get(),
                 krakenService = get(),
                 configService = get(),
-                benchmarkService = get(),
+                dataDirectoryIdentity = get(),
             )
         }
-        singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
         single {
-            AccountHistoryScopeGuard(
+            HistorySynchronizer(
+                applicationScope = get(qualifier = named(APPLICATION_SCOPE_QUALIFIER)),
                 krakenService = get(),
-                tradeRepository = get(),
-                ledgerRepository = get(),
                 configService = get(),
+                dataDirectoryIdentity = get(),
+                store = get(),
+                cycleGate = HistoryCycleGate { block -> get<PortfolioManager>().runHistoryPageIfAdmitted(block) },
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
@@ -172,7 +160,7 @@ val coreModule =
                 orderExecutor = get(),
                 krakenService = get(),
                 currentPortfolioState = get(),
-                actualObservationDispatcher = get(),
+                historyObservationRecorder = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {
@@ -189,7 +177,7 @@ val webModule =
         singleOf(::PerformanceTableComponent)
         singleOf(::RecentActivityComponent)
         singleOf(::DashboardFragmentComponent)
-        singleOf(::ActualObservationsPageComponent)
+        singleOf(::HistoryPageComponent)
         singleOf(::DashboardView)
         single {
             DashboardController(
@@ -199,7 +187,9 @@ val webModule =
                 portfolioManager = get(),
                 currentPortfolioState = get(),
                 orderIntentService = get(),
-                actualObservationDispatcher = get(),
+                historyService = get(),
+                historyObservationRecorder = get(),
+                historySynchronizer = get(),
             )
         }
     }

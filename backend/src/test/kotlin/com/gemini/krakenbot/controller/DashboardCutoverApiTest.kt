@@ -108,28 +108,15 @@ class DashboardCutoverApiTest : StringSpec() {
     }
 
     init {
-        "history route redirects to forward-only Actual and retired API paths return 410" {
+        "history route renders history page" {
             val server = server()
             testApplication {
                 application { installRoutes(server) }
 
-                val noRedirectClient = createClient { followRedirects = false }
-                val redirect = noRedirectClient.get("/history")
-                redirect.status shouldBe HttpStatusCode.MovedPermanently
-                redirect.headers[HttpHeaders.Location] shouldBe "/actual"
-
-                listOf(
-                    "/api/history/snapshots",
-                    "/api/history/trades",
-                    "/api/history/stats",
-                    "/api/history/sync-progress",
-                    "/api/history/comparison",
-                    "/api/history/rewards",
-                ).forEach { path -> client.get(path).status shouldBe HttpStatusCode.Gone }
-
-                val actual = client.get("/actual").bodyAsText()
-                actual shouldContain "Actual"
-                actual.lowercase() shouldNotContain "historical comparison"
+                val response = client.get("/history")
+                response.status shouldBe HttpStatusCode.OK
+                val html = response.bodyAsText()
+                html shouldContain "History"
             }
         }
 
@@ -181,6 +168,61 @@ class DashboardCutoverApiTest : StringSpec() {
                 val readiness = client.get("/api/readiness")
                 readiness.status shouldBe HttpStatusCode.ServiceUnavailable
                 readiness.bodyAsText().lowercase() shouldNotContain "history"
+            }
+        }
+
+        "health and readiness report diagnostics-unavailable when intent service throws" {
+            val server = server(snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("100.00")))
+            coEvery { server.orderIntentService.countUnresolvedIntents() } throws RuntimeException("DB down")
+            testApplication {
+                application { installRoutes(server) }
+                val response = client.get("/api/readiness")
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+                response.bodyAsText() shouldContain "DIAGNOSTICS_UNAVAILABLE"
+            }
+        }
+
+        "health and readiness report config-unavailable when configService throws" {
+            val server = server(snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("100.00")))
+            every { server.configService.getConfig() } throws RuntimeException("Config missing")
+            testApplication {
+                application { installRoutes(server) }
+                val response = client.get("/api/readiness")
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+                val body = response.bodyAsText()
+                body shouldContain "CONFIG_UNAVAILABLE"
+
+                val health = client.get("/api/health").bodyAsText()
+                health shouldContain "\"activeMode\":\"UNKNOWN\""
+            }
+        }
+
+        "health and readiness report loop-not-running when loop is stopped" {
+            val server = server(snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("100.00")))
+            every { server.portfolioManager.isLoopRunning() } returns false
+            testApplication {
+                application { installRoutes(server) }
+                val response = client.get("/api/readiness")
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+                response.bodyAsText() shouldContain "LOOP_NOT_RUNNING"
+            }
+        }
+
+        "health and readiness report READY 200 when all conditions pass" {
+            val liveConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(simulation = false, dryRun = false),
+            )
+            val server = server(snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("100.00")))
+            every { server.configService.getConfig() } returns liveConfig
+            testApplication {
+                application { installRoutes(server) }
+                val readiness = client.get("/api/readiness")
+                readiness.status shouldBe HttpStatusCode.OK
+                readiness.bodyAsText() shouldContain "\"readiness\":\"READY\""
+                readiness.bodyAsText() shouldContain "\"readinessReason\":\"READY\""
+
+                val health = client.get("/api/health").bodyAsText()
+                health shouldContain "\"activeMode\":\"LIVE\""
             }
         }
 

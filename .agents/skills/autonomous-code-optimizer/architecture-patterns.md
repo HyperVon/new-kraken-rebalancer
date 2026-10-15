@@ -32,19 +32,19 @@ Before merging or deleting a type, name which pattern it implements.
   money path. Nested pins must reuse the outer pin (already implemented — do
   not break).
 
-### 3. Current snapshot and Actual evidence ownership
+### 3. Current snapshot and History evidence ownership
 
 - `CurrentPortfolioState` exposes the latest completed cycle in an in-memory
   `StateFlow` and retains up to 24 same-source snapshots for the hero trend;
   it clears that window on mode or credential-scope changes and writes no
   reporting data.
-- `ActualObservationDispatcher` queues eligible direct evidence off the order
-  path, while the Actual store preserves raw observations and gaps.
-- Prospective Buy & Hold is scoped to an eligible baseline and verified
-  forward event continuity.
-- **Rule:** Keep current Dashboard state, Actual evidence, and any safe legacy
-  account-continuity checks in their respective owners. Do not add general
-  trade/ledger sync or retrospective reconstruction.
+- `HistoryObservationRecorder` queues selected direct cycle evidence off the
+  order path, while `HistoryStore` preserves recorded values and gaps.
+- `HistorySynchronizer` imports account-scoped trade and ledger pages with
+  bounded commits and account identity checks around exchange requests.
+- **Rule:** Keep current Dashboard state and account History in their respective
+  owners. Do not reconstruct prior portfolio values from exchange events or add
+  a synthetic benchmark.
 
 ### 4. Pure-ish domain calculator (`RebalancerEngine` + `PortfolioCalculations`)
 
@@ -63,7 +63,7 @@ Before merging or deleting a type, name which pattern it implements.
 
 | Role | Type | Pattern job |
 | :--- | :--- | :--- |
-| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → current snapshot / Actual capture |
+| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → current snapshot / History capture |
 | Brain | `PortfolioAnalyzerImpl` | Snapshot inputs + analysis; no `executeOrder` |
 | Brawn | `OrderExecutorImpl` | Place/settle only; no planning or target % math |
 
@@ -71,7 +71,8 @@ Before merging or deleting a type, name which pattern it implements.
 
 - `view/component/*` render DTOs + `Settings`; `DashboardView` composes pages;
   `DashboardController` maps HTTP ↔ services ↔ HTML/JSON.
-- HTMX + SSE shell owns live updates; `:frontend-js` owns charts/DOM after swap.
+- HTMX + SSE shell owns Dashboard updates; `:frontend-js` owns Dashboard and
+  Settings DOM behavior. History charts and filters are server-rendered.
 - **Rule:** Do not introduce client-side routing or a second SSE stack while
   "optimizing."
 
@@ -81,7 +82,9 @@ Before merging or deleting a type, name which pattern it implements.
   the active cycle's execution session exits.
 - Hot `StateFlow` plus a bounded deque: latest Dashboard snapshot and its
   source-scoped hero trend.
-- Bounded channel: best-effort Actual observation writes outside the order path.
+- Bounded channel: selected History observation writes outside the order path.
+- Explicit `HistorySynchronizer` requests: bounded account trade and ledger
+  pages, committed separately from the cycle/order path.
 - Cold `Flow`: exchange retry and USD sell-settlement polling.
 - **Rule:** Promoting a cold poll to a hot SharedFlow "for reuse" is an
   architecture bug. See [docs/FLOWS.md](../../../docs/FLOWS.md).

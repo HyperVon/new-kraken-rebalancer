@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.116] - 2026-10-15
+
+### Fixed
+
+- **History checkpoint coverage and live-order startup safety**: asset charts in
+  the All range now include every checkpoint page, and startup blocks live
+  submissions when the prior database still contains an unresolved order.
+- **History chart coverage and gaps**: sample oversized ranges across the full
+  time span, retain bucket endpoints, value extrema, and incomplete-cycle
+  markers within the point limit, draw lines between adjacent complete samples,
+  and preserve breaks at incomplete cycles. Populate asset, pair, and type
+  dropdowns from the selected account and time range.
+- **History observation accuracy**: timestamp incomplete cycles using the latest
+  available balance or price observation, and label the sync panel neutrally
+  when no synchronization is active.
+
+## [6.17.115] - 2026-10-14
+
+### Added
+
+- **Account History and portfolio value over time**: restore `/history` with
+  account-scoped Kraken trade and ledger synchronization, balance checkpoints,
+  and directly observed per-cycle portfolio values. The page shows sync state,
+  gaps, and paginated activity without reconstructing historical portfolio
+  values or calculating Buy & Hold performance.
+
+### Removed
+
+- **Actual and Buy & Hold reporting**: remove the forward-only Actual page,
+  observation database, and prospective comparison. Keep quality-score
+  allocations and the fixed configured USD target percentage.
+
 ## [6.17.114] - 2026-10-11
 
 ### Changed

@@ -1,11 +1,11 @@
 ---
 name: ui-manual-qa
 description: >-
-  Agent-driven manual QA of Dashboard, Settings, and Actual interactions in an
+  Agent-driven manual QA of Dashboard, Settings, and History interactions in an
   isolated simulation run. Check the latest current-cycle snapshot, active
-  settings, Actual evidence states, and legacy route behavior. Use for UI QA,
-  manual testing, interaction smoke tests, or post-frontend changes. Report only;
-  do not redesign or implement unless asked.
+  settings, scoped History samples, and account-sync route behavior. Use for UI
+  QA, manual testing, interaction smoke tests, or post-frontend changes. Report
+  only; do not redesign or implement unless asked.
 ---
 
 # UI Manual QA
@@ -34,10 +34,10 @@ Full case list → [checklist.md](checklist.md) (read before Step 3).
 | Mode | When |
 | :--- | :--- |
 | **Full suite** (default) | User asks to QA/smoke the UI, after UI/CSS/client deploy, or after broad UI work |
-| **Scoped** | User names Dashboard, Settings, Actual, or a specific control; run that subset plus Global and relevant style checks |
+| **Scoped** | User names Dashboard, Settings, History, or a specific control; run that subset plus Global and relevant style checks |
 
 After UI changes or deploys, include the current Dashboard snapshot, Settings
-controls, Actual state, and legacy `/history` redirect/API response checks when
+controls, History value samples, and account-sync/API response checks when
 relevant. Use laptop evidence for header density as well as phone evidence for
 narrow layouts.
 
@@ -47,64 +47,58 @@ live Kraken requests.
 
 ## Product contracts to verify
 
-1. **Mode plate** — Every retained page shows the configured `SIMULATION`,
-   `DRY RUN`, or `LIVE TRADING` mode; simulation takes precedence over dry run.
-2. **Stream chip** — Dashboard only; reads `STREAM` or `STALE` and describes
+1. **Mode plate** — Every retained page shows the configured SIMULATION,
+   DRY RUN, or LIVE TRADING mode; simulation takes precedence over dry run.
+2. **Stream chip** — Dashboard only; reads STREAM or STALE and describes
    snapshot feed freshness, not trading mode.
 3. **Dashboard** — Shows the latest completed in-memory cycle snapshot and
    actions from that cycle. It is not a retrospective timeline.
-4. **Settings** — Active controls remain editable and save correctly. Retired
-   history-only inception/drawdown/deployment/comparison keys disappear from
-   the JSON on the next Settings save.
-5. **Actual** — Shows raw forward observations and evidence status. Incomplete
-   observations and missing coverage stay visible as gaps; simulation does not
-   display emulator balances as authenticated Actual data.
-6. **Prospective Buy & Hold** — Available only from an eligible complete
-   observation after account/event continuity is verified; it uses forward
-   observations and is not a retrospective backtest.
-7. **Legacy routes** — `/history` redirects permanently to `/actual`; former
-   `/api/history/*` reporting endpoints return `410 Gone`.
+4. **Settings** — Active controls remain editable. Retired inception, drawdown,
+   deployment, and comparison-start keys disappear from the JSON on the next
+   Settings save.
+5. **History** — Shows directly captured cycle values, account-scoped Kraken
+   trades and ledgers, and exchange-reported balance checkpoints. Incomplete
+   samples and missing periods are not filled; simulation values remain in a
+   separate process-scoped series.
+6. **Account sync** — Available only after the authenticated account identity
+   is verified. A sync request uses CSRF protection and reports per-feed
+   progress; simulation does not import Kraken trades or ledgers.
 
 ## Workflow
 
-```text
-- [ ] Step 0: Confirm scope and output directory
-- [ ] Step 1: Boot isolated simulation (same as docs-screenshot-refresh)
-- [ ] Step 2: Open browser, lock tab, wait for a completed Dashboard snapshot
-- [ ] Step 3: Run relevant checklist cases; record pass / fail / blocked
-- [ ] Step 4: Write QA_DIR/report.md + findings.json
-- [ ] Step 5: Stop app, clean RUN_DIR, and present summary
-```
+1. Boot isolated simulation.
+2. Open a browser, lock the tab, and wait for a completed Dashboard snapshot.
+3. Run the relevant checklist cases; record pass, fail, or blocked.
+4. Write QA_DIR/report.md and QA_DIR/findings.json.
+5. Stop the app, remove only the isolated RUN_DIR, and present the summary.
 
 ### Step 1: Isolated simulation
 
-```bash
-./gradlew :backend:fatJar
-RUN_DIR=$(mktemp -d)
-cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
-# set simulation: true and a short loop delay
-# start jar from RUN_DIR; wait for curl -sf http://localhost:8080/api/health
-```
+Run these commands from the repository:
 
-Simulation is the required safety flag. It exercises current cycles through the
-offline emulator; it does not create authenticated Actual observations. Use
-`dryRun: false` only for emulator order/activity visibility. Keep placeholder
-credentials and never change simulation off during QA.
+    ./gradlew :backend:fatJar
+    RUN_DIR=$(mktemp -d)
+    cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
+    # Set simulation: true, dryRun: true, and a short loop delay in the copied file.
+    # From RUN_DIR, initialize once with --initialize-data, then start the jar.
+    # Wait for curl -sf http://localhost:8080/api/health
+    QA_DIR=$(mktemp -d /tmp/ui-manual-qa.XXXXXX)
 
-```bash
-QA_DIR=$(mktemp -d /tmp/ui-manual-qa.XXXXXX)
-```
+Simulation is the required safety flag. It exercises cycles through the offline
+emulator and writes a process-scoped History value series. It does not
+authenticate an account or synchronize Kraken trades and ledgers. Keep both
+simulation and dryRun enabled, use placeholder credentials, and never change
+simulation off during QA.
 
 ### Step 2: Browser setup
 
-Use the browser tool to open `http://localhost:8080/`, lock the tab, and inspect
-Dashboard, Settings, and Actual. Hard-refresh once or confirm the stylesheet
-has a versioned `/static/style.css?v=` URL before making styling judgments.
-Wait for a completed Dashboard cycle; a startup waiting state is not a failure
-until the configured short loop delay has elapsed.
+Open `http://localhost:8080/`, lock the tab, and inspect Dashboard, Settings, and
+History. Hard-refresh once or confirm the stylesheet has a versioned
+/static/style.css?v= URL before making styling judgments. Wait for a completed
+Dashboard cycle; startup waiting is expected until the short loop delay passes.
 
 Use the screenshot helper's laptop profile for header/status cases and phone
-when responsive evidence matters. Prefer browser snapshots for structure and
+when responsive behavior matters. Prefer browser snapshots for structure and
 stable labels. Unlock the browser only after all selected cases finish.
 
 ### Step 3: Execute cases
@@ -115,7 +109,7 @@ For each selected case:
 2. **Act** — click, type, select, toggle, or wait as specified.
 3. **Assert** — inspect visible text, enabled state, resulting snapshot, URL,
    response status, or saved value.
-4. **Record** — `pass`, `fail`, or `blocked` with one-line evidence.
+4. **Record** — pass, fail, or blocked with one-line evidence.
 5. **Recover** — restore disposable Settings changes before continuing.
 
 After four consecutive interaction failures without new evidence, stop and
@@ -123,55 +117,31 @@ report the blocker.
 
 ### Step 4: Report
 
-Write `$QA_DIR/report.md` and `$QA_DIR/findings.json`. Chat summary:
-
-```markdown
-# UI manual QA
-
-## Summary
-- Scope: full | Dashboard | Settings | Actual
-- Result: N passed / N failed / N blocked
-- Simulation: on; dryRun: on/off
-- Artifacts: `$QA_DIR`
-
-## Failures
-### [P0|P1|P2] CASE-ID — Title
-- **Page**: Dashboard | Settings | Actual | Global
-- **Steps**: what you did
-- **Expected**: …
-- **Actual**: … (screenshot / snapshot note)
-- **Repro**: minimal steps
-
-## Passed (compact)
-- GLOBAL-1, DASH-1, … (ids only)
-```
-
-Keep results factual. Account-backed Actual capture or a prospective benchmark
-that cannot be exercised in the isolated simulation should be marked blocked,
-with the safety reason.
+Write QA_DIR/report.md and QA_DIR/findings.json. Keep results factual. Mark
+account-backed History synchronization blocked when it cannot be exercised in
+simulation, with the safety reason.
 
 ### Step 5: Cleanup
 
-Stop the Java process, remove only the isolated `$RUN_DIR`, keep `$QA_DIR` for
-review, and unlock the browser tab.
+Stop the Java process, remove only the isolated RUN_DIR, keep QA_DIR for review,
+and unlock the browser tab.
 
 ## Interaction principles
 
 1. Prefer one observable assertion per case.
-2. Use visible labels and current `HtmlIds` where available.
-3. Wait for completed cycles, SSE updates, Settings saves, and Actual page loads
-   before asserting.
+2. Use visible labels and current HtmlIds where available.
+3. Wait for completed cycles, SSE updates, Settings saves, and History page
+   loads before asserting.
 4. Assert visible outcomes rather than relying on console silence.
-5. Keep mode plate and Simulation / Dry Run cards visible and clear.
-6. Settings mutations must be restored before leaving the isolated run.
+5. Keep the mode plate and simulation / dry-run cards visible and clear.
+6. Restore all Settings mutations before leaving the isolated run.
 
 ## Anti-patterns
 
 - Using the operator's real config or database
-- Treating simulation balances as Actual evidence
-- Treating the Dashboard snapshot as a persisted timeline
-- Presenting prospective Buy & Hold without verified continuity
-- Calling `/history` a retained page or expecting retired reporting APIs to work
+- Treating simulation History values as authenticated account evidence
+- Treating the Dashboard snapshot as the persisted History series
+- Treating direct cycle samples as a reconstructed portfolio or return series
 - Auto-implementing fixes during QA without a user request
 - Checking only mobile width when desktop/laptop layout is in scope
 
@@ -181,6 +151,6 @@ review, and unlock the browser tab.
 - [ ] Browser locked; current Dashboard snapshot visible
 - [ ] [checklist.md](checklist.md) cases run (full or scoped)
 - [ ] Failures include expected/actual evidence
-- [ ] `report.md` and `findings.json` written
+- [ ] report.md and findings.json written
 - [ ] App stopped; browser unlocked; summary delivered
 - [ ] No live-trading changes or unsolicited redesign

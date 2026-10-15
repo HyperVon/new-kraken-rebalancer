@@ -582,7 +582,6 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 ohlc.size shouldBe 1
                 ohlc[0].first shouldBe 1616662800L
                 ohlc[0].second.shouldBeEqualComparingTo(BigDecimal("52500.0"))
-                service.getLastTradeHistoryTotalCount() shouldBe 0
             }
         }
 
@@ -729,7 +728,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 """.trimIndent()
                 val service = createService(responseJson, limiter)
 
-                service.getTradeHistory()
+                service.getAccountTradePage(null, null, null, null)
 
                 limiter.acquiredCosts shouldBe listOf(4.0)
             }

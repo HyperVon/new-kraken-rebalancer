@@ -15,7 +15,6 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
-import java.util.Comparator
 
 class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -29,7 +28,6 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
                     repository.hasUnresolvedIntents() shouldBe true
                     repository.countUnresolvedIntents() shouldBe 1L
                     repository.loadUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
-                    repository.loadProjectionEvents(0, 10) shouldBe emptyList()
 
                     repository.recordOutcome(
                         intentId,
@@ -55,10 +53,10 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
 
                     repository.hasUnresolvedIntents() shouldBe false
                     repository.loadUnresolvedIntents() shouldBe emptyList()
-                    val events = repository.loadProjectionEvents(0, 10)
-                    events.map { it.revision } shouldBe listOf(1L, 2L)
-                    events.all { it.intent.state == OrderIntentState.CONFIRMED } shouldBe true
-                    events.last().intent.resolutionEvidence shouldBe "operator found Kraken order"
+                    repository.getKnownRebalancerOrderIdentities(
+                        orderTxids = setOf("OID-1"),
+                        clientOrderIds = emptySet(),
+                    ) shouldBe RebalancerOrderIdentities(setOf("OID-1"))
                     repository.recordOutcome(
                         intentId,
                         state = OrderIntentState.CONFIRMED,
@@ -197,77 +195,12 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
                         orderTxids = emptySet(),
                         clientOrderIds = setOf("client-null-txid", "client-blank-txid"),
                     ) shouldBe RebalancerOrderIdentities()
-                    repository.loadProjectionEvents(0, 10).filter { it.intent.id in setOf(nullTxidId, blankTxidId) }
-                        .all { it.intent.expectedPrice == null } shouldBe true
+                    repository.loadUnresolvedIntents() shouldBe emptyList()
                 }
             }
         }
 
-        "a failed reporting outbox insert rolls back the outcome and permits a safe retry" {
-            runTest {
-                withRepository { database, repository ->
-                    val intentId = repository.savePending(intent())
-                    database.connect().use { connection ->
-                        connection.createStatement().use { statement ->
-                            statement.execute(
-                                "CREATE TRIGGER fail_projection_insert BEFORE INSERT ON execution_projection_outbox " +
-                                    "BEGIN SELECT RAISE(IGNORE); END",
-                            )
-                        }
-                    }
-
-                    shouldThrow<IllegalStateException> {
-                        repository.recordOutcome(
-                            intentId,
-                            state = OrderIntentState.CONFIRMED,
-                            orderTxid = "OID-OUTBOX-RETRY",
-                            errorMessage = null,
-                            resolvedAt = Instant.parse("2026-10-08T12:00:30Z"),
-                        )
-                    }
-                    repository.loadUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
-                    repository.loadProjectionEvents(0, 10) shouldBe emptyList()
-
-                    database.connect().use { connection ->
-                        connection.createStatement().use { it.execute("DROP TRIGGER fail_projection_insert") }
-                    }
-                    repository.recordOutcome(
-                        intentId,
-                        state = OrderIntentState.CONFIRMED,
-                        orderTxid = "OID-OUTBOX-RETRY",
-                        errorMessage = null,
-                        resolvedAt = Instant.parse("2026-10-08T12:00:30Z"),
-                    ) shouldBe true
-                    repository.loadProjectionEvents(0, 10).single().intent.state shouldBe OrderIntentState.CONFIRMED
-                }
-            }
-        }
-
-        "projection pages exclude pending intents and validate their bounds" {
-            runTest {
-                withRepository { _, repository ->
-                    shouldThrow<IllegalArgumentException> { repository.loadProjectionEvents(0, 0) }
-                    val pendingId = repository.savePending(intent(clientOrderId = "pending-client"))
-                    repository.loadProjectionEvents(0, 10) shouldBe emptyList()
-
-                    repository.recordOutcome(
-                        pendingId,
-                        state = OrderIntentState.REJECTED,
-                        orderTxid = null,
-                        errorMessage = "rejected",
-                        resolvedAt = Instant.parse("2026-10-08T12:00:30Z"),
-                    ) shouldBe true
-                    repository.loadProjectionEvents(0, 1).single().let { event ->
-                        event.journalId shouldBe repository.journalId()
-                        event.eventId shouldBe 1L
-                        event.intent.state shouldBe OrderIntentState.REJECTED
-                    }
-                    repository.loadProjectionEvents(1, 10) shouldBe emptyList()
-                }
-            }
-        }
-
-        "restart recovery changes only pending submissions and adds a projection revision" {
+        "restart recovery changes only pending submissions to uncertainty" {
             runTest {
                 withRepository { _, repository ->
                     val pendingId = repository.savePending(intent(clientOrderId = "client-pending"))
@@ -287,9 +220,8 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
                     intents[pendingId]?.errorMessage shouldBe
                         "Process restarted before the exchange outcome was durably recorded."
                     intents[confirmedId] shouldBe null
-                    repository.loadProjectionEvents(0, 10).map { it.revision } shouldBe listOf(1L, 1L)
                     repository.recoverInterruptedSubmissions()
-                    repository.loadProjectionEvents(0, 10).map { it.revision } shouldBe listOf(1L, 1L)
+                    repository.loadUnresolvedIntents().single().id shouldBe pendingId
                 }
             }
         }
@@ -300,17 +232,11 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
     ) {
         val directory = Files.createTempDirectory("execution-intent-repository-")
         try {
-            val reportingPath = directory.resolve("reporting.db")
-            val database = ExecutionDatabase.init(
-                directory.resolve("execution.db").toString(),
-                reportingPath.toString(),
-            )
+            val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
             database.markReadyForSubmission()
             block(database, SqliteExecutionOrderIntentRepositoryImpl(database))
         } finally {
-            Files.walk(directory).use { paths ->
-                paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
-            }
+            directory.toFile().deleteRecursively()
         }
     }
 
@@ -327,10 +253,5 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
             expectedPrice = expectedPrice,
             createdAt = Instant.parse("2026-10-08T12:00:00Z"),
             state = OrderIntentState.PENDING,
-            localTradeId = 73,
-            legacySourceId = "legacy-$clientOrderId",
-            legacyIntentId = clientOrderId.hashCode(),
-            legacyTradeId = 73,
-            legacySourceState = "PENDING",
         )
 }

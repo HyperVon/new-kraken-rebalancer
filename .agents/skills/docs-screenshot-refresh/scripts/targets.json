@@ -85,14 +85,13 @@
       "anchor": "Target Allocations"
     },
     {
-      "file": "actual.png",
-      "path": "/actual",
+      "file": "history.png",
+      "path": "/history",
       "await_text": [
-        "Latest direct observation",
-        "Observed managed portfolio value",
-        "Actual observations are not captured in simulation mode.",
-        "Forward-only observed value sequence",
-        "Prospective Buy & Hold comparison"
+        "Portfolio Value Over Time",
+        "Trade History",
+        "Transactions & Ledgers",
+        "Kraken account identity is not verified yet; imported history appears after the first successful authentication."
       ],
       "viewport": {
         "height": 1200

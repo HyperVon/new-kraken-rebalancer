@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.ExecutionDatabase
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.domain.OrderResult
@@ -77,7 +76,6 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 confirmed.orderTxid shouldBe "FAKE-ETH-1"
                 confirmed.resolvedAt shouldBe true
                 confirmed.outcomeVolume shouldBe "0.02500000"
-                projectionEventCount(journal.executionPath) shouldBe 2
                 unresolvedCount(journal.executionPath) shouldBe 0
             } finally {
                 directory.toFile().deleteRecursively()
@@ -269,7 +267,6 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 reconciled.errorMessage shouldBe null
                 reconciled.resolvedAt shouldBe true
                 fakeExchange.executedOrders.count { it.pair == Asset.BTC_USD_PAIR } shouldBe 1
-                projectionEventCount(journal.executionPath) shouldBe 1
                 unresolvedCount(journal.executionPath) shouldBe 0
 
                 // A terminally confirmed intent no longer blocks an independent later plan.
@@ -338,9 +335,10 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                         connection.createStatement().use { statement ->
                             statement.execute(
                                 """
-                                CREATE TRIGGER reject_outcome_projection
-                                BEFORE INSERT ON execution_projection_outbox
-                                BEGIN SELECT RAISE(ABORT, 'injected outcome-projection failure'); END
+                                CREATE TRIGGER reject_terminal_outcome
+                                BEFORE UPDATE OF state ON execution_order_intents
+                                WHEN NEW.state IN ('CONFIRMED', 'REJECTED')
+                                BEGIN SELECT RAISE(ABORT, 'injected outcome failure'); END
                                 """.trimIndent(),
                             )
                         }
@@ -361,10 +359,10 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 readIntent(journal.executionPath, Asset.BTC_USD_PAIR).state shouldBe OrderIntentState.PENDING.name
                 fakeExchange.executedOrders.size shouldBe 1
                 DriverManager.getConnection("jdbc:sqlite:${journal.executionPath}").use { connection ->
-                    connection.createStatement().use { it.execute("DROP TRIGGER reject_outcome_projection") }
+                    connection.createStatement().use { it.execute("DROP TRIGGER reject_terminal_outcome") }
                 }
 
-                val restarted = openJournal(directory)
+                val restarted = openJournal(directory, initialize = false)
                 readIntent(restarted.executionPath, Asset.BTC_USD_PAIR).state shouldBe OrderIntentState.UNCERTAIN.name
                 val afterRestartExchange = FakeKrakenService()
                 executeLiveOrders(
@@ -380,17 +378,114 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 directory.toFile().deleteRecursively()
             }
         }
+
+        "startup blocks live orders when the legacy journal has an unresolved intent" {
+            val directory = Files.createTempDirectory("legacy-pending-order-intent-")
+            try {
+                val legacyPath = directory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("CREATE TABLE order_intents (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+                        statement.execute("INSERT INTO order_intents(state) VALUES ('PENDING')")
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "startup blocks live orders when the legacy trade has an unresolved submission" {
+            val directory = Files.createTempDirectory("legacy-pending-order-trade-")
+            try {
+                val legacyPath = directory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute(
+                            "CREATE TABLE trades (id INTEGER PRIMARY KEY, dry_run INTEGER NOT NULL, submission_state TEXT)",
+                        )
+                        statement.execute("INSERT INTO trades(dry_run, submission_state) VALUES (0, 'UNCERTAIN')")
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "startup blocks live orders when the legacy database path cannot be inspected" {
+            val directory = Files.createTempDirectory("legacy-order-database-path-")
+            try {
+                val legacyPath = Files.createDirectory(directory.resolve("legacy.db"))
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                shouldThrow<IllegalStateException> {
+                    runBlocking {
+                        ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                    }
+                }
+                shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
+
+        "startup allows resolved legacy intents and ignores dry-run submissions" {
+            val directory = Files.createTempDirectory("legacy-resolved-order-intents-")
+            try {
+                val legacyPath = directory.resolve("legacy.db")
+                DriverManager.getConnection("jdbc:sqlite:$legacyPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("CREATE TABLE order_intents (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+                        statement.execute("INSERT INTO order_intents(state) VALUES ('CONFIRMED'), ('REJECTED')")
+                        statement.execute(
+                            "CREATE TABLE trades (id INTEGER PRIMARY KEY, dry_run INTEGER NOT NULL, submission_state TEXT)",
+                        )
+                        statement.execute(
+                            "INSERT INTO trades(dry_run, submission_state) VALUES (1, 'PENDING'), (0, NULL)",
+                        )
+                    }
+                }
+                val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+
+                runBlocking {
+                    ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
+                }
+                database.ensureReadyForSubmission()
+            } finally {
+                directory.toFile().deleteRecursively()
+            }
+        }
     }
 
-    private suspend fun openJournal(directory: Path): LiveJournal {
-        val reportingPath = directory.resolve("reporting.db")
+    private suspend fun openJournal(directory: Path, initialize: Boolean = true): LiveJournal {
         val executionPath = directory.resolve("execution.db")
-        DatabaseConfig.init(reportingPath.toString())
-        val database = ExecutionDatabase.init(executionPath.toString(), reportingPath.toString())
+        val database = if (initialize) {
+            ExecutionDatabase.initialize(executionPath.toString())
+        } else {
+            ExecutionDatabase.init(executionPath.toString())
+        }
         val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
-        ExecutionJournalBootstrap(database, repository, reportingPath.toString()).initialize()
+        ExecutionJournalBootstrap(database, repository).initialize()
         return LiveJournal(
-            reportingPath = reportingPath,
             executionPath = executionPath,
             database = database,
             intentService = OrderIntentServiceImpl(repository, ExecutionAccountBindingVerifier { }),
@@ -459,9 +554,6 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
     private fun unresolvedCount(databasePath: Path): Int =
         count(databasePath, "SELECT COUNT(*) FROM execution_order_intents WHERE state IN ('PENDING', 'UNCERTAIN')")
 
-    private fun projectionEventCount(databasePath: Path): Int =
-        count(databasePath, "SELECT COUNT(*) FROM execution_projection_outbox")
-
     private fun count(databasePath: Path, query: String): Int =
         DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
             connection.createStatement().use { statement ->
@@ -473,7 +565,6 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
         }
 
     private data class LiveJournal(
-        val reportingPath: Path,
         val executionPath: Path,
         val database: ExecutionDatabase,
         val intentService: OrderIntentServiceImpl,

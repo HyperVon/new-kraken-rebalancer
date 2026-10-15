@@ -3,30 +3,23 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.DepositStatusRecord
-import com.gemini.krakenbot.model.InternalTransferRecord
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.WithdrawStatusRecord
+import com.gemini.krakenbot.service.AuthenticatedAccountInfo
 import com.gemini.krakenbot.service.BalanceRead
-import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
 import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.service.TickerRead
-import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
-import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.service.readBalancesWithCapture
 import com.gemini.krakenbot.service.readTickerPricesWithCapture
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
@@ -36,8 +29,6 @@ class DynamicKrakenService(
     private val configService: ConfigService,
 ) : KrakenService,
     DirectKrakenEvidenceService,
-    BoundedTradeHistoryService,
-    RecoveryTradeHistoryService,
     SpendableBalanceService {
     // `simulation` picks the backend; `dryRun` is enforced inside that backend's executeOrder, not here.
     private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
@@ -56,18 +47,6 @@ class DynamicKrakenService(
 
     private suspend fun currentBackend(): KrakenService =
         currentCoroutineContext()[PinnedBackend]?.service ?: resolveFromConfig()
-
-    /** Cached after [getTradeHistory] so progress metadata need not downcast the port. */
-    private val lastTradeHistoryTotalCount = AtomicInteger(0)
-    private val lastTradeHistoryTotalCountPresent = AtomicBoolean(false)
-    private val lastTradeHistoryPageShapeValid = AtomicBoolean(false)
-    private val lastTradeHistoryRawPageSize = AtomicInteger(0)
-
-    /** Cached after [getLedgers] so sync progress metadata need not downcast the port. */
-    private val lastLedgerTotalCount = AtomicInteger(0)
-    private val lastLedgerTotalCountPresent = AtomicBoolean(false)
-    private val lastLedgerPageShapeValid = AtomicBoolean(false)
-    private val lastLedgerRawPageSize = AtomicInteger(0)
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
@@ -111,80 +90,37 @@ class DynamicKrakenService(
         clOrdId: String?,
     ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun, clOrdId)
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        val backend = currentBackend()
-        val trades = backend.getTradeHistory(startSec, offset)
-        lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
-        lastTradeHistoryTotalCountPresent.set(backend.hasLastTradeHistoryTotalCount())
-        lastTradeHistoryPageShapeValid.set(backend.hasLastTradeHistoryPageShape())
-        lastTradeHistoryRawPageSize.set(backend.getLastTradeHistoryRawPageSize())
-        return trades
-    }
+    override suspend fun getAccountTradePage(
+        startSec: Long?,
+        endSec: Long?,
+        cursor: String?,
+        limit: Int?,
+    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> = currentBackend().getAccountTradePage(
+        startSec = startSec,
+        endSec = endSec,
+        cursor = cursor,
+        limit = limit,
+    )
 
-    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
-        val backend = currentBackend()
-        val trades = backend.getTradeHistoryUntil(startSec, offset, endSec)
-        lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
-        lastTradeHistoryTotalCountPresent.set(backend.hasLastTradeHistoryTotalCount())
-        lastTradeHistoryPageShapeValid.set(backend.hasLastTradeHistoryPageShape())
-        lastTradeHistoryRawPageSize.set(backend.getLastTradeHistoryRawPageSize())
-        return trades
-    }
-
-    override suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
-        val backend = currentBackend()
-        val trades = backend.getRecoveryTradeHistoryUntil(startSec, offset, endSec)
-        lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
-        lastTradeHistoryTotalCountPresent.set(backend.hasLastTradeHistoryTotalCount())
-        lastTradeHistoryPageShapeValid.set(backend.hasLastTradeHistoryPageShape())
-        lastTradeHistoryRawPageSize.set(backend.getLastTradeHistoryRawPageSize())
-        return trades
-    }
+    override suspend fun getAccountLedgerPage(
+        startSec: Long?,
+        endSec: Long?,
+        cursor: String?,
+    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> = currentBackend().getAccountLedgerPage(
+        startSec = startSec,
+        endSec = endSec,
+        cursor = cursor,
+    )
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> =
         currentBackend().getOHLC(pair, interval, since)
 
-    override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount.get()
-
-    override fun hasLastTradeHistoryTotalCount(): Boolean = lastTradeHistoryTotalCountPresent.get()
-
-    override fun hasLastTradeHistoryPageShape(): Boolean = lastTradeHistoryPageShapeValid.get()
-
-    override fun getLastTradeHistoryRawPageSize(): Int = lastTradeHistoryRawPageSize.get()
-
-    override suspend fun getLedgers(
-        startSec: Long?,
-        offset: Int?,
-        endSec: Long?,
-        types: Set<String>?,
-    ): List<LedgerEvent> {
-        val backend = currentBackend()
-        val ledgers = backend.getLedgers(startSec, offset, endSec, types)
-        lastLedgerTotalCount.set(backend.getLastLedgerTotalCount())
-        lastLedgerTotalCountPresent.set(backend.hasLastLedgerTotalCount())
-        lastLedgerPageShapeValid.set(backend.hasLastLedgerPageShape())
-        lastLedgerRawPageSize.set(backend.getLastLedgerRawPageSize())
-        return ledgers
-    }
-
-    override fun getLastLedgerTotalCount(): Int = lastLedgerTotalCount.get()
-
-    override fun hasLastLedgerTotalCount(): Boolean = lastLedgerTotalCountPresent.get()
-
-    override fun hasLastLedgerPageShape(): Boolean = lastLedgerPageShapeValid.get()
-
-    override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
-
-    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> =
-        currentBackend().getDepositStatus(startSec, endSec)
-
-    override suspend fun getWithdrawStatus(startSec: Long?, endSec: Long?): List<WithdrawStatusRecord> =
-        currentBackend().getWithdrawStatus(startSec, endSec)
-
-    override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> =
-        currentBackend().getInternalTransfers(startSec, endSec)
-
     override suspend fun getFundingEvidenceScope(): String = currentBackend().getFundingEvidenceScope()
+
+    override suspend fun getAuthenticatedAccountIdentity(): String? = currentBackend().getAuthenticatedAccountIdentity()
+
+    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
+        currentBackend().getAuthenticatedAccountInfo()
 
     override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

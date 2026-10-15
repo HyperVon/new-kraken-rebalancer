@@ -1,52 +1,52 @@
 # Current Behavior Verification
 
-This guide maps the focused tests that cover the current product contracts. The
-former 41-scenario suite and simulation cases for seeded historical snapshots,
-trade imports, retrospective comparison, and report persistence were retired;
-they are not a current test report or a description of emulator behavior.
+This guide maps the focused tests that cover the current product contracts. It
+identifies coverage areas; it is not a record of a particular test run.
 
 ## Current contract coverage
 
 | Contract | Focused tests |
 | --- | --- |
-| Configured USD percentage target, deviation triggers, fiat correction, precision, and order planning | [`RebalancerEngineTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/RebalancerEngineTest.kt), [`PortfolioCalculationsTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/PortfolioCalculationsTest.kt), [`PortfolioManagerFiatCorrectionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerFiatCorrectionTest.kt), [`PortfolioManagerZeroAllocationTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerZeroAllocationTest.kt) |
-| Sell-first execution, settled cash limits, and live submission safety | [`PortfolioManagerOrderExecutionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerOrderExecutionTest.kt), [`OrderExecutorFillSettlementTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorFillSettlementTest.kt), [`OrderExecutorCashCapTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorCashCapTest.kt), [`OrderExecutorSubmissionSafetyTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorSubmissionSafetyTest.kt), [`ExecutionJournalCutoverTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/ExecutionJournalCutoverTest.kt) |
-| Latest current-cycle Dashboard snapshot, `/history` redirect, retired API responses, health/readiness, and SSE | [`DashboardCutoverApiTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardCutoverApiTest.kt) |
-| Actual direct observations, incomplete evidence, account/scope continuity, and page rendering | [`DashboardActualPageTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardActualPageTest.kt), [`ActualObservationDispatcherTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/ActualObservationDispatcherTest.kt), [`ActualObservationStoreTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/ActualObservationStoreTest.kt), [`ActualObservationValuatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/ActualObservationValuatorTest.kt) |
-| Prospective Buy & Hold comparison only after event continuity is verified | [`ProspectiveBenchmarkServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/benchmark/ProspectiveBenchmarkServiceTest.kt), [`ProspectiveBenchmarkCalculatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/benchmark/ProspectiveBenchmarkCalculatorTest.kt), [`ProspectiveEventContinuityVerifierTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/actual/benchmark/ProspectiveEventContinuityVerifierTest.kt) |
-| Active Settings, config hot reload, and dropping retired fields | [`ConfigServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceTest.kt), [`ConfigServiceNestedSessionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceNestedSessionTest.kt), [`SettingsFormComponentTest`](../backend/src/test/kotlin/com/gemini/krakenbot/view/component/SettingsFormComponentTest.kt) |
-| Safe legacy account-history continuity, schema migrations, and journal binding | [`AccountHistoryContinuityVerifierTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/history/AccountHistoryContinuityVerifierTest.kt), [`AccountHistoryScopeGuardTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/history/AccountHistoryScopeGuardTest.kt), [`SchemaMigrationsTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/SchemaMigrationsTest.kt) |
-| Offline emulator and mode routing, without history seeding | [`SimulatedKrakenServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/SimulatedKrakenServiceTest.kt), [`DynamicKrakenServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/DynamicKrakenServiceTest.kt) |
+| Fixed configured USD percentage target, deviation triggers, fiat correction, precision, and order planning | [`RebalancerEngineTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/RebalancerEngineTest.kt), [`PortfolioCalculationsTest`](../engine/src/test/kotlin/com/gemini/krakenbot/domain/PortfolioCalculationsTest.kt), [`PortfolioManagerFiatCorrectionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerFiatCorrectionTest.kt), [`PortfolioManagerZeroAllocationTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerZeroAllocationTest.kt) |
+| Sell-first execution, settled cash limits, and live submission safety | [`PortfolioManagerOrderExecutionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerOrderExecutionTest.kt), [`OrderExecutorFillSettlementTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorFillSettlementTest.kt), [`OrderExecutorCashCapTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorCashCapTest.kt), [`OrderExecutorSubmissionSafetyTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorSubmissionSafetyTest.kt) |
+| Current-cycle Dashboard snapshot, SSE, health, and readiness | [`DashboardCutoverApiTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardCutoverApiTest.kt), [`CurrentPortfolioStateTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/CurrentPortfolioStateTest.kt) |
+| History routes, filters, page rendering, and mutation protection | [`DashboardHistoryPageTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardHistoryPageTest.kt), [`HistoryPageComponentTest`](../backend/src/test/kotlin/com/gemini/krakenbot/view/component/HistoryPageComponentTest.kt), [`DashboardMutationRoutesTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/DashboardMutationRoutesTest.kt) |
+| Direct cycle observations, incomplete evidence, and value classification | [`HistoryObservationRecorderTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryObservationRecorderTest.kt), [`HistoryObservationValuatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryObservationValuatorTest.kt), [`HistoryModelsTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryModelsTest.kt) |
+| Bounded Kraken trade/ledger synchronization, account scope, cursor recovery, and storage | [`HistorySynchronizerTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistorySynchronizerTest.kt), [`HistoryServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryServiceTest.kt), [`SqliteHistoryStoreTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/SqliteHistoryStoreTest.kt), [`HistoryStoreCodecTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryStoreCodecTest.kt), [`HistoryDatabaseTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryDatabaseTest.kt) |
+| Kraken history parsing and order-specific sell fill confirmation | [`KrakenParsersTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/KrakenParsersTest.kt), [`KrakenTradeHistoryTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/KrakenTradeHistoryTest.kt), [`OrderExecutorFillSettlementTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorFillSettlementTest.kt) |
+| Fresh data-directory lifecycle and account binding | [`DataDirectoryConfigTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/DataDirectoryConfigTest.kt), [`DataDirectoryIdentityTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/DataDirectoryIdentityTest.kt), [`ExecutionDatabaseLifecycleTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/ExecutionDatabaseLifecycleTest.kt) |
+| Active Settings, config hot reload, and dropping retired settings fields | [`ConfigServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceTest.kt), [`ConfigServiceNestedSessionTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceNestedSessionTest.kt), [`SettingsFormComponentTest`](../backend/src/test/kotlin/com/gemini/krakenbot/view/component/SettingsFormComponentTest.kt) |
+| Offline emulator and mode routing | [`SimulatedKrakenServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/SimulatedKrakenServiceTest.kt), [`DynamicKrakenServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/DynamicKrakenServiceTest.kt) |
 
-These links identify test coverage; they do not report a recent test run.
+## Data and initialization boundaries
 
-## Data and migration boundaries
+The application uses separate `execution.db` and `history.db` files under the
+configured data directory. Run `--initialize-data` explicitly once before
+normal startup. Normal startup does not create or migrate missing file-backed
+databases. The execution journal identity marker and the shared
+`account-identity.sha256` file must remain with the databases. Tests use
+in-memory or temporary SQLite paths and do not touch operator data.
 
-Test database setup isolates the legacy, execution, and Actual stores with
-in-memory or temporary paths. The legacy `kraken-rebalancer.db` file and its
-existing data/schema remain available for safe execution-journal migration and
-account-history continuity checks during binding. It is not an active reporting
-destination. Current startup does not synchronize historical trades or ledgers,
-reconstruct reports, or write retrospective report rows; existing files and
-tables are left untouched. The execution journal and Actual observation store
-remain separate active persistence paths.
-
-Simulation uses the offline exchange emulator for current cycles. It does not
-seed retrospective snapshots, trades, or reports, and it does not produce
-authenticated Actual observations.
+History records directly observed cycle values and account-scoped Kraken trade
+and ledger pages. It does not reconstruct a full past portfolio from ledger
+events, fill observation gaps, or calculate a Buy & Hold comparison. Simulation
+records values in a separate process-session scope and does not synchronize
+account trades or ledgers.
 
 ## Product behavior to keep covered
 
 - A cycle keeps the configured USD percentage fixed and recalculates its dollar
-  target from the current portfolio total.
-  Historical ATH/drawdown fields and comparison data do not change the plan.
+  target from the current portfolio total. Retired ATH/drawdown fields do not
+  change the plan.
 - The Dashboard displays the latest completed in-memory cycle snapshot and its
-  current-cycle actions. SSE publishes that snapshot; it is not a persisted
-  timeline.
-- `/history` permanently redirects to `/actual`; former `/api/history/*`
-  reporting endpoints return **410 Gone**.
-- Actual presents forward-only raw observations and retains incomplete samples
-  as gaps. Its optional Buy & Hold comparison starts from an eligible complete
-  observation after continuity verification and uses only forward observations.
+  current-cycle actions. SSE publishes that snapshot; the separate History page
+  reads persisted observations and synchronized exchange records.
+- Account trade and ledger sync uses bounded pages, a committed cursor, and a
+  verified account identity. A page failure or scope change cannot silently
+  merge data from another account.
+- History value samples preserve incomplete evidence and do not infer missing
+  values or periods. Oversized charts sample the full time range within the
+  point cap while retaining bucket endpoints, extrema, and incomplete-cycle
+  boundaries. Simulation values are scoped separately from account data.
 - Saving Settings retains active controls and removes retired drawdown,
   deployment, inception, and comparison-start keys from the saved JSON.

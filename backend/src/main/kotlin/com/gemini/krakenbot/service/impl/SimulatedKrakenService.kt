@@ -7,6 +7,9 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.toCryptoScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.LedgerEvent
@@ -14,10 +17,8 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
-import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,10 +31,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ThreadLocalRandom
 
-class SimulatedKrakenService(private val configService: ConfigService) :
-    KrakenService,
-    BoundedTradeHistoryService,
-    RecoveryTradeHistoryService {
+class SimulatedKrakenService(private val configService: ConfigService) : KrakenService {
     private val log = LoggerFactory.getLogger(SimulatedKrakenService::class.java)
 
     private val balances = ConcurrentHashMap<String, BigDecimal>()
@@ -43,9 +41,6 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     private val orderMutex = Mutex()
     private var historicalTradesSeeded = false
     private var historicalLedgersSeeded = false
-    private var lastTradeHistoryTotalCount = 0
-    private var lastTradeHistoryRawPageSize = 0
-    private var lastLedgerCount = 0
 
     init {
         log.info("Initialized SimulatedKrakenService")
@@ -376,6 +371,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
                 fee = fee,
                 source = TradeSource.API_FILL,
                 orderTxid = orderTxid,
+                tradeId = "$SIM_TRADE_ID_PREFIX${System.nanoTime()}",
             )
         simulatedTrades.add(trade)
 
@@ -388,89 +384,155 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         )
     }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
-        getTradeHistoryUntil(startSec, offset, null)
-
-    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
-        orderMutex.withLock {
-            initializeMissingBalancesAndPrices()
-
-            var filtered =
-                if (startSec != null) {
-                    val startInstant = Instant.ofEpochSecond(startSec)
-                    simulatedTrades.filter { !it.timestamp.isBefore(startInstant) }
-                } else {
-                    simulatedTrades
-                }
-
-            if (endSec != null) {
-                val endInstant = Instant.ofEpochSecond(endSec)
-                filtered = filtered.filter { !it.timestamp.isAfter(endInstant) }
-            }
-
-            filtered = filtered.sortedByDescending { it.timestamp }
-            lastTradeHistoryTotalCount = filtered.size
-
-            // Kraken returns at most 50 records per page (newest first). An offset
-            // at/beyond the result size therefore yields an empty page, not the whole history.
-            val page = filtered
-                .drop(offset?.coerceAtLeast(0) ?: 0)
-                .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
-            lastTradeHistoryRawPageSize = page.size
-            page
-        }
-
-    override suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
-        getTradeHistoryUntil(startSec, offset, endSec)
-
-    override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
-
-    override fun hasLastTradeHistoryTotalCount(): Boolean = true
-
-    override fun hasLastTradeHistoryPageShape(): Boolean = true
-
-    override fun getLastTradeHistoryRawPageSize(): Int = lastTradeHistoryRawPageSize
-
-    override suspend fun getLedgers(
+    override suspend fun getAccountTradePage(
         startSec: Long?,
-        offset: Int?,
         endSec: Long?,
-        types: Set<String>?,
-    ): List<LedgerEvent> = orderMutex.withLock {
+        cursor: String?,
+        limit: Int?,
+    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> = orderMutex.withLock {
+        require(limit == null || limit in 1..MAX_TRADE_PAGE_LIMIT) {
+            "Trade history limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
+        }
         initializeMissingBalancesAndPrices()
 
-        var filtered =
-            if (types != null) {
-                simulatedLedgerEntries.filter { it.type in types }
-            } else {
-                simulatedLedgerEntries
-            }
-
-        if (startSec != null) {
-            val startInstant = Instant.ofEpochSecond(startSec)
-            filtered = filtered.filter { !it.time.isBefore(startInstant) }
-        }
-
-        if (endSec != null) {
-            val endInstant = Instant.ofEpochSecond(endSec)
-            filtered = filtered.filter { !it.time.isAfter(endInstant) }
-        }
-
-        filtered = filtered.sortedByDescending { it.time }
-        lastLedgerCount = filtered.size
-
-        // Mirrors the private Ledgers endpoint: at most 50 entries per page (newest
-        // first); an offset at/beyond the result size yields an empty page.
-        filtered
-            .drop(offset?.coerceAtLeast(0) ?: 0)
-            .take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+        val filtered = simulatedTrades
+            .asSequence()
+            .filter { startSec == null || !it.timestamp.isBefore(Instant.ofEpochSecond(startSec)) }
+            .filter { endSec == null || !it.timestamp.isAfter(Instant.ofEpochSecond(endSec)) }
+            .sortedByDescending(TradeRecord::timestamp)
+            .toList()
+        val pageSize = limit ?: KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+        val slice = cursorPage(
+            entries = filtered,
+            requestedCursor = cursor,
+            pageSize = pageSize,
+            entryId = { it.tradeId },
+        )
+        val mapped = slice.entries.map(::toExchangeTrade)
+        ExchangeHistoryPage(
+            entries = mapped,
+            startSec = startSec,
+            endSec = endSec,
+            requestedCursor = cursor,
+            nextCursor = slice.nextCursor,
+            count = filtered.size.toLong(),
+            rawSize = mapped.size,
+            valid = slice.valid,
+        )
     }
 
-    override fun getLastLedgerTotalCount(): Int = lastLedgerCount
+    override suspend fun getAccountLedgerPage(
+        startSec: Long?,
+        endSec: Long?,
+        cursor: String?,
+    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> = orderMutex.withLock {
+        initializeMissingBalancesAndPrices()
 
-    override fun hasLastLedgerTotalCount(): Boolean = true
+        val filtered = simulatedLedgerEntries
+            .asSequence()
+            .filter { startSec == null || !it.time.isBefore(Instant.ofEpochSecond(startSec)) }
+            .filter { endSec == null || !it.time.isAfter(Instant.ofEpochSecond(endSec)) }
+            .sortedByDescending(LedgerEvent::time)
+            .toList()
+        val slice = cursorPage(
+            entries = filtered,
+            requestedCursor = cursor,
+            pageSize = KrakenApiConstants.LEDGER_PAGE_SIZE,
+            entryId = { it.ledgerId },
+        )
+        val mapped = slice.entries.map(::toExchangeLedger)
+        ExchangeHistoryPage(
+            entries = mapped,
+            startSec = startSec,
+            endSec = endSec,
+            requestedCursor = cursor,
+            nextCursor = slice.nextCursor,
+            count = filtered.size.toLong(),
+            rawSize = mapped.size,
+            valid = slice.valid,
+        )
+    }
 
-    override fun hasLastLedgerPageShape(): Boolean = true
+    private fun toExchangeTrade(trade: TradeRecord): ExchangeTradeHistoryEntry {
+        val pairSplit = Asset.splitTradingPair(trade.pair)
+        val rawTime = trade.timestamp.toRawEpochSeconds()
+        return ExchangeTradeHistoryEntry(
+            tradeId = trade.tradeId.orEmpty(),
+            orderTxid = trade.orderTxid,
+            postTxid = null,
+            pair = trade.pair,
+            baseAsset = pairSplit?.base,
+            quoteCurrency = pairSplit?.quote,
+            // The simulator deducts its fee from USD cash, so its synthetic row has a known unit.
+            feeCurrency = Asset.USD.takeIf { pairSplit?.quote == Asset.USD },
+            time = trade.timestamp,
+            rawTime = rawTime,
+            type = trade.side.lowercase(),
+            orderType = null,
+            price = trade.price.toPlainString(),
+            cost = trade.usdAmount.toPlainString(),
+            fee = trade.fee.toPlainString(),
+            volume = trade.volume.toPlainString(),
+            margin = null,
+            misc = null,
+            tradeSequenceId = null,
+            maker = null,
+            ledgerIds = null,
+            rawRecordJson = null,
+            hasValidTime = true,
+            hasValidPrice = trade.price.signum() > 0,
+            hasValidCost = trade.usdAmount.signum() >= 0,
+            hasValidFee = trade.fee.signum() >= 0,
+            hasValidVolume = trade.volume.signum() > 0,
+            isValidRecord = !trade.tradeId.isNullOrBlank(),
+        )
+    }
+
+    private fun toExchangeLedger(event: LedgerEvent): ExchangeLedgerHistoryEntry = ExchangeLedgerHistoryEntry(
+        ledgerId = event.ledgerId,
+        refid = event.refid,
+        time = event.time,
+        rawTime = event.time.toRawEpochSeconds(),
+        type = event.type,
+        subtype = event.subtype,
+        assetClass = event.aclass,
+        asset = event.asset,
+        amount = event.amount.toPlainString(),
+        fee = event.fee.toPlainString(),
+        balance = event.balance.toPlainString().takeIf { event.hasAuthoritativeBalance },
+        rawRecordJson = null,
+        hasValidTime = true,
+        hasValidAmount = event.hasValidAmount,
+        hasValidFee = event.hasValidFee,
+        hasValidBalance = event.hasAuthoritativeBalance,
+        isValidRecord = true,
+    )
+
+    private class CursorSlice<T>(val entries: List<T>, val nextCursor: String?, val valid: Boolean)
+
+    private fun <T> cursorPage(
+        entries: List<T>,
+        requestedCursor: String?,
+        pageSize: Int,
+        entryId: (T) -> String?,
+    ): CursorSlice<T> {
+        val startIndex = if (requestedCursor == null) {
+            0
+        } else {
+            val cursorIndex = entries.indexOfFirst { entryId(it) == requestedCursor }
+            if (cursorIndex < 0) return CursorSlice(emptyList(), null, false)
+            cursorIndex + 1
+        }
+        val page = entries.drop(startIndex).take(pageSize)
+        val hasMore = startIndex + page.size < entries.size
+        val nextCursor = if (hasMore) page.lastOrNull()?.let(entryId)?.takeIf(String::isNotBlank) else null
+        return CursorSlice(page, nextCursor, !hasMore || nextCursor != null)
+    }
+
+    private fun Instant.toRawEpochSeconds(): String = BigDecimal.valueOf(epochSecond)
+        .add(BigDecimal.valueOf(nano.toLong(), 9))
+        .stripTrailingZeros()
+        .toPlainString()
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 
@@ -478,12 +540,14 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     override suspend fun getApiCallCounter(): Double = 0.0
 
     private companion object {
+        const val MAX_TRADE_PAGE_LIMIT = 100
         val SIMULATED_ASSET_METADATA =
             (SimulationDefaults.INITIAL_PRICES.keys + listOf("MORPHO", "XMR"))
                 .map { KrakenAssetMetadata(it, KrakenApiConstants.ASSET_CLASS_CURRENCY) }
         const val SEED_ORDER_TXID_PREFIX = "SIM-SEED-"
         const val SEED_TRADE_ID_PREFIX = "SIM-SEED-FILL-"
         const val SIM_ORDER_TXID_PREFIX = "SIM-"
+        const val SIM_TRADE_ID_PREFIX = "SIM-FILL-"
         val SEED_FEE_RATE: BigDecimal = BigDecimal("0.0026")
     }
 }

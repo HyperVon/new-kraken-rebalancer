@@ -5,50 +5,199 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.safeParseBigDecimal
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.TradeSource
-import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.service.DirectBalanceCapture
 import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerCapture
 import com.gemini.krakenbot.service.DirectTickerMark
 import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.DirectValueEvidence
-import com.gemini.krakenbot.util.PrecisionConstants
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
-/** One page of a legacy Kraken funding-status response. */
-data class FundingStatusPage<T>(
-    val records: List<T>,
-    val nextCursor: String? = null,
-    val rawCount: Int = records.size,
-    val containerWellFormed: Boolean = true,
-)
-
-/** One Funding (Beta) deposit or withdrawal record. */
-data class FundingV1Record(
-    val id: String,
-    val methodId: String?,
-    val status: String,
-    val asset: String,
-    val amount: BigDecimal,
-    val fee: BigDecimal,
-    val hasAuthoritativeFee: Boolean,
-    val time: Instant,
-)
-
-/** One Funding (Beta) funding-method entry. */
-data class FundingMethodRecord(val methodId: String, val methodName: String)
-
 object KrakenParsers {
     private val log = LoggerFactory.getLogger(KrakenParsers::class.java)
+
+    /** Parses one account-wide native TradesHistory cursor response without allocation filtering. */
+    fun parseAccountTradePage(
+        result: JsonNode,
+        startSec: Long?,
+        endSec: Long?,
+        requestedCursor: String?,
+    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> {
+        val tradesNode = result.get(KrakenApiConstants.FIELD_TRADES)
+        val rawSize = tradesNode?.takeIf(JsonNode::isObject)?.size() ?: 0
+        val count = parseOptionalCount(result)
+        val cursor = parseCursor(result)
+        val entries = tradesNode?.takeIf(JsonNode::isObject)?.properties()?.map { (tradeId, node) ->
+            parseAccountTrade(tradeId, node)
+        }.orEmpty()
+
+        return ExchangeHistoryPage(
+            entries = entries,
+            startSec = startSec,
+            endSec = endSec,
+            requestedCursor = requestedCursor,
+            nextCursor = cursor.next,
+            count = count.value,
+            rawSize = rawSize,
+            valid = result.isObject && tradesNode?.isObject == true && count.valid && cursor.valid,
+        )
+    }
+
+    /** Parses one account-wide native Ledgers cursor response without asset/type filtering. */
+    fun parseAccountLedgerPage(
+        result: JsonNode,
+        startSec: Long?,
+        endSec: Long?,
+        requestedCursor: String?,
+    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> {
+        val ledgerNode = result.get(KrakenApiConstants.FIELD_LEDGERS)
+        val rawSize = ledgerNode?.takeIf(JsonNode::isObject)?.size() ?: 0
+        val count = parseOptionalCount(result)
+        val cursor = parseCursor(result)
+        val entries = ledgerNode?.takeIf(JsonNode::isObject)?.properties()?.map { (ledgerId, node) ->
+            parseAccountLedger(ledgerId, node)
+        }.orEmpty()
+
+        return ExchangeHistoryPage(
+            entries = entries,
+            startSec = startSec,
+            endSec = endSec,
+            requestedCursor = requestedCursor,
+            nextCursor = cursor.next,
+            count = count.value,
+            rawSize = rawSize,
+            valid = result.isObject && ledgerNode?.isObject == true && count.valid && cursor.valid,
+        )
+    }
+
+    private fun parseAccountTrade(tradeId: String, node: JsonNode): ExchangeTradeHistoryEntry {
+        val rawTime = rawValue(node, KrakenApiConstants.FIELD_TIME)
+        val time = rawTime?.toBigDecimalOrNull()?.let(::epochSecondsToInstantExact)
+        val pair = rawValue(node, KrakenApiConstants.FIELD_PAIR)
+        val pairSplit = pair?.let { Asset.splitTradingPair(it) }
+        val price = rawValue(node, KrakenApiConstants.FIELD_PRICE)
+        val cost = rawValue(node, KrakenApiConstants.FIELD_COST)
+        val fee = rawValue(node, KrakenApiConstants.FIELD_FEE)
+        val volume = rawValue(node, KrakenApiConstants.FIELD_VOL)
+        val orderTxid = rawValue(node, KrakenApiConstants.FIELD_ORDER_TXID)
+        val ledgerNode = node.get(KrakenApiConstants.FIELD_LEDGER_IDS)
+        val ledgerIds = when {
+            ledgerNode == null || ledgerNode.isNull -> null
+            ledgerNode.isArray -> ledgerNode.mapNotNull(JsonNode::textValue)
+            else -> listOfNotNull(rawValue(node, KrakenApiConstants.FIELD_LEDGER_IDS))
+        }
+
+        return ExchangeTradeHistoryEntry(
+            tradeId = tradeId,
+            orderTxid = orderTxid,
+            postTxid = rawValue(node, KrakenApiConstants.FIELD_POST_TXID),
+            pair = pair,
+            baseAsset = pairSplit?.base,
+            quoteCurrency = pairSplit?.quote,
+            feeCurrency = null,
+            time = time,
+            rawTime = rawTime,
+            type = rawValue(node, KrakenApiConstants.FIELD_TYPE),
+            orderType = rawValue(node, KrakenApiConstants.FIELD_ORDER_TYPE),
+            price = price,
+            cost = cost,
+            fee = fee,
+            volume = volume,
+            margin = rawValue(node, KrakenApiConstants.FIELD_MARGIN),
+            misc = rawValue(node, KrakenApiConstants.FIELD_MISC),
+            tradeSequenceId = rawValue(node, KrakenApiConstants.FIELD_TRADE_ID),
+            maker = node.get(KrakenApiConstants.FIELD_MAKER)?.takeIf(JsonNode::isBoolean)?.booleanValue(),
+            ledgerIds = ledgerIds,
+            rawRecordJson = node.toString(),
+            hasValidTime = time != null,
+            hasValidPrice = price.isPositiveDecimal(),
+            hasValidCost = cost.isNonNegativeDecimal(),
+            hasValidFee = fee.isNonNegativeDecimal(),
+            hasValidVolume = volume.isPositiveDecimal(),
+            isValidRecord = node.isObject,
+        )
+    }
+
+    private fun parseAccountLedger(ledgerId: String, node: JsonNode): ExchangeLedgerHistoryEntry {
+        val rawTime = rawValue(node, KrakenApiConstants.FIELD_TIME)
+        val time = rawTime?.toBigDecimalOrNull()?.let(::epochSecondsToInstantExact)
+        val amount = rawValue(node, KrakenApiConstants.FIELD_AMOUNT)
+        val fee = rawValue(node, KrakenApiConstants.FIELD_FEE)
+        val balance = rawValue(node, KrakenApiConstants.FIELD_BALANCE)
+
+        return ExchangeLedgerHistoryEntry(
+            ledgerId = ledgerId,
+            refid = rawValue(node, KrakenApiConstants.FIELD_REFID),
+            time = time,
+            rawTime = rawTime,
+            type = rawValue(node, KrakenApiConstants.FIELD_TYPE),
+            subtype = rawValue(node, KrakenApiConstants.FIELD_SUBTYPE),
+            assetClass = rawValue(node, KrakenApiConstants.FIELD_ACLASS),
+            asset = rawValue(node, KrakenApiConstants.FIELD_ASSET),
+            amount = amount,
+            fee = fee,
+            balance = balance,
+            rawRecordJson = node.toString(),
+            hasValidTime = time != null,
+            hasValidAmount = amount.isDecimal(),
+            hasValidFee = fee.isNonNegativeDecimal(),
+            hasValidBalance = balance.isDecimal(),
+            isValidRecord = node.isObject,
+        )
+    }
+
+    private class ParsedCount(val value: Long?, val valid: Boolean)
+
+    private fun parseOptionalCount(result: JsonNode): ParsedCount {
+        val node = result.get(KrakenApiConstants.FIELD_COUNT) ?: return ParsedCount(null, true)
+        if (node.isNull) return ParsedCount(null, true)
+        val value = node.takeIf { it.isIntegralNumber && it.canConvertToLong() }?.longValue()
+        return if (value != null && value >= 0L) ParsedCount(value, true) else ParsedCount(null, false)
+    }
+
+    private class ParsedCursor(val next: String?, val valid: Boolean)
+
+    private fun parseCursor(result: JsonNode): ParsedCursor {
+        val cursorNode = result.get(KrakenApiConstants.FIELD_CURSOR) ?: return ParsedCursor(null, true)
+        if (!cursorNode.isObject) return ParsedCursor(null, false)
+        val nextNode = cursorNode.get(KrakenApiConstants.FIELD_NEXT) ?: return ParsedCursor(null, true)
+        if (nextNode.isNull) return ParsedCursor(null, true)
+        val next = nextNode.takeIf(JsonNode::isTextual)?.textValue()?.takeIf(String::isNotBlank)
+        return if (next != null) ParsedCursor(next, true) else ParsedCursor(null, false)
+    }
+
+    private fun rawValue(node: JsonNode, field: String): String? {
+        val value = node.get(field)?.takeUnless(JsonNode::isNull) ?: return null
+        return when {
+            value.isValueNode -> value.asText()
+            else -> value.toString()
+        }
+    }
+
+    private fun String?.isDecimal(): Boolean = this?.toBigDecimalOrNull() != null
+
+    private fun String?.isPositiveDecimal(): Boolean = this?.toBigDecimalOrNull()?.signum()?.let { it > 0 } == true
+
+    private fun String?.isNonNegativeDecimal(): Boolean = this?.toBigDecimalOrNull()?.signum()?.let { it >= 0 } == true
+
+    /** Converts native decimal epoch seconds without routing through binary floating point or milliseconds. */
+    private fun epochSecondsToInstantExact(seconds: BigDecimal): Instant? = runCatching {
+        require(seconds.signum() >= 0)
+        val wholeSeconds = seconds.setScale(0, RoundingMode.FLOOR).longValueExact()
+        val fractionalNanos = seconds
+            .subtract(BigDecimal.valueOf(wholeSeconds))
+            .movePointRight(9)
+            .longValueExact()
+        Instant.ofEpochSecond(wholeSeconds, fractionalNanos)
+    }.getOrNull()
 
     fun parseBalances(result: JsonNode): RawBalances = result
         .properties()
@@ -238,374 +387,6 @@ object KrakenParsers {
             KrakenAssetMetadata(assetId, assetClass.asText())
         }
     }
-
-    data class TradePageResult(
-        val entries: List<TradeRecord>,
-        val totalCount: Int,
-        val rawPageSize: Int,
-        val hasTotalCount: Boolean,
-        val hasTradeContainer: Boolean,
-    )
-
-    fun parseTradeHistoryPage(
-        result: JsonNode,
-        allocations: List<String>,
-        preserveUnmapped: Boolean = false,
-    ): TradePageResult {
-        val countNode = result.get(KrakenApiConstants.FIELD_COUNT)
-        val hasTotalCount = countNode?.isIntegralNumber == true &&
-            countNode.canConvertToInt() &&
-            countNode.intValue() >= 0
-        val count = countNode?.takeIf { hasTotalCount }?.intValue() ?: 0
-        val tradesNode = result.path(KrakenApiConstants.FIELD_TRADES)
-        if (!tradesNode.isObject) return TradePageResult(emptyList(), count, 0, hasTotalCount, false)
-        val rawPageSize = tradesNode.size()
-
-        val tradesList = mutableListOf<TradeRecord>()
-        tradesNode.properties().forEach { (tradeId, tradeNode) ->
-            val pair = tradeNode.path(KrakenApiConstants.FIELD_PAIR).asText()
-            val type = tradeNode.path(KrakenApiConstants.FIELD_TYPE).asText()
-            val time = parseEpochSeconds(tradeNode.path(KrakenApiConstants.FIELD_TIME)) ?: Instant.EPOCH
-            val priceStr = tradeNode.path(KrakenApiConstants.FIELD_PRICE).asText()
-            val costStr = tradeNode.path(KrakenApiConstants.FIELD_COST).asText()
-            val volStr = tradeNode.path(KrakenApiConstants.FIELD_VOL).asText()
-            val feeStr = tradeNode.path(KrakenApiConstants.FIELD_FEE).asText()
-            val orderTxidNode = tradeNode.path(KrakenApiConstants.FIELD_ORDER_TXID)
-            val orderTxid =
-                if (orderTxidNode.isMissingNode || orderTxidNode.isNull) {
-                    null
-                } else {
-                    orderTxidNode.asText().ifBlank { null }
-                }
-
-            val supportedSymbol = Asset.fromTradingPair(pair, allocations)
-            val isSupportedMarket = supportedSymbol != null
-            val symbol = supportedSymbol
-                ?: if (preserveUnmapped) {
-                    Asset.fromTradingPair(pair, emptyList()) ?: pair.trim().uppercase()
-                } else {
-                    return@forEach
-                }
-
-            val side = type.uppercase()
-            // Raw numeric validity: malformed economics must never become valid-looking zeros.
-            // Rows are retained as evidence with explicit invalid flags and fail closed downstream.
-            val parsedVol = volStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
-            val hasValidVolume = parsedVol != null && parsedVol.signum() > 0
-            val parsedCost = costStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
-            // Unsupported markets force cost to zero (never interpret foreign cost as USD); validity
-            // for cost is therefore only meaningful for supported markets.
-            val hasValidCost = if (!isSupportedMarket) true else (parsedCost != null && parsedCost.signum() >= 0)
-            val parsedPrice = priceStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
-            val hasValidPrice = parsedPrice != null && parsedPrice.signum() > 0
-            val parsedFee = feeStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
-            val hasValidFee = feeStr.isBlank() || (parsedFee != null && parsedFee.signum() >= 0)
-            val volume = safeParseBigDecimal(volStr, PrecisionConstants.SCALE_CRYPTO)
-            val usdAmount = if (isSupportedMarket) {
-                safeParseBigDecimal(costStr, PrecisionConstants.SCALE_USD)
-            } else {
-                BigDecimal.ZERO
-            }
-            val errorMessage = if (isSupportedMarket) {
-                null
-            } else {
-                "unsupported historical trade market: $pair"
-            }
-
-            tradesList.add(
-                TradeRecord(
-                    timestamp = time,
-                    pair = pair,
-                    side = side,
-                    symbol = symbol,
-                    volume = volume,
-                    usdAmount = usdAmount,
-                    success = true,
-                    dryRun = false,
-                    errorMessage = errorMessage,
-                    price = safeParseBigDecimal(priceStr, PrecisionConstants.SCALE_CRYPTO),
-                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_FEE),
-                    source = TradeSource.API_FILL,
-                    orderTxid = orderTxid,
-                    tradeId = tradeId.ifBlank { null },
-                    hasValidVolume = hasValidVolume,
-                    hasValidCost = hasValidCost,
-                    hasValidPrice = hasValidPrice,
-                    hasValidFee = hasValidFee,
-                ),
-            )
-        }
-        return TradePageResult(tradesList, count, rawPageSize, hasTotalCount, true)
-    }
-
-    fun parseTradeHistory(
-        result: JsonNode,
-        allocations: List<String>,
-        preserveUnmapped: Boolean = false,
-    ): Pair<List<TradeRecord>, Int> {
-        val page = parseTradeHistoryPage(result, allocations, preserveUnmapped)
-        return page.entries to page.totalCount
-    }
-
-    data class LedgerPageResult(
-        val entries: List<LedgerEvent>,
-        val totalCount: Int,
-        val rawPageSize: Int,
-        val hasTotalCount: Boolean,
-        val hasLedgerContainer: Boolean,
-    )
-
-    fun parseLedgerPage(result: JsonNode, expectedTypes: Set<String>?): LedgerPageResult {
-        val countNode = result.get(KrakenApiConstants.FIELD_COUNT)
-        val hasTotalCount = countNode?.isIntegralNumber == true &&
-            countNode.canConvertToInt() &&
-            countNode.intValue() >= 0
-        val count = countNode?.takeIf { hasTotalCount }?.intValue() ?: 0
-        val ledgerNode = result.path(KrakenApiConstants.FIELD_LEDGERS)
-        if (!ledgerNode.isObject) return LedgerPageResult(emptyList(), count, 0, hasTotalCount, false)
-        val rawPageSize = ledgerNode.size()
-
-        val ledgerList = mutableListOf<LedgerEvent>()
-        ledgerNode.properties().forEach { (ledgerId, entryNode) ->
-            val type = entryNode.path(KrakenApiConstants.FIELD_TYPE).asText()
-            if (expectedTypes != null && type !in expectedTypes) return@forEach
-
-            val time = parseEpochSeconds(entryNode.path(KrakenApiConstants.FIELD_TIME)) ?: Instant.EPOCH
-            val amountStr = entryNode.path(KrakenApiConstants.FIELD_AMOUNT).asText()
-            val parsedAmount = runCatching { BigDecimal(amountStr) }.getOrNull()
-            val hasValidAmount = amountStr.isNotBlank() && parsedAmount != null
-            val balanceStr = entryNode.path(KrakenApiConstants.FIELD_BALANCE).asText()
-            val parsedBalance = runCatching { BigDecimal(balanceStr) }.getOrNull()
-            val scaledBalance = safeParseBigDecimal(balanceStr, PrecisionConstants.SCALE_CRYPTO)
-            val feeStr = entryNode.path(KrakenApiConstants.FIELD_FEE).asText()
-            val parsedFee = runCatching { BigDecimal(feeStr) }.getOrNull()
-            val hasValidFee = feeStr.isBlank() || (parsedFee != null && parsedFee.signum() >= 0)
-            val refidNode = entryNode.path(KrakenApiConstants.FIELD_REFID)
-            val refid =
-                if (refidNode.isMissingNode || refidNode.isNull) {
-                    null
-                } else {
-                    refidNode.asText().ifBlank { null }
-                }
-            val subtypeNode = entryNode.path(KrakenApiConstants.FIELD_SUBTYPE)
-            val subtype =
-                if (subtypeNode.isMissingNode || subtypeNode.isNull) {
-                    null
-                } else {
-                    subtypeNode.asText().ifBlank { null }
-                }
-            val aclassNode = entryNode.path(KrakenApiConstants.FIELD_ACLASS)
-            val aclass =
-                if (aclassNode.isMissingNode || aclassNode.isNull) {
-                    null
-                } else {
-                    aclassNode.asText().ifBlank { null }
-                }
-
-            ledgerList.add(
-                LedgerEvent(
-                    ledgerId = ledgerId,
-                    refid = refid,
-                    time = time,
-                    type = type,
-                    subtype = subtype,
-                    aclass = aclass,
-                    asset = Asset.normalizeLedgerAsset(entryNode.path(KrakenApiConstants.FIELD_ASSET).asText()),
-                    amount = safeParseBigDecimal(amountStr, PrecisionConstants.SCALE_CRYPTO),
-                    // Kraken fees are documented non-negative; clamping at the
-                    // trust boundary keeps `amount - fee` from over-crediting
-                    // balance deltas. [hasValidFee] ensures accounting still
-                    // rejects malformed input instead of treating it as zero.
-                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_LEDGER_FEE).max(BigDecimal.ZERO),
-                    balance = scaledBalance,
-                    // An explicit zero is an authoritative post-event
-                    // balance; only a missing or malformed field is
-                    // non-authoritative.
-                    hasAuthoritativeBalance = parsedBalance != null,
-                    hasAuthoritativeFee = hasValidFee && parsedFee != null,
-                    hasValidFee = hasValidFee,
-                    hasValidAmount = hasValidAmount,
-                ),
-            )
-        }
-        return LedgerPageResult(ledgerList, count, rawPageSize, hasTotalCount, true)
-    }
-
-    fun parseDepositStatus(result: JsonNode): List<DepositStatusRecord> = parseDepositStatusPage(result).records
-
-    fun parseDepositStatusPage(result: JsonNode): FundingStatusPage<DepositStatusRecord> =
-        parseFundingStatusPage(result, KrakenApiConstants.FIELD_DEPOSIT) { node, time, fee, hasFee ->
-            DepositStatusRecord(
-                refid = node.path(KrakenApiConstants.FIELD_REFID).asText(),
-                txid = optionalText(node, KrakenApiConstants.FIELD_TXID),
-                asset = Asset.normalizeLedgerAsset(node.path(KrakenApiConstants.FIELD_ASSET).asText()),
-                amount = parseRawDecimal(node, KrakenApiConstants.FIELD_AMOUNT) ?: return@parseFundingStatusPage null,
-                fee = fee,
-                time = time,
-                status = node.path(KrakenApiConstants.FIELD_STATUS).asText(),
-                method = optionalText(node, KrakenApiConstants.FIELD_METHOD),
-                hasAuthoritativeFee = hasFee,
-            )
-        }
-
-    fun parseWithdrawStatus(result: JsonNode): List<WithdrawStatusRecord> = parseWithdrawStatusPage(result).records
-
-    fun parseWithdrawStatusPage(result: JsonNode): FundingStatusPage<WithdrawStatusRecord> =
-        parseFundingStatusPage(result, KrakenApiConstants.FIELD_WITHDRAWAL) { node, time, fee, hasFee ->
-            WithdrawStatusRecord(
-                refid = node.path(KrakenApiConstants.FIELD_REFID).asText(),
-                txid = optionalText(node, KrakenApiConstants.FIELD_TXID),
-                asset = Asset.normalizeLedgerAsset(node.path(KrakenApiConstants.FIELD_ASSET).asText()),
-                amount = parseRawDecimal(node, KrakenApiConstants.FIELD_AMOUNT) ?: return@parseFundingStatusPage null,
-                fee = fee,
-                time = time,
-                status = node.path(KrakenApiConstants.FIELD_STATUS).asText(),
-                method = optionalText(node, KrakenApiConstants.FIELD_METHOD),
-                hasAuthoritativeFee = hasFee,
-            )
-        }
-
-    fun parseFundingV1Page(
-        result: JsonNode,
-        containerField: String,
-        idField: String,
-    ): FundingStatusPage<FundingV1Record> {
-        val resultNode = unwrapResult(result)
-        val entries = resultNode.path(containerField).takeIf { it.isArray }?.toList() ?: emptyList()
-        val records = entries.mapNotNull { node ->
-            if (!node.isObject) return@mapNotNull null
-            val id = node.path(idField).asText().trim()
-            val amountNode = node.path(KrakenApiConstants.FIELD_AMOUNT)
-            val amount = parseRawDecimal(amountNode, KrakenApiConstants.FIELD_AMOUNT)
-            val time = runCatching {
-                Instant.parse(node.path(KrakenApiConstants.FIELD_CREATE_TIME).asText().trim())
-            }.getOrNull()
-            if (id.isBlank() || amount == null || amount.signum() < 0 || time == null) return@mapNotNull null
-            val feeNode = node.path(KrakenApiConstants.FIELD_FEE)
-            val parsedFee = parseRawDecimal(feeNode, KrakenApiConstants.FIELD_AMOUNT)
-            val feeRaw = feeNode.path(KrakenApiConstants.FIELD_AMOUNT).asText().trim()
-            val hasValidFee = feeRaw.isBlank() || (parsedFee != null && parsedFee.signum() >= 0)
-            if (!hasValidFee) return@mapNotNull null
-            FundingV1Record(
-                id = id,
-                methodId = optionalText(node, KrakenApiConstants.FIELD_METHOD_ID),
-                status = node.path(KrakenApiConstants.FIELD_STATUS).asText(),
-                asset = Asset.normalizeLedgerAsset(
-                    amountNode.path(KrakenApiConstants.FIELD_ASSET).path(KrakenApiConstants.FIELD_NAME).asText(),
-                ),
-                amount = amount,
-                fee = parsedFee ?: BigDecimal.ZERO,
-                hasAuthoritativeFee = feeRaw.isNotBlank() && parsedFee != null,
-                time = time,
-            )
-        }
-        return FundingStatusPage(
-            records = records,
-            nextCursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR),
-            rawCount = entries.size,
-        )
-    }
-
-    fun parseFundingMethodsPage(result: JsonNode): FundingStatusPage<FundingMethodRecord> {
-        val resultNode = unwrapResult(result)
-        val methodsNode = resultNode.get(KrakenApiConstants.FIELD_METHODS)
-        val containerWellFormed = methodsNode?.isArray == true
-        val entries = methodsNode?.takeIf { it.isArray }?.toList().orEmpty()
-        val records = entries.mapNotNull { node ->
-            val methodId = optionalText(node, KrakenApiConstants.FIELD_METHOD_ID)
-            val methodName = optionalText(node, KrakenApiConstants.FIELD_METHOD_NAME)
-            if (methodId == null || methodName == null) null else FundingMethodRecord(methodId, methodName)
-        }
-        return FundingStatusPage(
-            records = records,
-            nextCursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR),
-            rawCount = entries.size,
-            containerWellFormed = containerWellFormed,
-        )
-    }
-
-    private fun unwrapResult(result: JsonNode): JsonNode =
-        if (result.isObject && result.has(KrakenApiConstants.FIELD_RESULT)) {
-            result.path(KrakenApiConstants.FIELD_RESULT)
-        } else {
-            result
-        }
-
-    private fun <T> parseFundingStatusPage(
-        result: JsonNode,
-        preferredField: String,
-        factory: (JsonNode, Instant, BigDecimal, Boolean) -> T?,
-    ): FundingStatusPage<T> {
-        val resultNode = if (result.isObject && result.has(KrakenApiConstants.FIELD_RESULT)) {
-            result.path(KrakenApiConstants.FIELD_RESULT)
-        } else {
-            result
-        }
-        val entries = when {
-            resultNode.isArray -> resultNode.toList()
-
-            resultNode.path(preferredField).isArray -> resultNode.path(preferredField).toList()
-
-            resultNode.path(KrakenApiConstants.FIELD_DATA).isArray ->
-                resultNode.path(KrakenApiConstants.FIELD_DATA).toList()
-
-            else -> emptyList()
-        }
-        val records = entries.mapNotNull { node ->
-            val refid = node.path(KrakenApiConstants.FIELD_REFID).asText()
-            val amount = parseRawDecimal(node, KrakenApiConstants.FIELD_AMOUNT)
-            val time = parseFundingTime(node)
-            if (!node.isObject || refid.isBlank() || amount == null || time == null) {
-                null
-            } else {
-                val feeNode = node.path(KrakenApiConstants.FIELD_FEE)
-                val parsedFee = parseRawDecimal(node, KrakenApiConstants.FIELD_FEE)
-                val feeRaw = feeNode.asText().trim()
-                val hasValidFee = feeRaw.isBlank() || (parsedFee != null && parsedFee.signum() >= 0)
-                if (!hasValidFee) {
-                    null
-                } else {
-                    factory(
-                        node,
-                        time,
-                        parsedFee ?: BigDecimal.ZERO,
-                        feeNode.isValueNode && parsedFee != null,
-                    )
-                }
-            }
-        }
-        val cursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR)
-            ?: optionalText(resultNode, KrakenApiConstants.FIELD_CURSOR)
-        return FundingStatusPage(records = records, nextCursor = cursor, rawCount = entries.size)
-    }
-
-    private fun parseFundingTime(node: JsonNode): Instant? {
-        val raw = node.path(KrakenApiConstants.FIELD_TIME).asText().trim()
-        if (raw.isBlank()) return null
-        return raw.toBigDecimalOrNull()
-            ?.takeIf { it.signum() >= 0 }
-            ?.let { seconds -> epochSecondsToInstant(seconds) }
-    }
-
-    /** Converts Kraken's decimal epoch seconds without routing through binary floating point. */
-    private fun parseEpochSeconds(node: JsonNode): Instant? =
-        node.asText().trim().toBigDecimalOrNull()?.let(::epochSecondsToInstant)
-
-    private fun epochSecondsToInstant(seconds: BigDecimal): Instant? = runCatching {
-        val epochMillis = seconds
-            .movePointRight(3)
-            .setScale(0, RoundingMode.DOWN)
-            .longValueExact()
-        Instant.ofEpochMilli(epochMillis)
-    }.getOrNull()
-
-    private fun parseRawDecimal(node: JsonNode, field: String): BigDecimal? =
-        node.path(field).asText().takeIf(String::isNotBlank)?.let { raw ->
-            runCatching { BigDecimal(raw) }.getOrNull()
-        }
-
-    private fun optionalText(node: JsonNode, field: String): String? =
-        node.path(field).asText().trim().takeIf(String::isNotBlank)
 
     fun parseOHLC(root: JsonNode, pair: String? = null): List<Pair<Long, BigDecimal>> {
         val resultNode = root.path(KrakenApiConstants.FIELD_RESULT)

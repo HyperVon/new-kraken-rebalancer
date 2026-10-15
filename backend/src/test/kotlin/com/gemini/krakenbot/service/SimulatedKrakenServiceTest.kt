@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.util.PrecisionConstants
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -119,12 +120,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 )
 
             result.success shouldBe true
-            val executedTrade = simulatedService.getTradeHistory().first()
+            val executedTrade = simulatedService.getAccountTradePage().entries.first()
             executedTrade.orderTxid shouldBe result.orderTxid
-            executedTrade.volume.shouldBeEqualComparingTo(buyVolume)
-            executedTrade.price.shouldBeEqualComparingTo(btcPrice)
-            executedTrade.usdAmount.shouldBeEqualComparingTo(expectedUsdAmount)
-            executedTrade.fee.shouldBeEqualComparingTo(expectedFee)
+            BigDecimal(executedTrade.volume!!).shouldBeEqualComparingTo(buyVolume)
+            BigDecimal(executedTrade.price!!).shouldBeEqualComparingTo(btcPrice)
+            BigDecimal(executedTrade.cost!!).shouldBeEqualComparingTo(expectedUsdAmount)
+            BigDecimal(executedTrade.fee!!).shouldBeEqualComparingTo(expectedFee)
 
             val newBalances = simulatedService.getBalances()
             newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(expectedBtcBalance)
@@ -161,12 +162,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 )
 
             result.success shouldBe true
-            val executedTrade = simulatedService.getTradeHistory().first()
+            val executedTrade = simulatedService.getAccountTradePage().entries.first()
             executedTrade.orderTxid shouldBe result.orderTxid
-            executedTrade.volume.shouldBeEqualComparingTo(sellVolume)
-            executedTrade.price.shouldBeEqualComparingTo(btcPrice)
-            executedTrade.usdAmount.shouldBeEqualComparingTo(expectedUsdAmount)
-            executedTrade.fee.shouldBeEqualComparingTo(expectedFee)
+            BigDecimal(executedTrade.volume!!).shouldBeEqualComparingTo(sellVolume)
+            BigDecimal(executedTrade.price!!).shouldBeEqualComparingTo(btcPrice)
+            BigDecimal(executedTrade.cost!!).shouldBeEqualComparingTo(expectedUsdAmount)
+            BigDecimal(executedTrade.fee!!).shouldBeEqualComparingTo(expectedFee)
 
             val newBalances = simulatedService.getBalances()
             newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(expectedBtcBalance)
@@ -287,42 +288,25 @@ class SimulatedKrakenServiceTest : StringSpec() {
             afterBalances[Asset.USD]!!.shouldBeEqualComparingTo(initialUsd)
         }
 
-        "should return trade history and support filtering" {
+        "should return cursor trade pages and support time filtering" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
 
             // First history call seeds 14 simulated trades (7 paired rebalances) into the in-memory ledger.
-            val history = simulatedService.getTradeHistory(null, null)
+            val history = simulatedService.getAccountTradePage().entries
             history.size shouldBe 14
 
-            val halfTime = history[7].timestamp.epochSecond
-            val filteredTime = simulatedService.getTradeHistory(halfTime, null)
-            filteredTime.all { it.timestamp.epochSecond >= halfTime } shouldBe true
+            val halfTime = history[7].time!!.epochSecond
+            val filtered = simulatedService.getAccountTradePage(startSec = halfTime).entries
+            filtered.all { it.time!!.epochSecond >= halfTime } shouldBe true
 
-            val paginated = simulatedService.getTradeHistory(null, 5)
-            paginated.size shouldBe 9
+            val bounded = simulatedService.getAccountTradePage(endSec = halfTime).entries
+            bounded.all { it.time!!.epochSecond <= halfTime } shouldBe true
         }
 
-        "should apply an inclusive end bound to trade history" {
-            val configService = mockk<ConfigService>()
-            every { configService.getConfig() } returns btcUsdConfig
-            val simulatedService = SimulatedKrakenService(configService)
-
-            val allTrades = simulatedService.getTradeHistory(null, null)
-            val endSec = allTrades[allTrades.size / 2].timestamp.epochSecond + 1
-            val expected = allTrades
-                .filter { !it.timestamp.isAfter(Instant.ofEpochSecond(endSec)) }
-                .take(50)
-
-            val bounded = simulatedService.getTradeHistoryUntil(null, null, endSec)
-
-            bounded shouldBe expected
-            simulatedService.getLastTradeHistoryTotalCount() shouldBe expected.size
-        }
-
-        "should cap trade history pages at 50 records and advance offsets" {
+        "should cap trade pages at 50 records and follow the cursor to the remainder" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns btcUsdConfig
             val simulatedService = SimulatedKrakenService(configService)
@@ -337,14 +321,15 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 ).success shouldBe true
             }
 
-            val firstPage = simulatedService.getTradeHistory(null, 0)
-            val secondPage = simulatedService.getTradeHistory(null, 50)
+            val firstPage = simulatedService.getAccountTradePage()
+            val secondPage = simulatedService.getAccountTradePage(cursor = firstPage.nextCursor)
 
-            firstPage.size shouldBe 50
-            secondPage.size shouldBe 4
+            firstPage.entries.size shouldBe 50
+            firstPage.nextCursor shouldNotBe null
+            secondPage.entries.size shouldBe 4
+            secondPage.nextCursor shouldBe null
             // Newest-first (Kraken-like): page 0 ends at or after the start of page 1.
-            (firstPage.last().timestamp >= secondPage.first().timestamp) shouldBe true
-            (firstPage.first().timestamp >= firstPage.last().timestamp) shouldBe true
+            (firstPage.entries.last().time!! >= secondPage.entries.first().time!!) shouldBe true
         }
 
         "should initialize assets added after the simulation portfolio already exists" {
@@ -380,7 +365,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 )
 
             val simulatedService = SimulatedKrakenService(configService)
-            val history = simulatedService.getTradeHistory(null, null)
+            val history = simulatedService.getAccountTradePage().entries
             history.size shouldBe 0
         }
 
@@ -394,7 +379,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             simulatedService.getBalances()[Asset.BTC] shouldNotBe null
-            simulatedService.getTradeHistory(null, null).size shouldBe 0
+            simulatedService.getAccountTradePage().entries.size shouldBe 0
         }
 
         "should not seed history when allocations turn usd-only mid initialization" {
@@ -410,7 +395,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             simulatedService.getBalances()[Asset.BTC] shouldNotBe null
-            simulatedService.getTradeHistory(null, null).size shouldBe 0
+            simulatedService.getAccountTradePage().entries.size shouldBe 0
         }
 
         "should handle unknown symbols and missing balances/prices in edge cases" {
@@ -476,10 +461,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
             invalidResult.success shouldBe false
             invalidResult.errorMessage?.contains("Unsupported order side") shouldBe true
 
-            // 15 seeded + 1 successful buy above; the rejected "hold" adds nothing,
-            // and an offset past the end returns an empty page (not the whole history).
-            val emptyHistory = simulatedService.getTradeHistory(null, 100)
-            emptyHistory.size shouldBe 0
+            // 14 seeded + 1 successful buy above; the rejected "hold" adds nothing.
+            simulatedService.getAccountTradePage().entries.size shouldBe 15
         }
 
         "should reject unsupported order types" {
@@ -507,73 +490,33 @@ class SimulatedKrakenServiceTest : StringSpec() {
             ohlc.isEmpty() shouldBe true
         }
 
-        "should return seeded staking ledger entries newest-first with a tracked total" {
+        "should return seeded staking ledger entries newest-first through cursor pages" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
-            val entries = simulatedService.getLedgers(null, null, null, null)
+            val page = simulatedService.getAccountLedgerPage()
 
-            entries.size shouldBe 5
-            entries.all { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING } shouldBe true
-            entries.map { it.time }.zipWithNext { newer, older -> !newer.isBefore(older) }
+            page.entries.size shouldBe 5
+            page.valid shouldBe true
+            page.count shouldBe 5L
+            page.nextCursor shouldBe null
+            page.entries.all { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING } shouldBe true
+            page.entries.map { it.time!! }.zipWithNext { newer, older -> !newer.isBefore(older) }
                 .all { it } shouldBe true
-            entries.all { it.amount > BigDecimal.ZERO } shouldBe true
-            simulatedService.getLastLedgerTotalCount() shouldBe 5
-            simulatedService.hasLastLedgerTotalCount() shouldBe true
-            simulatedService.hasLastLedgerPageShape() shouldBe true
         }
 
-        "should filter ledger entries by type" {
-            val configService = mockk<ConfigService>()
-            every { configService.getConfig() } returns btcUsdConfig
-
-            val simulatedService = SimulatedKrakenService(configService)
-
-            simulatedService.getLedgers(null, null, null, setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND))
-                .isEmpty() shouldBe true
-            simulatedService.getLedgers(null, null, null, setOf(KrakenApiConstants.LEDGER_TYPE_STAKING))
-                .size shouldBe 5
-        }
-
-        "should filter ledger entries by start and end window" {
+        "should filter ledger pages by start and end window" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
             val now = Instant.now()
 
-            simulatedService.getLedgers(
-                now.minusSeconds(150L * 3600).epochSecond,
-                null,
-                null,
-                null,
-            ).size shouldBe 2
-            simulatedService.getLedgers(
-                null,
-                null,
-                now.minusSeconds(100L * 3600).epochSecond,
-                null,
-            ).size shouldBe 3
-        }
-
-        "should page ledger entries at 50 records and track the total count" {
-            val configService = mockk<ConfigService>()
-            every { configService.getConfig() } returns
-                TestFixtures.DEFAULT_TEST_CONFIG.copy(
-                    allocations =
-                    listOf(
-                        Allocation(Asset.BTC, 40.0),
-                        Allocation(Asset.ETH, 30.0),
-                        Allocation(Asset.USD, 30.0),
-                    ),
-                )
-
-            val simulatedService = SimulatedKrakenService(configService)
-
-            simulatedService.getLedgers(null, 5, null, null).size shouldBe 5
-            simulatedService.getLedgers(null, 10, null, null).isEmpty() shouldBe true
-            simulatedService.getLastLedgerTotalCount() shouldBe 10
+            simulatedService.getAccountLedgerPage(startSec = now.minusSeconds(150L * 3600).epochSecond)
+                .entries.size shouldBe 2
+            simulatedService.getAccountLedgerPage(endSec = now.minusSeconds(100L * 3600).epochSecond)
+                .entries.size shouldBe 3
         }
 
         "should return no ledger entries when there are no non-usd allocations" {
@@ -584,28 +527,74 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 )
 
             val simulatedService = SimulatedKrakenService(configService)
+            val page = simulatedService.getAccountLedgerPage()
 
-            simulatedService.getLedgers(null, null, null, null).isEmpty() shouldBe true
-            simulatedService.getLastLedgerTotalCount() shouldBe 0
-            simulatedService.hasLastLedgerTotalCount() shouldBe true
-            simulatedService.hasLastLedgerPageShape() shouldBe true
+            page.entries.isEmpty() shouldBe true
+            page.valid shouldBe true
+            page.count shouldBe 0L
         }
 
-        "should track trade history total count, envelope shape, and raw page size" {
+        "executeOrder should reject sell order when token balance is insufficient" {
             val configService = mockk<ConfigService>()
-            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+            val result = simulatedService.executeOrder(
+                pair = TestFixtures.BTCUSD,
+                type = TestFixtures.MARKET,
+                side = TestFixtures.SELL,
+                volume = BigDecimal("10000.0"),
+                dryRun = false,
+            )
+            result.success shouldBe false
+            result.errorMessage?.contains("Insufficient BTC funds") shouldBe true
+        }
+
+        "getAccountTradePage should throw on invalid limit" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+            shouldThrow<IllegalArgumentException> {
+                simulatedService.getAccountTradePage(limit = 0)
+            }
+            shouldThrow<IllegalArgumentException> {
+                simulatedService.getAccountTradePage(limit = 101)
+            }
+        }
+
+        "getAccountTradePage should paginate with cursor and reject invalid cursor" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
             val simulatedService = SimulatedKrakenService(configService)
 
-            simulatedService.getTradeHistory()
-            simulatedService.hasLastTradeHistoryTotalCount() shouldBe true
-            simulatedService.hasLastTradeHistoryPageShape() shouldBe true
-            // DEFAULT_TEST_CONFIG seeds 7 paired rebalances (14 fills).
-            simulatedService.getLastTradeHistoryTotalCount() shouldBe 14
-            simulatedService.getLastTradeHistoryRawPageSize() shouldBe 14
+            val page1 = simulatedService.getAccountTradePage(limit = 5)
+            page1.entries.size shouldBe 5
+            page1.nextCursor shouldNotBe null
+            page1.valid shouldBe true
 
-            simulatedService.getRecoveryTradeHistoryUntil(null, null, null)
-            simulatedService.hasLastTradeHistoryTotalCount() shouldBe true
-            simulatedService.getLastTradeHistoryTotalCount() shouldBe 14
+            val page2 = simulatedService.getAccountTradePage(cursor = page1.nextCursor, limit = 5)
+            page2.entries.size shouldBe 5
+            page2.valid shouldBe true
+
+            val invalidCursorPage = simulatedService.getAccountTradePage(cursor = "non-existent-cursor", limit = 5)
+            invalidCursorPage.entries.isEmpty() shouldBe true
+            invalidCursorPage.valid shouldBe false
+            invalidCursorPage.nextCursor shouldBe null
+        }
+
+        "getAccountLedgerPage should reject invalid cursor" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+            val invalidCursorPage = simulatedService.getAccountLedgerPage(cursor = "non-existent-cursor")
+            invalidCursorPage.entries.isEmpty() shouldBe true
+            invalidCursorPage.valid shouldBe false
+        }
+
+        "getApiCallCounter should return 0.0" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+            simulatedService.getApiCallCounter() shouldBe 0.0
         }
     }
 }

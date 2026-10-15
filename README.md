@@ -10,7 +10,7 @@ cash.
 several months.**
 
 **New here?** Start with the [User Guide](docs/USER_GUIDE.md) — a walkthrough
-of Dashboard, Actual observations, Settings, and safety modes
+of Dashboard, History, Settings, and safety modes
 (simulation / dry run).
 
 ---
@@ -210,7 +210,7 @@ The experimental branches (`go-rewrite` and `feature/typescript-rewrite`) remain
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
-Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and paginated trade-history reporting. The retrospective reporting workflows have since been retired; order-specific fill confirmation still uses Kraken trade history for sell settlement. The remaining client-side JavaScript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
+Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and paginated trade-history reporting. The current History page restores account-scoped trade and ledger synchronization plus directly observed cycle values; it does not reconstruct retrospective portfolio values. Order-specific fill confirmation continues to use Kraken trade history for sell settlement. The remaining client-side JavaScript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
 
 ### Technologies Explored
 
@@ -270,17 +270,21 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for browser interactions
 
-### Forward-Only Actual Observations
+### Account History and Portfolio Value
 
-- `/actual` shows forward-only raw observations of configured managed assets,
-  their balance and ticker evidence, portfolio shares and configured targets,
-  and an append-only value chart. Authenticated read-only identity makes Actual
-  available in real-account Dry Run without a pre-existing execution binding.
-  It excludes other wallet balances and retains incomplete samples as gaps. An
-  optional prospective Buy & Hold comparison is available when observation continuity is
-  verified; it does not reconstruct retrospective history. See the [Actual
-  section in the User Guide](docs/USER_GUIDE.md#actual-observations) for scope,
-  timestamps, and limitations.
+- `/history` shows directly observed per-cycle portfolio values, Kraken trade
+  and ledger activity, and balance checkpoints for the authenticated account.
+  Historical trades and ledgers sync in bounded pages and remain scoped to the
+  verified account; changes in configured assets create separate value series.
+  Asset, pair, and event-type dropdowns show choices from the selected account
+  and time range.
+  The value chart returns every observation up to 2,000 points; larger ranges
+  are sampled across the full time span while retaining bucket endpoints,
+  complete-value extrema, and incomplete-cycle markers. It connects adjacent
+  complete samples and breaks at incomplete cycles. The chart does not
+  reconstruct earlier balances or calculate Buy & Hold performance. See
+  the [History section in the User Guide](docs/USER_GUIDE.md#history) for
+  sources, scope, and limitations.
 
 ### Hot-Reload Configuration
 
@@ -295,9 +299,10 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 ### Offline Exchange Simulator
 
 Run in Simulation Mode without Kraken keys to rehearse cycles against the offline
-exchange emulator. Simulation provides current-cycle Dashboard data; it does not
-seed retrospective charts or history. Authenticated Actual observations remain
-unavailable while simulation is enabled.
+exchange emulator. Simulation provides current-cycle Dashboard data and a
+separate, process-scoped History value series; it does not authenticate an
+account or sync Kraken trades and ledgers. Simulated values are not account
+history.
 
 ### Safety & Reliability
 
@@ -329,10 +334,9 @@ unavailable while simulation is enabled.
   [current rate-limit guidance](https://support.kraken.com/articles/206548367-what-are-the-api-rate-limits-?mobile_site=false)
 - **CORS Restrictions** — by default, limits browser origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`). `REBALANCER_ALLOWED_ORIGINS` can add exact origins; `REBALANCER_ALLOW_ALL_ORIGINS=true` is a lab-only break-glass override that disables origin checks and must never be used with live keys. CORS is not authentication.
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
-- **Database Indexing & Versioned Migrations** — schemas index timestamp
-  columns; on startup `DatabaseConfig` records applied schema versions, runs
-  non-deprecated Exposed builders in one transaction, and creates a
-  pre-migration backup for an existing file-backed database
+- **Explicit Data Store Initialization** — the execution journal and History
+  store use separate validated SQLite files; initialize them once before
+  startup, and normal startup refuses to recreate a missing file-backed store
 - **Operational Readiness** — `/api/health` is a liveness/diagnostic endpoint;
   `/api/readiness` reports whether the loop, latest cycle snapshot, and live-order
   journal are safe for continued operation
@@ -345,14 +349,14 @@ unavailable while simulation is enabled.
 
 ## Screenshots
 
-The current UI centers on the latest Dashboard cycle, active Settings, and
-forward-only Actual observations.
+The current UI centers on the latest Dashboard cycle, account History, and
+active Settings.
 
 <a href="docs/images/dashboard.png"><img src="docs/images/dashboard.png" alt="Dashboard with the latest current-cycle portfolio snapshot" width="960"></a>
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
 
-<a href="docs/images/actual.png"><img src="docs/images/actual.png" alt="Actual observations and evidence status" width="960"></a>
+<a href="docs/images/history.png"><img src="docs/images/history.png" alt="Account History with portfolio value and activity" width="960"></a>
 
 ---
 
@@ -364,7 +368,7 @@ graph LR
         D[Dashboard] --> DF[Current-cycle fragment]
         D --> SSE[Dashboard SSE]
         S[Settings]
-        A[Actual observations]
+        H[Account History]
     end
 
     subgraph Backend["Backend (Ktor + Koin)"]
@@ -374,10 +378,14 @@ graph LR
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
         PM --> CPS
-        PM --> AD[ActualObservationDispatcher]
-        DC --> AD
-        AD --> AOS[ActualObservationStore]
-        AD --> EAB[ExecutionAccountBindingService]
+        PM --> HR[HistoryObservationRecorder]
+        DC --> HS[HistoryService]
+        DC --> SY[HistorySynchronizer]
+        HR --> HStore[HistoryStore]
+        SY --> HStore
+        HS --> HStore
+        HStore --> HDB[History SQLite]
+        SY --> EAB[DataDirectoryIdentity]
         PA --> KS[KrakenService]
         OE --> KS
         OE --> OI[OrderIntentService]
@@ -397,8 +405,8 @@ part of the separate execution-safety path.
 
 See **[ALGORITHM.md](docs/ALGORITHM.md)** for current fixed-target rebalance
 logic, order sequence, and safety behavior. See **[FLOWS.md](docs/FLOWS.md)**
-for the active configuration, Dashboard SSE, order-settlement, and Actual
-observation flows.
+for the active configuration, Dashboard SSE, order-settlement, and History
+capture/synchronization flows.
 
 ### Dashboard updates
 
@@ -423,11 +431,11 @@ cycle does not mix configuration values.
 ├── frontend-js/                # Kotlin/JS interactions for Dashboard and Settings
 ├── backend/                    # Ktor server, rebalance loop, execution, and views
 │   └── src/main/kotlin/com/gemini/krakenbot/
-│       ├── config/             # DI, databases, migrations, and startup wiring
-│       ├── controller/         # Dashboard, Settings, Actual, health, and SSE routes
-│       ├── service/            # Current portfolio state and Actual observation services
+│       ├── config/             # DI, data directory, fresh databases, and startup wiring
+│       ├── controller/         # Dashboard, Settings, History, health, and SSE routes
+│       ├── service/            # Current portfolio state, History, and execution services
 │       ├── service/impl/       # Configuration, analysis, execution, and loop services
-│       └── view/               # Dashboard, Settings, Actual HTML and CSS
+│       └── view/               # Dashboard, Settings, History HTML and CSS
 ├── docs/                       # User, architecture, security, and evaluation guides
 ├── rebalancer-config-template.json
 └── build.gradle.kts            # Root Gradle aggregator
@@ -476,6 +484,23 @@ history-only keys such as `fiatMaxDrawdown`, `fiatDeploymentExponent`,
 They are discarded when the configuration is read and have no effect on
 orders. The next Settings save writes the active configuration without those
 retired keys.
+
+Initialize the separate execution and History databases once before the first
+normal start. Build the Fat JAR if needed, then run its explicit initializer:
+
+```bash
+./gradlew :backend:fatJar
+java -jar backend/build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar --initialize-data
+```
+
+This creates `execution.db`, `execution.db.journal-id`, and `history.db` under
+`rebalancer-data-v1` by default. Set `KRAKEN_DATA_DIR` or pass
+`-Dkraken.data.dir=<path>` to select another directory for both initialization
+and normal startup. Initialization refuses to replace an existing execution
+or History database; normal startup also refuses to recreate missing data
+files. Database files at older locations are left untouched and are not
+imported or migrated. To reopen existing data, configure the directory that
+contains the active `execution.db` and `history.db` files.
 
 ### 2. Start the Application
 
@@ -553,30 +578,26 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `dryRun`                         | `Boolean` | — (template `true`) | Required in JSON; suppresses order placement on the active backend (live or emulator) |
 | `simulation`                     | `Boolean` | `false`             | If true, routes exchange calls to the offline emulator; no Kraken key is required     |
 
-The existing `kraken-rebalancer.db` and its reporting tables remain in place,
-but the execution-journal cutover writes a one-time marker into the legacy
-database after importing its order intents and retains a backup. Older
-file-backed schemas are also migrated after a pre-migration backup. The legacy
-file remains available only for safe execution-journal migration and
-account-history continuity during binding; it is no longer an active reporting
-destination. The live execution journal defaults to the sibling
-`kraken-rebalancer-execution.db` and can be relocated with
-`-Dkraken.execution.db.path`. Actual observations use `kraken-actual.db` by
-default and can be relocated with `-Dkraken.actual.db.path`. Preserve the legacy
-database during cutover; back up the active execution database, its
-`.journal-id` identity sidecar, its witness, and the Actual database. By default
-the witness is beside the legacy database. See the [execution-journal recovery
-notes](SECURITY.md#execution-journal-storage-and-recovery) for its failure-domain
-limits and upgrade steps.
+Account History and live-order intents use separate SQLite files in the active
+data directory: `history.db` and `execution.db`. The directory defaults to
+`rebalancer-data-v1`; set `KRAKEN_DATA_DIR` or `-Dkraken.data.dir` to choose a
+different location. Initialize the new files explicitly with
+`java -jar <application>.jar --initialize-data` before the first normal start.
+Normal startup opens existing, validated schemas and fails closed if either
+initialized database or the execution journal identity marker is missing.
+Keep the whole data directory together when backing up, including
+`execution.db.journal-id` and `account-identity.sha256`. History and execution
+stores do not import records from the former reporting or Actual databases.
+See the [execution-journal storage notes](SECURITY.md#execution-journal-storage-and-recovery)
+for account binding and recovery requirements.
 
 Before a real live order, the execution journal must hold a verified Kraken
-account binding. Its first binding authenticates the account IIBAN and checks
-the preserved local account-history scope; credential rotations must
-authenticate to the same IIBAN. The journal stores only digests and an audit
-trail. A mismatch, missing or corrupt binding, or prior live-order record
-without a binding blocks live submission. After binding, steady-state checks
-use the execution journal. Simulation and dry-run modes do not create a live
-account binding.
+account binding. The first binding authenticates the account IIBAN; credential
+rotations must authenticate to the same IIBAN. The journal stores only digests
+and an audit trail, while the shared data-directory identity keeps account
+History and execution state pinned to that account. A mismatch, missing or
+corrupt binding, or prior live-order record without a binding blocks live
+submission. Simulation and dry-run modes do not create a live account binding.
 
 > **Note:** `minimumOrderSizeUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
 
@@ -589,8 +610,12 @@ account binding.
 | `GET` | `/` | Main dashboard shell (HTML) |
 | `GET` | `/settings` | Settings page (HTML) |
 | `POST` | `/settings` | Submit settings form (HTMX) |
-| `GET` | `/history` | Permanent redirect to `/actual` for legacy links |
-| `GET` | `/actual` | Forward-only Actual observations and optional prospective Buy & Hold comparison |
+| `GET` | `/history` | Account-scoped portfolio value, trade, ledger, and balance-checkpoint history |
+| `GET` | `/api/history/trades` | Paginated exchange trade history (JSON) |
+| `GET` | `/api/history/ledgers` | Paginated exchange ledger history (JSON) |
+| `GET` | `/api/history/checkpoints` | Paginated ledger balance checkpoints (JSON) |
+| `GET` | `/api/history/sync-status` | Current account-history synchronization status (JSON) |
+| `POST` | `/api/history/sync/start` | Start or resume bounded trade and ledger synchronization (CSRF-protected) |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
 | `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
@@ -601,9 +626,12 @@ account binding.
 | `POST` | `/api/resume` | Resume loop (CSRF-protected) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 
-The former `/api/history/*` reporting endpoints return **410 Gone**. The
-application no longer syncs or reconstructs retrospective reports; existing
-legacy database files and tables are left untouched.
+The History value chart uses directly captured cycle samples for configured
+assets. For ranges over 2,000 observations, it samples each time bucket's first
+and last observations, complete-value extrema, and incomplete-cycle boundary
+markers. It connects adjacent complete samples and breaks the line at
+incomplete cycles; the line does not infer values between samples or earlier
+portfolio values, or calculate Buy & Hold performance.
 
 ---
 
@@ -627,8 +655,8 @@ The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 85% branch, 95% line, and 95% method** during
 the recovery. The engine retains its independent **90% branch** threshold.
 Exclusions are narrow and mirror `coverageExcludes` in `backend/build.gradle.kts`:
-framework bootstrap (`DatabaseConfig`, `MigrationBackup`, `LegacyDataRepair`,
-`KtorConfig`), Exposed table declarations, selected thin service interfaces
+framework bootstrap (`KtorConfig`), execution/History SQLite plumbing
+(`ExecutionDatabase`, `HistoryDatabase`), Exposed table declarations, selected thin service interfaces
 (`KrakenService*`, `ConfigService`, `OrderExecutor`), and repository interfaces
 (concrete implementations remain measured),
 generated HTML-extension lambdas, CSS DSL, and `KrakenRebalancerApplication`.
@@ -671,21 +699,23 @@ Tests cover:
   symbol rejection, and `watchConfigChanges()` flow
 - `ServiceUtilsTest` / `FormatterTest` — utility function coverage
 - `RateLimiterTest` — call-counter decay, endpoint costs, waiting, and reset behavior
-- `DashboardCutoverApiTest` — latest current-cycle snapshot, `/history` redirect,
-  retired reporting routes, SSE, and health/readiness
-- `DashboardActualPageTest` — Actual observations and page rendering
-- `ActualObservation*Test` / `ProspectiveBenchmark*Test` — raw observation
-  capture, storage, valuation, and continuity-verified prospective comparison
+- `DashboardCutoverApiTest` — latest current-cycle snapshot, SSE, and
+  health/readiness
+- `DashboardHistoryPageTest` — History page, range/filter behavior, and API routes
+- `HistoryObservation*Test`, `HistorySynchronizerTest`, and
+  `SqliteHistoryStoreTest` — direct value samples, paginated account sync,
+  identity scoping, cursor recovery, and persistence
 - `LiveOrderJournal*Test` / `OrderExecutor*Test` — durable live-order state,
   ambiguity handling, and sell settlement
 - `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic
-- `DatabaseConfigTest` / `SchemaMigrationsTest` / `MigrationBackupTest` /
-  `ExecutionJournalCutoverTest` — schema migration, backup, and journal cutover
+- `DataDirectoryConfigTest`, `DataDirectoryIdentityTest`, and
+  `ExecutionDatabaseLifecycleTest` — explicit fresh-store initialization,
+  account binding, and fail-closed journal lifecycle
 
 ### Test Design Principles
 
 - **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools. Add `@Suppress("unused")` only when the compiler or IDE reports a real warning; Kotest discovers specs via reflection and does not require blanket suppression on every spec.
-- **Database Test Isolation**: Database tests use isolated in-memory or temporary SQLite paths for the legacy, execution, and Actual stores so they do not modify the operator's runtime data files.
+- **Database Test Isolation**: Database tests use isolated in-memory or temporary SQLite paths for the execution and History stores so they do not modify the operator's runtime data files.
 - **`FakeKrakenService`** — an in-process test double for `KrakenService` used
   by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of
   `suspend` functions in concurrent coroutine contexts.

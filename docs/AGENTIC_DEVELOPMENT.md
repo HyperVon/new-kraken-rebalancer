@@ -155,7 +155,7 @@ harnesses.
 | [`kraken-api-integration`](../.agents/skills/kraken-api-integration/SKILL.md) | Kraken signing, symbols, rate limits, retries, order IDs, and credentials |
 | [`ktor-html-views`](../.agents/skills/ktor-html-views/SKILL.md) | Server-rendered HTML, CSS DSL, HTMX, routes, and UI safety indicators |
 | [`portfolio-rebalancing-math`](../.agents/skills/portfolio-rebalancing-math/SKILL.md) | Fixed-USD target math, fiat correction, dust, and order sequencing |
-| [`trade-history-sync`](../.agents/skills/trade-history-sync/SKILL.md) | Retired reporting scope plus preserved migration/account-continuity and prospective evidence boundaries |
+| [`trade-history-sync`](../.agents/skills/trade-history-sync/SKILL.md) | Direct History values, account-scoped Kraken trade/ledger sync, and bounded cursor commits |
 
 ### Engineering quality
 

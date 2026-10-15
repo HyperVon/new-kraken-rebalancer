@@ -99,7 +99,7 @@ The decisions Canvas and recommend-only boundary in Step 6 remain mandatory.
 ### Step 0: Scope
 
 Default = **full system**. Narrow only if the user names a subsystem (e.g.
-Dashboard/Actual UI, account continuity, persistence, rebalance loop).
+Dashboard/History UI, account synchronization, persistence, rebalance loop).
 
 Ask once if unclear: full redesign brainstorm vs evolutionary options only.
 Default to **both**, ranked.
@@ -159,7 +159,8 @@ whether the split earns its keep.
 | :--- | :--- | :--- | :--- |
 | `watchConfigChanges()` | Hot SharedFlow | ConfigServiceImpl | Settings change restarts the loop |
 | Dashboard snapshot and hero trend | Hot StateFlow + bounded in-memory deque | CurrentPortfolioState | Latest completed cycle plus up to 24 same-source snapshots; clear trend on mode or credential-scope changes |
-| Actual sample write | Bounded channel | ActualObservationDispatcher | Best-effort; never block the order path |
+| History sample write | Bounded channel | HistoryObservationRecorder | Persist selected direct cycle evidence away from the order path |
+| Account History sync | Explicit bounded sync | HistorySynchronizer | Verify account identity around pages and commit cursors atomically |
 | Exchange retry / USD settle poll | Cold Flow | Kraken adapters / OrderSettleHelper | Collect for current cycle work; never broadcast to UI |
 
 **Redesign smell:** adding an EventSource/WebSocket client when HTMX SSE +
@@ -182,8 +183,8 @@ Cover each dimension. Skip empty sections in the report; do not invent issues.
    modes when Kraken is wrong/slow. Treat exchange-doc claims as hypotheses
    until verified against current official Kraken docs (canonical links in
    [kraken-api-integration](../kraken-api-integration/SKILL.md)).
-5. **Persistence & continuity** — SQLite/Exposed fit; active execution and
-   Actual stores; legacy migration and account-binding continuity; corruption
+5. **Persistence & continuity** — SQLite/Exposed fit; separately initialized
+   execution and History stores; data-directory account pinning; corruption
    and recovery.
 6. **API & UI architecture** — SSR + HTMX + Kotlin/JS vs SPA vs thinner
    server; chart/SSE coupling; operational clarity of LIVE/DRY/SIM.
@@ -260,9 +261,9 @@ bind-to-localhost — not "add JWT later".
 
 Any proposal replacing manager / executor / analyzer must preserve the focused
 current contracts in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md): fixed
-USD planning, execution safety, Dashboard cutover, Settings compatibility,
-Actual evidence, and prospective continuity. Do not restore a retired
-retrospective-history scenario suite.
+USD planning, execution safety, Dashboard, Settings compatibility, direct
+History capture, and account-history synchronization. Do not infer prior
+portfolio values from exchange events or add a synthetic benchmark.
 
 ### Step 4: Brainstorm alternatives
 

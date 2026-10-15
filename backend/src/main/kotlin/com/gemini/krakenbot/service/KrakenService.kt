@@ -3,12 +3,10 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.DepositStatusRecord
-import com.gemini.krakenbot.model.InternalTransferRecord
+import com.gemini.krakenbot.model.ExchangeHistoryPage
+import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.WithdrawStatusRecord
 import java.math.BigDecimal
 
 interface KrakenService {
@@ -34,61 +32,22 @@ interface KrakenService {
         clOrdId: String? = null,
     ): OrderResult
 
-    suspend fun getTradeHistory(startSec: Long? = null, offset: Int? = null): List<TradeRecord>
+    /** Returns one raw account-wide TradesHistory cursor page. */
+    suspend fun getAccountTradePage(
+        startSec: Long? = null,
+        endSec: Long? = null,
+        cursor: String? = null,
+        limit: Int? = null,
+    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry>
+
+    /** Returns one raw account-wide Ledgers cursor page, retaining Kraken asset codes verbatim. */
+    suspend fun getAccountLedgerPage(
+        startSec: Long? = null,
+        endSec: Long? = null,
+        cursor: String? = null,
+    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry>
 
     suspend fun getOHLC(pair: String, interval: Int = 1440, since: Long? = null): List<Pair<Long, BigDecimal>>
-
-    /**
-     * Total trade count from the last [getTradeHistory] response (Kraken `count` / sim total).
-     * Used for sync progress pagination metadata without downcasting the port.
-     */
-    fun getLastTradeHistoryTotalCount(): Int = 0
-
-    /** Whether the last [getTradeHistory] response included an authoritative `count` field. */
-    fun hasLastTradeHistoryTotalCount(): Boolean = false
-
-    /** Whether the last [getTradeHistory] response had an object-valued `trades` container. */
-    fun hasLastTradeHistoryPageShape(): Boolean = true
-
-    /** Number of raw entries returned in the last [getTradeHistory] page before local filtering. */
-    fun getLastTradeHistoryRawPageSize(): Int = 0
-
-    /**
-     * Ledger entries in [startSec, endSec] starting at [offset], optionally filtered to response
-     * [types] (for example `staking`, `spend`, or `receive`). The live Kraken adapter maps the
-     * consumer `spend`/`receive` response types to the API's `sale` query filter and filters the
-     * returned rows locally. Defaults to empty for backends without ledger support (simulation,
-     * test fakes).
-     */
-    suspend fun getLedgers(
-        startSec: Long? = null,
-        offset: Int? = null,
-        endSec: Long? = null,
-        types: Set<String>? = null,
-    ): List<LedgerEvent> = emptyList()
-
-    /**
-     * Batch funding evidence from Kraken's authenticated DepositStatus
-     * endpoint. Backends without a funding-status surface return an empty
-     * list; callers must treat absence as unresolved provenance.
-     */
-    suspend fun getDepositStatus(startSec: Long? = null, endSec: Long? = null): List<DepositStatusRecord> = emptyList()
-
-    /**
-     * Batch funding evidence from Kraken's authenticated WithdrawStatus
-     * endpoint. Backends without a funding-status surface return an empty
-     * list; callers must treat absence as unresolved provenance.
-     */
-    suspend fun getWithdrawStatus(startSec: Long? = null, endSec: Long? = null): List<WithdrawStatusRecord> =
-        emptyList()
-
-    /**
-     * Optional authoritative wallet-transfer evidence. Kraken's Spot REST
-     * surface does not expose a historical Futures-transfer query, so the live
-     * adapter returns empty until such a source is available.
-     */
-    suspend fun getInternalTransfers(startSec: Long? = null, endSec: Long? = null): List<InternalTransferRecord> =
-        emptyList()
 
     /**
      * Stable account/configuration scope for cached funding evidence. The
@@ -100,17 +59,10 @@ interface KrakenService {
     /** Authenticated stable account identity (Kraken Spot IIBAN); never use a credential hash here. */
     suspend fun getAuthenticatedAccountIdentity(): String? = null
 
-    /** Total ledger entry count from the last [getLedgers] response (Kraken `count`). */
-    fun getLastLedgerTotalCount(): Int = 0
-
-    /** Whether the last [getLedgers] response included an authoritative `count` field. */
-    fun hasLastLedgerTotalCount(): Boolean = false
-
-    /** Whether the last [getLedgers] response had an object-valued `ledger` container. */
-    fun hasLastLedgerPageShape(): Boolean = true
-
-    /** Number of raw entries returned in the last [getLedgers] page before local type filtering. */
-    fun getLastLedgerRawPageSize(): Int = 0
+    /** Authenticated API-key account identity and verified private-history time restrictions. */
+    suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? = getAuthenticatedAccountIdentity()?.let {
+        AuthenticatedAccountInfo(identity = it, queryBoundsVerified = false)
+    }
 
     /** Current private-API call-counter load; 0 for backends without a rate limiter. */
     suspend fun getApiCallCounter(): Double = 0.0
@@ -125,19 +77,25 @@ interface KrakenService {
     suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
 }
 
+data class AuthenticatedAccountInfo(
+    val identity: String,
+    /** Inclusive earliest allowed query second; null means Kraken reports no lower restriction. */
+    val queryFromSec: Long? = null,
+    /** Inclusive latest allowed query second; null means Kraken reports no upper restriction. */
+    val queryToSec: Long? = null,
+    val queryBoundsVerified: Boolean,
+) {
+    init {
+        require(identity.isNotBlank())
+        require(queryFromSec == null || queryFromSec >= 0)
+        require(queryToSec == null || queryToSec >= 0)
+        require(queryFromSec == null || queryToSec == null || queryFromSec <= queryToSec)
+    }
+}
+
 /** Optional capability for account balances reduced to amounts currently available for trading. */
 interface SpendableBalanceService {
     suspend fun getSpendableBalances(): RawBalances
-}
-
-/** Optional capability for backends that can pass an inclusive TradesHistory end bound. */
-interface BoundedTradeHistoryService {
-    suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>
-}
-
-/** Optional capability for backends that retrieve trade history without allocation filtering (for inception recovery). */
-interface RecoveryTradeHistoryService {
-    suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>
 }
 
 /** Optional direct-response evidence surface implemented by live Kraken adapters, not simulations. */
@@ -159,16 +117,3 @@ suspend fun KrakenService.readTickerPricesWithCapture(requests: List<DirectTicke
         (this as? DirectKrakenEvidenceService)?.readTickerPricesWithCapture(requests)
             ?: TickerRead(getTickerPrices(requests.joinToString(",") { it.pair }))
     }
-
-/** Uses the stable-bound capability when available and preserves two-argument test fakes otherwise. */
-suspend fun KrakenService.getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
-    (this as? BoundedTradeHistoryService)?.getTradeHistoryUntil(startSec, offset, endSec)
-        ?: getTradeHistory(startSec, offset)
-
-/** Retrieves recovery trade history preserving unmapped pairs, falling back to bounded or basic history. */
-suspend fun KrakenService.getRecoveryTradeHistoryUntil(
-    startSec: Long?,
-    offset: Int?,
-    endSec: Long?,
-): List<TradeRecord> = (this as? RecoveryTradeHistoryService)?.getRecoveryTradeHistoryUntil(startSec, offset, endSec)
-    ?: getTradeHistoryUntil(startSec, offset, endSec)
