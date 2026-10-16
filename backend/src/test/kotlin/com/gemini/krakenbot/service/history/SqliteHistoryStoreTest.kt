@@ -650,6 +650,51 @@ class SqliteHistoryStoreTest : StringSpec() {
             }
         }
 
+        "queryTradeSummary counts but excludes rows with unparsable cost or fee strings" {
+            withStore { store, _ ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 500L
+                store.beginSyncWindow(
+                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "trade-summary-invalid", startSec, endSec),
+                )
+                val entries = listOf(
+                    tradeEntry("BTC-USD", Instant.ofEpochSecond(startSec + 1)),
+                    tradeEntry("ETH-USD", Instant.ofEpochSecond(startSec + 2)).copy(
+                        cost = "not-a-number",
+                        fee = "??",
+                    ),
+                    tradeEntry("SOL-USD", Instant.ofEpochSecond(startSec + 3)).copy(fee = "??"),
+                )
+                store.commitTradePage(
+                    HistoryPageRequest(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.TRADES,
+                        scanId = "trade-summary-invalid",
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        committedAt = Instant.ofEpochSecond(endSec),
+                    ),
+                    ExchangeHistoryPage(
+                        entries = entries,
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        nextCursor = null,
+                        count = entries.size.toLong(),
+                        rawSize = entries.size,
+                        valid = true,
+                    ),
+                ).state shouldBe HistorySyncState.COMPLETE
+
+                val summary = store.queryTradeSummary(HistoryEventQuery(accountIdentityDigest = accountDigest))
+                summary.totalTrades shouldBe 3L
+                summary.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("10000.0")
+                summary.totalFeesPaid shouldBeEqualComparingTo BigDecimal("8.0")
+                summary.avgFeeRatePercent shouldBeEqualComparingTo BigDecimal("0.08")
+            }
+        }
+
         "filter options are account scoped and limited to the selected time range" {
             withStore { store, _ ->
                 val startSec = 1_700_000_000L

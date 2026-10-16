@@ -360,7 +360,7 @@ class HistoryPageComponentTest : StringSpec() {
                 pair = "XXBTZUSD",
                 baseAsset = "BTC",
                 quoteCurrency = "USD",
-                feeCurrency = "USD",
+                feeCurrency = null,
                 time = now,
                 rawTime = "1700000000",
                 type = "buy",
@@ -626,7 +626,78 @@ class HistoryPageComponentTest : StringSpec() {
             )
             val html = render(data)
             html shouldContain "(currency not reported)"
+            html.countOccurrences("title=\"1700000000\"") shouldBe 2
+            html.countOccurrences(">1700000000<") shouldBe 2
             html shouldContain "1–1"
+        }
+
+        "renders unparsable numeric cells as raw source strings" {
+            val trade = HistoryTrade(
+                accountIdentityDigest = validHash,
+                tradeId = "T3",
+                orderTxid = null,
+                postTxid = null,
+                pair = "XXBTZUSD",
+                baseAsset = "BTC",
+                quoteCurrency = "USD",
+                time = null,
+                rawTime = null,
+                type = "buy",
+                orderType = "limit",
+                price = "2000.0",
+                cost = "??",
+                fee = "0.0",
+                volume = "n/a",
+                margin = null,
+                misc = null,
+                tradeSequenceId = null,
+                maker = true,
+                ledgerIds = emptyList(),
+                rawRecordJson = null,
+                hasValidTime = false,
+                hasValidPrice = true,
+                hasValidCost = false,
+                hasValidFee = true,
+                hasValidVolume = false,
+                isValidRecord = true,
+            )
+            val ledger = HistoryLedger(
+                accountIdentityDigest = validHash,
+                ledgerId = "L3",
+                refid = null,
+                time = null,
+                rawTime = null,
+                type = "trade",
+                subtype = "tradespot",
+                assetClass = "currency",
+                asset = "USD",
+                amount = "x",
+                fee = "0.0",
+                balance = "y",
+                rawRecordJson = null,
+                hasValidTime = false,
+                hasValidAmount = false,
+                hasValidFee = true,
+                hasValidBalance = false,
+                isValidRecord = true,
+            )
+            val data = HistoryPageData(
+                range = "24h",
+                filters = HistoryEventQuery(),
+                tradesOffset = 0,
+                ledgersOffset = 0,
+                observations = emptyList(),
+                checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
+                trades = HistoryPage(listOf(trade), 1L, 50, 0, hasMore = false),
+                ledgers = HistoryPage(listOf(ledger), 1L, 50, 0, hasMore = false),
+                syncStatuses = emptyList(),
+                accountAvailable = true,
+            )
+            val html = render(data)
+            html.countOccurrences(">n/a<") shouldBe 1
+            html.countOccurrences(">??<") shouldBe 1
+            html.countOccurrences(">x<") shouldBe 1
+            html.countOccurrences(">y<") shouldBe 1
         }
     }
 

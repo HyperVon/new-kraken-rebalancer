@@ -55,6 +55,28 @@ class FormatterTest : StringSpec() {
             Formatter.formatCount(0L) shouldBe "0"
         }
 
+        "formatQuantity preserves the sign of ledger outflows" {
+            Formatter.formatQuantity(BigDecimal("-1.5")) shouldBe "-1.5"
+            Formatter.formatQuantity(BigDecimal("-1234.5678")) shouldBe "-1,234.5678"
+        }
+
+        "formatUsdOrDash places the sign before the currency symbol" {
+            Formatter.formatUsdOrDash(BigDecimal("-200.0"), 2, 2) shouldBe "-\$200.00"
+            Formatter.formatUsdOrDash(BigDecimal("200.0"), 2, 2) shouldBe "\$200.00"
+        }
+
+        "price and fee helpers dash absent or zero values" {
+            Formatter.formatPriceOrDash(null) shouldBe "—"
+            Formatter.formatPriceOrDash(BigDecimal.ZERO) shouldBe "—"
+            Formatter.formatFeeOrDash(BigDecimal.ZERO) shouldBe "—"
+        }
+
+        "formatPair falls back to the raw pair and formatCompactTradeTime blanks null" {
+            Formatter.formatPair("BTC", null, "XXBTZUSD") shouldBe "XXBTZUSD"
+            Formatter.formatPair(null, null, null) shouldBe ""
+            Formatter.formatCompactTradeTime(null) shouldBe ""
+        }
+
         "formatSignedUsd prefixes positives without a sign" {
             Formatter.formatSignedUsd(BigDecimal("200.0")) shouldBe "\$200.00"
             Formatter.formatSignedUsd(BigDecimal("-200.0")) shouldBe "-\$200.00"

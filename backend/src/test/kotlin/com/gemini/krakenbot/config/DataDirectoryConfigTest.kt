@@ -5,9 +5,13 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldEndWith
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileTime
 
 class DataDirectoryConfigTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -78,6 +82,60 @@ class DataDirectoryConfigTest : StringSpec() {
                 ExecutionDatabase.init(executionDb.toString()).journalId().isNotBlank() shouldBe true
                 HistoryDatabase(historyDb).connect().use { }
                 Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initializeDataDirectory refuses a marker placed over pre-existing foreign stores" {
+            val tempDir = Files.createTempDirectory("data-dir-stray-marker-test-")
+            val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            val marker = tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)
+            val foreign = "foreign history data"
+            try {
+                Files.writeString(historyDb, foreign)
+                Files.setLastModifiedTime(historyDb, FileTime.fromMillis(1_000))
+                Files.createFile(marker)
+                Files.setLastModifiedTime(marker, FileTime.fromMillis(5_000))
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.initializeDataDirectory(tempDir) }
+
+                Files.readString(historyDb) shouldBe foreign
+                Files.exists(executionDb) shouldBe false
+                Files.exists(marker) shouldBe true
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory fails when another process holds the initialization lock" {
+            val tempDir = Files.createTempDirectory("data-dir-init-lock-test-")
+            val lockFile = tempDir.resolve(DataDirectoryConfig.INITIALIZATION_LOCK_FILE)
+            try {
+                FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+                    channel.tryLock().use {
+                        val error = shouldThrow<IllegalStateException> {
+                            DataDirectoryConfig.ensureDataDirectory(tempDir)
+                        }
+                        error.message shouldContain "another process"
+                    }
+                }
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initialization lock is released when ensure fails" {
+            val tempDir = Files.createTempDirectory("data-dir-lock-release-test-")
+            val lockFile = tempDir.resolve(DataDirectoryConfig.INITIALIZATION_LOCK_FILE)
+            try {
+                Files.writeString(DataDirectoryConfig.historyDatabasePath(tempDir), "half copy")
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.ensureDataDirectory(tempDir) }
+
+                FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+                    channel.tryLock().use { }
+                }
             } finally {
                 tempDir.toFile().deleteRecursively()
             }

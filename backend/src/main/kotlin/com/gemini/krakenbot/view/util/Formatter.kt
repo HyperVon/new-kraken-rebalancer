@@ -23,12 +23,14 @@ object Formatter {
     /**
      * HIST-3: locale-style grouping with a bounded decimal tier (JVM mirror of the old
      * `usdOptionsToLocale`) — keeps ordinary values calm while preserving sub-cent precision.
+     * The sign is preserved so ledger outflows never render as inflows.
      */
     fun formatTiered(value: BigDecimal, minDigits: Int, maxDigits: Int): String {
         val rounded = value.abs().setScale(maxDigits, RoundingMode.HALF_UP)
         val stripped = rounded.stripTrailingZeros()
         val scale = stripped.scale().coerceIn(minDigits, maxDigits)
-        return String.format(Locale.US, "%,.${scale}f", stripped.setScale(scale, RoundingMode.HALF_UP))
+        val body = String.format(Locale.US, "%,.${scale}f", stripped.setScale(scale, RoundingMode.HALF_UP))
+        return if (value.signum() < 0) "-$body" else body
     }
 
     fun formatSignedUsd(value: BigDecimal): String =
@@ -37,7 +39,11 @@ object Formatter {
     /** Em-dash for absent/zero values so table cells stay aligned and quiet. */
     fun formatUsdOrDash(value: BigDecimal?, minDigits: Int, maxDigits: Int): String {
         if (value == null || value.signum() == 0) return ViewText.EM_DASH
-        return "$" + formatTiered(value, minDigits, maxDigits)
+        return if (value.signum() < 0) {
+            "-$" + formatTiered(value.abs(), minDigits, maxDigits)
+        } else {
+            "$" + formatTiered(value, minDigits, maxDigits)
+        }
     }
 
     fun formatPriceOrDash(price: BigDecimal?): String {
@@ -63,7 +69,7 @@ object Formatter {
     fun formatCount(value: Long): String = String.format(Locale.US, "%,d", value)
 
     private val compactTime: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("MMM d, h:mm a").withZone(ZoneId.systemDefault())
+        DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US).withZone(ZoneId.systemDefault())
 
     fun formatCompactTradeTime(time: Instant?): String = time?.let(compactTime::format).orEmpty()
 

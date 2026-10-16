@@ -317,8 +317,9 @@ class HistoryPageComponent {
                         data.trades.items.forEach { t ->
                             tr(CssClass.Table.Hoverable) {
                                 td(CssClass.Table.MonoCol) {
-                                    t.time?.let { title = timeFormatter.format(it) }
-                                    +Formatter.formatCompactTradeTime(t.time)
+                                    (t.time?.let(timeFormatter::format) ?: t.rawTime?.takeIf { it.isNotBlank() })
+                                        ?.let { title = it }
+                                    +(t.time?.let(Formatter::formatCompactTradeTime) ?: t.rawTime.orEmpty())
                                 }
                                 td(CssClass.Table.SymbolCol) {
                                     +Formatter.formatPair(t.baseAsset, t.quoteCurrency, t.pair)
@@ -344,7 +345,8 @@ class HistoryPageComponent {
                                         ?: +t.cost.orEmpty()
                                 }
                                 td(CssClass.Table.MonoCol) {
-                                    // Kraken does not establish the trade fee denomination in this response.
+                                    // Kraken omits a fee currency on TradesHistory; spot trade fees settle in
+                                    // the quote currency (confirmed against matching USD ledger fee legs).
                                     +Formatter.formatFeeWithCurrency(
                                         t.fee?.toBigDecimalOrNull(),
                                         t.feeCurrency ?: t.quoteCurrency,
@@ -382,8 +384,9 @@ class HistoryPageComponent {
                         data.ledgers.items.forEach { l ->
                             tr(CssClass.Table.Hoverable) {
                                 td(CssClass.Table.MonoCol) {
-                                    (l.time?.let(timeFormatter::format) ?: l.rawTime)?.let { title = it }
-                                    +Formatter.formatCompactTradeTime(l.time)
+                                    (l.time?.let(timeFormatter::format) ?: l.rawTime?.takeIf { it.isNotBlank() })
+                                        ?.let { title = it }
+                                    +(l.time?.let(Formatter::formatCompactTradeTime) ?: l.rawTime.orEmpty())
                                 }
                                 td {
                                     val type = l.type.orEmpty().replaceFirstChar { c -> c.uppercase() }
@@ -646,7 +649,7 @@ private enum class HistoryStatCardDefinition(
         Icons.DOLLAR_CIRCLE,
         HtmlIds.STAT_AVG_FEE_RATE,
         { data ->
-            if (data.tradeSummary.totalTrades == 0L) {
+            if (data.tradeSummary.totalVolumeUsd.signum() == 0) {
                 ViewText.EM_DASH
             } else {
                 "${Formatter.formatPercent(data.tradeSummary.avgFeeRatePercent)}%"
