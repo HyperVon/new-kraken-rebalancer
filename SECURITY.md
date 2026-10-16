@@ -151,10 +151,10 @@ For safe operation:
 The live-order journal and account History use separate SQLite databases in
 one data directory: `execution.db` and `history.db`. The default directory is
 `rebalancer-data-v1`; select another with `KRAKEN_DATA_DIR` or the JVM property
-`kraken.data.dir`. Initialize a new directory explicitly with
-`--initialize-data` before starting the application. Initialization refuses to
-replace an existing execution database. Normal startup opens only existing,
-validated files and fails closed if a database or the execution journal's
+`kraken.data.dir`. A new directory is initialized automatically on first start;
+`--initialize-data` remains available for explicit initialization and refuses
+to replace an existing execution database. Normal startup fails closed if only
+one of the two databases is present or the execution journal's
 `execution.db.journal-id` marker is missing or inconsistent.
 
 The `account-identity.sha256` file binds account-scoped History and execution

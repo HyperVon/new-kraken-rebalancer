@@ -5,6 +5,7 @@ import com.gemini.krakenbot.view.util.CssClass
 import kotlinx.css.Align
 import kotlinx.css.CssBuilder
 import kotlinx.css.Display
+import kotlinx.css.GridTemplateColumns
 import kotlinx.css.Padding
 import kotlinx.css.Position
 import kotlinx.css.TextAlign
@@ -16,6 +17,7 @@ import kotlinx.css.display
 import kotlinx.css.fontFamily
 import kotlinx.css.fontSize
 import kotlinx.css.gap
+import kotlinx.css.gridTemplateColumns
 import kotlinx.css.height
 import kotlinx.css.marginBottom
 import kotlinx.css.padding
@@ -28,6 +30,14 @@ import kotlinx.css.width
 
 object HistoryStyles {
     fun CssBuilder.applyHistoryStyles() {
+        ".${CssClass.History.StatsGrid}" {
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("1fr")
+            gap = 0.75.rem
+            marginBottom = 1.rem
+            alignItems = Align.start
+        }
+
         ".${CssClass.History.ToolbarRow}" {
             display = Display.flex
             alignItems = Align.center

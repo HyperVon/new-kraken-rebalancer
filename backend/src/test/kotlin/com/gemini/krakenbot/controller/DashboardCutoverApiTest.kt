@@ -149,7 +149,7 @@ class DashboardCutoverApiTest : StringSpec() {
                 val html = response.bodyAsText()
                 html shouldContain "hero-trend-svg"
                 html shouldContain "2 completed cycles"
-                html shouldContain "points=\"66.00,104.97 514.00,17.03\""
+                html shouldContain "points=\"8.00,129.31 512.00,20.69\""
             }
         }
 

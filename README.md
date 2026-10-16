@@ -485,22 +485,18 @@ They are discarded when the configuration is read and have no effect on
 orders. The next Settings save writes the active configuration without those
 retired keys.
 
-Initialize the separate execution and History databases once before the first
-normal start. Build the Fat JAR if needed, then run its explicit initializer:
-
-```bash
-./gradlew :backend:fatJar
-java -jar backend/build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar --initialize-data
-```
-
-This creates `execution.db`, `execution.db.journal-id`, and `history.db` under
-`rebalancer-data-v1` by default. Set `KRAKEN_DATA_DIR` or pass
-`-Dkraken.data.dir=<path>` to select another directory for both initialization
-and normal startup. Initialization refuses to replace an existing execution
-or History database; normal startup also refuses to recreate missing data
-files. Database files at older locations are left untouched and are not
-imported or migrated. To reopen existing data, configure the directory that
-contains the active `execution.db` and `history.db` files.
+The execution and History databases are created automatically the first time
+the application starts in a fresh data directory. This creates `execution.db`,
+`execution.db.journal-id`, and `history.db` under `rebalancer-data-v1` by
+default. Set `KRAKEN_DATA_DIR` or pass `-Dkraken.data.dir=<path>` to select
+another directory for both initialization and normal startup. A directory
+holding only one of the two databases is treated as half-copied or tampered and
+fails closed — restore the matching file or start from a fresh directory. The
+`--initialize-data` flag remains available for explicit initialization and
+refuses to replace an existing execution or History database. Database files at
+older locations are left untouched and are not imported or migrated. To reopen
+existing data, configure the directory that contains the active `execution.db`
+and `history.db` files.
 
 ### 2. Start the Application
 
@@ -581,10 +577,9 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 Account History and live-order intents use separate SQLite files in the active
 data directory: `history.db` and `execution.db`. The directory defaults to
 `rebalancer-data-v1`; set `KRAKEN_DATA_DIR` or `-Dkraken.data.dir` to choose a
-different location. Initialize the new files explicitly with
-`java -jar <application>.jar --initialize-data` before the first normal start.
-Normal startup opens existing, validated schemas and fails closed if either
-initialized database or the execution journal identity marker is missing.
+different location. Fresh files are created automatically on the first normal
+start. Normal startup opens existing, validated schemas and fails closed if
+only one store is present or the execution journal identity marker is missing.
 Keep the whole data directory together when backing up, including
 `execution.db.journal-id` and `account-identity.sha256`. History and execution
 stores do not import records from the former reporting or Actual databases.

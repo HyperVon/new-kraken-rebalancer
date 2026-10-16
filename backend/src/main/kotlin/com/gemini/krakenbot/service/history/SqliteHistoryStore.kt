@@ -6,9 +6,11 @@ import com.gemini.krakenbot.model.EARN_ASSET_SUFFIXES
 import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -184,6 +186,11 @@ class SqliteHistoryStore(
     override suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade> =
         withContext(Dispatchers.IO) {
             database.connect().use { connection -> queryTrades(connection, query) }
+        }
+
+    override suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary =
+        withContext(Dispatchers.IO) {
+            database.connect().use { connection -> queryTradeSummary(connection, query) }
         }
 
     override suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger> =
@@ -738,6 +745,32 @@ class SqliteHistoryStore(
             }
         }
         return HistoryPage(rows, total, query.limit, query.offset, query.offset + rows.size < total)
+    }
+
+    private fun queryTradeSummary(connection: Connection, query: HistoryEventQuery): HistoryTradeSummary {
+        val filter = tradeFilter(query)
+        var totalTrades = 0L
+        var volume = BigDecimal.ZERO
+        var fees = BigDecimal.ZERO
+        connection.prepareStatement("SELECT cost, fee FROM history_trades ${filter.where}").use { statement ->
+            bindValues(statement, filter.values)
+            statement.executeQuery().use { resultSet ->
+                while (resultSet.next()) {
+                    totalTrades++
+                    resultSet.getString("cost")?.toBigDecimalOrNull()?.let { volume += it }
+                    resultSet.getString("fee")?.toBigDecimalOrNull()?.let { fees += it }
+                }
+            }
+        }
+        val avgFeeRatePercent =
+            if (volume.signum() == 0) {
+                BigDecimal.ZERO
+            } else {
+                fees.divide(volume, PrecisionConstants.SCALE_PERCENT + 2, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(PrecisionConstants.HUNDRED_INT.toLong()))
+                    .setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
+            }
+        return HistoryTradeSummary(totalTrades, volume, fees, avgFeeRatePercent)
     }
 
     private fun queryLedgers(connection: Connection, query: HistoryEventQuery): HistoryPage<HistoryLedger> {

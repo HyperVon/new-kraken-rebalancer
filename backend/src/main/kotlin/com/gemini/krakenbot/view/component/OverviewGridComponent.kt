@@ -18,9 +18,6 @@ import kotlinx.html.style
 import kotlinx.html.unsafe
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.Duration
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class OverviewGridComponent {
@@ -55,8 +52,26 @@ class OverviewGridComponent {
                     +ViewText.TOTAL_PORTFOLIO
                 }
                 div(CssClass.Hero.Value) { +"$${Formatter.formatCurrency(latest.totalValueUSD)}" }
+                renderTrendDelta(recentSnapshots.takeLast(MAX_TREND_SAMPLES))
             }
             renderTrend(recentSnapshots)
+        }
+    }
+
+    private fun DIV.renderTrendDelta(samples: List<PortfolioSnapshot>) {
+        if (samples.size < 2) return
+        val first = samples.first().totalValueUSD
+        if (first.signum() == 0) return
+        val change =
+            samples.last().totalValueUSD
+                .subtract(first)
+                .divide(first, DELTA_RATE_SCALE, RoundingMode.HALF_UP)
+                .movePointRight(2)
+        val chipClass =
+            if (change.signum() >= 0) CssClass.Hero.TrendDeltaPositive else CssClass.Hero.TrendDeltaNegative
+        div(CssClass.Hero.TrendDeltaRow) {
+            span(chipClass) { +"${Formatter.getDeviationSign(change)}${Formatter.formatPercent(change)}%" }
+            span(CssClass.Hero.TrendDeltaLabel) { +ViewText.DASHBOARD_TREND_DELTA_LABEL }
         }
     }
 
@@ -108,29 +123,10 @@ class OverviewGridComponent {
                 val y = PLOT_BOTTOM - valueRatio * (PLOT_BOTTOM - PLOT_TOP)
                 "${formatCoordinate(x)},${formatCoordinate(y)}"
             }
-        val gridRows =
-            listOf(yMaximum, yMinimum.add(yMaximum).divide(TWO, COORDINATE_SCALE, RoundingMode.HALF_UP), yMinimum)
-                .mapIndexed { index, value ->
-                    val y = PLOT_TOP + index * (PLOT_BOTTOM - PLOT_TOP) / 2
-                    """
-                    <line class="${CssClass.Hero.TrendGrid.value}" x1="${formatCoordinate(
-                        PLOT_LEFT,
-                    )}" y1="${formatCoordinate(y)}" x2="${formatCoordinate(PLOT_RIGHT)}" y2="${formatCoordinate(y)}"/>
-                    <text class="${CssClass.Hero.TrendAxisLabel.value}" x="${formatCoordinate(
-                        PLOT_LEFT - 8,
-                    )}" y="${formatCoordinate(
-                        y + AXIS_LABEL_BASELINE,
-                    )}" text-anchor="end">${formatAxisCurrency(value)}</text>
-                    """.trimIndent()
-                }.joinToString("")
-        val formatter =
-            if (Duration.between(samples.first().timestamp, samples.last().timestamp) < DETAILED_TIME_WINDOW) {
-                TREND_TIME_FORMATTER_WITH_SECONDS
-            } else {
-                TREND_TIME_FORMATTER
-            }
-        val startTime = formatter.format(samples.first().timestamp)
-        val endTime = formatter.format(samples.last().timestamp)
+        val areaPoints =
+            points.joinToString(" ") +
+                " ${formatCoordinate(PLOT_RIGHT)},${formatCoordinate(PLOT_BOTTOM)}" +
+                " ${formatCoordinate(PLOT_LEFT)},${formatCoordinate(PLOT_BOTTOM)}"
         val lastPoint = points.last().split(',')
         return """
             <svg class="${CssClass.Hero.TrendSvg.value}" viewBox="0 0 ${formatCoordinate(
@@ -138,33 +134,17 @@ class OverviewGridComponent {
         )} ${formatCoordinate(
             SVG_HEIGHT,
         )}" preserveAspectRatio="none">
-              $gridRows
+              <defs>
+                <linearGradient id="$TREND_FILL_GRADIENT_ID" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="${ChartProps.COLOR_BLUE}" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="${ChartProps.COLOR_BLUE}" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <polygon points="$areaPoints" fill="url(#$TREND_FILL_GRADIENT_ID)"/>
               <polyline class="${CssClass.Hero.TrendLine.value}" points="${points.joinToString(" ")}"/>
               <circle class="${CssClass.Hero.TrendPoint.value}" cx="${lastPoint[0]}" cy="${lastPoint[1]}" r="5"/>
-              <text class="${CssClass.Hero.TrendAxisLabel.value}" x="${formatCoordinate(
-            PLOT_LEFT,
-        )}" y="${formatCoordinate(X_AXIS_LABEL_Y)}" text-anchor="start">$startTime</text>
-              <text class="${CssClass.Hero.TrendAxisLabel.value}" x="${formatCoordinate(
-            PLOT_RIGHT,
-        )}" y="${formatCoordinate(X_AXIS_LABEL_Y)}" text-anchor="end">$endTime</text>
             </svg>
         """.trimIndent()
-    }
-
-    private fun formatAxisCurrency(value: BigDecimal): String = when {
-        value.abs() >= MILLION -> "$${value.divide(
-            MILLION,
-            1,
-            RoundingMode.HALF_UP,
-        ).stripTrailingZeros().toPlainString()}m"
-
-        value.abs() >= THOUSAND -> "$${value.divide(
-            THOUSAND,
-            1,
-            RoundingMode.HALF_UP,
-        ).stripTrailingZeros().toPlainString()}k"
-
-        else -> "$${value.setScale(0, RoundingMode.HALF_UP).toPlainString()}"
     }
 
     private fun formatCoordinate(value: Double): String = String.format(Locale.US, "%.2f", value)
@@ -238,20 +218,13 @@ class OverviewGridComponent {
 private const val MAX_TREND_SAMPLES = 24
 private const val SVG_WIDTH = 520.0
 private const val SVG_HEIGHT = 150.0
-private const val PLOT_LEFT = 66.0
-private const val PLOT_RIGHT = 514.0
-private const val PLOT_TOP = 10.0
-private const val PLOT_BOTTOM = 112.0
-private const val X_AXIS_LABEL_Y = 142.0
-private const val AXIS_LABEL_BASELINE = 4.0
+private const val PLOT_LEFT = 8.0
+private const val PLOT_RIGHT = 512.0
+private const val PLOT_TOP = 12.0
+private const val PLOT_BOTTOM = 138.0
 private const val COORDINATE_SCALE = 12
-private val TWO = BigDecimal("2")
-private val THOUSAND = BigDecimal("1000")
-private val MILLION = BigDecimal("1000000")
+private const val DELTA_RATE_SCALE = 4
+private const val TREND_FILL_GRADIENT_ID = "hero-trend-fill"
 private val TREND_PADDING_PERCENT = BigDecimal("0.08")
 private val FLAT_LINE_PADDING_PERCENT = BigDecimal("0.005")
 private val MINIMUM_TREND_PADDING = BigDecimal("1.00")
-private val DETAILED_TIME_WINDOW = Duration.ofMinutes(5)
-private val TREND_TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a", Locale.US).withZone(ZoneId.systemDefault())
-private val TREND_TIME_FORMATTER_WITH_SECONDS =
-    DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US).withZone(ZoneId.systemDefault())

@@ -87,8 +87,8 @@ class KrakenServiceImpl(
         val result = readApiKeyInfo()
         val identity = result.path(KrakenApiConstants.FIELD_IBAN).takeIf { it.isTextual }
             ?.asText()?.trim()?.takeIf(String::isNotBlank) ?: return null
-        val from = parseQueryBound(result, "queryFrom")
-        val to = parseQueryBound(result, "queryTo")
+        val from = parseQueryBound(result, KrakenApiConstants.FIELD_QUERY_FROM)
+        val to = parseQueryBound(result, KrakenApiConstants.FIELD_QUERY_TO)
         val boundsVerified = from.valid && to.valid &&
             (from.value == null || to.value == null || from.value <= to.value)
         return AuthenticatedAccountInfo(

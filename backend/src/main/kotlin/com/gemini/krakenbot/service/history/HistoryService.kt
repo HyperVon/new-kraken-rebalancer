@@ -17,6 +17,8 @@ interface HistoryService {
 
     suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade>
 
+    suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary
+
     suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger>
 
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>
@@ -85,6 +87,9 @@ class HistoryServiceImpl(private val store: HistoryStore) : HistoryService {
         store.queryAssetValues(query)
 
     override suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade> = store.queryTrades(query)
+
+    override suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary =
+        store.queryTradeSummary(query)
 
     override suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger> = store.queryLedgers(query)
 

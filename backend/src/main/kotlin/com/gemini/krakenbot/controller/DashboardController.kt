@@ -733,6 +733,7 @@ class DashboardController(
             syncStatuses = service.getSyncStatus(scope),
             accountAvailable = true,
             filterOptions = service.queryFilterOptions(filters),
+            tradeSummary = service.queryTradeSummary(filters),
         )
     }
 

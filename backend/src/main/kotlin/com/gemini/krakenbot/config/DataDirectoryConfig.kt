@@ -54,4 +54,35 @@ object DataDirectoryConfig {
         Files.delete(initializationMarker)
         log.info("Initialized fresh execution and history databases in {}", dataDir)
     }
+
+    /**
+     * Normal startup entry: creates both stores automatically on a fresh data directory,
+     * resumes an interrupted initialization, and leaves an initialized directory untouched.
+     * A mixed directory (only one store present) still fails closed because it signals a
+     * half-copied or tampered data directory rather than a first run.
+     */
+    fun ensureDataDirectory(dataDir: Path = resolveDataDirectory()) {
+        val executionDb = executionDatabasePath(dataDir)
+        val historyDb = historyDatabasePath(dataDir)
+        val initializationMarker = dataDir.resolve(INITIALIZATION_MARKER_FILE)
+        if (Files.exists(initializationMarker)) {
+            initializeDataDirectory(dataDir)
+            return
+        }
+        val executionPresent = Files.exists(executionDb)
+        val historyPresent = Files.exists(historyDb)
+        when {
+            executionPresent && historyPresent -> return
+
+            !executionPresent && !historyPresent -> {
+                log.info("No data directory stores found in {}; creating them now.", dataDir)
+                initializeDataDirectory(dataDir)
+            }
+
+            else -> throw IllegalStateException(
+                "Data directory $dataDir contains only one of execution.db / history.db; " +
+                    "restore the matching file or start from a fresh directory.",
+            )
+        }
+    }
 }

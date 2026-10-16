@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySyncStatus
 import com.gemini.krakenbot.service.history.HistoryTrade
+import com.gemini.krakenbot.service.history.HistoryTradeSummary
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -280,7 +281,7 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html.countOccurrences("<circle") shouldBe 4
+            html.countChartShapes("<circle") shouldBe 4
             html shouldContain "Portfolio Value"
             html shouldContain "Asset Holdings Over Time (BTC)"
             html shouldContain "/static/rebalancer.js?v="
@@ -342,8 +343,8 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html.countOccurrences("<polyline") shouldBe 2
-            html.countOccurrences("<circle") shouldBe 5
+            html.countChartShapes("<polyline") shouldBe 2
+            html.countChartShapes("<circle") shouldBe 5
             html.countOccurrences("class=\"history-gap-marker\"") shouldBe 1
             html shouldContain "Lines connect complete cycle samples; incomplete cycles break the line."
             html shouldContain "No values are inferred between samples."
@@ -417,12 +418,78 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html shouldContain "XXBTZUSD"
-            html shouldContain "8.0 USD"
-            html shouldContain "trade / buy"
+            html shouldContain "BTC/USD"
+            html shouldContain "\$8.00"
+            html shouldContain "Trade (buy)"
             html shouldContain "Previous"
             html shouldContain "Next"
             html shouldContain "51–51 of 150"
+        }
+
+        "renders stat cards from trade summary and observed period high" {
+            val now = Instant.ofEpochSecond(1_700_000_000)
+            val obs = HistoryObservation(
+                observationId = "o1",
+                cycleId = "c1",
+                sourceScope = historyScope,
+                observedAt = now,
+                balanceRequestStartedAt = now,
+                balanceResponseEndedAt = now,
+                priceRequestStartedAt = now,
+                priceResponseEndedAt = now,
+                status = HistoryObservationStatus.COMPLETE,
+                totalUsd = BigDecimal("1234.56"),
+                incompleteReasons = emptyList(),
+                assets = emptyList(),
+            )
+            val data = HistoryPageData(
+                range = "30d",
+                filters = HistoryEventQuery(),
+                tradesOffset = 0,
+                ledgersOffset = 0,
+                observations = listOf(obs),
+                checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
+                trades = HistoryPage(emptyList(), 0L, 50, 0, false),
+                ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
+                syncStatuses = emptyList(),
+                accountAvailable = true,
+                tradeSummary = HistoryTradeSummary(
+                    totalTrades = 1234L,
+                    totalVolumeUsd = BigDecimal("5000.00"),
+                    totalFeesPaid = BigDecimal("24.00"),
+                    avgFeeRatePercent = BigDecimal("0.4800"),
+                ),
+            )
+            val html = render(data)
+            html shouldContain "Period High"
+            html shouldContain "\$1,234.56"
+            html shouldContain "Total Trades"
+            html shouldContain "1,234"
+            html shouldContain "Total Volume Traded"
+            html shouldContain "\$5,000.00"
+            html shouldContain "Total Fees Paid"
+            html shouldContain "\$24.00"
+            html shouldContain "Avg Fee Rate"
+            html shouldContain "0.48%"
+        }
+
+        "renders dash stat cards when the summary is empty" {
+            val data = HistoryPageData(
+                range = "30d",
+                filters = HistoryEventQuery(),
+                tradesOffset = 0,
+                ledgersOffset = 0,
+                observations = emptyList(),
+                checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
+                trades = HistoryPage(emptyList(), 0L, 50, 0, false),
+                ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
+                syncStatuses = emptyList(),
+                accountAvailable = true,
+            )
+            val html = render(data)
+            html shouldContain """id="stat-period-high">—<"""
+            html shouldContain """id="stat-total-trades">0<"""
+            html shouldContain """id="stat-avg-fee-rate">—<"""
         }
 
         "renders sync status with null window range and unknown error fallback" {
@@ -502,7 +569,7 @@ class HistoryPageComponentTest : StringSpec() {
                 postTxid = null,
                 pair = "ETHUSD",
                 baseAsset = "ETH",
-                quoteCurrency = "USD",
+                quoteCurrency = null,
                 feeCurrency = null,
                 time = null,
                 rawTime = "1700000000",
@@ -564,4 +631,10 @@ class HistoryPageComponentTest : StringSpec() {
     }
 
     private fun String.countOccurrences(value: String): Int = split(value).size - 1
+
+    /** Shape counts scoped to chart SVGs so inline icon markup cannot inflate them. */
+    private fun String.countChartShapes(value: String): Int =
+        Regex("""<svg class="history-chart-svg".*?</svg>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(this)
+            .sumOf { it.value.countOccurrences(value) }
 }

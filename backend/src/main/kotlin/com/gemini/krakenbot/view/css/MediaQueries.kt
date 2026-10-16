@@ -52,6 +52,9 @@ import kotlinx.css.width
 object MediaQueries {
     fun CssBuilder.applyMediaQueries() {
         "@media (min-width: 640px)" {
+            ".${CssClass.History.StatsGrid}" {
+                gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
+            }
         }
 
         "@media (min-width: 768px)" {
@@ -73,6 +76,9 @@ object MediaQueries {
             ".${CssClass.Layout.HeroGrid}" {
                 gridTemplateColumns = GridTemplateColumns("1.6fr 1fr")
             }
+            ".${CssClass.History.StatsGrid}" {
+                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
+            }
             ".${CssClass.Form.Grid2Col}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
             }
@@ -86,6 +92,19 @@ object MediaQueries {
         "@media (min-width: 1024px)" {
             ".${CssClass.Layout.DetailGrid}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
+            }
+            ".${CssClass.History.StatsGrid}" {
+                gridTemplateColumns = GridTemplateColumns("repeat(5, 1fr)")
+                gap = 0.625.rem
+            }
+            ".${CssClass.History.StatsGrid} ${CssClass.StatusCard.Default.querySelector}" {
+                padding = Padding(0.75.rem, 0.75.rem)
+            }
+            ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Value}" {
+                fontSize = 1.2.rem
+            }
+            ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Title}" {
+                fontSize = 0.75.rem
             }
         }
 

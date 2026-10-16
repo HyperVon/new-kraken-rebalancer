@@ -27,52 +27,26 @@ class OverviewGridComponentTest : StringSpec() {
             twoSamples shouldContain "hero-trend-svg"
             twoSamples shouldContain "2 completed cycles"
             twoSamples shouldContain "<polyline"
-            twoSamples shouldContain "text-anchor=\"start\""
-            twoSamples shouldContain "text-anchor=\"end\""
+            twoSamples shouldContain "<polygon"
+            twoSamples shouldContain "hero-trend-fill"
+            twoSamples shouldContain "hero-trend-delta positive"
+            twoSamples shouldContain "+1%"
+            twoSamples shouldContain "this run"
             twoSamples shouldNotContain "aria-label"
         }
 
-        "dashboard hero chart formats thousand and million axis values" {
-            val thousandHtml =
-                createHTML().div {
-                    OverviewGridComponent().render(
-                        TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:01:00Z"), BigDecimal("2000.00")),
-                        listOf(
-                            TestFixtures.emptySnapshot(
-                                Instant.parse("2026-10-11T12:00:00Z"),
-                                BigDecimal("1000.00"),
-                            ),
-                            TestFixtures.emptySnapshot(
-                                Instant.parse("2026-10-11T12:01:00Z"),
-                                BigDecimal("2000.00"),
-                            ),
-                        ),
-                    )
-                }
-            val millionHtml =
-                createHTML().div {
-                    OverviewGridComponent().render(
-                        TestFixtures.emptySnapshot(
-                            Instant.parse("2026-10-11T12:01:00Z"),
-                            BigDecimal("2000000.00"),
-                        ),
-                        listOf(
-                            TestFixtures.emptySnapshot(
-                                Instant.parse("2026-10-11T12:00:00Z"),
-                                BigDecimal("1000000.00"),
-                            ),
-                            TestFixtures.emptySnapshot(
-                                Instant.parse("2026-10-11T12:01:00Z"),
-                                BigDecimal("2000000.00"),
-                            ),
-                        ),
-                    )
-                }
+        "dashboard hero trend delta chip signs up and down windows" {
+            val first = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:00:00Z"), BigDecimal("101.00"))
+            val lowerLast = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:01:00Z"), BigDecimal("100.00"))
+            val higherLast = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:01:00Z"), BigDecimal("102.00"))
 
-            thousandHtml shouldContain "$2.1k"
-            thousandHtml shouldContain "$1.5k"
-            millionHtml shouldContain "$2.1m"
-            millionHtml shouldContain "$1.5m"
+            val downHtml = createHTML().div { OverviewGridComponent().render(lowerLast, listOf(first, lowerLast)) }
+            val upHtml = createHTML().div { OverviewGridComponent().render(higherLast, listOf(first, higherLast)) }
+
+            downHtml shouldContain "hero-trend-delta negative"
+            downHtml shouldContain "-0.99%"
+            upHtml shouldContain "hero-trend-delta positive"
+            upHtml shouldContain "+0.99%"
         }
 
         "cash tile shows the effective target and base allocation when USD data is available" {

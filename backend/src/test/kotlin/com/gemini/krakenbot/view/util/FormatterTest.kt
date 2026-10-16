@@ -41,5 +41,23 @@ class FormatterTest : StringSpec() {
             Formatter.feeDigitsForDisplay(BigDecimal("2.00")) shouldBe 2
             Formatter.feeDigitsForDisplay(BigDecimal("0.50")) shouldBe 4
         }
+
+        "formatFeeWithCurrency styles USD fees and annotates other denominations" {
+            Formatter.formatFeeWithCurrency(BigDecimal("8.0"), "USD") shouldBe "\$8.00"
+            Formatter.formatFeeWithCurrency(BigDecimal("0.0001"), "BTC") shouldBe "0.0001 BTC"
+            Formatter.formatFeeWithCurrency(BigDecimal("0.5"), null) shouldBe "0.5 (currency not reported)"
+            Formatter.formatFeeWithCurrency(BigDecimal.ZERO, "USD") shouldBe "—"
+            Formatter.formatFeeWithCurrency(null, "USD") shouldBe "—"
+        }
+
+        "formatCount groups thousands" {
+            Formatter.formatCount(1234L) shouldBe "1,234"
+            Formatter.formatCount(0L) shouldBe "0"
+        }
+
+        "formatSignedUsd prefixes positives without a sign" {
+            Formatter.formatSignedUsd(BigDecimal("200.0")) shouldBe "\$200.00"
+            Formatter.formatSignedUsd(BigDecimal("-200.0")) shouldBe "-\$200.00"
+        }
     }
 }

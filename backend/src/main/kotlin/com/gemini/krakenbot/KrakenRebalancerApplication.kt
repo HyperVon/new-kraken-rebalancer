@@ -68,6 +68,7 @@ fun main(args: Array<String>) {
         DataDirectoryConfig.initializeDataDirectory()
         return
     }
+    DataDirectoryConfig.ensureDataDirectory()
     startKoin {
         slf4jLogger()
         modules(appModule)

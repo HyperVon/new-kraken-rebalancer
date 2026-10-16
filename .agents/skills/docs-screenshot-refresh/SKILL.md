@@ -93,8 +93,8 @@ cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 ```
 
 Set `simulation: true`, `dryRun: true`, and a short `loopDelaySeconds` in the
-copied config. Initialize the fresh data directory once with the Fat JAR's
-`--initialize-data` flag before normal startup. Simulation routes exchange calls
+copied config. A fresh data directory is initialized automatically on the first
+normal startup. Simulation routes exchange calls
 to the offline emulator and writes only process-scoped History samples; it does
 not sync account trades or ledgers. Keep placeholder API keys. A temporary run
 directory keeps the active stores isolated from operator data.

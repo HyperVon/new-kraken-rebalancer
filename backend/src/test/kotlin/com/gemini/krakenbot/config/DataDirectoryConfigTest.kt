@@ -150,5 +150,65 @@ class DataDirectoryConfigTest : StringSpec() {
                 tempDir.toFile().deleteRecursively()
             }
         }
+
+        "ensureDataDirectory creates both stores on a fresh directory" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-fresh-test-")
+            try {
+                DataDirectoryConfig.ensureDataDirectory(tempDir)
+
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe true
+                Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe true
+                ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath(tempDir).toString())
+                    .journalId().isNotBlank() shouldBe true
+                HistoryDatabase(DataDirectoryConfig.historyDatabasePath(tempDir)).verifyInitialized()
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory leaves an initialized directory untouched" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-ready-test-")
+            try {
+                DataDirectoryConfig.initializeDataDirectory(tempDir)
+                val executionBefore = Files.readAllBytes(DataDirectoryConfig.executionDatabasePath(tempDir))
+
+                DataDirectoryConfig.ensureDataDirectory(tempDir)
+
+                Files.readAllBytes(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe executionBefore
+                HistoryDatabase(DataDirectoryConfig.historyDatabasePath(tempDir)).verifyInitialized()
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory resumes an interrupted initialization" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-resume-test-")
+            try {
+                Files.createFile(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE))
+
+                DataDirectoryConfig.ensureDataDirectory(tempDir)
+
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe true
+                Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe true
+                Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory fails closed on a mixed directory" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-mixed-test-")
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            try {
+                Files.writeString(historyDb, "half-copied store")
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.ensureDataDirectory(tempDir) }
+
+                Files.readString(historyDb) shouldBe "half-copied store"
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
     }
 }

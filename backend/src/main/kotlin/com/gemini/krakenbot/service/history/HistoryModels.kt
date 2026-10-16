@@ -178,6 +178,17 @@ data class HistoryPage<out T>(
     val hasMore: Boolean,
 )
 
+/**
+ * Range-wide trade aggregates for the History stat cards. Costs and fees are summed
+ * exactly as the trade table presents them (Kraken quote-denominated amounts).
+ */
+data class HistoryTradeSummary(
+    val totalTrades: Long = 0L,
+    val totalVolumeUsd: BigDecimal = BigDecimal.ZERO,
+    val totalFeesPaid: BigDecimal = BigDecimal.ZERO,
+    val avgFeeRatePercent: BigDecimal = BigDecimal.ZERO,
+)
+
 data class HistoryTrade(
     val accountIdentityDigest: String,
     val tradeId: String,
