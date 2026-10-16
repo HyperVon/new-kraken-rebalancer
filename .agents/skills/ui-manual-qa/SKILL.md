@@ -80,7 +80,7 @@ Run these commands from the repository:
     RUN_DIR=$(mktemp -d)
     cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
     # Set simulation: true, dryRun: true, and a short loop delay in the copied file.
-    # From RUN_DIR, initialize once with --initialize-data, then start the jar.
+    # From RUN_DIR, start the jar (fresh stores are created automatically).
     # Wait for curl -sf http://localhost:8080/api/health
     QA_DIR=$(mktemp -d /tmp/ui-manual-qa.XXXXXX)
 

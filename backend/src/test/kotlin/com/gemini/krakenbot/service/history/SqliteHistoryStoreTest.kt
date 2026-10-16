@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.test.runTest
@@ -592,6 +593,105 @@ class SqliteHistoryStoreTest : StringSpec() {
                     ),
                 )
                 combined.items.map { it.tradeId } shouldBe listOf("BTC-USDT")
+            }
+        }
+
+        "queryTradeSummary aggregates trade count, volume, fees, and fee rate for the filter" {
+            withStore { store, _ ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 500L
+                store.beginSyncWindow(
+                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "trade-summary", startSec, endSec),
+                )
+                val entries = listOf(
+                    tradeEntry("BTC-USD", Instant.ofEpochSecond(startSec + 1)),
+                    tradeEntry("ETH-USD", Instant.ofEpochSecond(startSec + 2)).copy(
+                        pair = "XETHZUSD",
+                        baseAsset = "ETH",
+                    ),
+                    tradeEntry("BTC-USDT", Instant.ofEpochSecond(startSec + 3)).copy(
+                        pair = "XBTUSDT",
+                        quoteCurrency = "USDT",
+                    ),
+                )
+                store.commitTradePage(
+                    HistoryPageRequest(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.TRADES,
+                        scanId = "trade-summary",
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        committedAt = Instant.ofEpochSecond(endSec),
+                    ),
+                    ExchangeHistoryPage(
+                        entries = entries,
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        nextCursor = null,
+                        count = entries.size.toLong(),
+                        rawSize = entries.size,
+                        valid = true,
+                    ),
+                ).state shouldBe HistorySyncState.COMPLETE
+
+                val summary = store.queryTradeSummary(HistoryEventQuery(accountIdentityDigest = accountDigest))
+                summary.totalTrades shouldBe 3L
+                summary.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("15000.0")
+                summary.totalFeesPaid shouldBeEqualComparingTo BigDecimal("24.0")
+                summary.avgFeeRatePercent shouldBeEqualComparingTo BigDecimal("0.16")
+
+                val btcOnly = store.queryTradeSummary(
+                    HistoryEventQuery(accountIdentityDigest = accountDigest, assetKey = "BTC"),
+                )
+                btcOnly.totalTrades shouldBe 2L
+                btcOnly.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("10000.0")
+            }
+        }
+
+        "queryTradeSummary counts but excludes rows with unparsable cost or fee strings" {
+            withStore { store, _ ->
+                val startSec = 1_700_000_000L
+                val endSec = startSec + 500L
+                store.beginSyncWindow(
+                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "trade-summary-invalid", startSec, endSec),
+                )
+                val entries = listOf(
+                    tradeEntry("BTC-USD", Instant.ofEpochSecond(startSec + 1)),
+                    tradeEntry("ETH-USD", Instant.ofEpochSecond(startSec + 2)).copy(
+                        cost = "not-a-number",
+                        fee = "??",
+                    ),
+                    tradeEntry("SOL-USD", Instant.ofEpochSecond(startSec + 3)).copy(fee = "??"),
+                )
+                store.commitTradePage(
+                    HistoryPageRequest(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.TRADES,
+                        scanId = "trade-summary-invalid",
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        committedAt = Instant.ofEpochSecond(endSec),
+                    ),
+                    ExchangeHistoryPage(
+                        entries = entries,
+                        startSec = startSec,
+                        endSec = endSec,
+                        requestedCursor = null,
+                        nextCursor = null,
+                        count = entries.size.toLong(),
+                        rawSize = entries.size,
+                        valid = true,
+                    ),
+                ).state shouldBe HistorySyncState.COMPLETE
+
+                val summary = store.queryTradeSummary(HistoryEventQuery(accountIdentityDigest = accountDigest))
+                summary.totalTrades shouldBe 3L
+                summary.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("10000.0")
+                summary.totalFeesPaid shouldBeEqualComparingTo BigDecimal("8.0")
+                summary.avgFeeRatePercent shouldBeEqualComparingTo BigDecimal("0.08")
             }
         }
 

@@ -48,6 +48,8 @@ KrakenApiConstants:
   ASSET_CLASS_TOKENIZED_ASSET: "tokenized_asset"
   FIELD_RESULT: "result"
   FIELD_IBAN: "iban"
+  FIELD_QUERY_FROM: "query_from"
+  FIELD_QUERY_TO: "query_to"
   FIELD_ERROR: "error"
   FIELD_COUNT: "count"
   FIELD_TRADES: "trades"

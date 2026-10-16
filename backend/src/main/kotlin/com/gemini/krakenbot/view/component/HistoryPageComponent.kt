@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
 import com.gemini.krakenbot.service.history.HistoryEventFilterOptions
@@ -13,12 +14,16 @@ import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySyncStatus
 import com.gemini.krakenbot.service.history.HistoryTrade
+import com.gemini.krakenbot.service.history.HistoryTradeSummary
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.brandWithMode
@@ -31,6 +36,10 @@ import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.statusCard
+import com.gemini.krakenbot.view.util.td
+import com.gemini.krakenbot.view.util.th
+import com.gemini.krakenbot.view.util.tr
 import com.gemini.krakenbot.view.util.withQuery
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
@@ -51,11 +60,8 @@ import kotlinx.html.script
 import kotlinx.html.select
 import kotlinx.html.table
 import kotlinx.html.tbody
-import kotlinx.html.td
-import kotlinx.html.th
 import kotlinx.html.thead
 import kotlinx.html.title
-import kotlinx.html.tr
 import kotlinx.html.unsafe
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -76,6 +82,7 @@ data class HistoryPageData(
     val syncStatuses: List<HistorySyncStatus>,
     val accountAvailable: Boolean,
     val filterOptions: HistoryEventFilterOptions = HistoryEventFilterOptions(),
+    val tradeSummary: HistoryTradeSummary = HistoryTradeSummary(),
 )
 
 class HistoryPageComponent {
@@ -96,6 +103,7 @@ class HistoryPageComponent {
                 }
                 renderSync(data, csrfToken)
                 renderToolbar(data)
+                renderStatsGrid(data)
                 renderValueChart(data)
                 renderCheckpointChart(data)
                 renderTrades(data)
@@ -227,6 +235,19 @@ class HistoryPageComponent {
         }
     }
 
+    private fun DIV.renderStatsGrid(data: HistoryPageData) {
+        div(CssClass.History.StatsGrid) {
+            HistoryStatCardDefinition.entries.forEach { card ->
+                statusCard(
+                    title = card.title,
+                    iconSvg = card.iconSvg,
+                    value = card.formatValue(data),
+                    valueId = card.valueId,
+                )
+            }
+        }
+    }
+
     private fun DIV.renderValueChart(data: HistoryPageData) {
         val observations = data.observations.sortedBy { it.observedAt }
         val hasCompleteValue = observations.any {
@@ -294,15 +315,43 @@ class HistoryPageComponent {
                         id = HtmlIds.HISTORY_TRADES_BODY
                         if (data.trades.items.isEmpty()) emptyRow(TRADE_COLUMNS)
                         data.trades.items.forEach { t ->
-                            tr {
-                                td { +(t.time?.let(timeFormatter::format) ?: t.rawTime.orEmpty()) }
-                                td { +t.pair.orEmpty() }
-                                td { +t.type.orEmpty() }
-                                td { +t.volume.orEmpty() }
-                                td { +t.price.orEmpty() }
-                                td { +t.cost.orEmpty() }
-                                // Kraken does not establish the trade fee denomination in this response.
-                                td { +"${t.fee.orEmpty()} ${t.feeCurrency ?: ViewText.HISTORY_UNKNOWN_CURRENCY}" }
+                            tr(CssClass.Table.Hoverable) {
+                                td(CssClass.Table.MonoCol) {
+                                    (t.time?.let(timeFormatter::format) ?: t.rawTime?.takeIf { it.isNotBlank() })
+                                        ?.let { title = it }
+                                    +(t.time?.let(Formatter::formatCompactTradeTime) ?: t.rawTime.orEmpty())
+                                }
+                                td(CssClass.Table.SymbolCol) {
+                                    +Formatter.formatPair(t.baseAsset, t.quoteCurrency, t.pair)
+                                }
+                                td {
+                                    val side = t.type.orEmpty()
+                                    val badgeClass = when (side.lowercase()) {
+                                        OrderSide.BUY.name.lowercase() -> CssClass.Badge.Buy
+                                        OrderSide.SELL.name.lowercase() -> CssClass.Badge.Sell
+                                        else -> CssClass.Badge.Info
+                                    }
+                                    span(badgeClass) { +side.uppercase() }
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    t.volume?.toBigDecimalOrNull()?.let { +Formatter.formatQuantity(it) }
+                                        ?: +t.volume.orEmpty()
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    +Formatter.formatPriceOrDash(t.price?.toBigDecimalOrNull())
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    t.cost?.toBigDecimalOrNull()?.let { +Formatter.formatSignedUsd(it) }
+                                        ?: +t.cost.orEmpty()
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    // Kraken omits a fee currency on TradesHistory; spot trade fees settle in
+                                    // the quote currency (confirmed against matching USD ledger fee legs).
+                                    +Formatter.formatFeeWithCurrency(
+                                        t.fee?.toBigDecimalOrNull(),
+                                        t.feeCurrency ?: t.quoteCurrency,
+                                    )
+                                }
                             }
                         }
                     }
@@ -333,13 +382,38 @@ class HistoryPageComponent {
                         id = HtmlIds.HISTORY_LEDGERS_BODY
                         if (data.ledgers.items.isEmpty()) emptyRow(LEDGER_COLUMNS)
                         data.ledgers.items.forEach { l ->
-                            tr {
-                                td { +(l.time?.let(timeFormatter::format) ?: l.rawTime.orEmpty()) }
-                                td { +listOfNotNull(l.type, l.subtype).joinToString(" / ") }
-                                td { +l.asset.orEmpty() }
-                                td { +l.amount.orEmpty() }
-                                td { +l.fee.orEmpty() }
-                                td { +l.balance.orEmpty() }
+                            tr(CssClass.Table.Hoverable) {
+                                td(CssClass.Table.MonoCol) {
+                                    (l.time?.let(timeFormatter::format) ?: l.rawTime?.takeIf { it.isNotBlank() })
+                                        ?.let { title = it }
+                                    +(l.time?.let(Formatter::formatCompactTradeTime) ?: l.rawTime.orEmpty())
+                                }
+                                td {
+                                    val type = l.type.orEmpty().replaceFirstChar { c -> c.uppercase() }
+                                    val subtype = l.subtype.orEmpty()
+                                    val showSubtype = subtype.isNotBlank() &&
+                                        !subtype.equals("tradespot", ignoreCase = true) &&
+                                        !subtype.equals(l.type, ignoreCase = true)
+                                    +if (showSubtype) "$type ($subtype)" else type
+                                }
+                                td(CssClass.Table.SymbolCol) {
+                                    +Asset.normalizeLedgerAsset(l.asset.orEmpty())
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    l.amount?.toBigDecimalOrNull()?.let { +Formatter.formatQuantity(it) }
+                                        ?: +l.amount.orEmpty()
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    // Kraken settles ledger fees in the ledger's own asset field.
+                                    +Formatter.formatFeeWithCurrency(
+                                        l.fee?.toBigDecimalOrNull(),
+                                        Asset.normalizeLedgerAsset(l.asset.orEmpty()),
+                                    )
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    l.balance?.toBigDecimalOrNull()?.let { +Formatter.formatQuantity(it) }
+                                        ?: +l.balance.orEmpty()
+                                }
                             }
                         }
                     }
@@ -351,7 +425,7 @@ class HistoryPageComponent {
 
     private fun kotlinx.html.TBODY.emptyRow(columns: Int) {
         tr {
-            td(CssClass.History.EmptyTableCell.value) {
+            td(CssClass.History.EmptyTableCell) {
                 colSpan = columns.toString()
                 +ViewText.HISTORY_NO_DATA
             }
@@ -377,7 +451,8 @@ class HistoryPageComponent {
                 }
             }
             span(CssClass.History.MutedSmallText) {
-                +"${offset + 1}–${offset + page.items.size}${page.total?.let { " of $it" }.orEmpty()}"
+                val shown = if (page.items.isEmpty()) "0–0" else "${offset + 1}–${offset + page.items.size}"
+                +"$shown${page.total?.let { " of $it" }.orEmpty()}"
             }
             if (page.hasMore) {
                 a(
@@ -519,4 +594,66 @@ class HistoryPageComponent {
         const val SVG_HEIGHT = 240
         const val SVG_PAD = 32
     }
+}
+
+private enum class HistoryStatCardDefinition(
+    val title: String,
+    val iconSvg: String,
+    val valueId: String,
+    val formatValue: (HistoryPageData) -> String,
+) {
+    PERIOD_HIGH(
+        ViewText.PERIOD_HIGH,
+        Icons.TREND_UP,
+        HtmlIds.STAT_PERIOD_HIGH,
+        { data ->
+            Formatter.formatUsdOrDash(
+                data.observations.mapNotNull { it.totalUsd }.maxOrNull(),
+                PrecisionConstants.SCALE_USD,
+                PrecisionConstants.SCALE_USD,
+            )
+        },
+    ),
+    TOTAL_TRADES(
+        ViewText.HISTORY_TOTAL_TRADES,
+        Icons.CHART,
+        HtmlIds.STAT_TOTAL_TRADES,
+        { data -> Formatter.formatCount(data.tradeSummary.totalTrades) },
+    ),
+    TOTAL_VOLUME(
+        ViewText.HISTORY_TOTAL_VOLUME,
+        Icons.WALLET,
+        HtmlIds.STAT_TOTAL_VOLUME,
+        { data ->
+            Formatter.formatUsdOrDash(
+                data.tradeSummary.totalVolumeUsd,
+                PrecisionConstants.SCALE_USD,
+                PrecisionConstants.SCALE_USD,
+            )
+        },
+    ),
+    TOTAL_FEES(
+        ViewText.HISTORY_TOTAL_FEES,
+        Icons.DOLLAR_CIRCLE,
+        HtmlIds.STAT_TOTAL_FEES,
+        { data ->
+            Formatter.formatUsdOrDash(
+                data.tradeSummary.totalFeesPaid,
+                PrecisionConstants.SCALE_USD,
+                PrecisionConstants.SCALE_USD,
+            )
+        },
+    ),
+    AVG_FEE_RATE(
+        ViewText.HISTORY_AVG_FEE_RATE,
+        Icons.DOLLAR_CIRCLE,
+        HtmlIds.STAT_AVG_FEE_RATE,
+        { data ->
+            if (data.tradeSummary.totalVolumeUsd.signum() == 0) {
+                ViewText.EM_DASH
+            } else {
+                "${Formatter.formatPercent(data.tradeSummary.avgFeeRatePercent)}%"
+            }
+        },
+    ),
 }

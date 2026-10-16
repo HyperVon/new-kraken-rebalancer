@@ -56,7 +56,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         "getAuthenticatedAccountInfo parses and validates Kraken query date restrictions" {
             runTest {
                 val bounded = createService(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":"1700000000","queryTo":"1800000000"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"1700000000","query_to":"1800000000"}}""",
                 ).getAuthenticatedAccountInfo()
                 bounded shouldBe AuthenticatedAccountInfo(
                     identity = "AA00 ACCOUNT",
@@ -66,12 +66,12 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 )
 
                 val unrestricted = createService(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":"0","queryTo":"0"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"0","query_to":"0"}}""",
                 ).getAuthenticatedAccountInfo()
                 unrestricted shouldBe AuthenticatedAccountInfo("AA00 ACCOUNT", queryBoundsVerified = true)
 
                 val malformed = createService(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":"yesterday","queryTo":"0"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"yesterday","query_to":"0"}}""",
                 ).getAuthenticatedAccountInfo()
                 malformed?.queryBoundsVerified shouldBe false
                 malformed?.queryFromSec shouldBe null
@@ -82,12 +82,12 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         "getAuthenticatedAccountInfo rejects incomplete or invalid query date restrictions" {
             runTest {
                 val invalidResponses = listOf(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":"-1","queryTo":"0"}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":"1800000000","queryTo":"1700000000"}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":1.5,"queryTo":0}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryFrom":"9223372036854775808","queryTo":"0"}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","queryTo":"0"}}""",
-                    """{"error":[],"result":{"queryFrom":"0","queryTo":"0"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"-1","query_to":"0"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"1800000000","query_to":"1700000000"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":1.5,"query_to":0}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"9223372036854775808","query_to":"0"}}""",
+                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_to":"0"}}""",
+                    """{"error":[],"result":{"query_from":"0","query_to":"0"}}""",
                 )
 
                 invalidResponses.forEach { response ->

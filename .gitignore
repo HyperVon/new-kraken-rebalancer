@@ -25,6 +25,10 @@ rebalancer-config.json.tmp
 trade-history.json
 portfolio-stats.json
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
+rebalancer-data-v1/
 
 # Local directories
 /bin/

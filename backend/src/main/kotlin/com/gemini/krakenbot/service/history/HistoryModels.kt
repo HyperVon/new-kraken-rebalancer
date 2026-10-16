@@ -178,6 +178,19 @@ data class HistoryPage<out T>(
     val hasMore: Boolean,
 )
 
+/**
+ * Range-wide trade aggregates for the History stat cards. Costs and fees are summed
+ * exactly as the trade table presents them (Kraken quote-denominated amounts).
+ * Rows whose stored cost/fee strings do not parse as decimals still count in
+ * [totalTrades] (they appear in the table) but are excluded from the sums.
+ */
+data class HistoryTradeSummary(
+    val totalTrades: Long = 0L,
+    val totalVolumeUsd: BigDecimal = BigDecimal.ZERO,
+    val totalFeesPaid: BigDecimal = BigDecimal.ZERO,
+    val avgFeeRatePercent: BigDecimal = BigDecimal.ZERO,
+)
+
 data class HistoryTrade(
     val accountIdentityDigest: String,
     val tradeId: String,
@@ -186,7 +199,7 @@ data class HistoryTrade(
     val pair: String?,
     val baseAsset: String?,
     val quoteCurrency: String?,
-    /** Kraken does not establish a trade fee denomination in this response. */
+    /** Kraken does not report a fee currency; spot trade fees settle in the quote currency. */
     val feeCurrency: String? = null,
     val time: Instant?,
     val rawTime: String?,

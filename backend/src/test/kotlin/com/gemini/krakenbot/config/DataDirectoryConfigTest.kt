@@ -5,9 +5,13 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldEndWith
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileTime
 
 class DataDirectoryConfigTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -83,6 +87,60 @@ class DataDirectoryConfigTest : StringSpec() {
             }
         }
 
+        "initializeDataDirectory refuses a marker placed over pre-existing foreign stores" {
+            val tempDir = Files.createTempDirectory("data-dir-stray-marker-test-")
+            val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            val marker = tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)
+            val foreign = "foreign history data"
+            try {
+                Files.writeString(historyDb, foreign)
+                Files.setLastModifiedTime(historyDb, FileTime.fromMillis(1_000))
+                Files.createFile(marker)
+                Files.setLastModifiedTime(marker, FileTime.fromMillis(5_000))
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.initializeDataDirectory(tempDir) }
+
+                Files.readString(historyDb) shouldBe foreign
+                Files.exists(executionDb) shouldBe false
+                Files.exists(marker) shouldBe true
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory fails when another process holds the initialization lock" {
+            val tempDir = Files.createTempDirectory("data-dir-init-lock-test-")
+            val lockFile = tempDir.resolve(DataDirectoryConfig.INITIALIZATION_LOCK_FILE)
+            try {
+                FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+                    channel.tryLock().use {
+                        val error = shouldThrow<IllegalStateException> {
+                            DataDirectoryConfig.ensureDataDirectory(tempDir)
+                        }
+                        error.message shouldContain "another process"
+                    }
+                }
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "initialization lock is released when ensure fails" {
+            val tempDir = Files.createTempDirectory("data-dir-lock-release-test-")
+            val lockFile = tempDir.resolve(DataDirectoryConfig.INITIALIZATION_LOCK_FILE)
+            try {
+                Files.writeString(DataDirectoryConfig.historyDatabasePath(tempDir), "half copy")
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.ensureDataDirectory(tempDir) }
+
+                FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+                    channel.tryLock().use { }
+                }
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
         "initializeDataDirectory recovers an incomplete execution database under its initialization marker" {
             val tempDir = Files.createTempDirectory("data-dir-incomplete-execution-test-")
             val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
@@ -146,6 +204,66 @@ class DataDirectoryConfigTest : StringSpec() {
                 Files.exists(executionDb) shouldBe false
                 Files.readString(marker) shouldBe "orphaned identity"
                 Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory creates both stores on a fresh directory" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-fresh-test-")
+            try {
+                DataDirectoryConfig.ensureDataDirectory(tempDir)
+
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe true
+                Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe true
+                ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath(tempDir).toString())
+                    .journalId().isNotBlank() shouldBe true
+                HistoryDatabase(DataDirectoryConfig.historyDatabasePath(tempDir)).verifyInitialized()
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory leaves an initialized directory untouched" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-ready-test-")
+            try {
+                DataDirectoryConfig.initializeDataDirectory(tempDir)
+                val executionBefore = Files.readAllBytes(DataDirectoryConfig.executionDatabasePath(tempDir))
+
+                DataDirectoryConfig.ensureDataDirectory(tempDir)
+
+                Files.readAllBytes(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe executionBefore
+                HistoryDatabase(DataDirectoryConfig.historyDatabasePath(tempDir)).verifyInitialized()
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory resumes an interrupted initialization" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-resume-test-")
+            try {
+                Files.createFile(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE))
+
+                DataDirectoryConfig.ensureDataDirectory(tempDir)
+
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe true
+                Files.exists(DataDirectoryConfig.historyDatabasePath(tempDir)) shouldBe true
+                Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe false
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "ensureDataDirectory fails closed on a mixed directory" {
+            val tempDir = Files.createTempDirectory("data-dir-ensure-mixed-test-")
+            val historyDb = DataDirectoryConfig.historyDatabasePath(tempDir)
+            try {
+                Files.writeString(historyDb, "half-copied store")
+
+                shouldThrow<IllegalStateException> { DataDirectoryConfig.ensureDataDirectory(tempDir) }
+
+                Files.readString(historyDb) shouldBe "half-copied store"
+                Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe false
             } finally {
                 tempDir.toFile().deleteRecursively()
             }

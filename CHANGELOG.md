@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.118] - 2026-10-16
+
+### Added
+
+- **History stat cards**: Period High, Total Trades, Total Volume Traded, Total
+  Fees Paid, and Avg Fee Rate for the selected range and filters, rendered
+  above the History charts.
+
+### Changed
+
+- **Automatic data-store initialization**: a fresh data directory creates
+  `execution.db` and `history.db` at startup and resumes an interrupted
+  initialization; `--initialize-data` remains available for explicit
+  initialization, and a directory holding only one store still fails closed.
+- **History table rendering**: compact times with full timestamp tooltips,
+  `BASE/QUOTE` pair labels, BUY/SELL side badges, tiered volume/price
+  formatting, quote-currency-aware fee cells (em dash for zero), normalized
+  ledger asset symbols, and `Trade (buy)`-style ledger types.
+
+### Fixed
+
+- **History synchronization**: verify Kraken API-key query bounds from the
+  snake_case `query_from`/`query_to` fields (`'0'` means unbounded), so account
+  sync is no longer blocked with `API_KEY_RESTRICTIONS_UNAVAILABLE`.
+- **Dashboard hero chart**: replace grid and axis labels (which could repeat the
+  same abbreviated value three times) with a gradient area sparkline plus a
+  signed this-run change chip.
+- **History pagination**: render `0–0` instead of `1–0` when a page is empty.
+
 ## [6.17.117] - 2026-10-15
 
 ### Fixed

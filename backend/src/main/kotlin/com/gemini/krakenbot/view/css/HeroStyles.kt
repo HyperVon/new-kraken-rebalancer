@@ -112,10 +112,35 @@ object HeroStyles {
             overflow = Overflow.visible
         }
 
-        CssClass.Hero.TrendGrid.querySelector {
-            put("stroke", CssTheme.colorGlassBorderHover.value)
-            put("stroke-opacity", "0.9")
-            put("stroke-width", "1.2")
+        CssClass.Hero.TrendDeltaRow.querySelector {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.5.rem
+            marginTop = 0.5.rem
+        }
+
+        "${CssClass.Hero.TrendDeltaPositive.querySelector}, ${CssClass.Hero.TrendDeltaNegative.querySelector}" {
+            padding = Padding(0.125.rem, 0.625.rem)
+            borderRadius = CssTheme.radiusPill
+            fontFamily = CssTheme.fontMono
+            fontSize = 0.75.rem
+            fontWeight = FontWeight.w700
+        }
+
+        CssClass.Hero.TrendDeltaPositive.querySelector {
+            color = CssTheme.colorSuccess
+            background = "rgba(16, 185, 129, 0.16)"
+        }
+
+        CssClass.Hero.TrendDeltaNegative.querySelector {
+            color = CssTheme.colorDanger
+            background = "rgba(239, 68, 68, 0.16)"
+        }
+
+        CssClass.Hero.TrendDeltaLabel.querySelector {
+            fontFamily = CssTheme.fontMono
+            fontSize = 0.6875.rem
+            color = CssTheme.colorTextMuted
         }
 
         CssClass.Hero.TrendLine.querySelector {
@@ -131,12 +156,6 @@ object HeroStyles {
             put("fill", ChartProps.COLOR_BLUE)
             put("stroke", CssTheme.colorSurface1.value)
             put("stroke-width", "2.5")
-        }
-
-        CssClass.Hero.TrendAxisLabel.querySelector {
-            put("fill", CssTheme.colorTextSecondary.value)
-            put("font-size", "13")
-            put("font-family", CssTheme.fontMono)
         }
 
         CssClass.Hero.TrendEmpty.querySelector {

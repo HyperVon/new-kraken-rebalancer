@@ -153,7 +153,7 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 - **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries current-cycle snapshots; the hero trend uses up to 24 in-memory cycles from one mode and credential scope, clears when that source changes, and never reads persisted history. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
-- **Data-store safety**: `DataDirectoryConfig` explicitly initializes fresh `execution.db` and `history.db` files. Normal startup refuses to create or migrate a missing file-backed store. `DataDirectoryIdentity` pins account-scoped stores in the directory to one verified Kraken account.
+- **Data-store safety**: `DataDirectoryConfig.ensureDataDirectory()` creates fresh `execution.db` and `history.db` files on first start and resumes an interrupted initialization; a mixed directory holding only one store fails closed instead of recreating a missing file. `DataDirectoryIdentity` pins account-scoped stores in the directory to one verified Kraken account.
 
 ---
 

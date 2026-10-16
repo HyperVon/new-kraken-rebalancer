@@ -21,9 +21,9 @@ identifies coverage areas; it is not a record of a particular test run.
 ## Data and initialization boundaries
 
 The application uses separate `execution.db` and `history.db` files under the
-configured data directory. Run `--initialize-data` explicitly once before
-normal startup. Normal startup does not create or migrate missing file-backed
-databases. The execution journal identity marker and the shared
+configured data directory. Fresh directories are initialized automatically at
+startup; a mixed directory holding only one store fails closed instead of
+recreating a missing file. The execution journal identity marker and the shared
 `account-identity.sha256` file must remain with the databases. Tests use
 in-memory or temporary SQLite paths and do not touch operator data.
 

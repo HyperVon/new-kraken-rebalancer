@@ -110,9 +110,10 @@ interrupted submissions in the active execution journal. The application also
 starts `HistoryObservationRecorder` before the loop. `DataDirectoryConfig`
 locates separate `execution.db` and `history.db` files under
 `KRAKEN_DATA_DIR`, `-Dkraken.data.dir`, or the default
-`rebalancer-data-v1` directory. Initialize fresh files explicitly with
-`--initialize-data`; normal startup refuses to create or migrate missing
-file-backed stores. `DataDirectoryIdentity` binds account-scoped stores to one
+`rebalancer-data-v1` directory. `DataDirectoryConfig.ensureDataDirectory()`
+creates fresh stores on first start and resumes an interrupted initialization;
+a mixed directory holding only one store fails closed.
+`DataDirectoryIdentity` binds account-scoped stores to one
 verified account with `account-identity.sha256`. The application does not
 migrate the former reporting or Actual stores.
 
