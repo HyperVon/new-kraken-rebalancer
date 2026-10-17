@@ -224,6 +224,15 @@ visible in the feed's sync status. The History UI exposes per-feed progress,
 time ranges, event filters, paginated trade and ledger tables, a portfolio-value
 chart, and ledger-reported balance checkpoints.
 
+History write transactions use SQLite `IMMEDIATE` mode, acquiring the writer
+reservation before reading transaction state. Sync startup/status changes and
+asynchronous cycle recording can overlap; acquiring the writer first avoids a
+deferred read-to-write upgrade failing immediately with `SQLITE_BUSY`. The
+existing five-second busy timeout bounds contention with another writer.
+Page exceptions are logged with their stack traces, feed, scan, window, and
+restart count. Failures outside page handling are also logged by the background
+job before propagation. Cancellation is propagated without a failure log.
+
 Simulation cycle samples use an independent process-session scope. Simulation
 does not authenticate an account or synchronize Kraken trades and ledgers, so
 its values are not represented as account history. The Dashboard's latest

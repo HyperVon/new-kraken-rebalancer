@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.119] - 2026-10-17
+
+### Fixed
+
+- **History sync SQLite contention**: reserve the database writer before
+  transactional reads, preventing immediate `SQLITE_BUSY` lock-upgrade failures
+  when sync state/page commits overlap with other History writers. Existing
+  databases and the bounded busy timeout are retained.
+- **History sync diagnostics**: log the original exception and stack trace with
+  feed, time window, scan, and retry context. Background startup and persistence
+  failures also retain their causes and produce an error log; cancellation
+  continues to propagate without failure logging.
+
 ## [6.17.118] - 2026-10-16
 
 ### Added

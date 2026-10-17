@@ -1,9 +1,14 @@
 package com.gemini.krakenbot.service.history
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.classic.spi.ThrowableProxy
+import ch.qos.logback.core.read.ListAppender
 import com.gemini.krakenbot.config.DataDirectoryIdentity
 import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.service.AuthenticatedAccountInfo
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.assertions.throwables.shouldThrow
@@ -17,8 +22,15 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import org.slf4j.LoggerFactory
+import java.sql.SQLException
 import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -415,7 +427,8 @@ class HistorySynchronizerTest : StringSpec() {
         }
 
         "throws IllegalStateException when initial authentication fails" {
-            coEvery { krakenService.withStableBackend<Any?>(any()) } throws RuntimeException("Network down")
+            val original = RuntimeException("Network down")
+            coEvery { krakenService.withStableBackend<Any?>(any()) } throws original
 
             runTest {
                 val synchronizer = HistorySynchronizer(
@@ -425,9 +438,10 @@ class HistorySynchronizerTest : StringSpec() {
                     dataDirectoryIdentity = dataDirectoryIdentity,
                     store = store,
                 )
-                shouldThrow<IllegalStateException> {
+                val failure = shouldThrow<IllegalStateException> {
                     synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_010_000)
                 }
+                failure.cause shouldBe original
             }
         }
 
@@ -633,6 +647,99 @@ class HistorySynchronizerTest : StringSpec() {
                 val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_010_000)
                 status.state shouldBe HistorySyncState.FAILED
                 status.lastError shouldBe "History page could not be validated after one bounded restart."
+            }
+        }
+
+        "logs SQL page failures with the original stack trace and bounded retry context" {
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.beginSyncWindow(any()) } answers { runningStatus(firstArg<HistorySyncWindow>()) }
+            coEvery { krakenService.getAccountTradePage(any(), any(), any(), any()) } returns ExchangeHistoryPage(
+                entries = emptyList(),
+                startSec = 1_700_000_000,
+                endSec = 1_700_010_000,
+                requestedCursor = null,
+                nextCursor = null,
+                count = 0L,
+                rawSize = 0,
+                valid = true,
+            )
+            val failure = SQLException("[SQLITE_BUSY] database is locked", "SQLITE_BUSY", 5)
+            val rootCause = IllegalStateException("Synthetic storage failure")
+            failure.initCause(rootCause)
+            coEvery { store.commitTradePage(any(), any()) } throws failure
+            coEvery { store.failSync(any(), any(), any(), any()) } just runs
+
+            withHistoryLogs { events ->
+                runTest {
+                    val synchronizer = HistorySynchronizer(
+                        applicationScope = backgroundScope,
+                        krakenService = krakenService,
+                        configService = configService,
+                        dataDirectoryIdentity = dataDirectoryIdentity,
+                        store = store,
+                    )
+                    val status = synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_010_000)
+                    status.state shouldBe HistorySyncState.FAILED
+                    val failures = events.filter { it.formattedMessage.contains("page failed") }
+                    failures.size shouldBe 2
+                    failures.forEachIndexed { restart, event ->
+                        event.formattedMessage.contains("History trades page failed (scan=") shouldBe true
+                        event.formattedMessage.contains("window=1700000000..1700010000") shouldBe true
+                        event.formattedMessage.contains("restart=$restart/1") shouldBe true
+                        event.formattedMessage.contains("ACCOUNT_1") shouldBe false
+                        event.formattedMessage.contains(status.accountIdentityDigest) shouldBe false
+                        val proxy = event.throwableProxy as ThrowableProxy
+                        proxy.throwable shouldBe failure
+                        proxy.message shouldBe "[SQLITE_BUSY] database is locked"
+                        proxy.cause.message shouldBe "Synthetic storage failure"
+                        proxy.stackTraceElementProxyArray.isNotEmpty() shouldBe true
+                    }
+                    coVerify(exactly = 2) { store.commitTradePage(any(), any()) }
+                }
+            }
+        }
+
+        "logs failures before the first page and rethrows them from the background job" {
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-1"
+            coEvery { krakenService.getAuthenticatedAccountInfo() } returns
+                AuthenticatedAccountInfo("ACCOUNT_1", queryBoundsVerified = true)
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            val failure = SQLException("Synthetic database unavailable")
+            coEvery { store.beginSyncWindow(any()) } throws failure
+
+            withHistoryLogs { events ->
+                runTest {
+                    var uncaught: Throwable? = null
+                    val scope = CoroutineScope(
+                        StandardTestDispatcher(testScheduler) + SupervisorJob() +
+                            CoroutineExceptionHandler { _, error -> uncaught = error },
+                    )
+                    try {
+                        val synchronizer = HistorySynchronizer(
+                            applicationScope = scope,
+                            krakenService = krakenService,
+                            configService = configService,
+                            dataDirectoryIdentity = dataDirectoryIdentity,
+                            store = store,
+                        )
+                        synchronizer.startSync(HistoryFeed.LEDGERS, 1_700_000_000, 1_700_010_000).join()
+                        uncaught shouldBe failure
+                        val event = events.single()
+                        event.formattedMessage shouldBe
+                            "History ledgers sync failed (window=1700000000..1700010000)."
+                        (event.throwableProxy as ThrowableProxy).throwable shouldBe failure
+                        coVerify(exactly = 0) { krakenService.getAccountLedgerPage(any(), any(), any()) }
+                    } finally {
+                        scope.cancel()
+                    }
+                }
             }
         }
 
@@ -899,19 +1006,25 @@ class HistorySynchronizerTest : StringSpec() {
             coEvery { krakenService.getAccountTradePage(any(), any(), any(), any()) } throws
                 CancellationException("test cancellation")
 
-            runTest {
-                val synchronizer = HistorySynchronizer(
-                    applicationScope = backgroundScope,
-                    krakenService = krakenService,
-                    configService = configService,
-                    dataDirectoryIdentity = dataDirectoryIdentity,
-                    store = store,
-                )
+            withHistoryLogs { events ->
+                runTest {
+                    val synchronizer = HistorySynchronizer(
+                        applicationScope = backgroundScope,
+                        krakenService = krakenService,
+                        configService = configService,
+                        dataDirectoryIdentity = dataDirectoryIdentity,
+                        store = store,
+                    )
 
-                shouldThrow<CancellationException> {
-                    synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+                    shouldThrow<CancellationException> {
+                        synchronizer.syncWindow(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+                    }
+                    val job = synchronizer.startSync(HistoryFeed.TRADES, 1_700_000_000, 1_700_000_100)
+                    job.join()
+                    job.isCancelled shouldBe true
+                    events shouldBe emptyList()
+                    coVerify(exactly = 0) { store.failSync(any(), any(), any(), any()) }
                 }
-                coVerify(exactly = 0) { store.failSync(any(), any(), any(), any()) }
             }
         }
 
@@ -935,6 +1048,19 @@ class HistorySynchronizerTest : StringSpec() {
                 }
                 failure.message shouldBe "History sync requires an authenticated, bound Kraken account."
             }
+        }
+    }
+
+    private suspend fun withHistoryLogs(block: suspend (List<ILoggingEvent>) -> Unit) {
+        val logger = LoggerFactory.getLogger(HistorySynchronizer::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        try {
+            block(appender.list)
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
         }
     }
 }
