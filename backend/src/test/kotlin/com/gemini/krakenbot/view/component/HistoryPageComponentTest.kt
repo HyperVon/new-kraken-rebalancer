@@ -64,7 +64,7 @@ class HistoryPageComponentTest : StringSpec() {
             val html = render(emptyData)
             html shouldContain
                 "Kraken account identity is not verified yet; imported history appears after the first successful authentication."
-            html shouldContain "Enter an asset (for example XXBT) in the filter to chart its exchange-reported balance."
+            html shouldContain "Select an asset in the filter to chart its exchange-reported balance."
             html shouldContain
                 "No historical data available yet. Synchronize account history to populate trades and ledger records."
             html shouldContain
@@ -190,7 +190,7 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html.countOccurrences("<select") shouldBe 3
+            html.countOccurrences("<select") shouldBe 4
             html shouldContain "name=\"asset\""
             html shouldContain "name=\"pair\""
             html shouldContain "name=\"type\""
@@ -282,6 +282,12 @@ class HistoryPageComponentTest : StringSpec() {
 
             val html = render(data)
             html.countChartShapes("<circle") shouldBe 4
+            html shouldContain "data-time=\"1699999900000\" data-value=\"50000.00\""
+            html shouldContain "2023-11-14 22:13:20 UTC · $55,000.00"
+            html shouldContain "data-history-zoom=\"reset\""
+            html shouldContain "data-history-view=\"points\""
+            html shouldContain "chart.umd.min.js"
+            html shouldContain "id=\"history-saved-views\""
             html shouldContain "Portfolio Value"
             html shouldContain "Asset Holdings Over Time (BTC)"
             html shouldContain "/static/rebalancer.js?v="
@@ -346,6 +352,7 @@ class HistoryPageComponentTest : StringSpec() {
             html.countChartShapes("<polyline") shouldBe 2
             html.countChartShapes("<circle") shouldBe 5
             html.countOccurrences("class=\"history-gap-marker\"") shouldBe 1
+            html shouldContain "data-time=\"1699999940000\" data-gap=\"true\""
             html shouldContain "Lines connect complete cycle samples; incomplete cycles break the line."
             html shouldContain "No values are inferred between samples."
         }

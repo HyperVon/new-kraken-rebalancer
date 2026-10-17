@@ -277,7 +277,9 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   Historical trades and ledgers sync in bounded pages and remain scoped to the
   verified account; changes in configured assets create separate value series.
   Asset, pair, and event-type dropdowns show choices from the selected account
-  and time range.
+  and time range. Save named views in your browser to recall favorite filters.
+  Interactive charts support value/time tooltips, line/point views, zoom,
+  earlier/later navigation, reset, and expansion.
   The value chart returns every observation up to 2,000 points; larger ranges
   are sampled across the full time span while retaining bucket endpoints,
   complete-value extrema, and incomplete-cycle markers. It connects adjacent

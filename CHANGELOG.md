@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.17.119] - 2026-10-17
+## [6.18.1] - 2026-10-17
 
 ### Fixed
 
@@ -18,6 +18,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   feed, time window, scan, and retry context. Background startup and persistence
   failures also retain their causes and produce an error log; cancellation
   continues to propagate without failure logging.
+
+## [6.18.0] - 2026-10-17
+
+### Added
+
+- **Interactive History charts**: exact value and UTC-time tooltips, readable
+  axes, line/point views, zoom, earlier/later navigation, reset, and an expanded
+  chart view. Incomplete samples still break the line; asset balances remain
+  individual exchange-reported checkpoints.
+- **Saved History views**: name and recall range/asset/pair/type selections in
+  this browser, replace a saved selection, or delete it.
+
+### Changed
+
+- **History layout**: restore a chart-first glass layout with compact grouped
+  filters, clear active range buttons, calmer sync details below the charts,
+  and controls that wrap on phones. Native SVG charts remain usable when the
+  chart library is unavailable.
 
 ## [6.17.118] - 2026-10-16
 
