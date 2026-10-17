@@ -51,7 +51,22 @@ class HistorySynchronizer(
         require(startSec <= endSec)
         synchronized(jobsLock) {
             jobs[feed]?.takeIf(Job::isActive)?.let { return it }
-            val job = applicationScope.launch { syncWindow(feed, startSec, endSec) }
+            val job = applicationScope.launch {
+                try {
+                    syncWindow(feed, startSec, endSec)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    log.error(
+                        "History {} sync failed (window={}..{}).",
+                        feed.name.lowercase(Locale.ROOT),
+                        startSec,
+                        endSec,
+                        error,
+                    )
+                    throw error
+                }
+            }
             jobs[feed] = job
             return job
         }
@@ -69,7 +84,7 @@ class HistorySynchronizer(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                throw IllegalStateException("History sync requires an authenticated, bound Kraken account.")
+                throw IllegalStateException("History sync requires an authenticated, bound Kraken account.", error)
             }
             val permittedStartSec = maxOf(startSec, identity.queryFromSec ?: startSec)
             val permittedEndSec = minOf(endSec, identity.queryToSec ?: endSec)
@@ -174,7 +189,15 @@ class HistorySynchronizer(
                     store.failSync(identity.digest, feed, status.scanId, reason)
                     return@withLock status.copy(state = HistorySyncState.FAILED, lastError = reason)
                 } catch (error: Exception) {
-                    log.warn("History {} page failed ({}).", feed.name.lowercase(Locale.ROOT), error::class.simpleName)
+                    log.warn(
+                        "History {} page failed (scan={}, window={}..{}, restart={}/1).",
+                        feed.name.lowercase(Locale.ROOT),
+                        status.scanId,
+                        scanStartSec,
+                        scanEndSec,
+                        restarts,
+                        error,
+                    )
                     if (restarts == 0) {
                         restarts++
                         store.failSync(identity.digest, feed, status.scanId, PAGE_RESTARTED)

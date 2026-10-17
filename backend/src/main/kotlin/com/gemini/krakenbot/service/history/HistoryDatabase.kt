@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.history
 
+import org.sqlite.SQLiteConfig
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
@@ -124,7 +125,12 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         }
     }
 
-    private fun openRawConnection(): Connection = DriverManager.getConnection(jdbcUrl)
+    // Reserve the writer before any transactional reads; deferred lock upgrades can fail
+    // immediately with SQLITE_BUSY when the trade, ledger, and cycle writers overlap.
+    private fun openRawConnection(): Connection = DriverManager.getConnection(
+        jdbcUrl,
+        SQLiteConfig().apply { setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE) }.toProperties(),
+    )
 
     private fun createSchema(connection: Connection) {
         connection.createStatement().use { statement ->
