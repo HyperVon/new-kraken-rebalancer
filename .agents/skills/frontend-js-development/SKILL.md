@@ -21,8 +21,11 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 
 The retained browser pages are Dashboard (`/`), Settings (`/settings`), and
 History (`/history`). Dashboard reports the latest current cycle only. History
-is rendered by the server; the client does not fetch exchange history, build
-its charts, or reconstruct past portfolio values.
+data and filters are rendered by the server. `History.kt` progressively
+enhances its SVG evidence markers with Chart.js tooltips, zoom/pan, view modes,
+and expansion; blocked chart dependencies leave the SVG visible. `HistoryViews.kt`
+stores named range/filter selections locally. The client does not fetch exchange
+history or reconstruct past portfolio values.
 
 ## SSE ownership and status semantics
 
@@ -60,8 +63,9 @@ Dashboard sorting preserves the selected column and direction when current
 cycle rows are replaced. Asset symbols sort as strings; numeric columns prefer
 the server-rendered `data-sort-value`, then parse visible text after removing
 currency, percent, and whitespace decoration. Keep History tables, trade
-formatting, charts, time ranges, and filters server-rendered rather than moving
-them into Kotlin/JS.
+formatting, time ranges, filters, and chart evidence
+server-rendered. Client chart enhancement must preserve explicit null gaps and
+keep asset checkpoints as individual points.
 
 ## Settings allocation controls
 
@@ -77,7 +81,8 @@ must not be added back to the form.
 
 ## Current JS tests
 
-Relevant specs are `DashboardTest`, `SettingsTest`, and `MainTest` under
+Relevant specs are `DashboardTest`, `SettingsTest`, `MainTest`, `HistoryTest`,
+and `HistoryViewsTest` under
 `frontend-js/src/jsTest/kotlin`. Add focused coverage for changes to freshness,
 sorting, allocation checks, or HTMX error handling. Coverage thresholds are
 configured in `frontend-js/karma.config.d/coverage.js`.

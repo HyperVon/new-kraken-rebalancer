@@ -50,6 +50,7 @@ import kotlinx.html.a
 import kotlinx.html.body
 import kotlinx.html.button
 import kotlinx.html.form
+import kotlinx.html.h1
 import kotlinx.html.head
 import kotlinx.html.header
 import kotlinx.html.id
@@ -94,6 +95,7 @@ class HistoryPageComponent {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
+            cdnScript(CdnUrls.CHART_JS, CdnIntegrity.CHART_JS)
         }
         html.body {
             div(CssClass.Layout.Container) {
@@ -101,11 +103,16 @@ class HistoryPageComponent {
                     brandWithMode(settings) { loopControl(paused, csrfToken) }
                     div(CssClass.Layout.HeaderActions) { primaryNav(ActiveNav.HISTORY) }
                 }
-                renderSync(data, csrfToken)
+                div(CssClass.History.PageHeading) {
+                    h1 { +ViewText.HISTORY_TITLE }
+                    p { +ViewText.HISTORY_PAGE_INTRO }
+                }
                 renderToolbar(data)
+                renderSavedViews()
                 renderStatsGrid(data)
                 renderValueChart(data)
                 renderCheckpointChart(data)
+                renderSync(data, csrfToken)
                 renderTrades(data)
                 renderLedgers(data)
             }
@@ -200,6 +207,39 @@ class HistoryPageComponent {
                     data.filterOptions.types,
                 )
                 button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) { +"Apply" }
+                if (data.filters.assetKey != null || data.filters.pair != null || data.filters.type != null) {
+                    a(
+                        href = Routes.HISTORY.withQuery("range", data.range),
+                        classes = CssClass.History.PaginationBtn.value,
+                    ) { +ViewText.HISTORY_CLEAR_FILTERS }
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderSavedViews() {
+        div(CssClass.History.FilterRow) {
+            id = HtmlIds.HISTORY_SAVED_VIEWS
+            attributes["hidden"] = "hidden"
+            label {
+                htmlFor = HtmlIds.HISTORY_SAVED_VIEW
+                +ViewText.HISTORY_SAVED_VIEWS
+                select(classes = CssClass.History.FilterInput.value) {
+                    id = HtmlIds.HISTORY_SAVED_VIEW
+                    option {
+                        value = ""
+                        +ViewText.HISTORY_CURRENT_VIEW
+                    }
+                }
+            }
+            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                id = HtmlIds.HISTORY_SAVE_VIEW
+                +ViewText.HISTORY_SAVE_VIEW
+            }
+            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                id = HtmlIds.HISTORY_DELETE_VIEW
+                disabled = true
+                +ViewText.HISTORY_DELETE_VIEW
             }
         }
     }
@@ -216,20 +256,20 @@ class HistoryPageComponent {
         label {
             htmlFor = inputId
             +labelText
-        }
-        select(classes = CssClass.History.FilterInput.value) {
-            this.name = name
-            id = inputId
-            option {
-                value = ""
-                selected = current.isNullOrEmpty()
-                +allLabel
-            }
-            (options + listOfNotNull(current)).filter(String::isNotBlank).distinct().sorted().forEach { value ->
+            select(classes = CssClass.History.FilterInput.value) {
+                this.name = name
+                id = inputId
                 option {
-                    this.value = value
-                    selected = current == value
-                    +display(value)
+                    value = ""
+                    selected = current.isNullOrEmpty()
+                    +allLabel
+                }
+                (options + listOfNotNull(current)).filter(String::isNotBlank).distinct().sorted().forEach { value ->
+                    option {
+                        this.value = value
+                        selected = current == value
+                        +display(value)
+                    }
                 }
             }
         }
@@ -254,15 +294,48 @@ class HistoryPageComponent {
             it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null
         }
         div(CssClass.Layout.GlassPanel) {
-            h2(CssClass.Utility.GlassPanelTitle) { +ViewText.HISTORY_PORTFOLIO_VALUE }
+            div(CssClass.History.ChartHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
+                    +ViewText.HISTORY_PORTFOLIO_VALUE
+                }
+                chartControls()
+            }
+            if (observations.isNotEmpty() && !hasCompleteValue) {
+                p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+            }
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                if (observations.isEmpty() || !hasCompleteValue) {
+                if (observations.isEmpty()) {
                     p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
                 }
                 if (observations.isNotEmpty()) unsafe { +valuePointSvg(observations) }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
+            p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
+        }
+    }
+
+    private fun DIV.chartControls(pointsOnly: Boolean = false) {
+        div(CssClass.History.ChartControls) {
+            attributes["data-history-controls"] = "true"
+            attributes["hidden"] = "hidden"
+            if (!pointsOnly) {
+                chartButton("data-history-view", "line", ViewText.HISTORY_CHART_LINE)
+                chartButton("data-history-view", "points", ViewText.HISTORY_CHART_POINTS)
+            }
+            chartButton("data-history-zoom", "in", ViewText.HISTORY_CHART_ZOOM_IN)
+            chartButton("data-history-zoom", "out", ViewText.HISTORY_CHART_ZOOM_OUT)
+            chartButton("data-history-pan", "earlier", ViewText.HISTORY_CHART_EARLIER)
+            chartButton("data-history-pan", "later", ViewText.HISTORY_CHART_LATER)
+            chartButton("data-history-zoom", "reset", ViewText.HISTORY_CHART_RESET)
+            chartButton("data-history-expand", "true", ViewText.HISTORY_CHART_EXPAND)
+        }
+    }
+
+    private fun DIV.chartButton(attribute: String, value: String, text: String) {
+        button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+            attributes[attribute] = value
+            +text
         }
     }
 
@@ -278,15 +351,22 @@ class HistoryPageComponent {
             }
         }
         div(CssClass.Layout.GlassPanel) {
-            h2(CssClass.Utility.GlassPanelTitle) {
-                +"${ViewText.HISTORY_ASSET_HOLDINGS}${asset?.let { " ($it)" }.orEmpty()}"
+            div(CssClass.History.ChartHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
+                    +"${ViewText.HISTORY_ASSET_HOLDINGS}${asset?.let { " ($it)" }.orEmpty()}"
+                }
+                chartControls(pointsOnly = true)
             }
-            div(CssClass.History.ChartContainer) {
-                id = HtmlIds.HISTORY_ASSET_CHART
-                when {
-                    asset.isNullOrBlank() -> p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_SELECT_ASSET }
-                    points.isEmpty() -> p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_NO_DATA }
-                    else -> unsafe { +pointSvg(points) }
+            if (asset.isNullOrBlank()) {
+                p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_SELECT_ASSET }
+            } else {
+                div(CssClass.History.ChartContainer) {
+                    id = HtmlIds.HISTORY_ASSET_CHART
+                    if (points.isEmpty()) {
+                        p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_NO_DATA }
+                    } else {
+                        unsafe { +pointSvg(points) }
+                    }
                 }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHECKPOINT_CAPTION }
@@ -505,15 +585,21 @@ class HistoryPageComponent {
         }
         val markers = points.joinToString("") { point ->
             val (x, y) = coordinate(point)
-            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4"/>"""
-                .format(java.util.Locale.US, x, y)
+            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4" data-time="${point.first.toEpochMilli()}" data-value="${point.second.toPlainString()}">"""
+                .format(java.util.Locale.US, x, y) +
+                "<title>${timeFormatter.format(
+                    point.first,
+                )} · ${Formatter.formatQuantity(point.second)}</title></circle>"
         }
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
-            """preserveAspectRatio="none">$markers""" +
-            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="12">${minV.max(
+            """preserveAspectRatio="none"><title>Exchange-reported balance checkpoints</title>${svgGrid()}$markers""" +
+            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="$SVG_PAD">${minV.max(
                 maxV,
             ).stripTrailingZeros().toPlainString()}</text>""" +
-            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - 4}">${minV.stripTrailingZeros().toPlainString()}</text></svg>"""
+            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - SVG_PAD}">${minV.stripTrailingZeros().toPlainString()}</text>${timeAxis(
+                minT,
+                maxT,
+            )}</svg>"""
     }
 
     /** Connect adjacent complete values and leave a visible break wherever an incomplete cycle occurs. */
@@ -564,27 +650,43 @@ class HistoryPageComponent {
 
         val markers = completePoints.joinToString("") { (time, value) ->
             val (x, y) = coordinate(time, value)
-            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4"/>"""
-                .format(java.util.Locale.US, x, y)
+            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4" data-time="${time.toEpochMilli()}" data-value="${value.toPlainString()}">"""
+                .format(java.util.Locale.US, x, y) +
+                "<title>${timeFormatter.format(time)} · ${Formatter.formatSignedUsd(value)}</title></circle>"
         }
         val gapMarkers = observations.filter { it.status == HistoryObservationStatus.INCOMPLETE }.joinToString("") {
             val x = xCoordinate(it.observedAt)
-            """<circle class="${CssClass.History.GapMarker.value}" cx="%.2f" cy="${SVG_HEIGHT - SVG_PAD + 8}" r="4">"""
+            """<circle class="${CssClass.History.GapMarker.value}" cx="%.2f" cy="${SVG_HEIGHT - SVG_PAD + 8}" r="4" data-time="${it.observedAt.toEpochMilli()}" data-gap="true">"""
                 .format(java.util.Locale.US, x) +
-                """<title>Incomplete observation; no portfolio value is plotted</title></circle>"""
+                """<title>${timeFormatter.format(
+                    it.observedAt,
+                )} · Incomplete observation; no portfolio value is plotted</title></circle>"""
         }
         val axisLabels = if (minV != null && maxV != null) {
-            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="12">""" +
-                maxV.stripTrailingZeros().toPlainString() + "</text>" +
-                """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - 4}">""" +
-                minV.stripTrailingZeros().toPlainString() + "</text>"
+            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="$SVG_PAD">""" +
+                Formatter.formatSignedUsd(maxV) + "</text>" +
+                """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - SVG_PAD}">""" +
+                Formatter.formatSignedUsd(minV) + "</text>"
         } else {
             ""
         }
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
             """preserveAspectRatio="none"><title>Portfolio samples; gaps mark incomplete cycles</title>""" +
-            lines + markers + gapMarkers + axisLabels + "</svg>"
+            svgGrid() + lines + markers + gapMarkers + axisLabels + timeAxis(minT, maxT) + "</svg>"
     }
+
+    private fun svgGrid(): String = (0..4).joinToString("") { tick ->
+        val y = SVG_PAD + tick * (SVG_HEIGHT - 2 * SVG_PAD) / 4
+        """<line class="${CssClass.History.GridLine.value}" x1="$SVG_PAD" x2="${SVG_WIDTH - SVG_PAD}" y1="$y" y2="$y"/>"""
+    }
+
+    private fun timeAxis(minT: Long, maxT: Long): String = listOf(minT, maxT).mapIndexed { index, time ->
+        val x = if (index == 0) SVG_PAD else SVG_WIDTH - SVG_PAD
+        val anchor = if (index == 0) "start" else "end"
+        val label = DateTimeFormatter.ofPattern("MMM d HH:mm 'UTC'").withZone(ZoneOffset.UTC)
+            .format(Instant.ofEpochSecond(time))
+        """<text class="${CssClass.History.AxisLabel.value}" x="$x" y="${SVG_HEIGHT - 4}" text-anchor="$anchor">$label</text>"""
+    }.joinToString("")
 
     private companion object {
         val RANGES = listOf("24h" to "24h", "7d" to "7d", "30d" to "30d", "90d" to "90d", "all" to "All")
