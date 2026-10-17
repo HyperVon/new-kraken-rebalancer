@@ -125,6 +125,8 @@ fun main() {
 }
 
 fun initOnLoad() {
+    initHistoryCharts()
+    initHistoryViews()
     updateAge()
     reapplySort()
 

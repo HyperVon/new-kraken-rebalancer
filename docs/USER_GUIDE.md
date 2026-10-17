@@ -320,7 +320,10 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 The **History** page combines directly recorded portfolio values with Kraken's
 trade and ledger records. It provides time-range controls and dropdown filters
 for asset, pair, and event type, populated from the selected account and range.
-Trade and ledger tables are independently paginated.
+Trade and ledger tables are independently paginated. **Clear filters** keeps
+the selected time range. Use **Save view** to name the current range and filters,
+then choose it from **Saved views** on a later visit. Views are stored in this
+browser; **Delete view** removes the selected preset.
 Ledger balance checkpoints can be charted for a selected asset using the
 exchange-reported balances attached to ledger events.
 
@@ -338,6 +341,13 @@ observations, complete-value extrema, and incomplete-cycle boundary markers.
 The chart connects adjacent complete samples with lines. An incomplete cycle
 breaks the line, so the chart never bridges a missing observation. The line
 joins recorded endpoints only; it does not infer values between samples.
+
+Hover or tap chart points for exact values and UTC timestamps. **Points** and
+**Line** switch the portfolio chart's presentation. **Zoom in** focuses on the
+latest samples; **Earlier** and **Later** move through the zoomed range. Use
+**Zoom out** or **Reset** to restore context, and **Expand** for a taller chart.
+The holdings chart always shows individual checkpoints. If the chart library
+cannot load, the native chart remains available with point tooltips.
 
 For an authenticated account, History synchronization fetches Kraken Trades
 and Ledgers in bounded pages and commits each page before continuing. The page

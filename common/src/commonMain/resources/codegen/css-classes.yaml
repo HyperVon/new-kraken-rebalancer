@@ -167,6 +167,9 @@ Navigation:
   Link: "nav-link"
   LinkActive: "nav-link active"
 History:
+  PageHeading: "history-page-heading"
+  ChartControls: "history-chart-controls"
+  ChartExpanded: "history-chart-expanded"
   Content: "history-content"
   StatsGrid: "history-stats-grid"
   ToolbarRow: "history-toolbar-row"

@@ -92,7 +92,10 @@ reconstruct reports.
 The History page uses `HistoryPageComponent`. It presents direct cycle-value
 samples, per-feed synchronization status, time-range and event filters,
 paginated trade and ledger tables, and exchange-reported balance checkpoints.
-Incomplete samples have no total; gaps are not filled. Account synchronization
+The Kotlin/JS client enhances server-rendered SVG markers with chart controls
+and tooltips, preserving the native chart if Chart.js cannot load. Named views
+store only range/asset/pair/type filters in this browser. Incomplete samples
+have no total; gaps are not filled. Account synchronization
 is unavailable until the authenticated identity is verified.
 
 ## HTMX and static assets
