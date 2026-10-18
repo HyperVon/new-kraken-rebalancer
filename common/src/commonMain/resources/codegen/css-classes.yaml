@@ -167,6 +167,8 @@ Navigation:
   Link: "nav-link"
   LinkActive: "nav-link active"
 History:
+  SectionNav: "history-section-nav"
+  SyncFeed: "history-sync-feed"
   PageHeading: "history-page-heading"
   ChartControls: "history-chart-controls"
   ChartExpanded: "history-chart-expanded"

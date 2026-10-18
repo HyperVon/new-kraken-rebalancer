@@ -168,6 +168,41 @@ class HistoryTest :
             }
         }
 
+        "dense portfolio lines stay legible while points remain inspectable" {
+            val points = (0..60).map { HistoryChartPoint(it * 1000.0, it.toDouble()) }
+            val line = historyChartConfig(points, true)
+            assertHistoryValue(line.data.datasets[0].pointRadius, 1)
+            assertHistoryValue(line.data.datasets[0].pointHitRadius, 10)
+            assertHistoryValue(line.options.interaction.intersect, false)
+            assertHistoryValue(line.options.interaction.axis, "x")
+            assertHistoryValue(historyChartConfig(points, false).data.datasets[0].pointRadius, 3)
+            assertHistoryValue(historyChartConfig(points.take(2), true).data.datasets[0].pointRadius, 3)
+            val isolated = points.flatMap { listOf(it, HistoryChartPoint(it.time + 500, null)) }
+            val mixed = historyChartConfig(isolated, true)
+            assertHistoryValue(mixed.data.datasets[0].pointRadius, 1)
+            assertHistoryValue(mixed.data.datasets[0].data[1].y, null)
+            assertHistoryValue(mixed.data.datasets[0].spanGaps, false)
+            val panel = historyFixture()
+            try {
+                panel.querySelector("svg")!!.innerHTML = points.joinToString("") {
+                    "<circle data-time='${it.time}' data-value='${it.value}'/>"
+                }
+                var chart: dynamic = null
+                initHistoryCharts { _, config ->
+                    chart = json("data" to config.data, "options" to config.options, "update" to { _: dynamic -> })
+                    chart
+                }
+                clickHistoryButton(panel, "[data-history-view='points']")
+                assertHistoryValue(chart.data.datasets[0].showLine, false)
+                assertHistoryValue(chart.data.datasets[0].pointRadius, 3)
+                clickHistoryButton(panel, "[data-history-view='line']")
+                assertHistoryValue(chart.data.datasets[0].pointRadius, 1)
+                assertHistoryValue(chart.data.datasets[0].data.length, 61)
+            } finally {
+                panel.remove()
+            }
+        }
+
         "long chart windows label both calendar date and time in UTC" {
             val config = historyChartConfig(
                 listOf(HistoryChartPoint(0.0, 1.0), HistoryChartPoint(86_400_000.0, 2.0)),

@@ -65,6 +65,24 @@ class AllocationChartComponentTest : StringSpec() {
             htmlString shouldContain "60.00%"
             // 1 / (0.6^2 + 0.4^2) = 1.92
             htmlString shouldContain "1.92"
+            htmlString shouldContain "class=\"allocation-stat-row\""
+            htmlString shouldContain "class=\"allocation-stat-label\">Weighted quality score"
+            htmlString shouldContain "scored assets only"
+            htmlString shouldContain "of the whole book"
+            htmlString shouldContain "href=\"/history?asset=BTC\""
+        }
+
+        "quality cards distinguish the scored sleeve from concentration across cash and crypto" {
+            val htmlString = render(
+                snapshotWith("BTC" to "600.00", "TAO" to "400.00", "USD" to "1000.00"),
+                mapOf("BTC" to BigDecimal("9.5"), "TAO" to BigDecimal("6.0")),
+            )
+
+            htmlString shouldContain "8.10"
+            htmlString shouldContain "50.00%"
+            htmlString shouldContain "2.63"
+            htmlString shouldContain "scored assets only"
+            htmlString shouldContain "of the whole book"
         }
     }
 }

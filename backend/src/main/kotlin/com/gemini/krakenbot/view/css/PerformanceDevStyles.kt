@@ -28,6 +28,16 @@ import kotlinx.css.width
 
 object PerformanceDevStyles {
     fun CssBuilder.applyPerformanceDevStyles() {
+        ".${CssClass.Table.SymbolCol} a, .${CssClass.AllocationChart.BarLabel} a" {
+            color = CssTheme.colorTextPrimary
+            put("text-decoration", "none")
+        }
+
+        ".${CssClass.Table.SymbolCol} a:hover, .${CssClass.AllocationChart.BarLabel} a:hover" {
+            color = CssTheme.colorBlueAccent
+            put("text-decoration", "underline")
+        }
+
         ".${CssClass.Performance.DevContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column

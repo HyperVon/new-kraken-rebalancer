@@ -90,8 +90,13 @@ object MediaQueries {
         }
 
         "@media (min-width: 1024px)" {
+            ".${CssClass.AllocationChart.Container}" {
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("repeat(2, minmax(0, 1fr))")
+                columnGap = 2.rem
+            }
             ".${CssClass.Layout.DetailGrid}" {
-                gridTemplateColumns = GridTemplateColumns("1fr 1fr")
+                gridTemplateColumns = GridTemplateColumns("1fr")
             }
             ".${CssClass.History.StatsGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(5, 1fr)")
@@ -283,8 +288,24 @@ object MediaQueries {
                 put("justify-self", "end")
             }
 
+            ".${CssClass.Layout.DetailGrid} .${CssClass.Form.AllocationStatRow}" {
+                gridTemplateColumns = GridTemplateColumns("1fr")
+            }
+            ".${CssClass.Layout.DetailGrid} .${CssClass.Form.AllocationStat}" {
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("4rem minmax(0, 1fr)")
+                columnGap = 0.5.rem
+                alignItems = Align.center
+            }
+            ".${CssClass.Layout.DetailGrid} .${CssClass.Form.AllocationStatValue}" {
+                put("grid-row", "1 / span 2")
+            }
+            ".${CssClass.Layout.DetailGrid} .${CssClass.Form.AllocationStatNote}" {
+                put("grid-column", "2")
+            }
+
             // DASH-MOBILE-1: keep the operator's most useful performance columns visible.
-            listOf(2, 4, 5).forEach { column ->
+            listOf(2, 4, 5, 7, 8).forEach { column ->
                 ".${CssClass.Layout.DetailGrid} table th:nth-child($column)" {
                     display = Display.none
                 }

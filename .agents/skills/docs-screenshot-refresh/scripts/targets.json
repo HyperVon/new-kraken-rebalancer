@@ -51,7 +51,7 @@
       "await_text": [
         "Recent Activity"
       ],
-      "position": "bottom"
+      "anchor": "Recent Activity"
     },
     {
       "file": "dashboard-performance.png",

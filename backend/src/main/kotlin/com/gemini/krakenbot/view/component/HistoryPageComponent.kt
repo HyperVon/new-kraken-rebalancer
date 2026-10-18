@@ -7,6 +7,7 @@ import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
 import com.gemini.krakenbot.service.history.HistoryEventFilterOptions
 import com.gemini.krakenbot.service.history.HistoryEventQuery
+import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
 import com.gemini.krakenbot.service.history.HistoryObservationStatus
@@ -49,6 +50,10 @@ import kotlinx.html.InputType
 import kotlinx.html.a
 import kotlinx.html.body
 import kotlinx.html.button
+import kotlinx.html.dd
+import kotlinx.html.details
+import kotlinx.html.dl
+import kotlinx.html.dt
 import kotlinx.html.form
 import kotlinx.html.h1
 import kotlinx.html.head
@@ -56,9 +61,11 @@ import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.input
 import kotlinx.html.label
+import kotlinx.html.nav
 import kotlinx.html.option
 import kotlinx.html.script
 import kotlinx.html.select
+import kotlinx.html.summary
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.thead
@@ -108,11 +115,11 @@ class HistoryPageComponent {
                     p { +ViewText.HISTORY_PAGE_INTRO }
                 }
                 renderToolbar(data)
-                renderSavedViews()
+                renderSectionNav()
+                renderSync(data, csrfToken)
                 renderStatsGrid(data)
                 renderValueChart(data)
                 renderCheckpointChart(data)
-                renderSync(data, csrfToken)
                 renderTrades(data)
                 renderLedgers(data)
             }
@@ -120,43 +127,95 @@ class HistoryPageComponent {
         }
     }
 
+    private fun DIV.renderSectionNav() {
+        nav(classes = CssClass.History.SectionNav.value) {
+            listOf(
+                HtmlIds.HISTORY_PORTFOLIO_SECTION to ViewText.HISTORY_JUMP_PORTFOLIO,
+                HtmlIds.HISTORY_TRADES_SECTION to ViewText.HISTORY_JUMP_TRADES,
+                HtmlIds.HISTORY_LEDGERS_SECTION to ViewText.HISTORY_JUMP_LEDGERS,
+            ).forEach { (section, label) ->
+                a(href = "#$section", classes = CssClass.History.TimeRangeBtn.value) { +label }
+            }
+        }
+    }
+
     private fun DIV.renderSync(data: HistoryPageData, csrfToken: String?) {
         div(CssClass.Layout.GlassPanel + CssClass.History.SyncBanner) {
             id = HtmlIds.HISTORY_SYNC_BANNER
-            span(CssClass.History.SyncTitle) { +ViewText.HISTORY_SYNC_TITLE }
-            if (!data.accountAvailable) {
-                p(CssClass.History.SyncText) { +ViewText.HISTORY_ACCOUNT_UNAVAILABLE }
-            }
-            data.syncStatuses.forEach { status ->
-                p(CssClass.History.SyncText) {
-                    +syncLine(status)
+            div(CssClass.History.SyncHeader) {
+                h2(CssClass.History.SyncTitle) { +ViewText.HISTORY_SYNC_TITLE }
+                if (data.accountAvailable) {
+                    form(action = Routes.API_HISTORY_SYNC_START, method = FormMethod.post) {
+                        input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
+                            value = csrfToken.orEmpty()
+                        }
+                        button(type = ButtonType.submit, classes = CssClass.Button.Secondary.value) {
+                            id = HtmlIds.HISTORY_SYNC_BUTTON
+                            +ViewText.HISTORY_SYNC_BUTTON
+                        }
+                    }
                 }
             }
-            if (data.accountAvailable) {
-                form(action = Routes.API_HISTORY_SYNC_START, method = FormMethod.post) {
-                    input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
-                        value = csrfToken.orEmpty()
+            if (!data.accountAvailable) {
+                p(CssClass.History.SyncText) { +ViewText.HISTORY_ACCOUNT_UNAVAILABLE }
+            } else if (data.syncStatuses.isEmpty()) {
+                p(CssClass.History.SyncText) { +ViewText.HISTORY_SYNC_NO_STATUS }
+            }
+            data.syncStatuses.forEach { status ->
+                div(CssClass.History.SyncFeed) {
+                    span(CssClass.History.SyncTitle) { +syncFeedLabel(status.feed) }
+                    val badge = when (status.state) {
+                        HistorySyncState.FAILED -> CssClass.Badge.Sell
+                        HistorySyncState.COMPLETE -> CssClass.Badge.Buy
+                        else -> CssClass.Badge.Info
                     }
-                    button(type = ButtonType.submit, classes = CssClass.Button.Secondary.value) {
-                        id = HtmlIds.HISTORY_SYNC_BUTTON
-                        +ViewText.HISTORY_SYNC_BUTTON
+                    span(badge) { +syncStateLabel(status.state) }
+                    if (status.state == HistorySyncState.FAILED) {
+                        p(CssClass.History.SyncText) {
+                            +(status.lastError ?: ViewText.HISTORY_SYNC_UNKNOWN_ERROR)
+                        }
+                    }
+                }
+            }
+            if (data.syncStatuses.isNotEmpty()) {
+                details {
+                    summary { +ViewText.HISTORY_SYNC_DETAILS }
+                    data.syncStatuses.forEach { status ->
+                        div(CssClass.History.SyncText) {
+                            span(CssClass.History.SyncTitle) { +syncFeedLabel(status.feed) }
+                            dl {
+                                dt { +ViewText.HISTORY_SYNC_STORED }
+                                dd { +status.storedCount.toString() }
+                                dt { +ViewText.HISTORY_SYNC_FETCHED }
+                                dd { +status.fetchedCount.toString() }
+                                status.lastPageAt?.let { updated ->
+                                    dt { +ViewText.HISTORY_SYNC_UPDATED }
+                                    dd { +timeFormatter.format(updated) }
+                                }
+                                val window = listOfNotNull(status.windowStart, status.windowEnd)
+                                if (window.isNotEmpty()) {
+                                    dt { +ViewText.HISTORY_SYNC_WINDOW }
+                                    dd { +window.joinToString(" – ", transform = timeFormatter::format) }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    private fun syncLine(status: HistorySyncStatus): String {
-        val state = when (status.state) {
-            HistorySyncState.NOT_STARTED -> "not started"
-            HistorySyncState.RUNNING -> "running"
-            HistorySyncState.COMPLETE -> "complete"
-            HistorySyncState.PAUSED -> "paused"
-            HistorySyncState.FAILED -> "failed: ${status.lastError ?: "unknown error"}"
-        }
-        val range = listOfNotNull(status.windowStart, status.windowEnd).joinToString(" – ") { timeFormatter.format(it) }
-        return "${status.feed.name.lowercase()}: $state; ${status.storedCount} stored, ${status.fetchedCount} fetched" +
-            if (range.isNotEmpty()) "; window $range" else ""
+    private fun syncFeedLabel(feed: HistoryFeed): String = when (feed) {
+        HistoryFeed.TRADES -> ViewText.HISTORY_SYNC_TRADES
+        HistoryFeed.LEDGERS -> ViewText.HISTORY_SYNC_LEDGERS
+    }
+
+    private fun syncStateLabel(state: HistorySyncState): String = when (state) {
+        HistorySyncState.NOT_STARTED -> ViewText.HISTORY_SYNC_NOT_STARTED
+        HistorySyncState.RUNNING -> ViewText.HISTORY_SYNC_RUNNING
+        HistorySyncState.COMPLETE -> ViewText.HISTORY_SYNC_COMPLETE
+        HistorySyncState.PAUSED -> ViewText.HISTORY_SYNC_PAUSED
+        HistorySyncState.FAILED -> ViewText.HISTORY_SYNC_FAILED
     }
 
     private fun DIV.renderToolbar(data: HistoryPageData) {
@@ -206,7 +265,9 @@ class HistoryPageComponent {
                     data.filters.type,
                     data.filterOptions.types,
                 )
-                button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) { +"Apply" }
+                button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) {
+                    +ViewText.HISTORY_APPLY_FILTERS
+                }
                 if (data.filters.assetKey != null || data.filters.pair != null || data.filters.type != null) {
                     a(
                         href = Routes.HISTORY.withQuery("range", data.range),
@@ -214,6 +275,8 @@ class HistoryPageComponent {
                     ) { +ViewText.HISTORY_CLEAR_FILTERS }
                 }
             }
+            renderSavedViews()
+            p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_FILTER_SCOPE }
         }
     }
 
@@ -294,6 +357,7 @@ class HistoryPageComponent {
             it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null
         }
         div(CssClass.Layout.GlassPanel) {
+            id = HtmlIds.HISTORY_PORTFOLIO_SECTION
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
                     +ViewText.HISTORY_PORTFOLIO_VALUE
@@ -309,6 +373,9 @@ class HistoryPageComponent {
                     p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
                 }
                 if (observations.isNotEmpty()) unsafe { +valuePointSvg(observations) }
+            }
+            if (hasCompleteValue && observations.any { it.status != HistoryObservationStatus.COMPLETE }) {
+                p(CssClass.History.SyncText) { +ViewText.HISTORY_VALUE_PARTIAL }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
@@ -375,7 +442,15 @@ class HistoryPageComponent {
 
     private fun DIV.renderTrades(data: HistoryPageData) {
         div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
-            h2(CssClass.Utility.GlassPanelTitle) { +ViewText.HISTORY_TRADE_LOG }
+            id = HtmlIds.HISTORY_TRADES_SECTION
+            div(CssClass.History.TradeLogHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
+                    +ViewText.HISTORY_TRADE_LOG
+                }
+                data.trades.total?.let { total ->
+                    span(CssClass.Badge.Info) { +total.toString() }
+                }
+            }
             div(CssClass.Table.Wrapper) {
                 table {
                     thead {
@@ -443,7 +518,15 @@ class HistoryPageComponent {
 
     private fun DIV.renderLedgers(data: HistoryPageData) {
         div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
-            h2(CssClass.Utility.GlassPanelTitle) { +ViewText.HISTORY_TRANSACTION_LOG }
+            id = HtmlIds.HISTORY_LEDGERS_SECTION
+            div(CssClass.History.TradeLogHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
+                    +ViewText.HISTORY_TRANSACTION_LOG
+                }
+                data.ledgers.total?.let { total ->
+                    span(CssClass.Badge.Info) { +total.toString() }
+                }
+            }
             div(CssClass.Table.Wrapper) {
                 table {
                     thead {
@@ -507,7 +590,7 @@ class HistoryPageComponent {
         tr {
             td(CssClass.History.EmptyTableCell) {
                 colSpan = columns.toString()
-                +ViewText.HISTORY_NO_DATA
+                +ViewText.HISTORY_EVENTS_EMPTY
             }
         }
     }
@@ -523,7 +606,7 @@ class HistoryPageComponent {
                         data,
                         tradesOffset = if (isTrades) previous else null,
                         ledgersOffset = if (isTrades) null else previous,
-                    ),
+                    ) + "#" + if (isTrades) HtmlIds.HISTORY_TRADES_SECTION else HtmlIds.HISTORY_LEDGERS_SECTION,
                     classes = CssClass.History.PaginationBtn.value,
                 ) {
                     id = if (isTrades) HtmlIds.HISTORY_TRADES_PREV else HtmlIds.HISTORY_LEDGERS_PREV
@@ -540,7 +623,7 @@ class HistoryPageComponent {
                         data,
                         tradesOffset = if (isTrades) next else null,
                         ledgersOffset = if (isTrades) null else next,
-                    ),
+                    ) + "#" + if (isTrades) HtmlIds.HISTORY_TRADES_SECTION else HtmlIds.HISTORY_LEDGERS_SECTION,
                     classes = CssClass.History.PaginationBtn.value,
                 ) {
                     id = if (isTrades) HtmlIds.HISTORY_TRADES_NEXT else HtmlIds.HISTORY_LEDGERS_NEXT

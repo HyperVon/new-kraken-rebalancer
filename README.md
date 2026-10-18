@@ -263,7 +263,8 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   application restarts, so it never imports unverified database history
 - Pushes current-cycle updates over Server-Sent Events
 - Horizontal bar chart showing asset allocation by value
-- Sortable asset performance table with deviation indicators
+- Sortable holdings table with price, value, target/current allocation, deviation,
+  quantity, and quality score; asset links open filtered History
 - **Recent Activity** — current-cycle action feed with BUY/SELL badges
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)

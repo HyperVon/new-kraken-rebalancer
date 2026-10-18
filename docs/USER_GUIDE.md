@@ -139,7 +139,10 @@ Dry Run, or Live Trading mode.
   from Settings (BTC/ETH/USD start with amber/violet/slate defaults; other
   assets get an auto-assigned color).
 - **Asset Performance** — Sortable table of price, value, target %, current %,
-  and **Dev %** (how far each asset is from target, with dollar impact).
+  and **Dev %** (how far each asset is from target, with dollar impact), plus
+  sortable **Quantity** and **Quality score** columns on larger screens. Asset
+  symbols open History filtered to that asset. Quality metrics are grouped
+  above the allocation bars.
   Amber = over target, blue = under target (not profit/loss green/red); a small
   legend sits above the table.
 - **Recent Activity** — actions from the latest completed cycle, with a short
@@ -320,10 +323,14 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 The **History** page combines directly recorded portfolio values with Kraken's
 trade and ledger records. It provides time-range controls and dropdown filters
 for asset, pair, and event type, populated from the selected account and range.
-Trade and ledger tables are independently paginated. **Clear filters** keeps
+Use **Portfolio value**, **Trades**, and **Transactions** to jump to a section.
+Long trade and transaction tables scroll within their panels; their headings
+stay visible. Each table is independently paginated. **Clear filters** keeps
 the selected time range. Use **Save view** to name the current range and filters,
 then choose it from **Saved views** on a later visit. Views are stored in this
-browser; **Delete view** removes the selected preset.
+browser; **Delete view** removes the selected preset. Event filters affect
+account records; the portfolio-value chart continues to show the whole managed
+portfolio for the selected range.
 Ledger balance checkpoints can be charted for a selected asset using the
 exchange-reported balances attached to ledger events.
 
@@ -342,7 +349,9 @@ The chart connects adjacent complete samples with lines. An incomplete cycle
 breaks the line, so the chart never bridges a missing observation. The line
 joins recorded endpoints only; it does not infer values between samples.
 
-Hover or tap chart points for exact values and UTC timestamps. **Points** and
+Hover or tap the chart for exact values and UTC timestamps. Dense portfolio
+lines use smaller point markers to keep the trend readable; **Points** makes
+them larger again. **Points** and
 **Line** switch the portfolio chart's presentation. **Zoom in** focuses on the
 latest samples; **Earlier** and **Later** move through the zoomed range. Use
 **Zoom out** or **Reset** to restore context, and **Expand** for a taller chart.
@@ -351,7 +360,9 @@ cannot load, the native chart remains available with point tooltips.
 
 For an authenticated account, History synchronization fetches Kraken Trades
 and Ledgers in bounded pages and commits each page before continuing. The page
-shows per-feed status and offers **Sync now** after the account identity has
+shows labeled per-feed states and keeps any failure message visible. Expand
+**Sync details** for stored/fetched counts, the last page time, and scan window.
+It offers **Sync now** after the account identity has
 been verified. Records are scoped to that account and the value series is also
 scoped to the configured asset set. Changing accounts or the managed asset set
 does not combine those series. The local account reference is stored as a

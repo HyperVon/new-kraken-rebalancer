@@ -48,7 +48,8 @@ internal fun historyChartConfig(points: List<HistoryChartPoint>, money: Boolean)
                     "borderColor" to "#8b9dff",
                     "backgroundColor" to "#8b9dff",
                     "borderWidth" to 2,
-                    "pointRadius" to 3,
+                    "pointRadius" to if (money && points.count { it.value != null } > 60) 1 else 3,
+                    "pointHitRadius" to 10,
                     "pointHoverRadius" to 6,
                     "showLine" to money,
                     "spanGaps" to false,
@@ -59,6 +60,7 @@ internal fun historyChartConfig(points: List<HistoryChartPoint>, money: Boolean)
             "responsive" to true,
             "maintainAspectRatio" to false,
             "animation" to false,
+            "interaction" to json("mode" to "nearest", "axis" to "x", "intersect" to false),
             "parsing" to false,
             "plugins" to json(
                 "legend" to json("display" to false),
@@ -148,6 +150,8 @@ private fun setupHistoryChartControls(
         button.addEventListener("click", {
             button.getAttribute("data-history-view")?.let { view ->
                 chart.data.datasets[0].showLine = money && view == "line"
+                chart.data.datasets[0].pointRadius =
+                    if (money && view == "line" && points.count { it.value != null } > 60) 1 else 3
                 val views = controls.querySelectorAll("[data-history-view]")
                 repeat(views.length) { viewIndex ->
                     val viewButton = views.item(viewIndex) as Element
