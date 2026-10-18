@@ -318,6 +318,12 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "Balance Checkpoints (BTC)"
             html shouldContain "Asset Holdings Over Time"
             html shouldContain "/static/rebalancer.js?v="
+
+            val localHtml = createHTML().html {
+                HistoryPageComponent(ZoneOffset.ofHours(2)).render(settings, data, "test-csrf", false)
+            }
+            localHtml shouldContain "2023-11-15 00:13:20 · $55,000.00"
+            localHtml shouldNotContain "2023-11-14 22:13:20"
         }
 
         "connects complete observations and breaks the value chart at incomplete cycles" {
@@ -793,6 +799,84 @@ class HistoryPageComponentTest : StringSpec() {
             html.countOccurrences("class=\"history-chart-scrubber-input\"") shouldBe 5
         }
 
+        "multi-series SVG escapes untrusted asset symbols in titles and series attributes" {
+            val now = Instant.ofEpochSecond(1_700_000_000)
+            val symbol = "BTC\"><script>alert(1)</script>"
+            val escapedSymbol = "BTC&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
+            val observation = sampleObservation("o1", now, "1000.00", listOf(Triple(symbol, "600.00", "60000.00")))
+            val incomplete = observation.copy(
+                observationId = "o2",
+                cycleId = "c-o2",
+                observedAt = now.plusSeconds(60),
+                status = HistoryObservationStatus.INCOMPLETE,
+                totalUsd = null,
+            )
+
+            val html = render(samplePageData(listOf(observation, incomplete)))
+            val svg = html.chartSvg("history-holdings-chart")
+            svg shouldContain "data-series=\"$escapedSymbol\""
+            svg shouldContain "<title>2023-11-14 22:13:20 · $escapedSymbol ·"
+            svg shouldContain "data-gap=\"true\" data-series=\"$escapedSymbol\""
+            html shouldNotContain "<script>alert(1)</script>"
+            svg shouldNotContain "data-series=\"$symbol\""
+        }
+
+        "holdings and allocation charts break each series at incomplete observations" {
+            val now = Instant.ofEpochSecond(1_700_000_000)
+            val before = sampleObservation(
+                "before",
+                now.minusSeconds(60),
+                "1000.00",
+                listOf(Triple("BTC", "600.00", "60000.00"), Triple("ETH", "400.00", "3000.00")),
+            )
+            val incomplete = before.copy(
+                observationId = "incomplete",
+                cycleId = "c-incomplete",
+                observedAt = now,
+                status = HistoryObservationStatus.INCOMPLETE,
+                totalUsd = null,
+            )
+            val after = before.copy(observationId = "after", cycleId = "c-after", observedAt = now.plusSeconds(60))
+
+            val html = render(samplePageData(listOf(before, incomplete, after)))
+            listOf("history-holdings-chart", "history-allocation-chart").forEach { chartId ->
+                val svg = html.chartSvg(chartId)
+                svg shouldNotContain "<polyline"
+                val symbols = if (chartId == "history-allocation-chart") {
+                    listOf("BTC", "ETH", "USD")
+                } else {
+                    listOf("BTC", "ETH")
+                }
+                symbols.forEach { symbol ->
+                    svg shouldContain "data-time=\"1700000000000\" data-gap=\"true\" data-series=\"$symbol\""
+                }
+                svg.countOccurrences("data-gap=\"true\"") shouldBe symbols.size
+                svg shouldContain "data-time=\"1699999940000\" data-value="
+                svg shouldContain "data-time=\"1700000060000\" data-value="
+            }
+        }
+
+        "holdings and allocation charts render a single observed sample" {
+            val observation = sampleObservation(
+                "single",
+                Instant.ofEpochSecond(1_700_000_000),
+                "1000.00",
+                listOf(Triple("BTC", "600.00", "60000.00")),
+            )
+
+            val html = render(samplePageData(listOf(observation)))
+            listOf("history-holdings-chart", "history-allocation-chart").forEach { chartId ->
+                val svg = html.chartSvg(chartId)
+                svg.countOccurrences("<circle") shouldBe if (chartId == "history-allocation-chart") 6 else 2
+                svg shouldContain "data-time=\"1700000000000\" data-value="
+                svg shouldContain "data-series=\"BTC\""
+                svg shouldNotContain "data-gap="
+                svg shouldNotContain "<polyline"
+                svg shouldNotContain "NaN"
+                svg shouldNotContain "Infinity"
+            }
+        }
+
         "asset value and allocation deviation series follow observed samples" {
             val now = Instant.ofEpochSecond(1_700_000_000)
             val first = sampleObservation(
@@ -866,6 +950,20 @@ class HistoryPageComponentTest : StringSpec() {
             total shouldBeEqualComparingTo BigDecimal("110")
         }
     }
+
+    private fun samplePageData(observations: List<HistoryObservation>): HistoryPageData = HistoryPageData(
+        range = "30d",
+        filters = HistoryEventQuery(),
+        tradesOffset = 0,
+        ledgersOffset = 0,
+        observations = observations,
+        checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
+        trades = HistoryPage(emptyList(), 0L, 50, 0, false),
+        ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
+        syncStatuses = emptyList(),
+        accountAvailable = true,
+        allocations = TestFixtures.DEFAULT_TEST_ALLOCATIONS,
+    )
 
     private fun sampleObservation(
         id: String,

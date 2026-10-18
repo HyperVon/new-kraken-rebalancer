@@ -220,11 +220,32 @@ class HistoryTest :
         }
 
         "chart time labels render in the browser's local wall-clock time" {
-            historyDateLabel(1000.0) shouldBe localStamp(1000.0)
-            historyAxisTimeLabel(1000.0, true) shouldBe localAxisShort(1000.0)
-            historyAxisTimeLabel(86_400_000.0, false) shouldBe localAxisLong(86_400_000.0)
-            if (Date(1000.0).getTimezoneOffset() != 0) {
-                (historyDateLabel(1000.0) == "1970-01-01 00:00:01.000") shouldBe false
+            val originalDate = window.asDynamic().Date
+            try {
+                // Keep UTC methods native so a UTC-formatting regression fails even on UTC CI.
+                window.asDynamic().Date = js(
+                    """(function(NativeDate) {
+                        return function(time) {
+                            var date = new NativeDate(time);
+                            var local = new NativeDate(time + 7200000);
+                            date.getFullYear = function() { return local.getUTCFullYear(); };
+                            date.getMonth = function() { return local.getUTCMonth(); };
+                            date.getDate = function() { return local.getUTCDate(); };
+                            date.getHours = function() { return local.getUTCHours(); };
+                            date.getMinutes = function() { return local.getUTCMinutes(); };
+                            date.getSeconds = function() { return local.getUTCSeconds(); };
+                            date.getMilliseconds = function() { return local.getUTCMilliseconds(); };
+                            date.getTimezoneOffset = function() { return -120; };
+                            return date;
+                        };
+                    })""",
+                )(originalDate)
+                val time = 1_700_000_000_000.0
+                historyDateLabel(time) shouldBe "2023-11-15 00:13:20.000"
+                historyAxisTimeLabel(time, true) shouldBe "00:13:20"
+                historyAxisTimeLabel(time, false) shouldBe "11-15 00:13"
+            } finally {
+                window.asDynamic().Date = originalDate
             }
         }
 
@@ -322,6 +343,27 @@ class HistoryTest :
                 HistoryChartPoint(2000.0, 20.0),
             )
             series.first { it.first == "ETH" }.second shouldBe listOf(HistoryChartPoint(1000.0, 5.0))
+        }
+
+        "multi-series parser preserves named gaps without values as null samples" {
+            val root = document.createElement("div")
+            root.innerHTML = """
+            <svg>
+              <circle data-time="3000" data-value="20" data-series="BTC"/>
+              <circle data-time="2000" data-gap="true" data-series="BTC"/>
+              <circle data-time="1000" data-value="10" data-series="BTC"/>
+              <circle data-time="2000" data-gap="true" data-value="99" data-series="ETH"/>
+            </svg>
+            """.trimIndent()
+
+            historySeriesPoints(root) shouldBe listOf(
+                "BTC" to listOf(
+                    HistoryChartPoint(1000.0, 10.0),
+                    HistoryChartPoint(2000.0, null),
+                    HistoryChartPoint(3000.0, 20.0),
+                ),
+                "ETH" to listOf(HistoryChartPoint(2000.0, null)),
+            )
         }
 
         "multi-series config keeps series identity and formats money and percentage axes" {

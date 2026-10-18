@@ -478,6 +478,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             chartId = HtmlIds.HISTORY_HOLDINGS_CHART,
             title = ViewText.HISTORY_ASSET_HOLDINGS,
             series = assetValueSeries(data.observations),
+            sampleTimes = data.observations.map { it.observedAt },
             caption = ViewText.HISTORY_HOLDINGS_CAPTION,
             emptyText = ViewText.HISTORY_VALUE_NO_DATA,
         )
@@ -495,7 +496,8 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             caption = ViewText.HISTORY_ALLOCATION_CAPTION,
             emptyText = ViewText.HISTORY_VALUE_NO_DATA,
             zeroLine = true,
-            formatValue = { "${Formatter.formatPercent(it)}%" },
+            sampleTimes = data.observations.map { it.observedAt },
+            formatValue = { "${Formatter.formatPercent(it)} pp" },
         )
     }
 
@@ -536,6 +538,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         caption: String,
         emptyText: String,
         zeroLine: Boolean = false,
+        sampleTimes: List<Instant> = emptyList(),
         formatValue: (BigDecimal) -> String = Formatter::formatSignedUsd,
         headerStat: (DIV.() -> Unit)? = null,
     ) {
@@ -550,7 +553,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 if (series.all { it.second.isEmpty() }) {
                     p(CssClass.History.MutedSmallText) { +emptyText }
                 } else {
-                    unsafe { +multiSeriesSvg(series, zeroLine, formatValue) }
+                    unsafe { +multiSeriesSvg(series, zeroLine, sampleTimes, formatValue) }
                 }
             }
             if (series.count { it.second.isNotEmpty() } > 1) renderSeriesLegend(series)
@@ -924,11 +927,13 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     private fun multiSeriesSvg(
         series: List<Pair<String, List<HistorySeriesPoint>>>,
         zeroLine: Boolean,
+        sampleTimes: List<Instant>,
         formatValue: (BigDecimal) -> String = Formatter::formatSignedUsd,
     ): String {
         val allPoints = series.flatMap { it.second }
-        val minT = allPoints.minOf { it.time.epochSecond }
-        val maxT = allPoints.maxOf { it.time.epochSecond }
+        val times = allPoints.map { it.time } + sampleTimes
+        val minT = times.minOf { it.epochSecond }
+        val maxT = times.maxOf { it.epochSecond }
         val minV = allPoints.minOf { it.value }
         val maxV = allPoints.maxOf { it.value }
         val spanT = (maxT - minT).coerceAtLeast(1).toDouble()
@@ -941,13 +946,20 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         }
         val bodies = series.mapIndexed { index, (symbol, points) ->
             val color = borderColorForSymbol(symbol, index)
-            val line = if (points.size > 1) {
-                val coordinates = points.joinToString(" ") { point ->
-                    "%.2f,%.2f".format(Locale.US, xCoordinate(point.time), yCoordinate(point.value))
+            val recordedTimes = points.map { it.time }.toSet()
+            val gaps = sampleTimes.filter { it !in recordedTimes }.distinct().sorted()
+            val line = points.groupBy { point -> gaps.count { it <= point.time } }.values
+                .filter { it.size > 1 }.joinToString("") { segment ->
+                    val coordinates = segment.joinToString(" ") { point ->
+                        "%.2f,%.2f".format(Locale.US, xCoordinate(point.time), yCoordinate(point.value))
+                    }
+                    """<polyline class="${CssClass.History.Line.value}" points="$coordinates" style="stroke:$color"/>"""
                 }
-                """<polyline class="${CssClass.History.Line.value}" points="$coordinates" style="stroke:$color"/>"""
-            } else {
-                ""
+            val gapMarkers = gaps.joinToString("") { time ->
+                val x = "%.2f".format(Locale.US, xCoordinate(time))
+                """<circle class="${CssClass.History.GapMarker.value}" cx="$x" cy="${SVG_HEIGHT - SVG_PAD + 8}" """ +
+                    """r="4" ${HtmlAttrs.DATA_TIME}="${time.toEpochMilli()}" ${HtmlAttrs.DATA_GAP}="true" """ +
+                    """${HtmlAttrs.DATA_SERIES}="${escapeSvgText(symbol)}"/>"""
             }
             val samples = points.map { point ->
                 SvgSample(
@@ -959,7 +971,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     series = symbol,
                 )
             }
-            line +
+            line + gapMarkers +
                 svgSampleMarkers(
                     samples,
                     visibleEvery = maxOf(1, (points.size + 7) / 8),
@@ -1014,25 +1026,32 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         visibleRadius: Int,
         color: String?,
     ): String = samples.mapIndexed { index, sample ->
-        val seriesAttr = sample.series?.let { " ${HtmlAttrs.DATA_SERIES}=\"$it\"" } ?: ""
+        val seriesAttr = sample.series?.let { " ${HtmlAttrs.DATA_SERIES}=\"${escapeSvgText(it)}\"" } ?: ""
         val hit =
             (
                 """<circle cx="%.2f" cy="%.2f" r="7" fill="transparent" """ +
                     "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
                     "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
-                ).format(Locale.US, sample.x, sample.y) + "<title>${sample.title}</title></circle>"
+                ).format(Locale.US, sample.x, sample.y) + "<title>${escapeSvgText(sample.title)}</title></circle>"
         val visible = if (index % visibleEvery == 0 || index == samples.lastIndex) {
             val fill = color?.let { """ style="fill:$it"""" } ?: ""
             (
                 """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="$visibleRadius"$fill """ +
                     "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
                     "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
-                ).format(Locale.US, sample.x, sample.y) + "<title>${sample.title}</title></circle>"
+                ).format(Locale.US, sample.x, sample.y) + "<title>${escapeSvgText(sample.title)}</title></circle>"
         } else {
             ""
         }
         hit + visible
     }.joinToString("")
+
+    private fun escapeSvgText(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
 
     private class SvgSample(
         val x: Double,

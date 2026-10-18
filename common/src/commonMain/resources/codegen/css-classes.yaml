@@ -122,11 +122,6 @@ Badge:
   Buy: "badge badge-buy"
   Sell: "badge badge-sell"
   Info: "badge badge-info"
-  Success: "badge badge-success"
-  Failed: "badge badge-failed"
-  SlippageFavorable: "badge badge-slippage-favorable"
-  SlippageAdverse: "badge badge-slippage-adverse"
-  SlippageNeutral: "badge badge-slippage-neutral"
 AllocationChart:
   Container: "allocation-chart-container"
   BarRow: "allocation-bar-row"

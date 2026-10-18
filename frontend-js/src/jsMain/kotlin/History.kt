@@ -43,8 +43,12 @@ internal fun historySeriesPoints(container: Element): List<Pair<String, List<His
         val marker = markers.item(index) as? Element ?: return@repeat
         val time = marker.getAttribute(HtmlAttrs.DATA_TIME)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: return@repeat
-        val value = marker.getAttribute(HtmlAttrs.DATA_VALUE)?.toDoubleOrNull()?.takeIf { it.isFinite() }
-            ?: return@repeat
+        val value = if (marker.getAttribute(HtmlAttrs.DATA_GAP) == "true") {
+            null
+        } else {
+            marker.getAttribute(HtmlAttrs.DATA_VALUE)?.toDoubleOrNull()?.takeIf { it.isFinite() }
+                ?: return@repeat
+        }
         val series = marker.getAttribute(HtmlAttrs.DATA_SERIES) ?: ""
         grouped.getOrPut(series) { mutableListOf() }.add(HistoryChartPoint(time, value))
     }

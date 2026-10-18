@@ -33,7 +33,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Promote repeated shadows, glows, and gradients to shared theme tokens and
   snap spacing and type sizes to the design scale.
 
+### Fixed
+
+- Preserve gaps in History holdings and allocation charts when cycle samples
+  are incomplete or an asset value is missing, in both SVG and Chart.js.
+- Label allocation deviation in percentage points in the SVG fallback, matching
+  the enhanced chart.
+
 ### Security
+
+- Escape asset symbols in History SVG marker titles and series attributes.
 
 - Patch six toolchain advisories: `shell-quote` ≥ 1.11.0, `source-map-js`
   ≥ 1.2.2, `proxy-addr` ≥ 2.0.8, `compression` ≥ 1.8.2 in the Kotlin/JS build
