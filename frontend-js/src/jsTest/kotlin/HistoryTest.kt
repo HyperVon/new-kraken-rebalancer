@@ -1,11 +1,15 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.ChartProps
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.events.Event
+import kotlin.js.Date
 import kotlin.js.json
 
 class HistoryTest :
@@ -36,9 +40,9 @@ class HistoryTest :
             assertHistoryValue(historyChartConfig(historyChartPoints(root), false).data.datasets[0].showLine, false)
             val item = json("parsed" to json("x" to 1000, "y" to 1234.56789))
             config.options.plugins.tooltip.callbacks.title(arrayOf(item)).toString() shouldBe
-                "1970-01-01 00:00:01.000 UTC"
+                localStamp(1000.0)
             assertHistoryValue(config.options.plugins.tooltip.callbacks.label(item).toString(), "$1,234.57")
-            assertHistoryValue(config.options.scales.x.ticks.callback(1000).toString(), "00:00:01")
+            assertHistoryValue(config.options.scales.x.ticks.callback(1000).toString(), localAxisShort(1000.0))
             assertHistoryValue(config.options.scales.y.ticks.callback(1000).toString(), "$1,000")
             val quantities = historyChartConfig(emptyList(), false)
             assertHistoryValue(quantities.options.plugins.tooltip.callbacks.label(item).toString(), "1,234.56789")
@@ -203,13 +207,106 @@ class HistoryTest :
             }
         }
 
-        "long chart windows label both calendar date and time in UTC" {
+        "long chart windows label both calendar date and time in local time" {
             val config = historyChartConfig(
                 listOf(HistoryChartPoint(0.0, 1.0), HistoryChartPoint(86_400_000.0, 2.0)),
                 true,
             )
-            assertHistoryValue(config.options.scales.x.ticks.callback(0).toString(), "01-01 00:00")
-            assertHistoryValue(config.options.scales.x.ticks.callback(86_400_000).toString(), "01-02 00:00")
+            assertHistoryValue(config.options.scales.x.ticks.callback(0).toString(), localAxisLong(0.0))
+            assertHistoryValue(
+                config.options.scales.x.ticks.callback(86_400_000).toString(),
+                localAxisLong(86_400_000.0),
+            )
+        }
+
+        "chart time labels render in the browser's local wall-clock time" {
+            val originalDate = window.asDynamic().Date
+            try {
+                // Keep UTC methods native so a UTC-formatting regression fails even on UTC CI.
+                window.asDynamic().Date = js(
+                    """(function(NativeDate) {
+                        return function(time) {
+                            var date = new NativeDate(time);
+                            var local = new NativeDate(time + 7200000);
+                            date.getFullYear = function() { return local.getUTCFullYear(); };
+                            date.getMonth = function() { return local.getUTCMonth(); };
+                            date.getDate = function() { return local.getUTCDate(); };
+                            date.getHours = function() { return local.getUTCHours(); };
+                            date.getMinutes = function() { return local.getUTCMinutes(); };
+                            date.getSeconds = function() { return local.getUTCSeconds(); };
+                            date.getMilliseconds = function() { return local.getUTCMilliseconds(); };
+                            date.getTimezoneOffset = function() { return -120; };
+                            return date;
+                        };
+                    })""",
+                )(originalDate)
+                val time = 1_700_000_000_000.0
+                historyDateLabel(time) shouldBe "2023-11-15 00:13:20.000"
+                historyAxisTimeLabel(time, true) shouldBe "00:13:20"
+                historyAxisTimeLabel(time, false) shouldBe "11-15 00:13"
+            } finally {
+                window.asDynamic().Date = originalDate
+            }
+        }
+
+        "canvas and SVG share the chart palette tokens" {
+            val config = historyChartConfig(listOf(HistoryChartPoint(1000.0, 10.0)), true)
+            assertHistoryValue(config.data.datasets[0].borderColor, "rgba(96, 165, 250, 1)")
+            assertHistoryValue(config.data.datasets[0].backgroundColor, "rgba(96, 165, 250, 1)")
+            assertHistoryValue(config.options.scales.x.grid.color, "rgba(51, 65, 85, 0.3)")
+            assertHistoryValue(config.options.scales.y.grid.color, "rgba(51, 65, 85, 0.3)")
+            assertHistoryValue(config.options.scales.x.ticks.color, "#64748b")
+            assertHistoryValue(config.options.scales.y.ticks.color, "#64748b")
+        }
+
+        "chart scrubber focuses each recorded sample and drives the chart cursor" {
+            val panel = historyFixture()
+            val scrubber = document.createElement("input") as HTMLInputElement
+            scrubber.type = "range"
+            scrubber.className = "history-chart-scrubber-input"
+            scrubber.setAttribute("data-chart-id", "history-value-chart")
+            scrubber.disabled = true
+            panel.appendChild(scrubber)
+            try {
+                var updates = 0
+                var activeIndexes: List<Int> = emptyList()
+                initHistoryCharts { _, config ->
+                    json(
+                        "data" to config.data,
+                        "options" to config.options,
+                        "update" to { _: dynamic -> updates++ },
+                        "resize" to { },
+                        "setActiveElements" to { elements: dynamic ->
+                            val length = elements.length as Int
+                            activeIndexes = (0 until length).map { ((elements[it].index) as Number).toInt() }
+                        },
+                        "tooltip" to json("setActiveElements" to { _: dynamic, _: dynamic -> }),
+                    )
+                }
+                scrubber.disabled shouldBe false
+                scrubber.min shouldBe "0"
+                scrubber.max shouldBe "2"
+                scrubber.value = "0"
+                scrubber.dispatchEvent(Event("input"))
+                activeIndexes shouldBe listOf(0)
+                panel.querySelector("circle[data-time='1000']")!!.classList.contains("active") shouldBe true
+                updates shouldBe 1
+                scrubber.value = "1"
+                scrubber.dispatchEvent(Event("input"))
+                activeIndexes shouldBe emptyList()
+                panel.querySelector("circle[data-time='2000']")!!.classList.contains("active") shouldBe true
+                panel.querySelector("circle[data-time='1000']")!!.classList.contains("active") shouldBe false
+                scrubber.value = "2"
+                scrubber.dispatchEvent(Event("input"))
+                activeIndexes shouldBe listOf(2)
+                panel.querySelector("circle[data-time='3000']")!!.classList.contains("active") shouldBe true
+                initHistoryScrubbers()
+                scrubber.value = "0"
+                scrubber.dispatchEvent(Event("input"))
+                updates shouldBe 4
+            } finally {
+                panel.remove()
+            }
         }
 
         "asset charts stay as points and work without a control toolbar" {
@@ -228,7 +325,149 @@ class HistoryTest :
                 panel.remove()
             }
         }
+
+        "multi-series samples group by series attribute and dedupe repeated markers" {
+            val root = document.createElement("div")
+            root.innerHTML = """
+            <svg>
+              <circle data-time="2000" data-value="20" data-series="BTC"/>
+              <circle data-time="1000" data-value="10" data-series="BTC"/>
+              <circle data-time="1000" data-value="10" data-series="BTC"/>
+              <circle data-time="1000" data-value="5" data-series="ETH"/>
+            </svg>
+            """.trimIndent()
+            val series = historySeriesPoints(root)
+            series.size shouldBe 2
+            series.first { it.first == "BTC" }.second shouldBe listOf(
+                HistoryChartPoint(1000.0, 10.0),
+                HistoryChartPoint(2000.0, 20.0),
+            )
+            series.first { it.first == "ETH" }.second shouldBe listOf(HistoryChartPoint(1000.0, 5.0))
+        }
+
+        "multi-series parser preserves named gaps without values as null samples" {
+            val root = document.createElement("div")
+            root.innerHTML = """
+            <svg>
+              <circle data-time="3000" data-value="20" data-series="BTC"/>
+              <circle data-time="2000" data-gap="true" data-series="BTC"/>
+              <circle data-time="1000" data-value="10" data-series="BTC"/>
+              <circle data-time="2000" data-gap="true" data-value="99" data-series="ETH"/>
+            </svg>
+            """.trimIndent()
+
+            historySeriesPoints(root) shouldBe listOf(
+                "BTC" to listOf(
+                    HistoryChartPoint(1000.0, 10.0),
+                    HistoryChartPoint(2000.0, null),
+                    HistoryChartPoint(3000.0, 20.0),
+                ),
+                "ETH" to listOf(HistoryChartPoint(2000.0, null)),
+            )
+        }
+
+        "multi-series config keeps series identity and formats money and percentage axes" {
+            val series = listOf(
+                "BTC" to listOf(HistoryChartPoint(1000.0, -2.5), HistoryChartPoint(2000.0, 3.0)),
+                "ETH" to listOf(HistoryChartPoint(1000.0, 1.0), HistoryChartPoint(2000.0, 2.0)),
+            )
+            val percent = historyMultiSeriesConfig(series, percent = true)
+            assertHistoryValue(percent.data.datasets.length, 2)
+            assertHistoryValue(percent.data.datasets[0].label, "BTC")
+            assertHistoryValue(percent.data.datasets[1].label, "ETH")
+            assertHistoryValue(percent.data.datasets[0].showLine, true)
+            assertHistoryValue(percent.options.plugins.legend.display, true)
+            val percentLabel = percent.options.plugins.tooltip.callbacks.label
+            assertHistoryValue(
+                percentLabel(json("parsed" to json("y" to 3.5), "dataset" to json("label" to "BTC"))),
+                "BTC · 3.5 pp",
+            )
+            val title = percent.options.plugins.tooltip.callbacks.title
+            assertHistoryValue(title(arrayOf(json("parsed" to json("x" to 1000.0)))), localStamp(1000.0))
+            val yTick = percent.options.scales.y.ticks.callback
+            assertHistoryValue(yTick(-2.5), "-2.5 pp")
+            val xTick = percent.options.scales.x.ticks.callback
+            assertHistoryValue(xTick(1000.0), localAxisShort(1000.0))
+            val gridColor = percent.options.scales.y.grid.color
+            assertHistoryValue(gridColor(json("tick" to json("value" to 0))), ChartProps.COLOR_TICK)
+            assertHistoryValue(gridColor(json("tick" to json("value" to 5))), ChartProps.COLOR_GRID_LINE)
+
+            val money = historyMultiSeriesConfig(
+                listOf("BTC" to listOf(HistoryChartPoint(0.0, 3.5), HistoryChartPoint(86_400_000.0, 4.5))),
+                percent = false,
+            )
+            val moneyLabel = money.options.plugins.tooltip.callbacks.label
+            assertHistoryValue(
+                moneyLabel(json("parsed" to json("y" to 3.5), "dataset" to json("label" to null))),
+                "$3.5",
+            )
+            val moneyYTick = money.options.scales.y.ticks.callback
+            assertHistoryValue(moneyYTick(3.5), "$3.5")
+            val longWindowX = money.options.scales.x.ticks.callback
+            assertHistoryValue(longWindowX(86_400_000.0), localAxisLong(86_400_000.0))
+        }
+
+        "multi-series charts enhance through Chart.js and view toggles apply to every dataset" {
+            val panel = document.createElement("section") as HTMLElement
+            panel.className = "glass-panel"
+            panel.innerHTML = """
+        <div data-history-controls hidden>
+          <button data-history-view="line">Line</button>
+          <button data-history-view="points">Points</button>
+        </div>
+        <div id="history-holdings-chart"><svg class="history-chart-svg">
+          <circle data-time="1000" data-value="10" data-series="BTC"/>
+          <circle data-time="2000" data-value="20" data-series="BTC"/>
+          <circle data-time="1000" data-value="5" data-series="ETH"/>
+          <circle data-time="2000" data-value="7" data-series="ETH"/>
+        </svg></div>
+            """.trimIndent()
+            document.body!!.appendChild(panel)
+            try {
+                var captured: dynamic = null
+                initHistoryCharts { _, config ->
+                    captured = config
+                    json(
+                        "data" to config.data,
+                        "options" to config.options,
+                        "update" to { _: dynamic -> },
+                        "resize" to { },
+                        "setActiveElements" to { _: dynamic -> },
+                        "tooltip" to json("setActiveElements" to { _: dynamic, _: dynamic -> }),
+                    )
+                }
+                assertHistoryValue(captured.data.datasets.length, 2)
+                panel.querySelector("#history-holdings-chart svg")!!.getAttribute("hidden") shouldBe ""
+                (panel.querySelector("#history-holdings-chart canvas") != null) shouldBe true
+                clickHistoryButton(panel, "[data-history-view='points']")
+                assertHistoryValue(captured.data.datasets[0].showLine, false)
+                assertHistoryValue(captured.data.datasets[1].showLine, false)
+            } finally {
+                panel.remove()
+            }
+        }
     })
+
+private fun historyPad(value: Int, size: Int): String = value.toString().padStart(size, '0')
+
+/** Independent local wall-clock oracle for the label format under test. */
+private fun localStamp(time: Double): String {
+    val date = Date(time)
+    return "${date.getFullYear()}-${historyPad(date.getMonth() + 1, 2)}-${historyPad(date.getDate(), 2)} " +
+        "${historyPad(date.getHours(), 2)}:${historyPad(date.getMinutes(), 2)}:" +
+        "${historyPad(date.getSeconds(), 2)}.${historyPad(date.getMilliseconds(), 3)}"
+}
+
+private fun localAxisShort(time: Double): String {
+    val date = Date(time)
+    return "${historyPad(date.getHours(), 2)}:${historyPad(date.getMinutes(), 2)}:${historyPad(date.getSeconds(), 2)}"
+}
+
+private fun localAxisLong(time: Double): String {
+    val date = Date(time)
+    return "${historyPad(date.getMonth() + 1, 2)}-${historyPad(date.getDate(), 2)} " +
+        "${historyPad(date.getHours(), 2)}:${historyPad(date.getMinutes(), 2)}"
+}
 
 private fun historyFixture(): HTMLElement {
     val panel = document.createElement("section") as HTMLElement

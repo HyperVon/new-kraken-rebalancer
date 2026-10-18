@@ -97,10 +97,7 @@ object FormStyles {
             background =
                 "linear-gradient(135deg, ${CssTheme.colorBlueAccent.value} 0%, " +
                 "${CssTheme.colorBluePrimary.value} 50%, ${CssTheme.colorBlueHover.value} 100%)"
-            boxShadowRaw(
-                "0 0 22px rgba(59,130,246,0.4), 0 8px 18px rgba(37,99,235,0.35), " +
-                    "inset 0 1px 0 rgba(255,255,255,0.22)",
-            )
+            boxShadowRaw(CssTheme.shadowBtnPrimaryHover)
         }
 
         CssClass.Button.Secondary.querySelector {
@@ -289,7 +286,7 @@ object FormStyles {
             padding = Padding(0.625.rem, 0.875.rem)
             borderRadius = CssTheme.radiusLg
             solidBorder(CssTheme.colorSurface2Border)
-            boxShadowRaw("0 4px 12px -4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(186,220,255,0.08)")
+            boxShadowRaw(CssTheme.shadowEditRow)
         }
 
         "${CssClass.Form.AllocationEditRow.querySelector} ${CssClass.Button.DangerGhost.querySelector}" {
@@ -517,7 +514,7 @@ object FormStyles {
             alignItems = Align.flexStart
             gap = 1.rem
             minWidth = 0.px
-            padding = Padding(1.25.rem)
+            padding = Padding(1.5.rem)
             borderRadius = CssTheme.radiusXl
             background = CssTheme.glassSurfaceGradient
             solidBorder(CssTheme.colorSurface2Border)
@@ -537,14 +534,9 @@ object FormStyles {
 
         // Active (checked) tint — a safety that is ON reads as success.
         "input[type=\"checkbox\"]:checked + .${CssClass.Form.SafetyCardInner.value}" {
-            background =
-                "linear-gradient(165deg, rgba(16,185,129,0.16) 0%, rgba(16,185,129,0.05) 28%, " +
-                "rgba(18,28,48,0.92) 100%)"
+            background = CssTheme.safetyCheckedGradient
             borderColor = CssTheme.colorSuccessBorder
-            boxShadowRaw(
-                "0 8px 22px rgba(0,0,0,0.5), 0 0 22px rgba(16,185,129,0.12), " +
-                    "inset 0 1px 0 rgba(147,197,253,0.14)",
-            )
+            boxShadowRaw(CssTheme.shadowSafetyChecked)
         }
 
         ".${CssClass.Form.SafetyCardIcon.value}" {

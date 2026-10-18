@@ -56,7 +56,7 @@ class HistoryViewsTest :
                 query = "?range=30d&type=deposit"
                 save.click()
                 parseHistoryViews(storage) shouldBe listOf(SavedHistoryView("Week", "range=30d&type=deposit"))
-                select.options.length shouldBe 2
+                select.options.length shouldBe 6
                 select.dispatchEvent(Event("change"))
                 destination shouldBe "/history?range=30d&type=deposit"
                 select.value = ""
@@ -66,7 +66,7 @@ class HistoryViewsTest :
                 save.click()
                 name = "  "
                 save.click()
-                select.options.length shouldBe 2
+                select.options.length shouldBe 6
                 select.value = "Week"
                 select.dispatchEvent(Event("change"))
                 delete.click()
@@ -124,7 +124,7 @@ class HistoryViewsTest :
                 select.dispatchEvent(Event("change"))
                 destination shouldBe "/history"
                 (root.querySelector("#history-delete-view") as HTMLButtonElement).click()
-                select.options.length shouldBe 1
+                select.options.length shouldBe 5
             } finally {
                 root.remove()
             }
@@ -164,6 +164,69 @@ class HistoryViewsTest :
             }
         }
 
+        "built-in presets are read-only and land on their range and section" {
+            val root = historyViewsFixture()
+            try {
+                var destination = ""
+                initHistoryViews(
+                    read = { null },
+                    write = { },
+                    prompt = { null },
+                    navigate = { destination = it },
+                    currentQuery = { "?range=24h" },
+                )
+                val select = root.querySelector("select") as HTMLSelectElement
+                select.options.length shouldBe 5
+                select.value = "preset:Week · Allocation"
+                select.dispatchEvent(Event("change"))
+                destination shouldBe "/history?range=7d#history-allocation-section"
+                (root.querySelector("#history-delete-view") as HTMLButtonElement).disabled shouldBe true
+                select.value = "preset:Month · Net Cash Flow"
+                select.dispatchEvent(Event("change"))
+                destination shouldBe "/history?range=30d#history-cash-flow-section"
+            } finally {
+                root.remove()
+            }
+        }
+
+        "set as default applies the chosen view on a bare page load only" {
+            var root = historyViewsFixture()
+            try {
+                var storage: String? = null
+                var destination = ""
+                initHistoryViews(
+                    read = { storage },
+                    write = { storage = it },
+                    prompt = { "Week" },
+                    navigate = { destination = it },
+                    currentQuery = { "?range=7d" },
+                )
+                (root.querySelector("#history-save-view") as HTMLButtonElement).click()
+                (root.querySelector("#history-set-default-view") as HTMLButtonElement).click()
+                parseHistoryViewStore(storage).defaultOption shouldBe "Week"
+                root.remove()
+                root = historyViewsFixture()
+                initHistoryViews(
+                    read = { storage },
+                    write = { storage = it },
+                    navigate = { destination = it },
+                    currentQuery = { "?range=30d" },
+                )
+                destination shouldBe ""
+                root.remove()
+                root = historyViewsFixture()
+                initHistoryViews(
+                    read = { storage },
+                    write = { storage = it },
+                    navigate = { destination = it },
+                    currentQuery = { "" },
+                )
+                destination shouldBe "/history?range=7d"
+            } finally {
+                root.remove()
+            }
+        }
+
         "initialization tolerates unrelated or partially rendered pages" {
             initHistoryViews(read = { error("must not access storage") })
             val root = document.createElement("div") as HTMLElement
@@ -188,6 +251,7 @@ private fun historyViewsFixture(): HTMLElement {
     root.innerHTML = """
         <select id="history-saved-view"></select>
         <button id="history-save-view">Save view</button>
+        <button id="history-set-default-view">Set as default</button>
         <button id="history-delete-view">Delete view</button>
     """.trimIndent()
     document.body!!.appendChild(root)

@@ -45,7 +45,7 @@ object PerformanceDevStyles {
         }
 
         ".${CssClass.Performance.DevUsdLabel}" {
-            fontSize = 0.675.rem
+            fontSize = 0.75.rem
             opacity = 0.7
             fontFamily = CssTheme.fontMono
         }
@@ -62,7 +62,7 @@ object PerformanceDevStyles {
         ".${CssClass.Performance.DevLegendItem}" {
             display = Display.inlineFlex
             alignItems = Align.center
-            gap = 0.35.rem
+            gap = 0.25.rem
             fontWeight = FontWeight.w600
         }
 

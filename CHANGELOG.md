@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.19.0] - 2026-10-17
+
+### Added
+
+- **History analytics**: Asset Holdings Over Time, Allocation Deviation from
+  Target, and Cumulative Net Cash Flow charts, each with zoom/pan controls and
+  a range scrubber for exact-point inspection.
+- **History rewards**: Staking Rewards panel with a cumulative rewards chart
+  and total, valued at the nearest observed cycle price.
+- **History stats**: All-Time High tile alongside the trade summary.
+- **History saved views**: "Set as default" plus built-in Overview, Day · Total
+  only, Week · Allocation, and Month · Net Cash Flow presets.
+
+### Changed
+
+- Show History chart tooltips, axis labels, and record timestamps in local time
+  instead of UTC.
+- Render every History chart through Chart.js with the server SVG kept as a
+  full-fidelity fallback: shared palette, legends, tooltips, and thinned
+  point markers on dense series.
+- Render canvas charts, server SVG fallbacks, and chart labels from one shared
+  chart palette so History and Dashboard series match.
+- Unify selected-chip styling across History controls and ease hover states on
+  table rows and History buttons.
+- Promote repeated shadows, glows, and gradients to shared theme tokens and
+  snap spacing and type sizes to the design scale.
+
+### Fixed
+
+- Preserve gaps in History holdings and allocation charts when cycle samples
+  are incomplete or an asset value is missing, in both SVG and Chart.js.
+- Label allocation deviation in percentage points in the SVG fallback, matching
+  the enhanced chart.
+
+### Security
+
+- Escape asset symbols in History SVG marker titles and series attributes.
+
+- Patch six toolchain advisories: `shell-quote` ≥ 1.11.0, `source-map-js`
+  ≥ 1.2.2, `proxy-addr` ≥ 2.0.8, `compression` ≥ 1.8.2 in the Kotlin/JS build
+  tree, and `katex` ≥ 0.18.2, `smol-toml` ≥ 1.9.0 in developer tooling.
+
 ## [6.18.2] - 2026-10-17
 
 ### Added

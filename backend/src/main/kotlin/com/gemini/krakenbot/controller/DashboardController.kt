@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.AssetColorAssigner
@@ -19,6 +20,7 @@ import com.gemini.krakenbot.service.history.HISTORY_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
+import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistoryService
@@ -715,8 +717,20 @@ class DashboardController(
             return HistoryPageData(
                 range, filters, tradesOffset, ledgersOffset, observations,
                 empty(), empty(tradesOffset), empty(ledgersOffset), emptyList(), accountAvailable = false,
+                allocations = config.allocations,
             )
         }
+        val chartLedgerQuery = filters.copy(pair = null, type = null, limit = HISTORY_MAX_PAGE_LIMIT)
+        val fundingLedgers = listOf(
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+        ).flatMap { type -> service.queryAllLedgers(chartLedgerQuery.copy(type = type)) }
+        val rewardLedgers = listOf(
+            KrakenApiConstants.LEDGER_TYPE_STAKING,
+            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            KrakenApiConstants.LEDGER_TYPE_EARN,
+            KrakenApiConstants.LEDGER_TYPE_REWARD,
+        ).flatMap { type -> service.queryAllLedgers(chartLedgerQuery.copy(type = type)) }
         return HistoryPageData(
             range = range,
             filters = filters,
@@ -734,7 +748,21 @@ class DashboardController(
             accountAvailable = true,
             filterOptions = service.queryFilterOptions(filters),
             tradeSummary = service.queryTradeSummary(filters),
+            fundingLedgers = fundingLedgers,
+            rewardLedgers = rewardLedgers,
+            allocations = config.allocations,
         )
+    }
+
+    private suspend fun HistoryService.queryAllLedgers(query: HistoryEventQuery): List<HistoryLedger> {
+        val ledgers = mutableListOf<HistoryLedger>()
+        var offset = 0
+        while (true) {
+            val page = queryLedgers(query.copy(limit = HISTORY_MAX_PAGE_LIMIT, offset = offset))
+            ledgers.addAll(page.items)
+            if (!page.hasMore || page.items.isEmpty()) return ledgers
+            offset += page.items.size
+        }
     }
 
     private suspend fun HistoryService.queryAllBalanceCheckpoints(

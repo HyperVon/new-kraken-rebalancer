@@ -86,5 +86,13 @@ rootProject.plugins.withType<YarnPlugin> {
         // Dependabot #105 / GHSA-5p4m-2wfm-xmqj — quadratic CPU in !!omap resolution
         // Dependabot #136 — empty merge sources bypass maxTotalMergeKeys
         resolution("js-yaml", ">=4.3.2 <5.0.0")
+        // Dependabot #159 — shell-quote < 1.11.0 improper neutralization of shell metacharacters
+        resolution("shell-quote", ">=1.11.0 <2.0.0")
+        // Dependabot #158 — source-map-js < 1.2.2 regular-expression denial of service
+        resolution("source-map-js", ">=1.2.2 <2.0.0")
+        // Dependabot #157 — proxy-addr < 2.0.8 proxy-addr trusted-proxy parsing
+        resolution("proxy-addr", ">=2.0.8 <3.0.0")
+        // Dependabot #156 — compression < 1.8.2 response body handling
+        resolution("compression", ">=1.8.2 <2.0.0")
     }
 }
