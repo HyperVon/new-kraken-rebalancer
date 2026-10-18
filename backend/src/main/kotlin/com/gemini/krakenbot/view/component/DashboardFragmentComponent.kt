@@ -77,7 +77,7 @@ class DashboardFragmentComponent(
 
         div.div(CssClass.Layout.DetailGrid) {
             allocationChartComponent.render(latest, allocations, qualityScores)
-            performanceTableComponent.render(latest)
+            performanceTableComponent.render(latest, qualityScores)
         }
 
         recentActivityComponent.render(latest)

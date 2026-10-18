@@ -31,7 +31,8 @@ class OverviewGridComponentTest : StringSpec() {
             twoSamples shouldContain "hero-trend-fill"
             twoSamples shouldContain "hero-trend-delta positive"
             twoSamples shouldContain "+1%"
-            twoSamples shouldContain "this run"
+            twoSamples shouldContain "over shown cycles"
+            twoSamples shouldNotContain "this run"
             twoSamples shouldNotContain "aria-label"
         }
 

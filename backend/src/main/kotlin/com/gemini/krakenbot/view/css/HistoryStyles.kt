@@ -46,8 +46,9 @@ object HistoryStyles {
         "#${HtmlIds.HISTORY_SAVED_VIEWS}[hidden]" { display = Display.none }
         "#${HtmlIds.HISTORY_SAVED_VIEWS}" {
             alignItems = Align.end
-            padding = Padding(0.75.rem, 0.875.rem)
-            maxWidthRaw("36rem")
+            padding = Padding(0.rem)
+            width = 100.pct
+            put("margin", "0")
         }
         ".${CssClass.History.ChartControls} .active" {
             color = CssTheme.colorTextPrimary
@@ -78,6 +79,7 @@ object HistoryStyles {
             borderRadius = CssTheme.radiusLg
         }
         ".${CssClass.History.TimeRangeSelector}" {
+            width = 100.pct
             display = Display.flex
             gap = 0.375.rem
             flexWrapRaw("wrap")
@@ -198,11 +200,15 @@ object HistoryStyles {
             gap = 0.75.rem
             marginBottom = 0.75.rem
         }
+        ".${CssClass.History.ToolbarRow} > .${CssClass.History.MutedSmallText}" {
+            width = 100.pct
+            put("margin", "0")
+        }
         ".${CssClass.History.ToolbarRow} > .${CssClass.History.FilterRow}" {
             alignItems = Align.end
             gap = 0.625.rem
             put("margin", "0")
-            put("flex", "1 1 36rem")
+            put("flex", "1 1 100%")
         }
         ".${CssClass.History.FilterRow} > label" {
             display = Display.grid
@@ -247,10 +253,64 @@ object HistoryStyles {
             background = CssTheme.colorGlassSurfaceFaint.value
             boxShadowRaw(CssTheme.insetTopHighlight)
         }
-        ".${CssClass.History.SyncHeader}, .${CssClass.History.SyncTitle}" {
+        ".${CssClass.History.SectionNav}" {
+            display = Display.flex
+            flexWrapRaw("wrap")
+            gap = 0.5.rem
+            marginBottom = 1.rem
+        }
+        ".${CssClass.History.SyncHeader}" {
             display = Display.flex
             alignItems = Align.center
+            justifyContentRaw("space-between")
+            flexWrapRaw("wrap")
+            gap = 0.75.rem
+            marginBottom = 0.75.rem
+        }
+        ".${CssClass.History.SyncTitle}" {
+            fontSize = 0.875.rem
+            put("margin", "0")
+        }
+        ".${CssClass.History.SyncFeed}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            flexWrapRaw("wrap")
             gap = 0.5.rem
+            put("margin", "0 1.5rem 0.5rem 0")
+            maxWidthRaw("100%")
+        }
+        ".${CssClass.History.SyncFeed} p" {
+            width = 100.pct
+            put("margin", "0")
+            color = CssTheme.colorWarning
+        }
+        ".${CssClass.History.SyncBanner} summary" {
+            put("cursor", "pointer")
+            fontSize = 0.8125.rem
+            color = CssTheme.colorTextSecondary
+            padding = Padding(0.375.rem, 0.rem)
+        }
+        ".${CssClass.History.SyncBanner} dl" {
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("minmax(8rem, auto) minmax(0, 1fr)")
+            gap = 0.375.rem
+        }
+        ".${CssClass.History.SyncBanner} dd" { put("margin", "0") }
+        ".${CssClass.History.TradeLog} .${CssClass.Table.Wrapper}" {
+            put("max-height", "32rem")
+            put("overflow", "auto")
+        }
+        ".${CssClass.History.TradeLog} thead" {
+            position = Position.sticky
+            put("top", "0")
+            put("z-index", "1")
+            background = CssTheme.colorSurface2.value
+        }
+        (
+            "#${HtmlIds.HISTORY_PORTFOLIO_SECTION}, #${HtmlIds.HISTORY_TRADES_SECTION}, " +
+                "#${HtmlIds.HISTORY_LEDGERS_SECTION}"
+            ) {
+            put("scroll-margin-top", "1rem")
         }
         ".${CssClass.History.SyncText}" {
             fontSize = 0.8125.rem

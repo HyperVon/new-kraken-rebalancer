@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.18.2] - 2026-10-17
+
+### Added
+
+- **Holdings detail**: sortable quantity and quality-score columns on the
+  Dashboard, with asset links opening filtered History.
+- **History navigation**: jump links to portfolio values, trades, and
+  transactions, plus readable sync states with expandable scan details.
+
+### Changed
+
+- Give holdings the full content width, arrange allocation bars in two columns
+  on laptops, and present portfolio quality metrics separately.
+- Group History filters and saved views, keep long account tables in scrollable
+  panels with sticky headings, and clarify empty and incomplete states.
+- Reduce marker clutter on dense portfolio charts while retaining exact-point
+  inspection and the Points view.
+
+### Fixed
+
+- Label the Dashboard's rolling 24-cycle change as “over shown cycles”.
+- Display small asset prices with useful precision and negative deviations
+  with the minus sign before the dollar symbol.
+
 ## [6.18.1] - 2026-10-17
 
 ### Fixed

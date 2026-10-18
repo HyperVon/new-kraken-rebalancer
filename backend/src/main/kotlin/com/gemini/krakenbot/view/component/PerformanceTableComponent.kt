@@ -6,6 +6,7 @@ import com.gemini.krakenbot.view.util.DataSort
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlKeys
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
@@ -13,10 +14,13 @@ import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.th
 import com.gemini.krakenbot.view.util.tr
+import com.gemini.krakenbot.view.util.withQuery
 import kotlinx.html.DIV
+import kotlinx.html.a
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.thead
+import java.math.BigDecimal
 
 class PerformanceTableComponent {
 
@@ -34,11 +38,13 @@ class PerformanceTableComponent {
             ColumnHeader(ViewText.HEADER_TARGET_PCT),
             ColumnHeader(ViewText.HEADER_CURRENT_PCT),
             ColumnHeader(ViewText.HEADER_DEV_PCT, CssClass.Table.SortableAsc, DataSort.ASCENDING),
+            ColumnHeader(ViewText.HEADER_QUANTITY),
+            ColumnHeader(ViewText.ALLOCATION_SCORE_FIELD),
         )
     }
 
     context(div: DIV)
-    fun render(latest: PortfolioSnapshot) {
+    fun render(latest: PortfolioSnapshot, qualityScores: Map<String, BigDecimal> = emptyMap()) {
         div.glassPanel(ViewText.ASSET_PERFORMANCE) {
             div(CssClass.Performance.DevLegend) {
                 span(CssClass.Performance.DevLegendItem + CssClass.Performance.DevLegendOver) {
@@ -77,20 +83,18 @@ class PerformanceTableComponent {
                             val sign = Formatter.getDeviationSign(dev)
 
                             tr(CssClass.Table.Hoverable) {
-                                td(CssClass.Table.SymbolCol) { +asset.symbol.value }
-                                td(CssClass.Table.MonoCol) {
-                                    +"$${
-                                        Formatter.formatCurrency(
-                                            asset.price,
-                                        )
-                                    }"
+                                td(CssClass.Table.SymbolCol) {
+                                    a(href = Routes.HISTORY.withQuery("asset", asset.symbol.value)) {
+                                        +asset.symbol.value
+                                    }
                                 }
                                 td(CssClass.Table.MonoCol) {
-                                    +"$${
-                                        Formatter.formatCurrency(
-                                            asset.valueUSD,
-                                        )
-                                    }"
+                                    attributes[HtmlAttrs.DATA_SORT_VALUE] = asset.price.toPlainString()
+                                    +Formatter.formatPriceOrDash(asset.price)
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    attributes[HtmlAttrs.DATA_SORT_VALUE] = asset.valueUSD.toPlainString()
+                                    +Formatter.formatSignedUsd(asset.valueUSD)
                                 }
                                 td { +"${Formatter.formatPercent(asset.targetPercent)}%" }
                                 td { +"${Formatter.formatPercent(asset.currentPercent)}%" }
@@ -106,15 +110,21 @@ class PerformanceTableComponent {
                                         }
                                         span(CssClass.Performance.DevUsdLabel) {
                                             val devUSD = asset.deviationUSD
-                                            val usdSign =
-                                                if (devUSD.signum() >= 0) "+" else ""
-                                            +"($usdSign$${
-                                                Formatter.formatCurrency(
-                                                    devUSD,
-                                                )
-                                            })"
+                                            val usdSign = if (devUSD.signum() > 0) "+" else ""
+                                            +"($usdSign${Formatter.formatSignedUsd(devUSD)})"
                                         }
                                     }
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    attributes[HtmlAttrs.DATA_SORT_VALUE] = asset.balance.toPlainString()
+                                    +Formatter.formatQuantity(asset.balance)
+                                }
+                                td(CssClass.Table.MonoCol) {
+                                    val score = qualityScores[asset.symbol.value]
+                                    if (score != null) {
+                                        attributes[HtmlAttrs.DATA_SORT_VALUE] = score.toPlainString()
+                                    }
+                                    +(score?.let(Formatter::formatPercent) ?: ViewText.EM_DASH)
                                 }
                             }
                         }

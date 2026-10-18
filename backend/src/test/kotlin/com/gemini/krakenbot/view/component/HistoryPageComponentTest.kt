@@ -66,11 +66,16 @@ class HistoryPageComponentTest : StringSpec() {
                 "Kraken account identity is not verified yet; imported history appears after the first successful authentication."
             html shouldContain "Select an asset in the filter to chart its exchange-reported balance."
             html shouldContain
-                "No historical data available yet. Synchronize account history to populate trades and ledger records."
+                "No matching records in this range. Try another range or clear the event filters."
             html shouldContain
                 "No portfolio observations are available for this range yet. Portfolio values are captured during rebalance cycles."
             html shouldContain "Exchange History Sync"
             html shouldNotContain "Synchronizing Exchange History"
+            html shouldNotContain "action=\"/api/history/sync/start\""
+            html shouldNotContain "id=\"history-sync-button\""
+            val verifiedHtml = render(emptyData.copy(accountAvailable = true))
+            verifiedHtml shouldContain "No account history sync has been recorded yet."
+            verifiedHtml shouldContain "id=\"history-sync-button\""
         }
 
         "renders sync banner with all sync states" {
@@ -162,12 +167,22 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html shouldContain "trades: running; 5 stored, 10 fetched"
-            html shouldContain "ledgers: complete; 50 stored, 50 fetched"
-            html shouldContain "trades: paused"
-            html shouldContain "ledgers: failed: Rate limit hit"
-            html shouldContain "trades: not started"
+            listOf("Running", "Complete", "Paused", "Failed", "Not started", "Rate limit hit").forEach {
+                html shouldContain ">$it<"
+            }
+            html shouldContain "<summary>Sync details</summary>"
+            html shouldContain "<dt>Stored records</dt>"
+            html shouldContain "<dd>5</dd>"
+            html shouldContain "<dt>Fetched this scan</dt>"
+            html shouldContain "<dd>10</dd>"
+            html shouldContain "<dt>Scan window</dt>"
+            html shouldContain "<dt>Last page received</dt>"
+            html shouldContain "2023-11-14 22:13:20 UTC"
+            html shouldContain "method=\"post\""
+            html shouldContain "action=\"/api/history/sync/start\""
+            html shouldContain "name=\"csrfToken\" value=\"test-csrf\""
             html shouldContain "Sync now"
+            (html.indexOf("Rate limit hit") < html.indexOf("<details>")) shouldBe true
         }
 
         "renders account filters as dropdowns and keeps the selected options" {
@@ -197,6 +212,14 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "XXBT (BTC)"
             html shouldContain "selected"
             html shouldNotContain "type=\"text\""
+            html shouldContain "href=\"#history-portfolio-section\""
+            html shouldContain "href=\"#history-trades-section\""
+            html shouldContain "href=\"#history-ledgers-section\""
+            html shouldContain "id=\"history-portfolio-section\""
+            html shouldContain "id=\"history-trades-section\""
+            html shouldContain "id=\"history-ledgers-section\""
+            html shouldContain "range=30d&amp;asset=BTC&amp;pair=XXBTZUSD&amp;type=buy"
+            html shouldContain "Asset, pair and type filters apply to account records."
         }
 
         "renders value chart and checkpoint chart with SVG lines" {
@@ -355,6 +378,7 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "data-time=\"1699999940000\" data-gap=\"true\""
             html shouldContain "Lines connect complete cycle samples; incomplete cycles break the line."
             html shouldContain "No values are inferred between samples."
+            html shouldContain "Some cycles have incomplete values. Gaps remain visible in the chart."
         }
 
         "renders trades, ledgers, and pagination buttons" {
@@ -431,6 +455,8 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "Previous"
             html shouldContain "Next"
             html shouldContain "51–51 of 150"
+            html shouldContain "tradesOffset=100&amp;ledgersOffset=50#history-trades-section"
+            html shouldContain "tradesOffset=50&amp;ledgersOffset=100#history-ledgers-section"
         }
 
         "renders stat cards from trade summary and observed period high" {
@@ -527,7 +553,10 @@ class HistoryPageComponentTest : StringSpec() {
                 accountAvailable = true,
             )
             val html = render(data)
-            html shouldContain "trades: failed: unknown error; 0 stored, 0 fetched"
+            html shouldContain ">Failed<"
+            html shouldContain ">Unknown error<"
+            html shouldNotContain "<dt>Scan window</dt>"
+            html shouldNotContain "<dt>Last page received</dt>"
         }
 
         "renders charts with single points or flat values" {
