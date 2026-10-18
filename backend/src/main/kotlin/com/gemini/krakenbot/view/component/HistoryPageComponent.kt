@@ -1,7 +1,9 @@
 package com.gemini.krakenbot.view.component
 
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
@@ -20,13 +22,17 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
+import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.HistoryChartActions
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.borderColorForSymbol
 import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.cdnScript
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
@@ -74,8 +80,10 @@ import kotlinx.html.unsafe
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.abs
 
 /** Everything the History page renders; assembled by the controller from [HistoryService] queries. */
 data class HistoryPageData(
@@ -91,10 +99,14 @@ data class HistoryPageData(
     val accountAvailable: Boolean,
     val filterOptions: HistoryEventFilterOptions = HistoryEventFilterOptions(),
     val tradeSummary: HistoryTradeSummary = HistoryTradeSummary(),
+    val fundingLedgers: List<HistoryLedger> = emptyList(),
+    val rewardLedgers: List<HistoryLedger> = emptyList(),
+    val allocations: List<Allocation> = emptyList(),
 )
 
-class HistoryPageComponent {
-    private val timeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'").withZone(ZoneOffset.UTC)
+class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefault()) {
+    private val timeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(displayZone)
+    private val axisTimeFormatter = DateTimeFormatter.ofPattern("MMM d HH:mm").withZone(displayZone)
 
     context(html: HTML)
     fun render(settings: Settings, data: HistoryPageData, csrfToken: String?, paused: Boolean) {
@@ -119,6 +131,10 @@ class HistoryPageComponent {
                 renderSync(data, csrfToken)
                 renderStatsGrid(data)
                 renderValueChart(data)
+                renderHoldingsChart(data)
+                renderAllocationChart(data)
+                renderCashFlowChart(data)
+                renderRewardsChart(data)
                 renderCheckpointChart(data)
                 renderTrades(data)
                 renderLedgers(data)
@@ -131,6 +147,10 @@ class HistoryPageComponent {
         nav(classes = CssClass.History.SectionNav.value) {
             listOf(
                 HtmlIds.HISTORY_PORTFOLIO_SECTION to ViewText.HISTORY_JUMP_PORTFOLIO,
+                HtmlIds.HISTORY_HOLDINGS_SECTION to ViewText.HISTORY_JUMP_HOLDINGS,
+                HtmlIds.HISTORY_ALLOCATION_SECTION to ViewText.HISTORY_JUMP_ALLOCATION,
+                HtmlIds.HISTORY_CASH_FLOW_SECTION to ViewText.HISTORY_JUMP_CASH_FLOW,
+                HtmlIds.HISTORY_REWARDS_SECTION to ViewText.HISTORY_JUMP_REWARDS,
                 HtmlIds.HISTORY_TRADES_SECTION to ViewText.HISTORY_JUMP_TRADES,
                 HtmlIds.HISTORY_LEDGERS_SECTION to ViewText.HISTORY_JUMP_LEDGERS,
             ).forEach { (section, label) ->
@@ -157,9 +177,15 @@ class HistoryPageComponent {
                 }
             }
             if (!data.accountAvailable) {
-                p(CssClass.History.SyncText) { +ViewText.HISTORY_ACCOUNT_UNAVAILABLE }
+                p(CssClass.History.SyncText) {
+                    id = HtmlIds.HISTORY_SYNC_TEXT
+                    +ViewText.HISTORY_ACCOUNT_UNAVAILABLE
+                }
             } else if (data.syncStatuses.isEmpty()) {
-                p(CssClass.History.SyncText) { +ViewText.HISTORY_SYNC_NO_STATUS }
+                p(CssClass.History.SyncText) {
+                    id = HtmlIds.HISTORY_SYNC_TEXT
+                    +ViewText.HISTORY_SYNC_NO_STATUS
+                }
             }
             data.syncStatuses.forEach { status ->
                 div(CssClass.History.SyncFeed) {
@@ -300,6 +326,11 @@ class HistoryPageComponent {
                 +ViewText.HISTORY_SAVE_VIEW
             }
             button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                id = HtmlIds.HISTORY_SET_DEFAULT_VIEW
+                disabled = true
+                +ViewText.HISTORY_SET_DEFAULT
+            }
+            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
                 id = HtmlIds.HISTORY_DELETE_VIEW
                 disabled = true
                 +ViewText.HISTORY_DELETE_VIEW
@@ -377,6 +408,7 @@ class HistoryPageComponent {
             if (hasCompleteValue && observations.any { it.status != HistoryObservationStatus.COMPLETE }) {
                 p(CssClass.History.SyncText) { +ViewText.HISTORY_VALUE_PARTIAL }
             }
+            renderChartScrubber(HtmlIds.HISTORY_VALUE_CHART)
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
         }
@@ -384,18 +416,18 @@ class HistoryPageComponent {
 
     private fun DIV.chartControls(pointsOnly: Boolean = false) {
         div(CssClass.History.ChartControls) {
-            attributes["data-history-controls"] = "true"
+            attributes[HtmlAttrs.DATA_HISTORY_CONTROLS] = "true"
             attributes["hidden"] = "hidden"
             if (!pointsOnly) {
-                chartButton("data-history-view", "line", ViewText.HISTORY_CHART_LINE)
-                chartButton("data-history-view", "points", ViewText.HISTORY_CHART_POINTS)
+                chartButton(HtmlAttrs.DATA_HISTORY_VIEW, HistoryChartActions.VIEW_LINE, ViewText.HISTORY_CHART_LINE)
+                chartButton(HtmlAttrs.DATA_HISTORY_VIEW, HistoryChartActions.VIEW_POINTS, ViewText.HISTORY_CHART_POINTS)
             }
-            chartButton("data-history-zoom", "in", ViewText.HISTORY_CHART_ZOOM_IN)
-            chartButton("data-history-zoom", "out", ViewText.HISTORY_CHART_ZOOM_OUT)
-            chartButton("data-history-pan", "earlier", ViewText.HISTORY_CHART_EARLIER)
-            chartButton("data-history-pan", "later", ViewText.HISTORY_CHART_LATER)
-            chartButton("data-history-zoom", "reset", ViewText.HISTORY_CHART_RESET)
-            chartButton("data-history-expand", "true", ViewText.HISTORY_CHART_EXPAND)
+            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_IN, ViewText.HISTORY_CHART_ZOOM_IN)
+            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_OUT, ViewText.HISTORY_CHART_ZOOM_OUT)
+            chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_EARLIER, ViewText.HISTORY_CHART_EARLIER)
+            chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_LATER, ViewText.HISTORY_CHART_LATER)
+            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_RESET, ViewText.HISTORY_CHART_RESET)
+            chartButton(HtmlAttrs.DATA_HISTORY_EXPAND, HistoryChartActions.EXPAND, ViewText.HISTORY_CHART_EXPAND)
         }
     }
 
@@ -420,7 +452,7 @@ class HistoryPageComponent {
         div(CssClass.Layout.GlassPanel) {
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
-                    +"${ViewText.HISTORY_ASSET_HOLDINGS}${asset?.let { " ($it)" }.orEmpty()}"
+                    +"${ViewText.HISTORY_CHECKPOINT_TITLE}${asset?.let { " ($it)" }.orEmpty()}"
                 }
                 chartControls(pointsOnly = true)
             }
@@ -437,6 +469,120 @@ class HistoryPageComponent {
                 }
             }
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHECKPOINT_CAPTION }
+        }
+    }
+
+    private fun DIV.renderHoldingsChart(data: HistoryPageData) {
+        renderSeriesChart(
+            sectionId = HtmlIds.HISTORY_HOLDINGS_SECTION,
+            chartId = HtmlIds.HISTORY_HOLDINGS_CHART,
+            title = ViewText.HISTORY_ASSET_HOLDINGS,
+            series = assetValueSeries(data.observations),
+            caption = ViewText.HISTORY_HOLDINGS_CAPTION,
+            emptyText = ViewText.HISTORY_VALUE_NO_DATA,
+        )
+    }
+
+    private fun DIV.renderAllocationChart(data: HistoryPageData) {
+        renderSeriesChart(
+            sectionId = HtmlIds.HISTORY_ALLOCATION_SECTION,
+            chartId = HtmlIds.HISTORY_ALLOCATION_CHART,
+            title = ViewText.HISTORY_ALLOCATION_DRIFT,
+            series = allocationDeviationSeries(
+                data.observations,
+                data.allocations.associate { it.symbol.value to BigDecimal.valueOf(it.targetPercent) },
+            ),
+            caption = ViewText.HISTORY_ALLOCATION_CAPTION,
+            emptyText = ViewText.HISTORY_VALUE_NO_DATA,
+            zeroLine = true,
+            formatValue = { "${Formatter.formatPercent(it)}%" },
+        )
+    }
+
+    private fun DIV.renderCashFlowChart(data: HistoryPageData) {
+        renderSeriesChart(
+            sectionId = HtmlIds.HISTORY_CASH_FLOW_SECTION,
+            chartId = HtmlIds.HISTORY_CASH_FLOW_CHART,
+            title = ViewText.HISTORY_NET_CASH_FLOW,
+            series = listOf(Asset.USD to cumulativeFundingFlow(data.fundingLedgers, data.observations)),
+            caption = ViewText.HISTORY_CASH_FLOW_CAPTION,
+            emptyText = ViewText.HISTORY_NO_DATA,
+        )
+    }
+
+    private fun DIV.renderRewardsChart(data: HistoryPageData) {
+        val (points, total) = cumulativeRewardValue(data.rewardLedgers, data.observations)
+        renderSeriesChart(
+            sectionId = HtmlIds.HISTORY_REWARDS_SECTION,
+            chartId = HtmlIds.HISTORY_REWARDS_CHART,
+            title = ViewText.HISTORY_STAKING_REWARDS,
+            series = listOf(Asset.USD to points),
+            caption = ViewText.HISTORY_REWARDS_CAPTION,
+            emptyText = ViewText.HISTORY_NO_DATA,
+            headerStat = {
+                span(CssClass.History.MutedSmallText) {
+                    id = HtmlIds.HISTORY_REWARDS_TOTAL
+                    +"${ViewText.HISTORY_TOTAL_REWARDS}: ${Formatter.formatSignedUsd(total)}"
+                }
+            },
+        )
+    }
+
+    private fun DIV.renderSeriesChart(
+        sectionId: String,
+        chartId: String,
+        title: String,
+        series: List<Pair<String, List<HistorySeriesPoint>>>,
+        caption: String,
+        emptyText: String,
+        zeroLine: Boolean = false,
+        formatValue: (BigDecimal) -> String = Formatter::formatSignedUsd,
+        headerStat: (DIV.() -> Unit)? = null,
+    ) {
+        div(CssClass.Layout.GlassPanel) {
+            id = sectionId
+            div(CssClass.History.ChartHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) { +title }
+                headerStat?.invoke(this)
+            }
+            div(CssClass.History.ChartContainer) {
+                id = chartId
+                if (series.all { it.second.isEmpty() }) {
+                    p(CssClass.History.MutedSmallText) { +emptyText }
+                } else {
+                    unsafe { +multiSeriesSvg(series, zeroLine, formatValue) }
+                }
+            }
+            if (series.count { it.second.isNotEmpty() } > 1) renderSeriesLegend(series)
+            renderChartScrubber(chartId)
+            p(CssClass.History.ChartCaption) { +caption }
+        }
+    }
+
+    private fun DIV.renderSeriesLegend(series: List<Pair<String, List<HistorySeriesPoint>>>) {
+        div(CssClass.History.ChartLegend) {
+            series.filter { it.second.isNotEmpty() }.forEachIndexed { index, (symbol, _) ->
+                span(CssClass.History.ChartLegendItem) {
+                    span(CssClass.History.ChartLegendSwatch) {
+                        attributes["style"] = "background:${borderColorForSymbol(symbol, index)}"
+                    }
+                    +symbol
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderChartScrubber(chartId: String) {
+        div(CssClass.History.ChartScrubber) {
+            input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
+                min = "0"
+                max = "1"
+                step = "1"
+                value = "0"
+                // Starts disabled; :frontend-js enables it once the chart has scrubbable points.
+                disabled = true
+                attributes[HtmlAttrs.DATA_CHART_ID] = chartId
+            }
         }
     }
 
@@ -659,30 +805,35 @@ class HistoryPageComponent {
         val maxV = points.maxOf { it.second }
         val spanT = (maxT - minT).coerceAtLeast(1).toDouble()
         val spanV = maxV.subtract(minV).takeIf { it.signum() != 0 } ?: BigDecimal.ONE
+        val plotWidth = (SVG_WIDTH - SVG_LABEL_GUTTER - SVG_PAD).toDouble()
         fun coordinate(point: Pair<Instant, BigDecimal>): Pair<Double, Double> {
             val (time, value) = point
-            val x = (time.epochSecond - minT) / spanT * (SVG_WIDTH - 2 * SVG_PAD) + SVG_PAD
+            val x = (time.epochSecond - minT) / spanT * plotWidth + SVG_LABEL_GUTTER
             val ratio = value.subtract(minV).divide(spanV, 6, RoundingMode.HALF_UP).toDouble()
             val y = SVG_HEIGHT - SVG_PAD - ratio * (SVG_HEIGHT - 2 * SVG_PAD)
             return x to y
         }
-        val markers = points.joinToString("") { point ->
-            val (x, y) = coordinate(point)
-            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4" data-time="${point.first.toEpochMilli()}" data-value="${point.second.toPlainString()}">"""
-                .format(java.util.Locale.US, x, y) +
-                "<title>${timeFormatter.format(
-                    point.first,
-                )} · ${Formatter.formatQuantity(point.second)}</title></circle>"
-        }
+        val markers = svgSampleMarkers(
+            samples = points.map { point ->
+                val (x, y) = coordinate(point)
+                SvgSample(
+                    x = x,
+                    y = y,
+                    title = "${timeFormatter.format(point.first)} · ${Formatter.formatQuantity(point.second)}",
+                    timeMillis = point.first.toEpochMilli(),
+                    valueAttr = point.second.toPlainString(),
+                )
+            },
+            visibleEvery = maxOf(1, (points.size + 15) / 16),
+            visibleRadius = 3,
+            color = null,
+        )
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
             """preserveAspectRatio="none"><title>Exchange-reported balance checkpoints</title>${svgGrid()}$markers""" +
-            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="$SVG_PAD">${minV.max(
-                maxV,
-            ).stripTrailingZeros().toPlainString()}</text>""" +
-            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - SVG_PAD}">${minV.stripTrailingZeros().toPlainString()}</text>${timeAxis(
-                minT,
-                maxT,
-            )}</svg>"""
+            valueAxisLabels(
+                minV.max(maxV).stripTrailingZeros().toPlainString(),
+                minV.stripTrailingZeros().toPlainString(),
+            ) + timeAxis(minT, maxT) + "</svg>"
     }
 
     /** Connect adjacent complete values and leave a visible break wherever an incomplete cycle occurs. */
@@ -704,7 +855,8 @@ class HistoryPageComponent {
         } else {
             BigDecimal.ONE
         }
-        fun xCoordinate(time: Instant): Double = (time.epochSecond - minT) / spanT * (SVG_WIDTH - 2 * SVG_PAD) + SVG_PAD
+        val plotWidth = (SVG_WIDTH - SVG_LABEL_GUTTER - SVG_PAD).toDouble()
+        fun xCoordinate(time: Instant): Double = (time.epochSecond - minT) / spanT * plotWidth + SVG_LABEL_GUTTER
         fun coordinate(time: Instant, value: BigDecimal): Pair<Double, Double> {
             val x = xCoordinate(time)
             val ratio = value.subtract(minV!!).divide(spanV, 6, RoundingMode.HALF_UP).toDouble()
@@ -726,30 +878,40 @@ class HistoryPageComponent {
         if (currentSegment.size > 1) lineSegments += currentSegment
         val lines = lineSegments.joinToString("") { segment ->
             val coordinates = segment.joinToString(" ") { (x, y) ->
-                "%.2f,%.2f".format(java.util.Locale.US, x, y)
+                "%.2f,%.2f".format(Locale.US, x, y)
             }
             """<polyline class="${CssClass.History.Line.value}" points="$coordinates"/>"""
         }
 
-        val markers = completePoints.joinToString("") { (time, value) ->
-            val (x, y) = coordinate(time, value)
-            """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="4" data-time="${time.toEpochMilli()}" data-value="${value.toPlainString()}">"""
-                .format(java.util.Locale.US, x, y) +
-                "<title>${timeFormatter.format(time)} · ${Formatter.formatSignedUsd(value)}</title></circle>"
-        }
+        val markers = svgSampleMarkers(
+            samples = completePoints.map { (time, value) ->
+                val (x, y) = coordinate(time, value)
+                SvgSample(
+                    x = x,
+                    y = y,
+                    title = "${timeFormatter.format(time)} · ${Formatter.formatSignedUsd(value)}",
+                    timeMillis = time.toEpochMilli(),
+                    valueAttr = value.toPlainString(),
+                )
+            },
+            visibleEvery = maxOf(1, (completePoints.size + 15) / 16),
+            visibleRadius = 3,
+            color = null,
+        )
         val gapMarkers = observations.filter { it.status == HistoryObservationStatus.INCOMPLETE }.joinToString("") {
             val x = xCoordinate(it.observedAt)
-            """<circle class="${CssClass.History.GapMarker.value}" cx="%.2f" cy="${SVG_HEIGHT - SVG_PAD + 8}" r="4" data-time="${it.observedAt.toEpochMilli()}" data-gap="true">"""
-                .format(java.util.Locale.US, x) +
+            (
+                """<circle class="${CssClass.History.GapMarker.value}" cx="%.2f" """ +
+                    """cy="${SVG_HEIGHT - SVG_PAD + 8}" r="4" """ +
+                    "${HtmlAttrs.DATA_TIME}=\"${it.observedAt.toEpochMilli()}\" " +
+                    "${HtmlAttrs.DATA_GAP}=\"true\">"
+                ).format(Locale.US, x) +
                 """<title>${timeFormatter.format(
                     it.observedAt,
                 )} · Incomplete observation; no portfolio value is plotted</title></circle>"""
         }
         val axisLabels = if (minV != null && maxV != null) {
-            """<text class="${CssClass.History.AxisLabel.value}" x="4" y="$SVG_PAD">""" +
-                Formatter.formatSignedUsd(maxV) + "</text>" +
-                """<text class="${CssClass.History.AxisLabel.value}" x="4" y="${SVG_HEIGHT - SVG_PAD}">""" +
-                Formatter.formatSignedUsd(minV) + "</text>"
+            valueAxisLabels(Formatter.formatSignedUsd(maxV), Formatter.formatSignedUsd(minV))
         } else {
             ""
         }
@@ -758,26 +920,138 @@ class HistoryPageComponent {
             svgGrid() + lines + markers + gapMarkers + axisLabels + timeAxis(minT, maxT) + "</svg>"
     }
 
+    /** Time-proportional series lines with per-point markers; each series keeps its own palette color. */
+    private fun multiSeriesSvg(
+        series: List<Pair<String, List<HistorySeriesPoint>>>,
+        zeroLine: Boolean,
+        formatValue: (BigDecimal) -> String = Formatter::formatSignedUsd,
+    ): String {
+        val allPoints = series.flatMap { it.second }
+        val minT = allPoints.minOf { it.time.epochSecond }
+        val maxT = allPoints.maxOf { it.time.epochSecond }
+        val minV = allPoints.minOf { it.value }
+        val maxV = allPoints.maxOf { it.value }
+        val spanT = (maxT - minT).coerceAtLeast(1).toDouble()
+        val spanV = maxV.subtract(minV).takeIf { it.signum() != 0 } ?: BigDecimal.ONE
+        val plotWidth = (SVG_WIDTH - SVG_LABEL_GUTTER - SVG_PAD).toDouble()
+        fun xCoordinate(time: Instant): Double = (time.epochSecond - minT) / spanT * plotWidth + SVG_LABEL_GUTTER
+        fun yCoordinate(value: BigDecimal): Double {
+            val ratio = value.subtract(minV).divide(spanV, 6, RoundingMode.HALF_UP).toDouble()
+            return SVG_HEIGHT - SVG_PAD - ratio * (SVG_HEIGHT - 2 * SVG_PAD)
+        }
+        val bodies = series.mapIndexed { index, (symbol, points) ->
+            val color = borderColorForSymbol(symbol, index)
+            val line = if (points.size > 1) {
+                val coordinates = points.joinToString(" ") { point ->
+                    "%.2f,%.2f".format(Locale.US, xCoordinate(point.time), yCoordinate(point.value))
+                }
+                """<polyline class="${CssClass.History.Line.value}" points="$coordinates" style="stroke:$color"/>"""
+            } else {
+                ""
+            }
+            val samples = points.map { point ->
+                SvgSample(
+                    x = xCoordinate(point.time),
+                    y = yCoordinate(point.value),
+                    title = "${timeFormatter.format(point.time)} · $symbol · ${formatValue(point.value)}",
+                    timeMillis = point.time.toEpochMilli(),
+                    valueAttr = point.value.toPlainString(),
+                    series = symbol,
+                )
+            }
+            line +
+                svgSampleMarkers(
+                    samples,
+                    visibleEvery = maxOf(1, (points.size + 7) / 8),
+                    visibleRadius = 2,
+                    color = color,
+                )
+        }.joinToString("")
+        val zero = if (zeroLine && minV.signum() <= 0 && maxV.signum() >= 0) {
+            val y = "%.2f".format(Locale.US, yCoordinate(BigDecimal.ZERO))
+            """<line x1="$SVG_LABEL_GUTTER" x2="$SVG_PLOT_RIGHT" y1="$y" y2="$y" """ +
+                """stroke="${ChartProps.COLOR_TICK}" stroke-width="2" stroke-dasharray="6 5">""" +
+                "<title>${ViewText.HISTORY_CHART_ZERO_LINE}</title></line>"
+        } else {
+            ""
+        }
+        return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
+            """preserveAspectRatio="none">${svgGrid()}$zero$bodies""" +
+            valueAxisLabels(formatValue(maxV), formatValue(minV)) + timeAxis(minT, maxT) + "</svg>"
+    }
+
     private fun svgGrid(): String = (0..4).joinToString("") { tick ->
         val y = SVG_PAD + tick * (SVG_HEIGHT - 2 * SVG_PAD) / 4
-        """<line class="${CssClass.History.GridLine.value}" x1="$SVG_PAD" x2="${SVG_WIDTH - SVG_PAD}" y1="$y" y2="$y"/>"""
+        """<line class="${CssClass.History.GridLine.value}" x1="$SVG_LABEL_GUTTER" x2="$SVG_PLOT_RIGHT" y1="$y" y2="$y"/>"""
     }
 
     private fun timeAxis(minT: Long, maxT: Long): String = listOf(minT, maxT).mapIndexed { index, time ->
-        val x = if (index == 0) SVG_PAD else SVG_WIDTH - SVG_PAD
+        val x = if (index == 0) SVG_LABEL_GUTTER else SVG_PLOT_RIGHT
         val anchor = if (index == 0) "start" else "end"
-        val label = DateTimeFormatter.ofPattern("MMM d HH:mm 'UTC'").withZone(ZoneOffset.UTC)
-            .format(Instant.ofEpochSecond(time))
+        val label = axisTimeFormatter.format(Instant.ofEpochSecond(time))
         """<text class="${CssClass.History.AxisLabel.value}" x="$x" y="${SVG_HEIGHT - 4}" text-anchor="$anchor">$label</text>"""
     }.joinToString("")
+
+    /** Extreme-value labels sit in the left gutter, clear of the plot band. */
+    private fun valueAxisLabels(maxLabel: String, minLabel: String): String {
+        val x = SVG_LABEL_GUTTER - 10
+        val max = """<text class="${CssClass.History.AxisLabel.value}" x="$x" y="${SVG_PAD + 4}" text-anchor="end">""" +
+            "$maxLabel</text>"
+        val min = """<text class="${CssClass.History.AxisLabel.value}" x="$x" y="${SVG_HEIGHT - SVG_PAD + 4}" """ +
+            """text-anchor="end">$minLabel</text>"""
+        return max + min
+    }
+
+    /**
+     * Dense samples render as thin connective lines: a transparent hit circle at every sample keeps
+     * exact-point hover and the scrubber cursor, while visible markers appear only every [visibleEvery]
+     * samples (plus the final one) so the SVG fallback stays readable. Every circle keeps its data
+     * attributes so the Chart.js enhancement reads the complete series.
+     */
+    private fun svgSampleMarkers(
+        samples: List<SvgSample>,
+        visibleEvery: Int,
+        visibleRadius: Int,
+        color: String?,
+    ): String = samples.mapIndexed { index, sample ->
+        val seriesAttr = sample.series?.let { " ${HtmlAttrs.DATA_SERIES}=\"$it\"" } ?: ""
+        val hit =
+            (
+                """<circle cx="%.2f" cy="%.2f" r="7" fill="transparent" """ +
+                    "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
+                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
+                ).format(Locale.US, sample.x, sample.y) + "<title>${sample.title}</title></circle>"
+        val visible = if (index % visibleEvery == 0 || index == samples.lastIndex) {
+            val fill = color?.let { """ style="fill:$it"""" } ?: ""
+            (
+                """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="$visibleRadius"$fill """ +
+                    "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
+                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
+                ).format(Locale.US, sample.x, sample.y) + "<title>${sample.title}</title></circle>"
+        } else {
+            ""
+        }
+        hit + visible
+    }.joinToString("")
+
+    private class SvgSample(
+        val x: Double,
+        val y: Double,
+        val title: String,
+        val timeMillis: Long,
+        val valueAttr: String,
+        val series: String? = null,
+    )
 
     private companion object {
         val RANGES = listOf("24h" to "24h", "7d" to "7d", "30d" to "30d", "90d" to "90d", "all" to "All")
         const val TRADE_COLUMNS = 7
         const val LEDGER_COLUMNS = 6
-        const val SVG_WIDTH = 800
+        const val SVG_WIDTH = 960
         const val SVG_HEIGHT = 240
         const val SVG_PAD = 32
+        const val SVG_LABEL_GUTTER = 120
+        const val SVG_PLOT_RIGHT = SVG_WIDTH - SVG_PAD
     }
 }
 
@@ -787,10 +1061,10 @@ private enum class HistoryStatCardDefinition(
     val valueId: String,
     val formatValue: (HistoryPageData) -> String,
 ) {
-    PERIOD_HIGH(
-        ViewText.PERIOD_HIGH,
-        Icons.TREND_UP,
-        HtmlIds.STAT_PERIOD_HIGH,
+    ALL_TIME_HIGH(
+        ViewText.HISTORY_ALL_TIME_HIGH,
+        Icons.WALLET,
+        HtmlIds.STAT_ALL_TIME_HIGH,
         { data ->
             Formatter.formatUsdOrDash(
                 data.observations.mapNotNull { it.totalUsd }.maxOrNull(),
@@ -841,4 +1115,109 @@ private enum class HistoryStatCardDefinition(
             }
         },
     ),
+}
+
+internal data class HistorySeriesPoint(val time: Instant, val value: BigDecimal)
+
+internal fun assetValueSeries(observations: List<HistoryObservation>): List<Pair<String, List<HistorySeriesPoint>>> =
+    observations
+        .filter { it.status == HistoryObservationStatus.COMPLETE }
+        .sortedBy { it.observedAt }
+        .flatMap { observation ->
+            observation.assets.mapNotNull { asset ->
+                asset.valueUsd?.let { value -> asset.symbol to HistorySeriesPoint(observation.observedAt, value) }
+            }
+        }
+        .groupBy({ it.first }, { it.second })
+        .toSortedMap()
+        .map { (symbol, points) -> symbol to points }
+
+internal fun allocationDeviationSeries(
+    observations: List<HistoryObservation>,
+    targets: Map<String, BigDecimal>,
+): List<Pair<String, List<HistorySeriesPoint>>> {
+    val ordered = observations.sortedBy { it.observedAt }
+    val symbols = (targets.keys + ordered.flatMap { observation -> observation.assets.map { it.symbol } }).toSortedSet()
+    return symbols.map { symbol ->
+        val target = targets[symbol] ?: BigDecimal.ZERO
+        symbol to ordered.mapNotNull { observation ->
+            if (observation.status != HistoryObservationStatus.COMPLETE) return@mapNotNull null
+            val total = observation.totalUsd ?: return@mapNotNull null
+            if (total.signum() <= 0) return@mapNotNull null
+            val value = observation.assets.firstOrNull { it.symbol == symbol }?.valueUsd ?: BigDecimal.ZERO
+            val actualShare = value
+                .multiply(BigDecimal(PrecisionConstants.HUNDRED_INT))
+                .divide(total, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
+            HistorySeriesPoint(observation.observedAt, actualShare.subtract(target))
+        }
+    }
+}
+
+internal fun cumulativeFundingFlow(
+    ledgers: List<HistoryLedger>,
+    observations: List<HistoryObservation>,
+): List<HistorySeriesPoint> {
+    val prices = observedUsdPrices(observations)
+    return cumulativeLedgerValue(ledgers) { ledger, time ->
+        val type = ledger.type?.lowercase()
+        if (type != KrakenApiConstants.LEDGER_TYPE_DEPOSIT && type != KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL) {
+            return@cumulativeLedgerValue null
+        }
+        val amount = ledger.amount?.toBigDecimalOrNull() ?: return@cumulativeLedgerValue null
+        observedUsdValue(prices, ledger.asset, time, amount)
+    }
+}
+
+internal fun cumulativeRewardValue(
+    ledgers: List<HistoryLedger>,
+    observations: List<HistoryObservation>,
+): Pair<List<HistorySeriesPoint>, BigDecimal> {
+    val prices = observedUsdPrices(observations)
+    val points = cumulativeLedgerValue(ledgers) { ledger, time ->
+        val amount = ledger.amount?.toBigDecimalOrNull() ?: return@cumulativeLedgerValue null
+        observedUsdValue(prices, ledger.asset, time, amount)
+    }
+    return points to (points.lastOrNull()?.value ?: BigDecimal.ZERO)
+}
+
+private fun cumulativeLedgerValue(
+    ledgers: List<HistoryLedger>,
+    signedUsdValue: (HistoryLedger, Instant) -> BigDecimal?,
+): List<HistorySeriesPoint> {
+    var running = BigDecimal.ZERO
+    return ledgers
+        .sortedWith(compareBy({ it.time ?: Instant.EPOCH }, { it.ledgerId }))
+        .mapNotNull { ledger ->
+            val time = ledger.time ?: return@mapNotNull null
+            val value = signedUsdValue(ledger, time) ?: return@mapNotNull null
+            running = running.add(value)
+            HistorySeriesPoint(time, running)
+        }
+}
+
+private fun observedUsdPrices(observations: List<HistoryObservation>): Map<String, List<Pair<Instant, BigDecimal>>> =
+    observations
+        .flatMap { observation ->
+            observation.assets.mapNotNull { asset ->
+                asset.priceUsd?.let { price -> asset.symbol to (observation.observedAt to price) }
+            }
+        }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, samples) -> samples.sortedBy { it.first } }
+
+/** USD ledger legs count at par; other assets need the nearest observed cycle price. */
+private fun observedUsdValue(
+    prices: Map<String, List<Pair<Instant, BigDecimal>>>,
+    asset: String?,
+    time: Instant,
+    amount: BigDecimal,
+): BigDecimal? {
+    val symbol = asset?.let(Asset::normalizeLedgerAsset).orEmpty()
+    if (symbol.isEmpty()) return null
+    if (symbol == Asset.USD) return amount
+    val price = prices[symbol]
+        ?.minByOrNull { sample -> abs(sample.first.epochSecond - time.epochSecond) }
+        ?.second
+        ?: return null
+    return amount.multiply(price)
 }

@@ -54,6 +54,20 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Done (recent)
 
+| CI-33-R1 | M | done | frontend | Restore History "Staking Rewards" panel (cumulative rewards chart + total) over synced ledger reward events; vestige `SimulatedKrakenService` seeds staking ledger entries for it | 33 | 33 |
+| CI-33-R2 | M | done | frontend | Restore History analytics charts (Asset Holdings Over Time, Allocation Deviation from Target, Cumulative Net Cash Flow) + All-Time High stat tile (Avg Slippage not derivable from current HistoryTrade fields — skipped) | 33 | 33 |
+| CI-33-R3 | S | done | frontend | Restore chart time-scrubbers (range input under each chart to scrub cursor across points) — `queryChartScrubber` / `DATA_CHART_ID` were deleted in 06b7d4f9 while zoom/pan returned in #417 | 33 | 33 |
+| CI-33-R4 | S | done | frontend | Restore Saved Views "Set as default" + built-in presets (Overview / Day · Total only / Week · Allocation / Month · Net Cash Flow) in History saved views | 33 | 33 |
+| CI-33-U1 | S | done | css | History chart palette must use `ChartProps` tokens (server SVG + JS canvas currently diverge: `#8b9dff` vs `COLOR_BLUE #60a5fa`; grid/tick literals vs `COLOR_GRID_LINE`/`COLOR_TICK`) | 33 | 33 |
+| CI-33-U2 | M | done | css | Promote duplicated raw `rgba()`/shadow literals (`LayoutStyles.kt:299`, `FormStyles.kt:292`, `HeroStyles.kt:132,137,152`, `NavigationStyles.kt:63`, `TableStyles.kt:120,135`) to `css-theme.yaml` tokens | 33 | 33 |
+| CI-33-U3 | S | done | css | Add hover transitions to `TableStyles.kt:98,128` and `HistoryStyles.kt:92-108` chip rules so hover matches buttons/nav/panels | 33 | 33 |
+| CI-33-U4 | S | done | css | Unify History active-chip treatment (`.ChartControls .active` vs `TimeRangeBtnActive`) so selected saved-view and time-range chips match | 33 | 33 |
+| CI-33-U5 | M | done | css | Snap off-scale spacing/type values (`0.35rem`, `0.4375rem`, `0.675rem`, mixed `1.25/1.5/1.75rem` paddings) to the 0.25rem spacing + type scale | 33 | 33 |
+| CI-33-H1 | S | done | frontend | Remove dead `AssetColors.kt` `window.__ASSET_COLORS__` helpers (no emitter, no call sites) or wire them to the `chart-props.yaml` palette | 33 | 33 |
+| CI-33-H2 | S | done | frontend | Reconcile chart-attr catalog vs live literals: wire `data-history-*` literals to `HtmlAttrs` constants and drop truly-dead `DATA_ZOOM_ACTION`/`DATA_RANGE`/`ZoomActions` | 33 | 33 |
+| CI-33-H3 | S | done | frontend | Orphan HtmlIds `HISTORY_SYNC_TEXT`/`HISTORY_FROM`/`HISTORY_UNTIL` unused — remove or wire | 33 | 33 |
+| CI-33-H4 | S | done | css | Delete dead `TableStyles.kt` `.badge-slippage-*` rules and unreferenced `History.Content/SyncSpinner/ProgressTrack/ProgressBar/ChartLegend*` css-classes catalog entries | 33 | 33 |
+| CI-33-D1 | S | done | deps | Dependabot critical/high transitive pin bumps: `shell-quote` → 1.11.0 (#159), `proxy-addr` → 2.0.8 (#157), `source-map-js` → 1.2.2 (#158), `compression` → 1.8.2 (#156); `smol-toml`/`katex` medium/low | 33 | 33 |
 | CI-31-C02 | S | done | code | Standardize `RebalanceEvent.NoCounterBalancingAssets` formatting via `ActionLogFormatter` and `ViewText` | 31 | 31 |
 | CI-31-C03 | S | done | code | Avoid `TradeTable.id eq TradeTable.id` SQL tautology in `SqliteOrderIntentRepositoryImpl` via `Op.TRUE` | 31 | 31 |
 | CI-31-C04 | S | done | comments | Add KDoc and rationale comments to `OrderSettleHelper` USD settlement fallback branches | 31 | 31 |

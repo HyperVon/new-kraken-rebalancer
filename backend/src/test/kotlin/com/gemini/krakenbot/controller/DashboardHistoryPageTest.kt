@@ -87,13 +87,13 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
                 val html = response.bodyAsText()
                 html shouldContain ">1</text>"
                 html shouldContain ">2001</text>"
-                val markerXCoordinates = Regex("""class="history-point" cx="([0-9.]+)""")
+                val markerXCoordinates = Regex("""cx="([0-9.]+)" cy="[0-9.]+" r="7" fill="transparent"""")
                     .findAll(html)
                     .map { it.groupValues[1] }
                     .toList()
                 markerXCoordinates.size shouldBe 2_001
-                markerXCoordinates.first() shouldBe "32.00"
-                markerXCoordinates.last() shouldBe "768.00"
+                markerXCoordinates.first() shouldBe "120.00"
+                markerXCoordinates.last() shouldBe "928.00"
                 markerXCoordinates.zipWithNext().all { (left, right) ->
                     left.toDouble() <= right.toDouble()
                 } shouldBe true

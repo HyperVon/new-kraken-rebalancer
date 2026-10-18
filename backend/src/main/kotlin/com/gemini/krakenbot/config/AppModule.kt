@@ -177,7 +177,7 @@ val webModule =
         singleOf(::PerformanceTableComponent)
         singleOf(::RecentActivityComponent)
         singleOf(::DashboardFragmentComponent)
-        singleOf(::HistoryPageComponent)
+        single { HistoryPageComponent() }
         singleOf(::DashboardView)
         single {
             DashboardController(

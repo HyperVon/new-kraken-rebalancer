@@ -197,8 +197,8 @@ object LayoutStyles {
         }
 
         ".${CssClass.Layout.LoopDot}" {
-            width = 0.4375.rem
-            height = 0.4375.rem
+            width = 0.5.rem
+            height = 0.5.rem
             borderRadius = 50.pct
             backgroundColorRaw("currentColor")
             flexShrink = 0.0
@@ -206,7 +206,7 @@ object LayoutStyles {
 
         ".${CssClass.Layout.LoopControl} > .btn" {
             justifyContentRaw("center")
-            padding = Padding(0.4375.rem, 0.75.rem)
+            padding = Padding(0.5.rem, 0.75.rem)
             whiteSpaceRaw("nowrap")
         }
 
@@ -260,8 +260,8 @@ object LayoutStyles {
         }
 
         ".${CssClass.Mode.Dot.value}" {
-            width = 0.4375.rem
-            height = 0.4375.rem
+            width = 0.5.rem
+            height = 0.5.rem
             borderRadius = 50.pct
             backgroundColorRaw("currentColor")
             flexShrink = 0.0
@@ -296,7 +296,7 @@ object LayoutStyles {
             borderRadius = CssTheme.radiusPill
             background = CssTheme.colorSurface2.value
             solidBorder(CssTheme.colorGlassBorder)
-            boxShadowRaw("0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(186,220,255,0.1)")
+            boxShadowRaw(CssTheme.shadowStatusChip)
             fontSize = 0.75.rem
             color = CssTheme.colorTextSecondary
             whiteSpaceRaw("nowrap")

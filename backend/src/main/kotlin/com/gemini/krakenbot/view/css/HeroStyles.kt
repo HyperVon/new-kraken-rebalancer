@@ -53,7 +53,7 @@ object HeroStyles {
             flexDirection = FlexDirection.column
             alignItems = Align.stretch
             gap = 1.5.rem
-            padding = Padding(1.5.rem, 1.75.rem)
+            padding = Padding(1.5.rem, 2.rem)
             // Slightly taller lift than sibling tiles.
             boxShadowRaw(CssTheme.shadowHeroCard)
         }
@@ -71,7 +71,7 @@ object HeroStyles {
             flexDirection = FlexDirection.column
             flexGrow = 1.0
             minWidth = 0.px
-            gap = 0.35.rem
+            gap = 0.25.rem
         }
 
         CssClass.Hero.TrendHeader.querySelector {
@@ -129,12 +129,12 @@ object HeroStyles {
 
         CssClass.Hero.TrendDeltaPositive.querySelector {
             color = CssTheme.colorSuccess
-            background = "rgba(16, 185, 129, 0.16)"
+            background = CssTheme.colorSuccessMuted.value
         }
 
         CssClass.Hero.TrendDeltaNegative.querySelector {
             color = CssTheme.colorDanger
-            background = "rgba(239, 68, 68, 0.16)"
+            background = CssTheme.colorDangerMuted.value
         }
 
         CssClass.Hero.TrendDeltaLabel.querySelector {
@@ -149,7 +149,7 @@ object HeroStyles {
             put("stroke-width", "3.5")
             put("stroke-linejoin", "round")
             put("stroke-linecap", "round")
-            put("filter", "drop-shadow(0 0 3px rgba(96,165,250,0.55))")
+            put("filter", CssTheme.filterHeroTrendLine)
         }
 
         CssClass.Hero.TrendPoint.querySelector {

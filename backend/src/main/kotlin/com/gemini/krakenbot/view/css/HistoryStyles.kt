@@ -21,6 +21,7 @@ import kotlinx.css.gap
 import kotlinx.css.gridTemplateColumns
 import kotlinx.css.height
 import kotlinx.css.marginBottom
+import kotlinx.css.opacity
 import kotlinx.css.padding
 import kotlinx.css.pct
 import kotlinx.css.position
@@ -50,13 +51,17 @@ object HistoryStyles {
             width = 100.pct
             put("margin", "0")
         }
-        ".${CssClass.History.ChartControls} .active" {
+        (
+            ".${CssClass.History.ChartControls} .active, " +
+                "${CssClass.History.TimeRangeBtnActive.querySelector}"
+            ) {
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorBlueGlassBgHover.value
             solidBorder(CssTheme.colorBlueAccent)
+            boxShadowRaw(CssTheme.insetTopHighlight)
         }
         ".${CssClass.History.GridLine}" {
-            strokeRaw(CssTheme.colorBorderSubtle.value)
+            strokeRaw(ChartProps.COLOR_GRID_LINE)
             strokeWidthRaw("1")
         }
         ".${CssClass.History.StatsGrid}" {
@@ -98,12 +103,7 @@ object HistoryStyles {
             solidBorder(CssTheme.colorGlassBorder)
             borderRadius = CssTheme.radiusMd
             fontFamily = CssTheme.fontSans
-        }
-        CssClass.History.TimeRangeBtnActive.querySelector {
-            color = CssTheme.colorTextPrimary
-            background = CssTheme.colorBlueGlassBgHover.value
-            solidBorder(CssTheme.colorBlueAccent)
-            boxShadowRaw(CssTheme.insetTopHighlight)
+            transitionRaw("all 0.2s ease")
         }
         ".${CssClass.History.TimeRangeBtn}:hover, .${CssClass.History.PaginationBtn}:hover" {
             color = CssTheme.colorTextPrimary
@@ -172,13 +172,64 @@ object HistoryStyles {
         CssClass.History.Point.querySelector {
             fillRaw(ChartProps.COLOR_BLUE)
         }
+        ".${CssClass.History.ChartSvg} circle.${CssClass.Utility.Active}" {
+            strokeRaw(ChartProps.COLOR_TICK)
+            strokeWidthRaw("2")
+        }
         CssClass.History.GapMarker.querySelector {
             fillRaw(CssTheme.colorWarning.value)
         }
         CssClass.History.AxisLabel.querySelector {
-            fillRaw(CssTheme.colorTextSecondary.value)
+            fillRaw(ChartProps.COLOR_TICK)
             fontSize = 0.6875.rem
             fontFamily = CssTheme.fontMono
+        }
+        ".${CssClass.History.ChartScrubber}" {
+            padding = Padding(0.5.rem, 0.25.rem, 0.125.rem)
+        }
+        ".${CssClass.History.ChartScrubberInput}" {
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
+            width = 100.pct
+            height = 0.35.rem
+            borderRadius = CssTheme.radiusPill
+            background = CssTheme.colorBorderMuted.value
+            accentColorRaw(CssTheme.colorBlueAccent.value)
+        }
+        ".${CssClass.History.ChartScrubberInput}:disabled" {
+            opacity = 0.3
+        }
+        ".${CssClass.History.ChartScrubberInput}::-webkit-slider-thumb" {
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
+            width = 1.rem
+            height = 1.rem
+            borderRadius = 50.pct
+            background = CssTheme.colorBlueAccent.value
+        }
+        ".${CssClass.History.ChartScrubberInput}::-moz-range-thumb" {
+            width = 1.rem
+            height = 1.rem
+            borderRadius = 50.pct
+            background = CssTheme.colorBlueAccent.value
+        }
+        ".${CssClass.History.ChartLegend}" {
+            display = Display.flex
+            flexWrapRaw("wrap")
+            gap = 0.75.rem
+            padding = Padding(0.5.rem, 0.25.rem)
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextSecondary
+        }
+        ".${CssClass.History.ChartLegendItem}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            gap = 0.375.rem
+        }
+        ".${CssClass.History.ChartLegendSwatch}" {
+            width = 0.625.rem
+            height = 0.625.rem
+            borderRadius = CssTheme.radiusSm
         }
         ".${CssClass.History.ChartCaption}, .${CssClass.History.MutedSmallText}" {
             fontSize = 0.75.rem
@@ -246,6 +297,7 @@ object HistoryStyles {
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
             borderRadius = CssTheme.radiusSm
+            transitionRaw("all 0.2s ease")
         }
         ".${CssClass.History.SyncBanner}" {
             marginBottom = 1.rem
@@ -307,7 +359,9 @@ object HistoryStyles {
             background = CssTheme.colorSurface2.value
         }
         (
-            "#${HtmlIds.HISTORY_PORTFOLIO_SECTION}, #${HtmlIds.HISTORY_TRADES_SECTION}, " +
+            "#${HtmlIds.HISTORY_PORTFOLIO_SECTION}, #${HtmlIds.HISTORY_HOLDINGS_SECTION}, " +
+                "#${HtmlIds.HISTORY_ALLOCATION_SECTION}, #${HtmlIds.HISTORY_CASH_FLOW_SECTION}, " +
+                "#${HtmlIds.HISTORY_REWARDS_SECTION}, #${HtmlIds.HISTORY_TRADES_SECTION}, " +
                 "#${HtmlIds.HISTORY_LEDGERS_SECTION}"
             ) {
             put("scroll-margin-top", "1rem")

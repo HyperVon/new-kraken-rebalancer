@@ -95,6 +95,10 @@ object TableStyles {
             borderBottomStyle = BorderStyle.none
         }
 
+        HtmlQueries.HOVERABLE_TR {
+            transitionRaw("all 0.2s ease")
+        }
+
         "${HtmlQueries.HOVERABLE_TR}:hover" {
             backgroundColor = CssTheme.colorWhiteSubtle
         }
@@ -117,12 +121,13 @@ object TableStyles {
             height = 0.5.rem
             borderRadius = 50.pct
             backgroundColor = CssTheme.colorSuccess
-            boxShadowRaw("0 0 0 3px rgba(16, 185, 129, 0.15)")
+            boxShadowRaw(CssTheme.shadowStatusDot)
         }
 
         HtmlQueries.SORTABLE_TH {
             cursor = Cursor.pointer
             userSelectRaw("none")
+            transitionRaw("all 0.2s ease")
         }
 
         "${HtmlQueries.SORTABLE_TH}:hover" {
@@ -132,12 +137,12 @@ object TableStyles {
         "${HtmlQueries.SORTABLE_TH}:focus-visible" {
             outlineRaw("none")
             color = CssTheme.colorTextPrimary
-            boxShadowRaw("inset 0 0 0 2px rgba(59, 130, 246, 0.7)")
+            boxShadowRaw(CssTheme.focusRingInsetStrong)
         }
 
         "${HtmlQueries.SORTABLE_TH}::after" {
             content = QuotedString("")
-            marginLeft = 0.35.rem
+            marginLeft = 0.25.rem
             fontSize = 0.7.rem
             opacity = 0.4
         }
@@ -158,7 +163,7 @@ object TableStyles {
             alignItems = Align.center
             padding = Padding(0.125.rem, 0.5.rem)
             borderRadius = CssTheme.radiusSm
-            fontSize = 0.675.rem
+            fontSize = 0.75.rem
             fontWeight = FontWeight.w700
             letterSpacingRaw("0.05em")
             backgroundColor = Color.transparent
@@ -166,13 +171,13 @@ object TableStyles {
             color = CssTheme.colorTextSecondary
         }
 
-        ".badge.badge-buy, .badge.badge-success" {
+        ".badge.badge-buy" {
             backgroundColor = CssTheme.colorSuccessBgSubtle
             borderColor = CssTheme.colorSuccessBorderSubtle
             color = CssTheme.colorSuccess
         }
 
-        ".badge.badge-sell, .badge.badge-failed" {
+        ".badge.badge-sell" {
             backgroundColor = CssTheme.colorDangerBgSubtle
             borderColor = CssTheme.colorDangerBorderSubtle
             color = CssTheme.colorDanger
@@ -182,24 +187,6 @@ object TableStyles {
             backgroundColor = CssTheme.colorBlueGlassBg
             borderColor = CssTheme.colorBlueGlassBorder
             color = CssTheme.colorBlueAccent
-        }
-
-        ".badge.badge-slippage-favorable" {
-            backgroundColor = CssTheme.colorSuccessBgSubtle
-            borderColor = CssTheme.colorSuccessBorderSubtle
-            color = CssTheme.colorSuccess
-        }
-
-        ".badge.badge-slippage-adverse" {
-            backgroundColor = CssTheme.colorDangerBgSubtle
-            borderColor = CssTheme.colorDangerBorderSubtle
-            color = CssTheme.colorDanger
-        }
-
-        ".badge.badge-slippage-neutral" {
-            backgroundColor = Color.transparent
-            borderColor = CssTheme.colorWhiteBorder
-            color = CssTheme.colorTextMuted
         }
 
         ".${CssClass.Utility.TextDanger}" {
