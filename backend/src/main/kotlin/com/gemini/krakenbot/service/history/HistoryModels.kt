@@ -119,12 +119,57 @@ data class HistoryObservation(
     }
 }
 
+/**
+ * Structured cycle outcome for the activity feed. Legacy rows recorded before outcomes
+ * existed carry null and display as [HistoryCycleOutcome.RECORDED]; a historical fill or
+ * submission status is never invented to fill the display format.
+ */
+enum class HistoryCycleOutcome { NO_TRADE, DRY_RUN_PLAN, ORDERS_ATTEMPTED, PROBLEM, RECORDED }
+
 data class HistoryCycleActivity(
     val cycleId: String,
     val sourceScope: HistorySourceScope,
     val occurredAt: Instant,
     val dryRun: Boolean,
     val actions: List<String>,
+    val outcome: HistoryCycleOutcome? = null,
+)
+
+/** Stable paged activity read; ordering is by occurrence then cycle id and never shifts rows mid-page. */
+data class HistoryActivityQuery(
+    val sourceScope: HistorySourceScope,
+    val from: Instant? = null,
+    val until: Instant? = null,
+    val limit: Int = HISTORY_PAGE_LIMIT,
+    val offset: Int = 0,
+) {
+    init {
+        require(from == null || until == null || from <= until) { "History range start must not follow its end." }
+        require(limit in 1..HISTORY_MAX_PAGE_LIMIT)
+        require(offset >= 0)
+    }
+}
+
+/** One stored asset-set scope with its recorded value coverage for the scope selector. */
+data class HistoryRecordedScope(
+    val sourceKey: String,
+    val mode: HistorySourceMode,
+    val managedScopeFingerprint: String,
+    val managedScopeSymbols: List<String>,
+    val accountIdentityDigest: String?,
+    val simulationSessionId: String?,
+    val firstObservedAt: Instant?,
+    val lastObservedAt: Instant?,
+    val observationCount: Long,
+)
+
+/** Honest value-record coverage for one scope; trades/ledgers coverage is reported separately. */
+data class HistoryValuesCoverage(
+    val sourceKey: String,
+    val firstRecordedAt: Instant?,
+    val lastRecordedAt: Instant?,
+    val completeCount: Long,
+    val incompleteCount: Long,
 )
 
 data class HistoryRangeQuery(
@@ -304,6 +349,45 @@ data class HistoryDailyValue(
 enum class HistoryFeed { TRADES, LEDGERS }
 
 enum class HistorySyncState { NOT_STARTED, RUNNING, COMPLETE, PAUSED, FAILED }
+
+/** Job identity: recent refresh, older backfill, and the daily late-record repair stay independent. */
+enum class HistorySyncPurpose { RECENT, BACKFILL, REPAIR }
+
+enum class HistorySyncJobState { PENDING, RUNNING, COMPLETE, FAILED, BLOCKED }
+
+/**
+ * Durable coordinator job state. The committed [cursor] and frozen window survive a recent
+ * scan and a process restart; [completedThroughSec] advances only after every page in the
+ * frozen window commits.
+ */
+data class HistorySyncJob(
+    val accountIdentityDigest: String,
+    val feed: HistoryFeed,
+    val purpose: HistorySyncPurpose,
+    val state: HistorySyncJobState,
+    val windowStartSec: Long?,
+    val windowEndSec: Long?,
+    val cursor: String?,
+    val completedThroughSec: Long?,
+    val lastError: String?,
+    val nextRetryAt: Instant?,
+    val lastSuccessAt: Instant?,
+    val updatedAt: Instant,
+)
+
+/** Account/feed view of recent coverage and older import progress for Data status. */
+data class HistorySyncProgressSummary(
+    val accountIdentityDigest: String,
+    val feed: HistoryFeed,
+    val recentCompletedThroughSec: Long?,
+    val recentLastSuccessAt: Instant?,
+    val backfillState: HistorySyncJobState,
+    val backfillCompletedThroughSec: Long?,
+    val backfillCursor: String?,
+    val repairLastRunAt: Instant?,
+    val lastError: String?,
+    val nextRetryAt: Instant?,
+)
 
 data class HistorySyncStatus(
     val accountIdentityDigest: String,

@@ -27,11 +27,23 @@ class SqliteHistoryStore(
         require(maxPagesPerScan > 0)
     }
     override suspend fun appendObservation(observation: HistoryObservation): Boolean = withContext(Dispatchers.IO) {
-        database.connect().use { connection -> connection.inTransaction { insertObservation(connection, observation) } }
+        database.connect().use { connection ->
+            connection.inTransaction {
+                val inserted = insertObservation(connection, observation)
+                if (inserted) bumpDataRevision(connection)
+                inserted
+            }
+        }
     }
 
     override suspend fun appendCycleActivity(activity: HistoryCycleActivity): Boolean = withContext(Dispatchers.IO) {
-        database.connect().use { connection -> connection.inTransaction { insertCycleActivity(connection, activity) } }
+        database.connect().use { connection ->
+            connection.inTransaction {
+                val inserted = insertCycleActivity(connection, activity)
+                if (inserted) bumpDataRevision(connection)
+                inserted
+            }
+        }
     }
 
     override suspend fun appendCycle(observation: HistoryObservation?, activity: HistoryCycleActivity): Boolean =
@@ -42,6 +54,7 @@ class SqliteHistoryStore(
                 connection.inTransaction {
                     val observationInserted = observation?.let { insertObservation(connection, it) } ?: false
                     val activityInserted = insertCycleActivity(connection, activity)
+                    if (observationInserted || activityInserted) bumpDataRevision(connection)
                     observationInserted || activityInserted
                 }
             }
@@ -323,6 +336,7 @@ class SqliteHistoryStore(
                 page.entries.forEach { entry ->
                     if (insertTrade(connection, entry.toHistoryTrade(request.accountIdentityDigest))) inserted++
                 }
+                if (inserted > 0) bumpDataRevision(connection)
                 updatePageStatus(connection, request, page.nextCursor, page.rawSize, inserted, page.count)
             }
         }
@@ -351,6 +365,7 @@ class SqliteHistoryStore(
                 page.entries.forEach { entry ->
                     if (insertLedger(connection, entry.toHistoryLedger(request.accountIdentityDigest))) inserted++
                 }
+                if (inserted > 0) bumpDataRevision(connection)
                 updatePageStatus(connection, request, page.nextCursor, page.rawSize, inserted, page.count)
             }
         }
@@ -372,6 +387,231 @@ class SqliteHistoryStore(
             database.connect().use { connection ->
                 connection.inTransaction {
                     updateSyncState(connection, accountIdentityDigest, feed, scanId, HistorySyncState.FAILED, reason)
+                }
+            }
+        }
+
+    override suspend fun currentDataRevision(): Long = withContext(Dispatchers.IO) {
+        database.connect().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT revision FROM history_data_revision WHERE id = 1").use { resultSet ->
+                    check(resultSet.next()) { "History data revision row is missing." }
+                    resultSet.getLong(1)
+                }
+            }
+        }
+    }
+
+    override suspend fun loadSyncJobs(accountIdentityDigest: String): List<HistorySyncJob> =
+        withContext(Dispatchers.IO) {
+            requireDigest(accountIdentityDigest)
+            database.connect().use { connection ->
+                connection.prepareStatement(
+                    "SELECT * FROM history_sync_jobs WHERE account_identity_digest = ? " +
+                        "ORDER BY feed, purpose",
+                ).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.executeQuery().use { resultSet ->
+                        buildList {
+                            while (resultSet.next()) add(resultSet.toSyncJob())
+                        }
+                    }
+                }
+            }
+        }
+
+    override suspend fun upsertSyncJob(job: HistorySyncJob) = withContext(Dispatchers.IO) {
+        requireDigest(job.accountIdentityDigest)
+        database.connect().use { connection ->
+            connection.inTransaction {
+                connection.prepareStatement(
+                    "INSERT INTO history_sync_jobs(" +
+                        "account_identity_digest, feed, purpose, state, window_start_sec, window_end_sec, cursor, " +
+                        "completed_through_sec, last_error, next_retry_at_ns, last_success_at_ns, updated_at_ns) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT(account_identity_digest, feed, purpose) DO UPDATE SET " +
+                        "state = excluded.state, window_start_sec = excluded.window_start_sec, " +
+                        "window_end_sec = excluded.window_end_sec, cursor = excluded.cursor, " +
+                        "completed_through_sec = excluded.completed_through_sec, last_error = excluded.last_error, " +
+                        "next_retry_at_ns = excluded.next_retry_at_ns, " +
+                        "last_success_at_ns = excluded.last_success_at_ns, updated_at_ns = excluded.updated_at_ns",
+                ).use { statement ->
+                    statement.setString(1, job.accountIdentityDigest)
+                    statement.setString(2, job.feed.name)
+                    statement.setString(3, job.purpose.name)
+                    statement.setString(4, job.state.name)
+                    statement.setNullableLong(5, job.windowStartSec)
+                    statement.setNullableLong(6, job.windowEndSec)
+                    statement.setString(7, job.cursor)
+                    statement.setNullableLong(8, job.completedThroughSec)
+                    statement.setString(9, job.lastError)
+                    setInstant(statement, 10, job.nextRetryAt)
+                    setInstant(statement, 11, job.lastSuccessAt)
+                    statement.setLong(12, job.updatedAt.toEpochNanos())
+                    statement.executeUpdate()
+                }
+                Unit
+            }
+        }
+    }
+
+    override suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary> =
+        withContext(Dispatchers.IO) {
+            requireDigest(accountIdentityDigest)
+            database.connect().use { connection ->
+                val jobs = connection.prepareStatement(
+                    "SELECT * FROM history_sync_jobs WHERE account_identity_digest = ?",
+                ).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.executeQuery().use { resultSet ->
+                        buildList {
+                            while (resultSet.next()) add(resultSet.toSyncJob())
+                        }
+                    }
+                }
+                HistoryFeed.entries.mapNotNull { feed ->
+                    val feedJobs = jobs.filter { it.feed == feed }
+                    if (feedJobs.isEmpty()) return@mapNotNull null
+                    val recent = feedJobs.firstOrNull { it.purpose == HistorySyncPurpose.RECENT }
+                    val backfill = feedJobs.firstOrNull { it.purpose == HistorySyncPurpose.BACKFILL }
+                    val repair = feedJobs.firstOrNull { it.purpose == HistorySyncPurpose.REPAIR }
+                    HistorySyncProgressSummary(
+                        accountIdentityDigest = accountIdentityDigest,
+                        feed = feed,
+                        recentCompletedThroughSec = recent?.completedThroughSec,
+                        recentLastSuccessAt = recent?.lastSuccessAt,
+                        backfillState = backfill?.state ?: HistorySyncJobState.PENDING,
+                        backfillCompletedThroughSec = backfill?.completedThroughSec,
+                        backfillCursor = backfill?.cursor,
+                        repairLastRunAt = repair?.lastSuccessAt,
+                        lastError = feedJobs.mapNotNull { it.lastError }.lastOrNull(),
+                        nextRetryAt = feedJobs.mapNotNull { it.nextRetryAt }.minOrNull(),
+                    )
+                }
+            }
+        }
+
+    override suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity> =
+        withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                val conditions = mutableListOf("source_key = ?")
+                val values = mutableListOf<Any?>(query.sourceScope.sourceKey)
+                query.from?.let {
+                    conditions.add("occurred_at_ns >= ?")
+                    values.add(it.toEpochNanos())
+                }
+                query.until?.let {
+                    conditions.add("occurred_at_ns < ?")
+                    values.add(it.toEpochNanos())
+                }
+                val where = "WHERE ${conditions.joinToString(" AND ")}"
+                val total = connection.prepareStatement(
+                    "SELECT COUNT(*) FROM history_cycle_activity $where",
+                ).use { statement ->
+                    bindValues(statement, values)
+                    statement.executeQuery().use { resultSet ->
+                        check(resultSet.next())
+                        resultSet.getLong(1)
+                    }
+                }
+                val items = connection.prepareStatement(
+                    "SELECT * FROM history_cycle_activity $where " +
+                        "ORDER BY occurred_at_ns DESC, cycle_id DESC LIMIT ? OFFSET ?",
+                ).use { statement ->
+                    bindValues(statement, values)
+                    statement.setInt(values.size + 1, query.limit)
+                    statement.setInt(values.size + 2, query.offset)
+                    statement.executeQuery().use { resultSet ->
+                        buildList {
+                            while (resultSet.next()) add(resultSet.toCycleActivity())
+                        }
+                    }
+                }
+                HistoryPage(
+                    items = items,
+                    total = total,
+                    limit = query.limit,
+                    offset = query.offset,
+                    hasMore = query.offset + items.size < total,
+                )
+            }
+        }
+
+    override suspend fun listRecordedScopes(accountIdentityDigest: String): List<HistoryRecordedScope> =
+        withContext(Dispatchers.IO) {
+            requireDigest(accountIdentityDigest)
+            database.connect().use { connection ->
+                val rows = connection.prepareStatement(
+                    "SELECT source_key, source_mode, account_identity_digest, simulation_session_id, " +
+                        "managed_scope_fingerprint, managed_scope_symbols, observed_at_ns AS at_ns " +
+                        "FROM history_observations WHERE account_identity_digest = ? " +
+                        "UNION ALL " +
+                        "SELECT source_key, source_mode, account_identity_digest, simulation_session_id, " +
+                        "managed_scope_fingerprint, managed_scope_symbols, occurred_at_ns AS at_ns " +
+                        "FROM history_cycle_activity WHERE account_identity_digest = ?",
+                ).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.setString(2, accountIdentityDigest)
+                    statement.executeQuery().use { resultSet ->
+                        buildList {
+                            while (resultSet.next()) {
+                                add(
+                                    Triple(
+                                        HistoryRecordedScope(
+                                            sourceKey = resultSet.getString("source_key"),
+                                            mode = HistorySourceMode.valueOf(resultSet.getString("source_mode")),
+                                            managedScopeFingerprint = resultSet.getString("managed_scope_fingerprint"),
+                                            managedScopeSymbols = decodeHistoryStrings(
+                                                resultSet.getString("managed_scope_symbols"),
+                                            ),
+                                            accountIdentityDigest = resultSet.getString("account_identity_digest"),
+                                            simulationSessionId = resultSet.getString("simulation_session_id"),
+                                            firstObservedAt = null,
+                                            lastObservedAt = null,
+                                            observationCount = 0,
+                                        ),
+                                        resultSet.getLong("at_ns"),
+                                        1L,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                }
+                rows.groupBy { (scope, _, _) -> scope.sourceKey }
+                    .map { (_, entries) ->
+                        val scope = entries.first().first
+                        val times = entries.map { (_, atNs, _) -> atNs }
+                        scope.copy(
+                            firstObservedAt = times.minOrNull()?.toInstantNanos(),
+                            lastObservedAt = times.maxOrNull()?.toInstantNanos(),
+                            observationCount = entries.sumOf { (_, _, count) -> count },
+                        )
+                    }
+                    .sortedWith(compareByDescending { it.lastObservedAt ?: Instant.EPOCH })
+            }
+        }
+
+    override suspend fun valuesCoverage(sourceScope: HistorySourceScope): HistoryValuesCoverage =
+        withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                connection.prepareStatement(
+                    "SELECT MIN(observed_at_ns) AS first_ns, MAX(observed_at_ns) AS last_ns, " +
+                        "SUM(CASE WHEN status = 'COMPLETE' THEN 1 ELSE 0 END) AS complete_count, " +
+                        "SUM(CASE WHEN status = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete_count " +
+                        "FROM history_observations WHERE source_key = ?",
+                ).use { statement ->
+                    statement.setString(1, sourceScope.sourceKey)
+                    statement.executeQuery().use { resultSet ->
+                        check(resultSet.next())
+                        HistoryValuesCoverage(
+                            sourceKey = sourceScope.sourceKey,
+                            firstRecordedAt = resultSet.getNullableLong("first_ns")?.toInstantNanos(),
+                            lastRecordedAt = resultSet.getNullableLong("last_ns")?.toInstantNanos(),
+                            completeCount = resultSet.getLong("complete_count"),
+                            incompleteCount = resultSet.getLong("incomplete_count"),
+                        )
+                    }
                 }
             }
         }
@@ -657,8 +897,9 @@ class SqliteHistoryStore(
         val inserted = connection.prepareStatement(
             "INSERT OR IGNORE INTO history_cycle_activity(" +
                 "source_key, cycle_id, source_mode, account_identity_digest, simulation_session_id, " +
-                "managed_scope_fingerprint, managed_scope_symbols, occurred_at_ns, dry_run, actions, payload_hash) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "managed_scope_fingerprint, managed_scope_symbols, occurred_at_ns, dry_run, actions, outcome, " +
+                "payload_hash) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ).use { statement ->
             statement.setString(1, activity.sourceScope.sourceKey)
             statement.setString(2, activity.cycleId)
@@ -670,7 +911,8 @@ class SqliteHistoryStore(
             statement.setLong(8, activity.occurredAt.toEpochNanos())
             statement.setInt(9, if (activity.dryRun) 1 else 0)
             statement.setString(10, encodeHistoryStrings(activity.actions))
-            statement.setString(11, payloadHash)
+            statement.setString(11, activity.outcome?.name)
+            statement.setString(12, payloadHash)
             statement.executeUpdate() == 1
         }
         if (!inserted) {
@@ -1021,6 +1263,7 @@ class SqliteHistoryStore(
             activity.occurredAt.toString(),
             activity.dryRun.toString(),
             encodeHistoryStrings(activity.actions),
+            activity.outcome?.name,
         ),
     )
 
@@ -1605,6 +1848,35 @@ class SqliteHistoryStore(
         if (value == null) statement.setObject(index, null) else statement.setLong(index, value.toEpochNanos())
     }
 
+    private fun PreparedStatement.setNullableLong(index: Int, value: Long?) {
+        if (value == null) setObject(index, null) else setLong(index, value)
+    }
+
+    private fun bumpDataRevision(connection: Connection) {
+        connection.createStatement().use { statement ->
+            check(
+                statement.executeUpdate("UPDATE history_data_revision SET revision = revision + 1 WHERE id = 1") == 1,
+            ) {
+                "History data revision row is missing."
+            }
+        }
+    }
+
+    private fun ResultSet.toSyncJob() = HistorySyncJob(
+        accountIdentityDigest = getString("account_identity_digest"),
+        feed = HistoryFeed.valueOf(getString("feed")),
+        purpose = HistorySyncPurpose.valueOf(getString("purpose")),
+        state = HistorySyncJobState.valueOf(getString("state")),
+        windowStartSec = getNullableLong("window_start_sec"),
+        windowEndSec = getNullableLong("window_end_sec"),
+        cursor = getString("cursor"),
+        completedThroughSec = getNullableLong("completed_through_sec"),
+        lastError = getString("last_error"),
+        nextRetryAt = getNullableLong("next_retry_at_ns")?.toInstantNanos(),
+        lastSuccessAt = getNullableLong("last_success_at_ns")?.toInstantNanos(),
+        updatedAt = getLong("updated_at_ns").toInstantNanos(),
+    )
+
     private fun <T> Connection.inTransaction(block: () -> T): T = transaction(block)
 
     private fun <T> Connection.transaction(block: () -> T): T {
@@ -1737,6 +2009,7 @@ class SqliteHistoryStore(
         occurredAt = getLong("occurred_at_ns").toInstantNanos(),
         dryRun = getInt("dry_run") != 0,
         actions = decodeHistoryStrings(getString("actions")),
+        outcome = getString("outcome")?.let { value -> HistoryCycleOutcome.valueOf(value) },
     )
 
     private fun ResultSet.toHistoryTrade() = HistoryTrade(

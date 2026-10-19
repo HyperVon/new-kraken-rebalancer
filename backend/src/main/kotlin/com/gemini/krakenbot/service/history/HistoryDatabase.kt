@@ -7,7 +7,11 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.util.UUID
 
-/** Fresh History-only SQLite database. Normal opens never create or migrate its schema. */
+/**
+ * History SQLite database with versioned schema upgrades. Fresh databases start at the
+ * current version; an older initialized database is upgraded in one transaction so a failed
+ * upgrade leaves the original data recoverable and blocks trading instead of stranding it.
+ */
 class HistoryDatabase private constructor(private val jdbcUrl: String, private val filePath: Path?) : AutoCloseable {
     constructor(databasePath: Path) : this("jdbc:sqlite:${databasePath.toAbsolutePath()}", databasePath)
 
@@ -25,15 +29,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
                     ).use { resultSet -> buildSet { while (resultSet.next()) add(resultSet.getString(1)) } }
                 }
                 if ("history_schema_meta" in tables) {
-                    val version = connection.createStatement().use { statement ->
-                        statement.executeQuery(
-                            "SELECT schema_version FROM history_schema_meta WHERE id = 1",
-                        ).use { resultSet ->
-                            check(resultSet.next()) { "History schema marker is incomplete." }
-                            resultSet.getInt(1)
-                        }
-                    }
-                    check(version == HISTORY_SCHEMA_VERSION) { "Unsupported History schema version $version." }
+                    ensureCurrentSchema(connection)
                     connection.commit()
                     return
                 }
@@ -49,31 +45,120 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         }
     }
 
-    /** Opens only an existing, explicitly initialized History database. */
+    /** Opens an existing, explicitly initialized History database, upgrading older schemas. */
     fun connect(): Connection {
         if (filePath != null) {
             check(Files.isRegularFile(filePath)) {
                 "Initialized History database is missing at ${filePath.toAbsolutePath()}."
             }
         }
-        return connectRaw().also { connection ->
-            val version = runCatching {
-                connection.createStatement().use { statement ->
-                    statement.executeQuery(
-                        "SELECT schema_version FROM history_schema_meta WHERE id = 1",
-                    ).use { resultSet ->
-                        check(resultSet.next()) { "History schema marker is missing." }
-                        resultSet.getInt(1)
-                    }
-                }
-            }.getOrElse { error ->
-                connection.close()
-                throw IllegalStateException("History database is not initialized.", error)
+        val connection = connectRaw()
+        try {
+            val exists = connection.createStatement().use { statement ->
+                statement.executeQuery(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'history_schema_meta'",
+                ).use { resultSet -> resultSet.next() }
             }
-            check(version == HISTORY_SCHEMA_VERSION) {
-                connection.close()
-                "Unsupported History schema version $version."
+            check(exists) { "History database is not initialized." }
+            connection.autoCommit = false
+            ensureCurrentSchema(connection)
+            connection.commit()
+            connection.autoCommit = true
+            return connection
+        } catch (error: Exception) {
+            runCatching { connection.rollback() }
+            connection.close()
+            throw IllegalStateException("History database schema could not be opened or upgraded.", error)
+        }
+    }
+
+    /**
+     * Brings the open connection to [HISTORY_SCHEMA_VERSION] in its current transaction.
+     * Older supported versions upgrade in place; newer or unknown versions fail closed.
+     */
+    private fun ensureCurrentSchema(connection: Connection) {
+        val version = connection.createStatement().use { statement ->
+            statement.executeQuery(
+                "SELECT schema_version FROM history_schema_meta WHERE id = 1",
+            ).use { resultSet ->
+                check(resultSet.next()) { "History schema marker is incomplete." }
+                resultSet.getInt(1)
             }
+        }
+        when (version) {
+            HISTORY_SCHEMA_VERSION -> return
+
+            HISTORY_SCHEMA_VERSION - 1 -> migrateSchema(connection, version)
+
+            else -> {
+                val direction = if (version > HISTORY_SCHEMA_VERSION) "newer" else "unsupported"
+                throw IllegalStateException(
+                    "History database has a $direction schema version $version; expected $HISTORY_SCHEMA_VERSION.",
+                )
+            }
+        }
+    }
+
+    private fun migrateSchema(connection: Connection, fromVersion: Int) {
+        val migrations = mapOf<Int, (Connection) -> Unit>(2 to ::migrateV2ToV3)
+        val migration = migrations[fromVersion]
+            ?: throw IllegalStateException("No History schema migration is available from version $fromVersion.")
+        try {
+            migration(connection)
+        } catch (error: Exception) {
+            throw IllegalStateException("History schema upgrade from version $fromVersion failed.", error)
+        }
+        connection.prepareStatement(
+            "UPDATE history_schema_meta SET schema_version = ? WHERE id = 1",
+        ).use { statement ->
+            statement.setInt(1, HISTORY_SCHEMA_VERSION)
+            check(statement.executeUpdate() == 1) { "History schema marker could not be updated." }
+        }
+    }
+
+    /**
+     * Version 2 to 3: durable job/progress/revision metadata plus structured cycle outcomes.
+     * Existing records are preserved. A recent-refresh horizon is seeded only from proven
+     * completed-window metadata; unfinished legacy scans are replayed through the normal
+     * deduplicated scans rather than being guessed into a purpose.
+     */
+    private fun migrateV2ToV3(connection: Connection) {
+        connection.createStatement().use { statement ->
+            statement.executeUpdate(
+                "ALTER TABLE history_cycle_activity ADD COLUMN outcome TEXT",
+            )
+            statement.executeUpdate(
+                "CREATE TABLE history_sync_jobs(" +
+                    "account_identity_digest TEXT NOT NULL, " +
+                    "feed TEXT NOT NULL CHECK(feed IN ('TRADES', 'LEDGERS')), " +
+                    "purpose TEXT NOT NULL CHECK(purpose IN ('RECENT', 'BACKFILL', 'REPAIR')), " +
+                    "state TEXT NOT NULL CHECK(state IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED', 'BLOCKED')), " +
+                    "window_start_sec INTEGER, " +
+                    "window_end_sec INTEGER, " +
+                    "cursor TEXT, " +
+                    "completed_through_sec INTEGER, " +
+                    "last_error TEXT, " +
+                    "next_retry_at_ns INTEGER, " +
+                    "last_success_at_ns INTEGER, " +
+                    "updated_at_ns INTEGER NOT NULL, " +
+                    "PRIMARY KEY(account_identity_digest, feed, purpose))",
+            )
+            statement.executeUpdate(
+                "CREATE TABLE history_data_revision(" +
+                    "id INTEGER PRIMARY KEY CHECK(id = 1), " +
+                    "revision INTEGER NOT NULL)",
+            )
+            statement.executeUpdate("INSERT INTO history_data_revision(id, revision) VALUES (1, 1)")
+            statement.executeUpdate(
+                "INSERT INTO history_sync_jobs(" +
+                    "account_identity_digest, feed, purpose, state, window_start_sec, window_end_sec, cursor, " +
+                    "completed_through_sec, last_error, next_retry_at_ns, last_success_at_ns, updated_at_ns) " +
+                    "SELECT account_identity_digest, feed, 'RECENT', 'COMPLETE', NULL, NULL, NULL, " +
+                    "MAX(end_sec), NULL, NULL, MAX(completed_at_ns), " +
+                    "CAST(strftime('%s','now') AS INTEGER) * 1000000000 " +
+                    "FROM history_sync_windows WHERE state = 'COMPLETE' " +
+                    "GROUP BY account_identity_digest, feed",
+            )
         }
     }
 
@@ -213,6 +298,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
                     occurred_at_ns INTEGER NOT NULL,
                     dry_run INTEGER NOT NULL,
                     actions TEXT NOT NULL,
+                    outcome TEXT,
                     payload_hash TEXT NOT NULL,
                     PRIMARY KEY(source_key, cycle_id)
                 )
@@ -442,6 +528,34 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
                 "CREATE INDEX idx_history_daily_assets_key_day " +
                     "ON history_daily_assets(account_identity_digest, raw_asset_key, day_end_sec)",
             )
+            statement.execute(
+                """
+                CREATE TABLE history_sync_jobs (
+                    account_identity_digest TEXT NOT NULL,
+                    feed TEXT NOT NULL CHECK(feed IN ('TRADES', 'LEDGERS')),
+                    purpose TEXT NOT NULL CHECK(purpose IN ('RECENT', 'BACKFILL', 'REPAIR')),
+                    state TEXT NOT NULL CHECK(state IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED', 'BLOCKED')),
+                    window_start_sec INTEGER,
+                    window_end_sec INTEGER,
+                    cursor TEXT,
+                    completed_through_sec INTEGER,
+                    last_error TEXT,
+                    next_retry_at_ns INTEGER,
+                    last_success_at_ns INTEGER,
+                    updated_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY(account_identity_digest, feed, purpose)
+                )
+                """.trimIndent(),
+            )
+            statement.execute(
+                """
+                CREATE TABLE history_data_revision (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    revision INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            statement.execute("INSERT INTO history_data_revision(id, revision) VALUES (1, 1)")
         }
         connection.prepareStatement(
             "INSERT INTO history_schema_meta(id, schema_version, initialized_at_ns) VALUES (1, ?, ?)",
@@ -453,7 +567,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
     }
 
     companion object {
-        private const val HISTORY_SCHEMA_VERSION = 2
+        private const val HISTORY_SCHEMA_VERSION = 3
         private val REQUIRED_TABLES = setOf(
             "history_schema_meta",
             "history_observations",
@@ -465,6 +579,8 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             "history_sync_status",
             "history_sync_windows",
             "history_sync_seen_cursors",
+            "history_sync_jobs",
+            "history_data_revision",
             "history_daily_prices",
             "history_daily_values",
             "history_daily_assets",
@@ -478,6 +594,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             "history_sync_status",
             "history_sync_windows",
             "history_sync_seen_cursors",
+            "history_sync_jobs",
             "history_daily_prices",
             "history_daily_values",
             "history_daily_assets",
