@@ -7,7 +7,10 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.CurrentCycleActivity
+import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
+import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.view.util.FormFields
@@ -105,7 +108,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 )
 
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
+                response.headers[HtmxHeaders.HX_REDIRECT] shouldBe null
                 captured.captured.settings.loopDelaySeconds shouldBe 75L
                 captured.captured.settings.deviationTriggerPercent shouldBe 3.25
                 captured.captured.settings.minimumOrderSizeUSD shouldBe 7.5
@@ -415,6 +418,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                         csrf.value,
                         mapOf(
                             FormFields.ORDER_INTENT_STATE to listOf("CONFIRMED"),
+                            FormFields.ORDER_INTENT_EVIDENCE to listOf("operator matched Kraken order"),
                             FormFields.ORDER_INTENT_ORDER_TXID to listOf("   "),
                         ),
                     ),
@@ -425,7 +429,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     orderIntentService.resolve(
                         id = 12,
                         state = OrderIntentState.CONFIRMED,
-                        evidence = "",
+                        evidence = "operator matched Kraken order",
                     )
                 }
             }
@@ -634,7 +638,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
             }
         }
 
-        "dashboard fragment renders waiting and current rows with unresolved-intent controls" {
+        "dashboard fragment renders failed activity while waiting and current rows with unresolved-intent controls" {
             every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
                 settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(qualityScores = mapOf("BTC" to 9.5)),
             )
@@ -668,11 +672,24 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 ),
             )
             coEvery { orderIntentService.getUnresolvedIntents() } returns unresolved
+            currentPortfolioState.publishActivity(
+                CurrentCycleActivity(
+                    cycleId = "failed-before-first-snapshot",
+                    occurredAt = Instant.parse("2026-10-11T12:00:00Z"),
+                    mode = CurrentCycleActivityMode.LIVE,
+                    outcome = HistoryCycleOutcome.PROBLEM,
+                    actions = listOf("WARNING: price refresh unavailable"),
+                ),
+                "test-source",
+            )
 
             testApplication {
                 application { configureTestEnv() }
                 val waiting = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
                 waiting shouldContain "Waiting for first rebalance cycle"
+                waiting shouldContain "failed-before-first-snapshot"
+                waiting shouldContain "Problem"
+                waiting shouldContain "WARNING: price refresh unavailable"
 
                 val snapshot = TestFixtures.emptySnapshot(Instant.now().minusSeconds(10_000), BigDecimal("1000"))
                     .copy(

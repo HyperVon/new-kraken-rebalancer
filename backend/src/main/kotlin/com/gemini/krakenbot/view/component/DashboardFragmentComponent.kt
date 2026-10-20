@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.util.StreamStatus
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
@@ -23,6 +24,7 @@ import kotlinx.html.FormMethod
 import kotlinx.html.InputType
 import kotlinx.html.button
 import kotlinx.html.form
+import kotlinx.html.h2
 import kotlinx.html.h3
 import kotlinx.html.id
 import kotlinx.html.input
@@ -54,6 +56,8 @@ class DashboardFragmentComponent(
         csrfToken: String? = null,
         qualityScores: Map<String, BigDecimal> = emptyMap(),
         recentSnapshots: List<PortfolioSnapshot> = listOf(latest),
+        recentActivities: List<CurrentCycleActivity> = emptyList(),
+        activitySourceId: String = "",
     ) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
@@ -80,7 +84,18 @@ class DashboardFragmentComponent(
             performanceTableComponent.render(latest, qualityScores)
         }
 
-        recentActivityComponent.render(latest)
+        recentActivityComponent.render(recentActivities, activitySourceId)
+    }
+
+    context(div: DIV)
+    fun renderWaiting(settings: Settings, recentActivities: List<CurrentCycleActivity>, activitySourceId: String) {
+        div.modePlate(settings, outOfBand = true)
+        div.div(CssClass.Loading.SpinnerContainer) {
+            div(CssClass.Loading.Spinner) {}
+            h2(CssClass.Dashboard.WaitingTitle.value) { +ViewText.WAITING_FIRST_CYCLE }
+            p(CssClass.Dashboard.WaitingText.value) { +ViewText.REBALANCER_RUNNING }
+        }
+        recentActivityComponent.render(recentActivities, activitySourceId)
     }
 
     context(div: DIV)

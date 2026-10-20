@@ -99,7 +99,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.5.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS                |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Kotlin/JS interactions for all pages |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
 | **Testing**     | Kotest 6.2.5 + MockK 1.14.11; backend JaCoCo 95% lines/85% branches (temp), engine 95/90; Karma 90/80/75     |
 | **Build**       | Gradle 9.8.0 (Kotlin DSL), Spotless 8.10.3 + ktlint 1.8.0                                                    |
@@ -266,6 +266,8 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 - Sortable holdings table with price, value, target/current allocation, deviation,
   quantity, and quality score; asset links open filtered History
 - **Recent Activity** — current-cycle action feed with BUY/SELL badges
+- **Recent Activity history** — newest 20 cycle outcomes with older-page
+  navigation, including failed cycles; the in-memory history is capped at 120.
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
@@ -274,20 +276,36 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 ### Account History and Portfolio Value
 
 - `/history` shows directly observed per-cycle portfolio values, Kraken trade
-  and ledger activity, and balance checkpoints for the authenticated account.
-  Historical trades and ledgers sync in bounded pages and remain scoped to the
-  verified account; changes in configured assets create separate value series.
-  Asset, pair, and event-type dropdowns show choices from the selected account
-  and time range. Save named views in your browser to recall favorite filters.
-  Interactive charts support value/time tooltips, line/point views, zoom,
-  earlier/later navigation, reset, and expansion.
+  and ledger activity, bot-cycle activity, and balance checkpoints for the
+  authenticated account. Portfolio, Activity, and Data status tabs keep values,
+  bot activity, exchange records, and per-feed synchronization progress
+  distinct. Trades and transactions are independently paginated and exportable.
+- After account identity is verified, a background coordinator refreshes the
+  recent trade and ledger windows, resumes a durable older backfill, repairs the
+  last seven days daily, and requests a refresh five seconds after a qualifying
+  live order submission.
+  A manual Retry remains available for blocked synchronization. Simulation
+  never imports Kraken trades or ledgers.
+- Exchange records remain scoped to the verified account; changes in configured
+  assets create separate value series. Asset, pair, and event-type filters apply
+  to exchange records, not bot-activity exports. Because Kraken records do not
+  prove which bot cycle caused a fill or its lifecycle, linkage is shown as
+  `Unknown` rather than inferred.
+- History statistics distinguish the latest observed value from the selected
+  period's first-to-last change and range high/low. Trade volume and fees stay
+  grouped by currency; funding and rewards stay in native asset units, with a
+  selectable asset chart and no nearest-price historical conversion.
+- Save named views in your browser to recall favorite filters. Interactive
+  charts support value/time tooltips, line/point views, zoom, earlier/later
+  navigation, reset, and expansion.
   The value chart returns every observation up to 2,000 points; larger ranges
   are sampled across the full time span while retaining bucket endpoints,
-  complete-value extrema, and incomplete-cycle markers. It connects adjacent
-  complete samples and breaks at incomplete cycles. The chart does not
-  reconstruct earlier balances or calculate Buy & Hold performance. See
-  the [History section in the User Guide](docs/USER_GUIDE.md#history) for
-  sources, scope, and limitations.
+  complete-value extrema, and incomplete-cycle markers. The UI labels recorded
+  observations separately from plotted representative points. It connects
+  adjacent complete samples and breaks at incomplete cycles. The chart does not
+  reconstruct earlier balances or calculate Buy & Hold performance. See the
+  [History section in the User Guide](docs/USER_GUIDE.md#history) for sources,
+  scope, and limitations.
 
 ### Hot-Reload Configuration
 
@@ -359,7 +377,7 @@ active Settings.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
 
-<a href="docs/images/history.png"><img src="docs/images/history.png" alt="Account History with portfolio value and activity" width="960"></a>
+<a href="docs/images/history.png"><img src="docs/images/history.png" alt="History with range statistics and portfolio value coverage" width="960"></a>
 
 ---
 
@@ -431,13 +449,15 @@ cycle does not mix configuration values.
 ├── .agents/                    # Repository agent rules and skills
 ├── common/                     # Shared KMP configuration, models, and UI catalogs
 ├── engine/                     # Pure portfolio valuation, allocation, and order-planning math
-├── frontend-js/                # Kotlin/JS interactions for Dashboard and Settings
+├── frontend-js/                # Kotlin/JS interactions for Dashboard, Settings, and History
 ├── backend/                    # Ktor server, rebalance loop, execution, and views
 │   └── src/main/kotlin/com/gemini/krakenbot/
 │       ├── config/             # DI, data directory, fresh databases, and startup wiring
 │       ├── controller/         # Dashboard, Settings, History, health, and SSE routes
-│       ├── service/            # Current portfolio state, History, and execution services
-│       ├── service/impl/       # Configuration, analysis, execution, and loop services
+│       ├── service/            # Current portfolio state and application services
+│       │   ├── history/        # Account-scoped sync, activity, and SQLite persistence
+│       │   ├── reporting/      # Range-aware statistics and native-asset series
+│       │   └── impl/           # Configuration, analysis, execution, and loop services
 │       └── view/               # Dashboard, Settings, History HTML and CSS
 ├── docs/                       # User, architecture, security, and evaluation guides
 ├── rebalancer-config-template.json
@@ -613,7 +633,16 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/api/history/ledgers` | Paginated exchange ledger history (JSON) |
 | `GET` | `/api/history/checkpoints` | Paginated ledger balance checkpoints (JSON) |
 | `GET` | `/api/history/sync-status` | Current account-history synchronization status (JSON) |
-| `POST` | `/api/history/sync/start` | Start or resume bounded trade and ledger synchronization (CSRF-protected) |
+| `GET` | `/api/history/charts` | Range- and scope-selected History chart series (JSON) |
+| `GET` | `/api/history/summary` | Coverage and range-aware History statistics (JSON) |
+| `GET` | `/api/history/scopes` | Available recorded portfolio scopes (JSON) |
+| `GET` | `/api/history/activities` | Cursor-paginated bot-cycle activity (JSON) |
+| `GET` | `/api/history/data-status` | Per-feed recent, backfill, repair, and failure state (JSON) |
+| `GET` | `/api/history/export/trades` | CSV export of filtered trade records |
+| `GET` | `/api/history/export/ledgers` | CSV export of filtered ledger records |
+| `GET` | `/api/history/export/activity` | CSV export of scoped bot activity; event filters do not apply |
+| `POST` | `/api/history/repair` | Queue a selected date/window repair (CSRF-protected) |
+| `POST` | `/api/history/sync/start` | Request or resume bounded trade and ledger synchronization (CSRF-protected) |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
 | `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |

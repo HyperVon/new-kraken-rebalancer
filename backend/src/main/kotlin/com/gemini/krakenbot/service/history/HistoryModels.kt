@@ -135,13 +135,17 @@ data class HistoryCycleActivity(
     val outcome: HistoryCycleOutcome? = null,
 )
 
-/** Stable paged activity read; ordering is by occurrence then cycle id and never shifts rows mid-page. */
+/** Cursor for continuing a descending time/id history query. */
+data class HistorySortCursor(val time: Instant?, val id: String)
+
+/** Activity query in descending occurrence/cycle-id order with optional offset or keyset paging. */
 data class HistoryActivityQuery(
     val sourceScope: HistorySourceScope,
     val from: Instant? = null,
     val until: Instant? = null,
     val limit: Int = HISTORY_PAGE_LIMIT,
     val offset: Int = 0,
+    val sortCursor: HistorySortCursor? = null,
 ) {
     init {
         require(from == null || until == null || from <= until) { "History range start must not follow its end." }
@@ -199,6 +203,7 @@ data class HistoryEventQuery(
     val type: String? = null,
     val limit: Int = HISTORY_PAGE_LIMIT,
     val offset: Int = 0,
+    val sortCursor: HistorySortCursor? = null,
 ) {
     init {
         require(from == null || until == null || from <= until) { "History range start must not follow its end." }
@@ -221,19 +226,6 @@ data class HistoryPage<out T>(
     val limit: Int,
     val offset: Int,
     val hasMore: Boolean,
-)
-
-/**
- * Range-wide trade aggregates for the History stat cards. Costs and fees are summed
- * exactly as the trade table presents them (Kraken quote-denominated amounts).
- * Rows whose stored cost/fee strings do not parse as decimals still count in
- * [totalTrades] (they appear in the table) but are excluded from the sums.
- */
-data class HistoryTradeSummary(
-    val totalTrades: Long = 0L,
-    val totalVolumeUsd: BigDecimal = BigDecimal.ZERO,
-    val totalFeesPaid: BigDecimal = BigDecimal.ZERO,
-    val avgFeeRatePercent: BigDecimal = BigDecimal.ZERO,
 )
 
 data class HistoryTrade(
@@ -348,6 +340,19 @@ data class HistoryDailyValue(
 
 enum class HistoryFeed { TRADES, LEDGERS }
 
+/** Canonical sync-stop reasons shared by the synchronizer, coordinator, and status presenter. */
+object HistorySyncErrors {
+    const val ACCOUNT_SCOPE_CHANGED = "History sync stopped because authenticated account or credentials changed."
+    const val API_KEY_RESTRICTIONS_UNAVAILABLE =
+        "History sync stopped because Kraken API-key time restrictions could not be verified."
+    const val API_KEY_WINDOW_NO_OVERLAP =
+        "History sync window does not overlap this Kraken API key's allowed query dates."
+    const val API_KEY_RESTRICTIONS_CHANGED =
+        "History sync stopped because Kraken API-key query restrictions changed."
+    const val PAGE_RESTARTED = "History page was retried from the start of its bounded time window."
+    const val PAGE_FAILED = "History page could not be validated after one bounded restart."
+}
+
 enum class HistorySyncState { NOT_STARTED, RUNNING, COMPLETE, PAUSED, FAILED }
 
 /** Job identity: recent refresh, older backfill, and the daily late-record repair stay independent. */
@@ -412,6 +417,7 @@ data class HistoryPageRequest(
     val endSec: Long,
     val requestedCursor: String?,
     val committedAt: Instant,
+    val purpose: HistorySyncPurpose = HistorySyncPurpose.RECENT,
 )
 
 data class HistorySyncWindow(
@@ -421,6 +427,7 @@ data class HistorySyncWindow(
     val startSec: Long,
     val endSec: Long,
     val cursor: String? = null,
+    val purpose: HistorySyncPurpose = HistorySyncPurpose.RECENT,
 )
 
 const val HISTORY_MAX_SYNC_PAGES = 5_000

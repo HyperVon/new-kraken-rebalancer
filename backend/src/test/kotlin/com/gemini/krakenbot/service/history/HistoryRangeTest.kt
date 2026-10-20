@@ -79,6 +79,28 @@ class HistoryRangeTest : StringSpec() {
             }
         }
 
+        "resolved bounds expose epoch-second query limits per preset" {
+            val now = Instant.parse("2026-06-15T12:00:00Z")
+
+            val all = HistoryRanges.resolve(HistoryRangeSelection(HistoryRangePreset.ALL), now, UTC)
+            HistoryRanges.fromSec(all) shouldBe null
+            HistoryRanges.untilSec(all) shouldBe now.epochSecond
+
+            val year = HistoryRanges.resolve(HistoryRangeSelection(HistoryRangePreset.ONE_YEAR), now, UTC)
+            HistoryRanges.fromSec(year) shouldBe now.minus(Duration.ofDays(365)).epochSecond
+            HistoryRanges.untilSec(year) shouldBe now.epochSecond
+
+            val custom = HistoryRanges.resolve(
+                HistoryRangeSelection.custom(LocalDate.parse("2026-03-01"), LocalDate.parse("2026-03-02")),
+                now,
+                UTC,
+            )
+            HistoryRanges.fromSec(custom) shouldBe Instant.parse("2026-03-01T00:00:00Z").epochSecond
+            HistoryRanges.untilSec(custom) shouldBe Instant.parse("2026-03-03T00:00:00Z").epochSecond
+
+            HistoryRangeSelection.rolling(HistoryRangePreset.SEVEN_DAYS).preset.duration shouldBe Duration.ofDays(7)
+        }
+
         "preset keys cover the specified controls and nothing else" {
             HistoryRangePreset.entries.map { it.key } shouldBe listOf("24h", "7d", "30d", "90d", "1y", "all", "custom")
             HistoryRangePreset.fromKey("90d") shouldBe HistoryRangePreset.NINETY_DAYS

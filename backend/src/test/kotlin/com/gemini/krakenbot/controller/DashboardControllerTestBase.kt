@@ -7,9 +7,14 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.history.HistoryApiPresenter
+import com.gemini.krakenbot.service.history.HistoryCsvExporter
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryService
+import com.gemini.krakenbot.service.history.HistoryStore
+import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
@@ -32,6 +37,8 @@ import io.ktor.server.routing.routing
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
+import java.time.Instant
 import io.ktor.server.sse.SSE as ServerSSE
 
 abstract class DashboardControllerTestBase : StringSpec() {
@@ -45,10 +52,26 @@ abstract class DashboardControllerTestBase : StringSpec() {
     protected val historyService = mockk<HistoryService>(relaxed = true)
     protected val historyObservationRecorder = mockk<HistoryObservationRecorder>(relaxed = true)
     protected val historySynchronizer = mockk<HistorySynchronizer>(relaxed = true)
+    protected val historyStore = mockk<HistoryStore>(relaxed = true)
+    protected val historyCsvExporter = spyk(HistoryCsvExporter(historyService, historyStore))
+    protected val historySyncCoordinator = mockk<HistorySyncCoordinator>(relaxed = true)
     protected val currentPortfolioState = CurrentPortfolioState()
     protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
+    protected var historyApiNow: () -> Instant = { Instant.now() }
+    protected val historyReportingService by lazy { HistoryReportingService(historyService, historyApiNow) }
 
-    protected fun Application.configureTestEnv() {
+    protected open fun historyApi(): HistoryApiPresenter = HistoryApiPresenter(
+        historyService = historyService,
+        historyStore = historyStore,
+        reportingService = historyReportingService,
+        syncCoordinator = historySyncCoordinator,
+        nowProvider = historyApiNow,
+    )
+
+    protected fun Application.configureTestEnv(
+        csvExporter: HistoryCsvExporter? = historyCsvExporter,
+        service: HistoryService? = historyService,
+    ) {
         install(ServerSSE)
         val view = DashboardView(
             shellComponent = DashboardShellComponent(),
@@ -68,9 +91,12 @@ abstract class DashboardControllerTestBase : StringSpec() {
             portfolioManager = portfolioManager,
             currentPortfolioState = currentPortfolioState,
             orderIntentService = orderIntentService,
-            historyService = historyService,
+            historyService = service,
             historyObservationRecorder = historyObservationRecorder,
             historySynchronizer = historySynchronizer,
+            historyApi = historyApi(),
+            historyReportingService = historyReportingService,
+            historyCsvExporter = csvExporter,
         )
         routing { controller.registerRoutes(this) }
     }

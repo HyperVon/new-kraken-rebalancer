@@ -17,6 +17,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.history.HistoryDatabase
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
@@ -81,6 +82,7 @@ fun main(args: Array<String>) {
     val portfolioManager = koin.get<PortfolioManager>()
     val orderIntentService = koin.get<OrderIntentService>()
     val historyObservationRecorder = koin.get<HistoryObservationRecorder>()
+    val historySyncCoordinator = koin.get<HistorySyncCoordinator>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
 
@@ -88,6 +90,7 @@ fun main(args: Array<String>) {
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
     historyObservationRecorder.start(applicationScope)
+    historySyncCoordinator.start(applicationScope)
     portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
@@ -95,6 +98,7 @@ fun main(args: Array<String>) {
             // Stop and join the worker before closing its Koin-managed client and dependency graph.
             // Use the job actually cancelled by stop() so a replacement worker created after a
             // pause/resume is fully drained before the dependency graph is torn down.
+            historySyncCoordinator.stop()
             val stoppedWorker = portfolioManager.stopRebalancingLoop()
             val workerJoined =
                 runBlocking {

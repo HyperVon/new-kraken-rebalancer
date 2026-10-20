@@ -31,6 +31,9 @@ class FakeKrakenService : KrakenService {
     var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
     var fundingEvidenceScopeSupplier: () -> String = { "fake-account" }
     var authenticatedAccountIdentitySupplier: () -> String? = { "AA00 TEST TEST TEST" }
+    var authenticatedAccountInfoFactory: (String) -> AuthenticatedAccountInfo = { identity ->
+        AuthenticatedAccountInfo(identity, queryBoundsVerified = true)
+    }
 
     /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -105,7 +108,7 @@ class FakeKrakenService : KrakenService {
     override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
         authenticatedAccountIdentitySupplier()?.let { identity ->
             getAuthenticatedAccountIdentityCallCount++
-            AuthenticatedAccountInfo(identity, queryBoundsVerified = true)
+            authenticatedAccountInfoFactory(identity)
         }
 
     override suspend fun executeOrder(

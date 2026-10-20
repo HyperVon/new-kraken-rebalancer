@@ -5,14 +5,21 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.history.HistoryCycleOutcome
+import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
@@ -54,6 +61,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 krakenService.executedOrders.size shouldBe 0
+                fixture.currentPortfolioState.readDashboardView().recentActivities.single().outcome shouldBe
+                    HistoryCycleOutcome.NO_TRADE
             }
         }
 
@@ -88,6 +97,26 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 // Buy capped to 99% of cash raised from the sell ($100 → $99)
                 buy.volume.subtract(BigDecimal("0.99"))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
+                fixture.currentPortfolioState.readDashboardView().recentActivities.single().outcome shouldBe
+                    HistoryCycleOutcome.ORDERS_ATTEMPTED
+            }
+        }
+
+        "Scenario: Dry-run plans are recorded without claiming attempted live orders" {
+            runTest {
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = true, loopDelaySeconds = 60L),
+                    allocations = listOf(Allocation(TestFixtures.A, 100.0), Allocation(Asset.USD, 0.0)),
+                )
+                krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0) }
+                krakenService.balanceSupplier = { mapOf(TestFixtures.A to 0.0, Asset.USD to 1000.0) }
+
+                portfolioManager.performRebalanceCycle()
+
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders.single().dryRun shouldBe true
+                fixture.currentPortfolioState.readDashboardView().recentActivities.single().outcome shouldBe
+                    HistoryCycleOutcome.DRY_RUN_PLAN
             }
         }
 
@@ -271,6 +300,9 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 krakenService.executedOrders.size shouldBe 0
                 portfolioManager.getOperationalStatus().lastCycleError shouldBe "Cycle produced no snapshot"
+                val activity = fixture.currentPortfolioState.readDashboardView().recentActivities.single()
+                activity.outcome shouldBe HistoryCycleOutcome.PROBLEM
+                activity.actions.any { it.startsWith("ERROR:") }.shouldBeTrue()
             }
         }
 
@@ -349,6 +381,85 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 portfolioManager.getOperationalStatus().lastCycleError shouldBe "Order execution failed"
+            }
+        }
+
+        "successful cycle outcome is shared by dashboard activity and persisted history" {
+            runTest {
+                val config = makeConfig(
+                    Allocation(TestFixtures.A, 50.0),
+                    Allocation(TestFixtures.B, 50.0),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
+                krakenService.balanceSupplier = { mapOf(TestFixtures.A to 10.0, TestFixtures.B to 10.0) }
+                val historyRecorder = mockk<HistoryObservationRecorder>(relaxed = true)
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = fixture.portfolioAnalyzer,
+                    orderExecutor = fixture.orderExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = fixture.currentPortfolioState,
+                    historyObservationRecorder = historyRecorder,
+                )
+
+                manager.performRebalanceCycle()
+
+                val persistedOutcome = slot<HistoryCycleOutcome>()
+                coVerify(exactly = 1) {
+                    historyRecorder.captureFinalCycle(
+                        cycleId = any(),
+                        config = config,
+                        balances = any(),
+                        prices = any(),
+                        snapshot = any(),
+                        sampleSelection = any(),
+                        additionalIncompleteReasons = any(),
+                        actions = any(),
+                        dryRun = false,
+                        outcome = capture(persistedOutcome),
+                    )
+                }
+                fixture.currentPortfolioState.readDashboardView().recentActivities.single().outcome shouldBe
+                    persistedOutcome.captured
+                persistedOutcome.captured shouldBe HistoryCycleOutcome.NO_TRADE
+            }
+        }
+
+        "pre-snapshot exchange failure reaches activity ring and failed-history capture" {
+            runTest {
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation(TestFixtures.A, 100.0),
+                    Allocation(Asset.USD, 0.0),
+                )
+                krakenService.balanceSupplier = { throw IOException("balance unavailable") }
+                val historyRecorder = mockk<HistoryObservationRecorder>(relaxed = true)
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = fixture.portfolioAnalyzer,
+                    orderExecutor = fixture.orderExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = fixture.currentPortfolioState,
+                    historyObservationRecorder = historyRecorder,
+                )
+
+                shouldThrow<IOException> { manager.performRebalanceCycle() }.message shouldBe "balance unavailable"
+
+                val activity = fixture.currentPortfolioState.readDashboardView().recentActivities.single()
+                fixture.currentPortfolioState.readDashboardView().latest shouldBe null
+                activity.outcome shouldBe HistoryCycleOutcome.PROBLEM
+                activity.actions.single() shouldContain "balance unavailable"
+                val persistedActions = slot<List<String>>()
+                coVerify(exactly = 1) {
+                    historyRecorder.captureFailedCycle(
+                        cycleId = any(),
+                        config = any(),
+                        reason = any(),
+                        actions = capture(persistedActions),
+                        dryRun = false,
+                    )
+                }
+                persistedActions.captured shouldBe activity.actions
             }
         }
     }

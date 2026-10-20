@@ -6,6 +6,16 @@ import com.gemini.krakenbot.domain.AssetValues
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RebalanceOrders
 
+/**
+ * Structured execution result; callers never parse formatted action text to infer whether
+ * a submission occurred. [liveSubmissionAttempted] is true only when a real-money AddOrder
+ * reached the live exchange path in this cycle.
+ */
+data class OrderExecutionOutcome(
+    val liveSubmissionAttempted: Boolean = false,
+    val exchangeOrderAttempted: Boolean = false,
+)
+
 interface OrderExecutor {
     suspend fun executeOrders(
         buyOrders: RebalanceOrders,
@@ -16,5 +26,5 @@ interface OrderExecutor {
         actionLog: MutableList<String>,
         cycleId: String = "",
         availableBalances: RawBalances? = null,
-    )
+    ): OrderExecutionOutcome
 }

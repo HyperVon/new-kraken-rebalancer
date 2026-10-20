@@ -96,6 +96,19 @@ class HistoryServiceTest : StringSpec() {
                 )
             }
 
+            val observations = HistoryPage(
+                items = emptyList<HistoryObservation>(),
+                total = 0L,
+                limit = 50,
+                offset = 0,
+                hasMore = false,
+            )
+            coEvery { store.latestObservation(accScope) } returns null
+            coEvery { store.observationAtOrBefore(any(), any(), any()) } returns null
+            coEvery { store.queryObservations(any()) } returns observations
+            coEvery { store.queryCycleActivities(any(), any()) } returns emptyList()
+            coEvery { store.syncStatus(any()) } returns emptyList()
+
             val data = service.getDashboardHistory(
                 sourceScope = accScope,
                 range = HistoryRangeQuery(),
@@ -104,6 +117,11 @@ class HistoryServiceTest : StringSpec() {
             )
 
             data.sourceScope shouldBe accScope
+            data.latestObservation shouldBe null
+            data.baselineObservation shouldBe null
+            data.observations shouldBe observations
+            data.recentCycleActivity shouldBe emptyList()
+            data.syncStatus shouldBe emptyList()
             coVerify { store.latestObservation(accScope) }
             coVerify { store.queryObservations(match { it.sourceScope == accScope }) }
             coVerify { store.observationAtOrBefore(accScope, now, Duration.ofHours(24)) }

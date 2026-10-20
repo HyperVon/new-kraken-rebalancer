@@ -53,13 +53,21 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             }
         }
         val connection = connectRaw()
-        try {
-            val exists = connection.createStatement().use { statement ->
+        val initialized = try {
+            connection.createStatement().use { statement ->
                 statement.executeQuery(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'history_schema_meta'",
                 ).use { resultSet -> resultSet.next() }
             }
-            check(exists) { "History database is not initialized." }
+        } catch (error: Throwable) {
+            runCatching { connection.close() }
+            throw error
+        }
+        if (!initialized) {
+            connection.close()
+            throw IllegalStateException("History database is not initialized.")
+        }
+        try {
             connection.autoCommit = false
             ensureCurrentSchema(connection)
             connection.commit()

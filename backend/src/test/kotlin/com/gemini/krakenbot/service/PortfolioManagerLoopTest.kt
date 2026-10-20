@@ -31,6 +31,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -571,6 +572,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                         2 -> withContext(NonCancellable) { bGate.await() }
                         else -> error("unexpected execution call #$executionCalls")
                     }
+                    OrderExecutionOutcome()
                 }
                 val manager = PortfolioManagerImpl(
                     configService = configService,
@@ -955,6 +957,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                         additionalIncompleteReasons = any(),
                         actions = any(),
                         dryRun = true,
+                        outcome = com.gemini.krakenbot.service.history.HistoryCycleOutcome.NO_TRADE,
                     )
                 }
             }
@@ -996,6 +999,83 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 val snapshot = manager.performRebalanceCycle()
                 snapshot.shouldNotBeNull()
+            }
+        }
+
+        "a rebalance cycle that throws records a failed history observation and rethrows" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = true, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val failingAnalyzer = mockk<PortfolioAnalyzer>()
+                coEvery { failingAnalyzer.fetchObservedBalances() } throws IllegalStateException("balance backend down")
+                val mockRecorder =
+                    mockk<com.gemini.krakenbot.service.history.HistoryObservationRecorder>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = failingAnalyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                    historyObservationRecorder = mockRecorder,
+                )
+
+                val failure = shouldThrow<IllegalStateException> { manager.performRebalanceCycle() }
+                failure.message shouldBe "balance backend down"
+                manager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
+                coVerify(exactly = 1) {
+                    mockRecorder.captureFailedCycle(
+                        cycleId = any(),
+                        config = config,
+                        reason = "Rebalance cycle failed: IllegalStateException",
+                        actions = any(),
+                        dryRun = true,
+                    )
+                }
+            }
+        }
+
+        "a live order submission requests an urgent post-order history refresh" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = false, dryRun = false),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = mapOf("BTC" to BigDecimal("0.001")),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+                val mockExecutor = mockk<OrderExecutor>()
+                coEvery { mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    OrderExecutionOutcome(liveSubmissionAttempted = true, exchangeOrderAttempted = true)
+                val mockSync = mockk<com.gemini.krakenbot.service.history.HistorySyncCoordinator>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = mockExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                    historySyncCoordinator = mockSync,
+                )
+
+                val snapshot = manager.performRebalanceCycle()
+                snapshot.shouldNotBeNull()
+                verify(exactly = 1) { mockSync.requestUrgentAfterOrderCycle() }
             }
         }
     }

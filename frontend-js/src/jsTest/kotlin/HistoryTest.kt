@@ -32,7 +32,7 @@ class HistoryTest :
                 HistoryChartPoint(2000.0, null),
                 HistoryChartPoint(3000.0, 12.5),
             )
-            val config = historyChartConfig(historyChartPoints(root), true)
+            val config = historyChartConfig(historyChartPoints(root), true, ChartRange(1000.0, 3000.0))
             assertHistoryValue(config.data.datasets[0].data[1].y, null)
             assertHistoryValue(config.data.datasets[0].spanGaps, false)
             assertHistoryValue(config.options.parsing, false)
@@ -219,6 +219,25 @@ class HistoryTest :
             )
         }
 
+        "a one-point data series keeps date labels when its selected range is long" {
+            val time = 1_700_000_000_000.0
+            val point = listOf(HistoryChartPoint(time, 1.0))
+            val longRange = ChartRange(time - 30 * 86_400_000.0, time)
+            val longWindow = historyChartConfig(point, true, longRange)
+            val unknownWindow = historyChartConfig(point, true)
+
+            assertHistoryValue(
+                longWindow.options.scales.x.ticks.callback(time).toString(),
+                localAxisLong(time),
+            )
+            assertHistoryValue(
+                unknownWindow.options.scales.x.ticks.callback(time).toString(),
+                localAxisLong(time),
+            )
+            historyAxisTimeLabel(time, longRange) shouldBe localAxisLong(time)
+            historyAxisTimeLabel(time, ChartRange(time - 30_000.0, time)) shouldBe localAxisShort(time)
+        }
+
         "chart time labels render in the browser's local wall-clock time" {
             val originalDate = window.asDynamic().Date
             try {
@@ -259,51 +278,58 @@ class HistoryTest :
             assertHistoryValue(config.options.scales.y.ticks.color, "#64748b")
         }
 
-        "chart scrubber focuses each recorded sample and drives the chart cursor" {
+        "navigation scrubber pans the zoomed window and synchronizes with chart controls" {
             val panel = historyFixture()
+            val track = document.createElement("div") as HTMLElement
+            track.className = "history-chart-scrubber"
             val scrubber = document.createElement("input") as HTMLInputElement
             scrubber.type = "range"
             scrubber.className = "history-chart-scrubber-input"
             scrubber.setAttribute("data-chart-id", "history-value-chart")
             scrubber.disabled = true
-            panel.appendChild(scrubber)
+            track.appendChild(scrubber)
+            panel.appendChild(track)
             try {
+                var chart: dynamic = null
                 var updates = 0
-                var activeIndexes: List<Int> = emptyList()
                 initHistoryCharts { _, config ->
-                    json(
+                    chart = json(
                         "data" to config.data,
                         "options" to config.options,
                         "update" to { _: dynamic -> updates++ },
                         "resize" to { },
-                        "setActiveElements" to { elements: dynamic ->
-                            val length = elements.length as Int
-                            activeIndexes = (0 until length).map { ((elements[it].index) as Number).toInt() }
-                        },
-                        "tooltip" to json("setActiveElements" to { _: dynamic, _: dynamic -> }),
                     )
+                    chart
                 }
-                scrubber.disabled shouldBe false
+                scrubber.disabled shouldBe true
                 scrubber.min shouldBe "0"
-                scrubber.max shouldBe "2"
+                scrubber.max shouldBe "1000"
+                track.classList.contains("hidden") shouldBe true
+                clickHistoryButton(panel, "[data-history-zoom='in']")
+                scrubber.disabled shouldBe false
+                track.classList.contains("hidden") shouldBe false
+                scrubber.value shouldBe "1000"
+                clickHistoryButton(panel, "[data-history-pan='earlier']")
+                scrubber.value shouldBe "500"
                 scrubber.value = "0"
                 scrubber.dispatchEvent(Event("input"))
-                activeIndexes shouldBe listOf(0)
-                panel.querySelector("circle[data-time='1000']")!!.classList.contains("active") shouldBe true
-                updates shouldBe 1
-                scrubber.value = "1"
+                assertHistoryValue(chart.options.scales.x.min, 1000.0)
+                assertHistoryValue(chart.options.scales.x.max, 2000.0)
+                scrubber.value = "1000"
                 scrubber.dispatchEvent(Event("input"))
-                activeIndexes shouldBe emptyList()
-                panel.querySelector("circle[data-time='2000']")!!.classList.contains("active") shouldBe true
-                panel.querySelector("circle[data-time='1000']")!!.classList.contains("active") shouldBe false
-                scrubber.value = "2"
-                scrubber.dispatchEvent(Event("input"))
-                activeIndexes shouldBe listOf(2)
-                panel.querySelector("circle[data-time='3000']")!!.classList.contains("active") shouldBe true
+                assertHistoryValue(chart.options.scales.x.min, 2000.0)
+                assertHistoryValue(chart.options.scales.x.max, 3000.0)
                 initHistoryScrubbers()
                 scrubber.value = "0"
                 scrubber.dispatchEvent(Event("input"))
-                updates shouldBe 4
+                assertHistoryValue(chart.options.scales.x.min, 1000.0)
+                updates shouldBe 5
+                clickHistoryButton(panel, "[data-history-zoom='reset']")
+                assertHistoryValue(chart.options.scales.x.min, 1000.0)
+                assertHistoryValue(chart.options.scales.x.max, 3000.0)
+                scrubber.disabled shouldBe true
+                track.classList.contains("hidden") shouldBe true
+                updates shouldBe 6
             } finally {
                 panel.remove()
             }
@@ -371,7 +397,7 @@ class HistoryTest :
                 "BTC" to listOf(HistoryChartPoint(1000.0, -2.5), HistoryChartPoint(2000.0, 3.0)),
                 "ETH" to listOf(HistoryChartPoint(1000.0, 1.0), HistoryChartPoint(2000.0, 2.0)),
             )
-            val percent = historyMultiSeriesConfig(series, percent = true)
+            val percent = historyMultiSeriesConfig(series, percent = true, axisRange = ChartRange(1000.0, 2000.0))
             assertHistoryValue(percent.data.datasets.length, 2)
             assertHistoryValue(percent.data.datasets[0].label, "BTC")
             assertHistoryValue(percent.data.datasets[1].label, "ETH")

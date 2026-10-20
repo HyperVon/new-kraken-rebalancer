@@ -168,6 +168,7 @@ History:
   ChartControls: "history-chart-controls"
   ChartExpanded: "history-chart-expanded"
   StatsGrid: "history-stats-grid"
+  ReportDetails: "history-report-details"
   ToolbarRow: "history-toolbar-row"
   TimeRangeSelector: "time-range-selector"
   TimeRangeBtn: "time-range-btn"

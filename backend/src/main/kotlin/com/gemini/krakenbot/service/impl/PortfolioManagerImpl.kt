@@ -1,21 +1,27 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.CurrentCycleActivity
+import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
+import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistorySampleSelection
+import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
+import com.gemini.krakenbot.view.util.RecentActivityText
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +51,7 @@ class PortfolioManagerImpl(
     private val krakenService: KrakenService? = null,
     private val currentPortfolioState: CurrentPortfolioState = CurrentPortfolioState(),
     private val historyObservationRecorder: HistoryObservationRecorder? = null,
+    private val historySyncCoordinator: HistorySyncCoordinator? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -281,8 +288,17 @@ class PortfolioManagerImpl(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
         )
+        var activityDraft: CycleActivityDraft? = null
         try {
-            val snapshot = performRebalanceCyclePinned(cycleId)
+            val config = configService.getConfig()
+            val draft = CycleActivityDraft(
+                cycleId = cycleId,
+                config = config,
+                sourceScope = portfolioSourceScope(config, cycleId),
+                actions = mutableListOf(),
+            )
+            activityDraft = draft
+            val snapshot = performRebalanceCyclePinned(cycleId, draft)
             if (snapshot == null) {
                 operationalStatus = operationalStatus.copy(
                     lastCycleError = operationalStatus.lastCycleError ?: "Cycle produced no snapshot",
@@ -295,6 +311,12 @@ class PortfolioManagerImpl(
                     operationalStatus.lastCycleError,
                 )
             }
+            val activity = draft.toActivity(snapshot?.timestamp ?: Instant.now())
+            if (snapshot == null) {
+                currentPortfolioState.publishActivity(activity, draft.sourceScope)
+            } else {
+                currentPortfolioState.publish(snapshot, draft.sourceScope, activity)
+            }
             return snapshot
         } catch (e: CancellationException) {
             throw e
@@ -302,6 +324,42 @@ class PortfolioManagerImpl(
             operationalStatus = operationalStatus.copy(
                 lastCycleError = e::class.simpleName ?: "CycleFailure",
             )
+            val draft = activityDraft ?: try {
+                configService.getConfig().let { config ->
+                    CycleActivityDraft(
+                        cycleId = cycleId,
+                        config = config,
+                        sourceScope = portfolioSourceScope(config, cycleId),
+                        actions = mutableListOf(),
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (draft != null) {
+                val errorText = e.message ?: e::class.simpleName ?: RecentActivityText.UNKNOWN_REASON
+                val reason = "Rebalance cycle failed: ${e::class.simpleName ?: "CycleFailure"}"
+                draft.actions += RecentActivityText.CYCLE_FAILURE_PREFIX + errorText
+                currentPortfolioState.publishActivity(
+                    draft.toActivity(Instant.now(), HistoryCycleOutcome.PROBLEM),
+                    draft.sourceScope,
+                )
+                try {
+                    historyObservationRecorder?.captureFailedCycle(
+                        cycleId = cycleId,
+                        config = draft.config,
+                        reason = reason,
+                        actions = draft.actions,
+                        dryRun = draft.config.settings.dryRun,
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (captureError: Exception) {
+                    log.warn("Failed cycle activity could not be queued for History", captureError)
+                }
+            }
             throw e
         }
     }
@@ -311,10 +369,13 @@ class PortfolioManagerImpl(
         return withContext(MDCContext(contextMap)) { block() }
     }
 
-    private suspend fun performRebalanceCyclePinned(cycleId: String): PortfolioSnapshot? {
+    private suspend fun performRebalanceCyclePinned(
+        cycleId: String,
+        activityDraft: CycleActivityDraft,
+    ): PortfolioSnapshot? {
         log.info("--- Starting Snapshot Phase ---")
-        val config = configService.getConfig()
-        val actionLog = mutableListOf<String>()
+        val config = activityDraft.config
+        val actionLog = activityDraft.actions
 
         val observedBalances = portfolioAnalyzer.fetchObservedBalances()
         val balances = observedBalances.balances
@@ -328,6 +389,8 @@ class PortfolioManagerImpl(
                 onSuccess = { it },
                 onFailure = {
                     log.error("Failed to calculate portfolio values: {}", it.message)
+                    actionLog += RecentActivityText.VALUATION_FAILURE_PREFIX +
+                        (it.message ?: RecentActivityText.UNKNOWN_REASON)
                     historyObservationRecorder?.captureIncompleteCycle(
                         cycleId = cycleId,
                         config = config,
@@ -336,6 +399,7 @@ class PortfolioManagerImpl(
                         reason = "Portfolio valuation failed before a snapshot could be built.",
                         actions = actionLog,
                         dryRun = config.settings.dryRun,
+                        outcome = HistoryCycleOutcome.PROBLEM,
                     )
                     return null
                 },
@@ -358,11 +422,15 @@ class PortfolioManagerImpl(
         )
         val buyOrders = plan.buyOrders
         val sellOrders = plan.sellOrders
+        activityDraft.hasOrders = buyOrders.isNotEmpty() || sellOrders.isNotEmpty()
         actionLog.addAll(plan.events.map(RebalanceEventFormatter::format))
 
         currentCoroutineContext().ensureActive()
+        var executionAttemptedLive = false
+        var executionAttemptedExchange = false
+        var executionFailed = false
         try {
-            orderExecutor.executeOrders(
+            val executionOutcome = orderExecutor.executeOrders(
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
                 currentValuesUSD = currentValuesUSD,
@@ -372,14 +440,16 @@ class PortfolioManagerImpl(
                 cycleId = cycleId,
                 availableBalances = balances,
             )
+            executionAttemptedLive = executionOutcome.liveSubmissionAttempted
+            executionAttemptedExchange = executionOutcome.exchangeOrderAttempted
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.error("Order execution failed; continuing with a snapshot", e)
             markCycleError("Order execution failed")
+            executionFailed = true
             actionLog.add(ViewText.ERROR_ORDER_EXECUTION_FAILED_PREFIX + (e.message ?: e.javaClass.simpleName))
         }
-
         var finalBalances = observedBalances
         var finalPrices = observedPrices
         var sampleSelection = HistorySampleSelection.PRE_TRADE
@@ -406,6 +476,8 @@ class PortfolioManagerImpl(
                         onFailure = {
                             markCycleError("Post-trade valuation failed")
                             additionalReasons.add("Post-trade valuation failed")
+                            actionLog += RecentActivityText.VALUATION_FAILURE_PREFIX +
+                                (it.message ?: RecentActivityText.UNKNOWN_REASON)
                             RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
                         },
                     )
@@ -418,11 +490,21 @@ class PortfolioManagerImpl(
                     )
                     markCycleError("Post-trade state refresh failed")
                     additionalReasons.add("Post-trade state refresh failed: ${e.message}")
+                    actionLog += RecentActivityText.CYCLE_FAILURE_PREFIX +
+                        (e.message ?: e::class.simpleName ?: RecentActivityText.UNKNOWN_REASON)
                     RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
                 }
             } else {
                 RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
             }
+
+        val cycleOutcome = when {
+            executionFailed || operationalStatus.lastCycleError != null -> HistoryCycleOutcome.PROBLEM
+            config.settings.dryRun && activityDraft.hasOrders -> HistoryCycleOutcome.DRY_RUN_PLAN
+            executionAttemptedExchange -> HistoryCycleOutcome.ORDERS_ATTEMPTED
+            else -> HistoryCycleOutcome.NO_TRADE
+        }
+        activityDraft.outcome = cycleOutcome
 
         val snapshot =
             portfolioAnalyzer.buildSnapshot(
@@ -436,8 +518,6 @@ class PortfolioManagerImpl(
                 balancesObservedAt = finalState.balancesObservedAt,
             )
 
-        currentPortfolioState.publish(snapshot, portfolioSourceScope(config, cycleId))
-
         historyObservationRecorder?.captureFinalCycle(
             cycleId = cycleId,
             config = config,
@@ -448,7 +528,11 @@ class PortfolioManagerImpl(
             additionalIncompleteReasons = additionalReasons,
             actions = actionLog,
             dryRun = config.settings.dryRun,
+            outcome = cycleOutcome,
         )
+        if (executionAttemptedLive) {
+            historySyncCoordinator?.requestUrgentAfterOrderCycle()
+        }
 
         log.info("--- Cycle Complete ---")
         return snapshot
@@ -458,7 +542,7 @@ class PortfolioManagerImpl(
         operationalStatus = operationalStatus.copy(lastCycleError = error)
     }
 
-    private suspend fun portfolioSourceScope(config: com.gemini.krakenbot.config.AppConfig, cycleId: String): String {
+    private suspend fun portfolioSourceScope(config: AppConfig, cycleId: String): String {
         val source = if (config.settings.simulation) "simulation" else "live"
         val credentialScope = try {
             krakenService?.getFundingEvidenceScope()
@@ -472,6 +556,30 @@ class PortfolioManagerImpl(
         }
         return "$source:${credentialScope ?: cycleId}"
     }
+
+    private fun CycleActivityDraft.toActivity(
+        occurredAt: Instant,
+        outcome: HistoryCycleOutcome = this.outcome ?: HistoryCycleOutcome.PROBLEM,
+    ) = CurrentCycleActivity(
+        cycleId = cycleId,
+        occurredAt = occurredAt,
+        mode = when {
+            config.settings.simulation -> CurrentCycleActivityMode.SIMULATION
+            config.settings.dryRun -> CurrentCycleActivityMode.DRY_RUN
+            else -> CurrentCycleActivityMode.LIVE
+        },
+        outcome = outcome,
+        actions = actions.toList(),
+    )
+
+    private data class CycleActivityDraft(
+        val cycleId: String,
+        val config: AppConfig,
+        val sourceScope: String,
+        val actions: MutableList<String>,
+        var hasOrders: Boolean = false,
+        var outcome: HistoryCycleOutcome? = null,
+    )
 }
 
 private data class RebalanceState(

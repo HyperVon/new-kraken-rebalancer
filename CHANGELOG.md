@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.0] - 2026-10-19
+
+### Added
+
+- **Automatic account History sync**: verified accounts receive periodic recent
+  refreshes, a nonblocking post-order refresh, resumable backfill, and a bounded
+  daily repair scan with per-feed progress and actionable failure states.
+- **History activity and exports**: separate bot-activity, trades, transactions,
+  and data-status views with independent paging, date repair, and CSV exports.
+- **Range-aware History reporting**: selected-period value endpoints and extrema,
+  separate exchange-fill and bot-cycle counts, currency-grouped trade totals,
+  and native-asset funding and rewards.
+
+### Changed
+
+- **Dashboard activity**: retain recent cycle outcomes, including failures, with
+  older-page navigation bounded to the latest 120 records.
+- **History charts and coverage**: show stored observation and representative
+  plotted-point counts separately, and make native-asset funding/reward charts
+  selectable by asset.
+- **Settings saves**: stay on Settings and report whether saved values are
+  active immediately or pending the current execution cycle.
+
+### Fixed
+
+- Replace the misleading History All-Time High and mixed-currency aggregates
+  with selected-range values and per-currency amounts; missing evidence remains
+  unavailable or incomplete instead of becoming zero.
+- Remove nearest-cycle-price conversion from funding and reward reporting.
+- Harden History exports against control-prefixed spreadsheet formulas, preserve
+  quote-currency fee units and the History view's timezone fallback, and use
+  stable sort cursors across export pages.
+
 ## [6.19.0] - 2026-10-17
 
 ### Added

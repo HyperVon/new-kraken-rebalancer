@@ -87,6 +87,12 @@ Additional precautions include:
 - starting with `dryRun: true` or `simulation: true` before considering live
   trading.
 
+After the authenticated account identity is verified, the application
+automatically synchronizes account-scoped trade and ledger history using the
+read permissions above. This background synchronization does not run for
+simulation scopes and does not grant order permissions; treat `history.db` as
+private financial data even when no live orders are enabled.
+
 Runtime logs can include order identifiers, balance amounts, and asset keys.
 Protect them as account data and redact them before sharing. The endpoints used
 during normal application operation do not require the **Query Open Orders &

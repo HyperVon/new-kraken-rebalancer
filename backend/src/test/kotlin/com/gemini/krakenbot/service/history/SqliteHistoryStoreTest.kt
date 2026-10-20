@@ -6,7 +6,6 @@ import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.test.runTest
@@ -593,105 +592,6 @@ class SqliteHistoryStoreTest : StringSpec() {
                     ),
                 )
                 combined.items.map { it.tradeId } shouldBe listOf("BTC-USDT")
-            }
-        }
-
-        "queryTradeSummary aggregates trade count, volume, fees, and fee rate for the filter" {
-            withStore { store, _ ->
-                val startSec = 1_700_000_000L
-                val endSec = startSec + 500L
-                store.beginSyncWindow(
-                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "trade-summary", startSec, endSec),
-                )
-                val entries = listOf(
-                    tradeEntry("BTC-USD", Instant.ofEpochSecond(startSec + 1)),
-                    tradeEntry("ETH-USD", Instant.ofEpochSecond(startSec + 2)).copy(
-                        pair = "XETHZUSD",
-                        baseAsset = "ETH",
-                    ),
-                    tradeEntry("BTC-USDT", Instant.ofEpochSecond(startSec + 3)).copy(
-                        pair = "XBTUSDT",
-                        quoteCurrency = "USDT",
-                    ),
-                )
-                store.commitTradePage(
-                    HistoryPageRequest(
-                        accountIdentityDigest = accountDigest,
-                        feed = HistoryFeed.TRADES,
-                        scanId = "trade-summary",
-                        startSec = startSec,
-                        endSec = endSec,
-                        requestedCursor = null,
-                        committedAt = Instant.ofEpochSecond(endSec),
-                    ),
-                    ExchangeHistoryPage(
-                        entries = entries,
-                        startSec = startSec,
-                        endSec = endSec,
-                        requestedCursor = null,
-                        nextCursor = null,
-                        count = entries.size.toLong(),
-                        rawSize = entries.size,
-                        valid = true,
-                    ),
-                ).state shouldBe HistorySyncState.COMPLETE
-
-                val summary = store.queryTradeSummary(HistoryEventQuery(accountIdentityDigest = accountDigest))
-                summary.totalTrades shouldBe 3L
-                summary.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("15000.0")
-                summary.totalFeesPaid shouldBeEqualComparingTo BigDecimal("24.0")
-                summary.avgFeeRatePercent shouldBeEqualComparingTo BigDecimal("0.16")
-
-                val btcOnly = store.queryTradeSummary(
-                    HistoryEventQuery(accountIdentityDigest = accountDigest, assetKey = "BTC"),
-                )
-                btcOnly.totalTrades shouldBe 2L
-                btcOnly.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("10000.0")
-            }
-        }
-
-        "queryTradeSummary counts but excludes rows with unparsable cost or fee strings" {
-            withStore { store, _ ->
-                val startSec = 1_700_000_000L
-                val endSec = startSec + 500L
-                store.beginSyncWindow(
-                    HistorySyncWindow(accountDigest, HistoryFeed.TRADES, "trade-summary-invalid", startSec, endSec),
-                )
-                val entries = listOf(
-                    tradeEntry("BTC-USD", Instant.ofEpochSecond(startSec + 1)),
-                    tradeEntry("ETH-USD", Instant.ofEpochSecond(startSec + 2)).copy(
-                        cost = "not-a-number",
-                        fee = "??",
-                    ),
-                    tradeEntry("SOL-USD", Instant.ofEpochSecond(startSec + 3)).copy(fee = "??"),
-                )
-                store.commitTradePage(
-                    HistoryPageRequest(
-                        accountIdentityDigest = accountDigest,
-                        feed = HistoryFeed.TRADES,
-                        scanId = "trade-summary-invalid",
-                        startSec = startSec,
-                        endSec = endSec,
-                        requestedCursor = null,
-                        committedAt = Instant.ofEpochSecond(endSec),
-                    ),
-                    ExchangeHistoryPage(
-                        entries = entries,
-                        startSec = startSec,
-                        endSec = endSec,
-                        requestedCursor = null,
-                        nextCursor = null,
-                        count = entries.size.toLong(),
-                        rawSize = entries.size,
-                        valid = true,
-                    ),
-                ).state shouldBe HistorySyncState.COMPLETE
-
-                val summary = store.queryTradeSummary(HistoryEventQuery(accountIdentityDigest = accountDigest))
-                summary.totalTrades shouldBe 3L
-                summary.totalVolumeUsd shouldBeEqualComparingTo BigDecimal("10000.0")
-                summary.totalFeesPaid shouldBeEqualComparingTo BigDecimal("8.0")
-                summary.avgFeeRatePercent shouldBeEqualComparingTo BigDecimal("0.08")
             }
         }
 
@@ -2037,6 +1937,176 @@ class SqliteHistoryStoreTest : StringSpec() {
                 store.pauseSync(accountDigest, HistoryFeed.TRADES, "scan-active-1")
                 val resumedStatus = store.beginSyncWindow(syncWindow)
                 resumedStatus.state shouldBe HistorySyncState.RUNNING
+            }
+        }
+
+        "sort cursors keep export pages stable when newer rows arrive" {
+            withStore { store, _ ->
+                val base = Instant.ofEpochSecond(1_700_000_000L)
+                suspend fun commitTrades(scanId: String, entries: List<ExchangeTradeHistoryEntry>) {
+                    val startSec = base.epochSecond
+                    val endSec = base.plusSeconds(10).epochSecond
+                    store.beginSyncWindow(
+                        HistorySyncWindow(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.TRADES,
+                            scanId = scanId,
+                            startSec = startSec,
+                            endSec = endSec,
+                        ),
+                    )
+                    store.commitTradePage(
+                        HistoryPageRequest(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.TRADES,
+                            scanId = scanId,
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = null,
+                            committedAt = base,
+                        ),
+                        ExchangeHistoryPage(
+                            entries = entries,
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = null,
+                            nextCursor = null,
+                            count = entries.size.toLong(),
+                            rawSize = entries.size,
+                            valid = true,
+                        ),
+                    )
+                }
+                suspend fun commitLedgers(scanId: String, entries: List<ExchangeLedgerHistoryEntry>) {
+                    val startSec = base.epochSecond
+                    val endSec = base.plusSeconds(10).epochSecond
+                    store.beginSyncWindow(
+                        HistorySyncWindow(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.LEDGERS,
+                            scanId = scanId,
+                            startSec = startSec,
+                            endSec = endSec,
+                        ),
+                    )
+                    store.commitLedgerPage(
+                        HistoryPageRequest(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.LEDGERS,
+                            scanId = scanId,
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = null,
+                            committedAt = base,
+                        ),
+                        ExchangeHistoryPage(
+                            entries = entries,
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = null,
+                            nextCursor = null,
+                            count = entries.size.toLong(),
+                            rawSize = entries.size,
+                            valid = true,
+                        ),
+                    )
+                }
+
+                commitTrades(
+                    "initial-trades",
+                    listOf(
+                        tradeEntry("older", base.plusSeconds(1)),
+                        tradeEntry("middle", base.plusSeconds(2)),
+                        tradeEntry("newest", base.plusSeconds(3)),
+                    ),
+                )
+                val firstTrades = store.queryTrades(
+                    HistoryEventQuery(accountIdentityDigest = accountDigest, limit = 2),
+                )
+                firstTrades.items.map { it.tradeId } shouldBe listOf("newest", "middle")
+                firstTrades.hasMore shouldBe true
+                commitTrades("late-trade", listOf(tradeEntry("inserted-newer", base.plusSeconds(4))))
+
+                val remainingTrades = store.queryTrades(
+                    HistoryEventQuery(
+                        accountIdentityDigest = accountDigest,
+                        limit = 2,
+                        sortCursor = HistorySortCursor(firstTrades.items.last().time, firstTrades.items.last().tradeId),
+                    ),
+                )
+                remainingTrades.items.map { it.tradeId } shouldBe listOf("older")
+                (firstTrades.items + remainingTrades.items).map { it.tradeId }.toSet() shouldBe
+                    setOf("newest", "middle", "older")
+
+                commitLedgers(
+                    "initial-ledgers",
+                    listOf(
+                        ledgerEntry("older-ledger", base.plusSeconds(1)),
+                        ledgerEntry("middle-ledger", base.plusSeconds(2)),
+                        ledgerEntry("newest-ledger", base.plusSeconds(3)),
+                    ),
+                )
+                val firstLedgers = store.queryLedgers(
+                    HistoryEventQuery(accountIdentityDigest = accountDigest, limit = 2),
+                )
+                firstLedgers.items.map { it.ledgerId } shouldBe listOf("newest-ledger", "middle-ledger")
+                commitLedgers(
+                    "late-ledger",
+                    listOf(ledgerEntry("inserted-newer-ledger", base.plusSeconds(4))),
+                )
+
+                val remainingLedgers = store.queryLedgers(
+                    HistoryEventQuery(
+                        accountIdentityDigest = accountDigest,
+                        limit = 2,
+                        sortCursor = HistorySortCursor(
+                            firstLedgers.items.last().time,
+                            firstLedgers.items.last().ledgerId,
+                        ),
+                    ),
+                )
+                remainingLedgers.items.map { it.ledgerId } shouldBe listOf("older-ledger")
+                (firstLedgers.items + remainingLedgers.items).map { it.ledgerId }.toSet() shouldBe
+                    setOf("newest-ledger", "middle-ledger", "older-ledger")
+
+                listOf(1L, 2L, 3L).forEachIndexed { index, seconds ->
+                    store.appendCycleActivity(
+                        HistoryCycleActivity(
+                            cycleId = "cycle-$index",
+                            sourceScope = testScope(),
+                            occurredAt = base.plusSeconds(seconds),
+                            dryRun = true,
+                            actions = emptyList(),
+                        ),
+                    )
+                }
+                val firstActivities = store.queryActivityPage(
+                    HistoryActivityQuery(sourceScope = testScope(), limit = 2),
+                )
+                firstActivities.items.map { it.cycleId } shouldBe listOf("cycle-2", "cycle-1")
+                store.appendCycleActivity(
+                    HistoryCycleActivity(
+                        cycleId = "cycle-newer",
+                        sourceScope = testScope(),
+                        occurredAt = base.plusSeconds(4),
+                        dryRun = true,
+                        actions = emptyList(),
+                    ),
+                )
+
+                val remainingActivities = store.queryActivityPage(
+                    HistoryActivityQuery(
+                        sourceScope = testScope(),
+                        limit = 2,
+                        sortCursor = HistorySortCursor(
+                            firstActivities.items.last().occurredAt,
+                            firstActivities.items.last().cycleId,
+                        ),
+                    ),
+                )
+                remainingActivities.items.map { it.cycleId } shouldBe listOf("cycle-0")
+                (firstActivities.items + remainingActivities.items).map { it.cycleId }.toSet() shouldBe
+                    setOf("cycle-2", "cycle-1", "cycle-0")
             }
         }
     }

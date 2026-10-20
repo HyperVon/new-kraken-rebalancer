@@ -13,4 +13,19 @@ data class RebalanceSessionContext(
     val prices: AssetPrices,
     val settings: Settings,
     val actionLog: MutableList<String>,
+    val attempts: OrderAttemptTracker = OrderAttemptTracker(),
 )
+
+/** Records structured submission attempts for the cycle outcome and post-order sync signal. */
+class OrderAttemptTracker {
+    @Volatile
+    var liveSubmissionAttempted: Boolean = false
+
+    @Volatile
+    var exchangeOrderAttempted: Boolean = false
+
+    fun record(isLiveSubmission: Boolean) {
+        if (isLiveSubmission) liveSubmissionAttempted = true
+        exchangeOrderAttempted = true
+    }
+}

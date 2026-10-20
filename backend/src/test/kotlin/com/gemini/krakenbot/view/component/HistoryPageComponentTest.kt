@@ -18,7 +18,18 @@ import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySyncStatus
 import com.gemini.krakenbot.service.history.HistoryTrade
-import com.gemini.krakenbot.service.history.HistoryTradeSummary
+import com.gemini.krakenbot.service.reporting.AllocationDeviation
+import com.gemini.krakenbot.service.reporting.BotCycles
+import com.gemini.krakenbot.service.reporting.DepositsWithdrawals
+import com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics
+import com.gemini.krakenbot.service.reporting.LatestObservedValue
+import com.gemini.krakenbot.service.reporting.NativeAssetQuantities
+import com.gemini.krakenbot.service.reporting.NativeQuantityPoint
+import com.gemini.krakenbot.service.reporting.NativeQuantitySeries
+import com.gemini.krakenbot.service.reporting.ObservedValueChange
+import com.gemini.krakenbot.service.reporting.RangeExtrema
+import com.gemini.krakenbot.service.reporting.RangeExtremum
+import com.gemini.krakenbot.service.reporting.TradeStatistics
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -49,6 +60,42 @@ class HistoryPageComponentTest : StringSpec() {
         }
 
     init {
+        "renders the range, custom-date, portfolio-scope, and coverage controls" {
+            val html = render(samplePageData(emptyList()).copy(range = "90d"))
+
+            listOf(
+                "data-history-range=\"24h\"",
+                "data-history-range=\"7d\"",
+                "data-history-range=\"30d\"",
+                "data-history-range=\"90d\"",
+                "data-history-range=\"1y\"",
+                "data-history-range=\"all\"",
+                "data-history-range=\"custom\"",
+                "id=\"history-range-custom-start\"",
+                "id=\"history-range-custom-end\"",
+                "id=\"history-range-custom-tz\"",
+                "id=\"history-range-custom-apply\"",
+                "id=\"history-scope-select\"",
+                "id=\"history-scope-link\"",
+                "id=\"history-coverage-selected\"",
+                "id=\"history-coverage-values\"",
+                "id=\"history-coverage-trades\"",
+                "id=\"history-coverage-ledgers\"",
+                "id=\"history-refresh-status\"",
+                "id=\"history-refresh-chip\"",
+                "id=\"history-refresh-updated\"",
+                "id=\"history-refresh-next\"",
+                "data-history-feed=\"TRADES\"",
+                "data-history-feed=\"LEDGERS\"",
+                "id=\"history-new-data-banner\"",
+                "id=\"history-new-records-notice\"",
+                "They do not filter portfolio-value observations, which use the selected recorded portfolio.",
+            ).forEach { html shouldContain it }
+            html shouldContain "Earlier recorded portfolios available"
+            Regex("""<a\b(?=[^>]*data-history-range="90d")(?=[^>]*class="time-range-btn active")[^>]*>""")
+                .containsMatchIn(html) shouldBe true
+        }
+
         "renders empty state when no account is available" {
             val emptyData = HistoryPageData(
                 range = "24h",
@@ -183,8 +230,8 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "method=\"post\""
             html shouldContain "action=\"/api/history/sync/start\""
             html shouldContain "name=\"csrfToken\" value=\"test-csrf\""
-            html shouldContain "Sync now"
-            (html.indexOf("Rate limit hit") < html.indexOf("<details>")) shouldBe true
+            html shouldContain ">Retry</button>"
+            (html.indexOf("Rate limit hit") < html.indexOf("<summary>Sync details</summary>")) shouldBe true
         }
 
         "renders account filters as dropdowns and keeps the selected options" {
@@ -207,7 +254,7 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html.countOccurrences("<select") shouldBe 4
+            html.countOccurrences("<select") shouldBe 5
             html shouldContain "name=\"asset\""
             html shouldContain "name=\"pair\""
             html shouldContain "name=\"type\""
@@ -215,13 +262,87 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "selected"
             html shouldNotContain "type=\"text\""
             html shouldContain "href=\"#history-portfolio-section\""
-            html shouldContain "href=\"#history-trades-section\""
-            html shouldContain "href=\"#history-ledgers-section\""
+            html shouldContain "href=\"/history?tab=activity&amp;activity=trades\""
+            html shouldContain "href=\"/history?tab=activity&amp;activity=transactions\""
             html shouldContain "id=\"history-portfolio-section\""
             html shouldContain "id=\"history-trades-section\""
             html shouldContain "id=\"history-ledgers-section\""
+            html shouldContain "data-history-tab=\"portfolio\""
+            html shouldContain "data-history-tab=\"activity\""
+            html shouldContain "data-history-tab=\"data\""
             html shouldContain "range=30d&amp;asset=BTC&amp;pair=XXBTZUSD&amp;type=buy"
             html shouldContain "Asset, pair and type filters apply to account records."
+        }
+
+        "R6 activity tabs expose exports and repair controls without rendering raw records" {
+            val data = samplePageData(emptyList()).copy(
+                trades = HistoryPage(
+                    listOf(sampleTrade("trade-secret", "{\"private\":\"trade-json\"}")),
+                    1L,
+                    500,
+                    0,
+                    false,
+                ),
+                ledgers = HistoryPage(
+                    listOf(
+                        sampleLedger("ledger-secret", Instant.ofEpochSecond(1_700_000_000), "trade", "XXBT", "0.1")
+                            .copy(rawRecordJson = "{\"private\":\"ledger-json\"}"),
+                    ),
+                    1L,
+                    500,
+                    0,
+                    false,
+                ),
+            )
+
+            val html = render(data)
+            html shouldContain "href=\"/history?tab=activity&amp;activity=bot\""
+            html shouldContain "href=\"/api/history/export/activity\""
+            html shouldContain "href=\"/api/history/export/trades\""
+            html shouldContain "href=\"/api/history/export/ledgers\""
+            html shouldContain "action=\"/api/history/repair\""
+            html shouldContain "method=\"post\""
+            html shouldContain "id=\"history-repair-start\""
+            html shouldContain "id=\"history-repair-end\""
+            html shouldContain "name=\"start\""
+            html shouldContain "name=\"end\""
+            html shouldContain "name=\"tz\""
+            html shouldContain "name=\"csrfToken\" value=\"test-csrf\""
+            html shouldContain "data-history-panel=\"data\""
+            html shouldContain "id=\"history-refresh-status\""
+            html shouldContain "id=\"history-refresh-feed-progress\""
+            html shouldContain "id=\"history-activity-body\""
+            html shouldContain ">Unknown</dd>"
+            html shouldContain "trade-secret"
+            html shouldContain "ledger-secret"
+            html shouldNotContain "trade-json"
+            html shouldNotContain "ledger-json"
+            html shouldNotContain "rawRecordJson"
+        }
+
+        "trade and transaction pages render at most 50 rows and keep independent offsets" {
+            val trades = (1..51).map { sampleTrade("T$it") }
+            val ledgers = (1..52).map {
+                sampleLedger("L$it", Instant.ofEpochSecond(1_700_000_000), "deposit", "ZUSD", "1.0")
+            }
+            val data = samplePageData(emptyList()).copy(
+                tradesOffset = 50,
+                ledgersOffset = 100,
+                trades = HistoryPage(trades, 151L, 500, 50, true),
+                ledgers = HistoryPage(ledgers, 152L, 500, 100, true),
+            )
+
+            val html = render(data)
+            val tradeRows = html.substringAfter("id=\"history-trades-body\">").substringBefore("</tbody>")
+            val ledgerRows = html.substringAfter("id=\"history-ledgers-body\">").substringBefore("</tbody>")
+            tradeRows.countOccurrences("<tr") shouldBe 50
+            ledgerRows.countOccurrences("<tr") shouldBe 50
+            html shouldContain "51–100 of 151"
+            html shouldContain "101–150 of 152"
+            html shouldContain
+                "range=30d&amp;tab=activity&amp;activity=trades&amp;tradesOffset=100&amp;ledgersOffset=100"
+            html shouldContain
+                "range=30d&amp;tab=activity&amp;activity=transactions&amp;tradesOffset=50&amp;ledgersOffset=150"
         }
 
         "renders value chart and checkpoint chart with SVG lines" {
@@ -312,7 +433,7 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "2023-11-14 22:13:20 · $55,000.00"
             html shouldContain "data-history-zoom=\"reset\""
             html shouldContain "data-history-view=\"points\""
-            html shouldContain "chart.umd.min.js"
+            html shouldContain "src=\"/static/vendor/chart.umd.js\""
             html shouldContain "id=\"history-saved-views\""
             html shouldContain "Portfolio Value"
             html shouldContain "Balance Checkpoints (BTC)"
@@ -469,54 +590,100 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "tradesOffset=50&amp;ledgersOffset=100#history-ledgers-section"
         }
 
-        "renders stat cards from trade summary and observed all-time high" {
+        "renders range-correct statistics without mixing native currencies" {
             val now = Instant.ofEpochSecond(1_700_000_000)
-            val obs = HistoryObservation(
-                observationId = "o1",
-                cycleId = "c1",
-                sourceScope = historyScope,
-                observedAt = now,
-                balanceRequestStartedAt = now,
-                balanceResponseEndedAt = now,
-                priceRequestStartedAt = now,
-                priceResponseEndedAt = now,
-                status = HistoryObservationStatus.COMPLETE,
-                totalUsd = BigDecimal("1234.56"),
-                incompleteReasons = emptyList(),
-                assets = emptyList(),
+            val statistics = HistoryPeriodStatistics(
+                generatedAt = now,
+                latestObservedValue = LatestObservedValue(BigDecimal("1234.56"), now, false, true, null),
+                observedValueChange = ObservedValueChange(
+                    changeUsd = BigDecimal("-34.56"),
+                    firstValueUsd = BigDecimal("1269.12"),
+                    firstObservedAt = now.minusSeconds(60),
+                    lastValueUsd = BigDecimal("1234.56"),
+                    lastObservedAt = now,
+                    includesFlowsNotice = "Includes deposits, withdrawals and market moves",
+                    complete = true,
+                    incompleteReason = null,
+                ),
+                rangeExtrema = RangeExtrema(
+                    high = RangeExtremum("Range high", BigDecimal("1400.00"), now.minusSeconds(120)),
+                    low = RangeExtremum("Range low", BigDecimal("1000.00"), now.minusSeconds(90)),
+                    complete = true,
+                    incompleteReason = null,
+                ),
+                trades = TradeStatistics(
+                    tradeCount = 3,
+                    volumeByCurrency = mapOf("USD" to BigDecimal("5000.00"), "BTC" to BigDecimal("0.02")),
+                    feesByCurrency = mapOf("USD" to BigDecimal("24.00"), "BTC" to BigDecimal("0.0001")),
+                    excludedCount = 1,
+                    complete = false,
+                    incompleteReason = "Incomplete",
+                ),
+                botCycles = BotCycles(2, true, null),
+                allocationDeviation = AllocationDeviation(
+                    label = "Deviation from current targets (percentage points)",
+                    targetsUsed = mapOf("BTC" to BigDecimal("70"), "USD" to BigDecimal("30")),
+                    deviationsBySymbol = mapOf("BTC" to BigDecimal("-10"), "USD" to BigDecimal("10")),
+                    observedAt = now,
+                    complete = true,
+                    incompleteReason = null,
+                ),
+                depositsWithdrawals = DepositsWithdrawals(
+                    notice = "Ledger classification is not proof of external capital.",
+                    deposits = NativeAssetQuantities(mapOf("ZUSD" to BigDecimal("100.00")), 0, true, null),
+                    withdrawals = NativeAssetQuantities(mapOf("ZUSD" to BigDecimal("-40.00")), 0, true, null),
+                    complete = true,
+                    incompleteReason = null,
+                ),
+                rewards = NativeAssetQuantities(
+                    mapOf("XXBT" to BigDecimal("0.002"), "XETH" to BigDecimal("0.1")),
+                    0,
+                    true,
+                    null,
+                ),
             )
             val data = HistoryPageData(
                 range = "30d",
                 filters = HistoryEventQuery(),
                 tradesOffset = 0,
                 ledgersOffset = 0,
-                observations = listOf(obs),
+                observations = emptyList(),
                 checkpoints = HistoryPage(emptyList(), 0L, 50, 0, false),
                 trades = HistoryPage(emptyList(), 0L, 50, 0, false),
                 ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
                 syncStatuses = emptyList(),
                 accountAvailable = true,
-                tradeSummary = HistoryTradeSummary(
-                    totalTrades = 1234L,
-                    totalVolumeUsd = BigDecimal("5000.00"),
-                    totalFeesPaid = BigDecimal("24.00"),
-                    avgFeeRatePercent = BigDecimal("0.4800"),
-                ),
+                statistics = statistics,
             )
             val html = render(data)
-            html shouldContain "All-Time High"
+            html shouldContain "Latest observed value"
+            html shouldContain "Observed value change"
+            html shouldContain "Range high"
+            html shouldContain "Range low"
             html shouldContain "\$1,234.56"
-            html shouldContain "Total Trades"
-            html shouldContain "1,234"
-            html shouldContain "Total Volume Traded"
-            html shouldContain "\$5,000.00"
-            html shouldContain "Total Fees Paid"
-            html shouldContain "\$24.00"
-            html shouldContain "Avg Fee Rate"
-            html shouldContain "0.48%"
+            html shouldContain "-\$34.56"
+            html shouldNotContain "\$-34.56"
+            html shouldContain "BTC: -10 pp (70% target)"
+            html shouldContain "5,000 USD; 0.02 BTC"
+            html shouldContain "24 USD; 0.0001 BTC"
+            html shouldContain """id="history-stat-trades">3 · Incomplete<"""
+            html shouldContain """id="history-stat-bot-cycles">2<"""
+            html shouldContain
+                """id="history-stat-volume">5,000 USD; 0.02 BTC · Incomplete; 1 excluded currency amounts<"""
+            html shouldContain
+                """id="history-stat-fees">24 USD; 0.0001 BTC · Incomplete; 1 excluded currency amounts<"""
+            html shouldContain """id="history-stat-excluded">1<"""
+            html shouldContain "100 ZUSD"
+            html shouldContain "0.002 XXBT"
+            html shouldContain "0.1 XETH"
+            html shouldContain "Includes deposits, withdrawals and market moves"
+            html shouldContain "Ledger classification is not proof of external capital."
+            html shouldNotContain "All-Time High"
+            html shouldNotContain "Avg Fee Rate"
+            html shouldNotContain "Total Volume Traded"
         }
 
-        "renders dash stat cards when the summary is empty" {
+        "renders unavailable rather than zero when statistics are not loaded" {
             val data = HistoryPageData(
                 range = "30d",
                 filters = HistoryEventQuery(),
@@ -530,9 +697,13 @@ class HistoryPageComponentTest : StringSpec() {
                 accountAvailable = true,
             )
             val html = render(data)
-            html shouldContain """id="stat-all-time-high">—<"""
-            html shouldContain """id="stat-total-trades">0<"""
-            html shouldContain """id="stat-avg-fee-rate">—<"""
+            html shouldContain """id="history-stat-latest-value">Unavailable<"""
+            html shouldContain """id="history-stat-value-change">Unavailable<"""
+            html shouldContain """id="history-stat-range-high">Unavailable<"""
+            html shouldContain """id="history-stat-range-low">Unavailable<"""
+            html shouldNotContain "All-Time High"
+            html shouldNotContain "id=\"history-stat-latest-value\">0<"
+            html shouldNotContain "id=\"history-stat-value-change\">0<"
         }
 
         "renders sync status with null window range and unknown error fallback" {
@@ -673,7 +844,7 @@ class HistoryPageComponentTest : StringSpec() {
             val html = render(data)
             html shouldContain "(currency not reported)"
             html.countOccurrences("title=\"1700000000\"") shouldBe 2
-            html.countOccurrences(">1700000000<") shouldBe 2
+            html.countOccurrences(">1700000000<") shouldBe 4
             html shouldContain "1–1"
         }
 
@@ -744,9 +915,13 @@ class HistoryPageComponentTest : StringSpec() {
             html.countOccurrences(">??<") shouldBe 1
             html.countOccurrences(">x<") shouldBe 1
             html.countOccurrences(">y<") shouldBe 1
+            html shouldContain ">n/a BTC<"
+            html shouldContain ">?? USD<"
+            html shouldContain ">x USD<"
+            html shouldContain ">y USD<"
         }
 
-        "renders restored analytics charts with rewards total, ATH tile, and scrubbers" {
+        "renders native funding and reward series with selectable asset charts" {
             val now = Instant.ofEpochSecond(1_700_000_000)
             val data = HistoryPageData(
                 range = "30d",
@@ -766,12 +941,31 @@ class HistoryPageComponentTest : StringSpec() {
                 ledgers = HistoryPage(emptyList(), 0L, 50, 0, false),
                 syncStatuses = emptyList(),
                 accountAvailable = true,
-                fundingLedgers = listOf(
-                    sampleLedger("dep", now.minusSeconds(60), "deposit", "ZUSD", "100.00"),
-                    sampleLedger("wd", now.minusSeconds(30), "withdrawal", "ZUSD", "-40.00"),
+                fundingSeries = listOf(
+                    NativeQuantitySeries(
+                        "ZUSD",
+                        listOf(
+                            NativeQuantityPoint(now.minusSeconds(60), BigDecimal("100.00")),
+                            NativeQuantityPoint(now.minusSeconds(30), BigDecimal("60.00")),
+                        ),
+                    ),
+                    NativeQuantitySeries(
+                        "XXBT",
+                        listOf(NativeQuantityPoint(now, BigDecimal("0.5"))),
+                    ),
                 ),
-                rewardLedgers = listOf(
-                    sampleLedger("r1", now.minusSeconds(30), "staking", "XXBT", "0.001", subtype = "reward"),
+                rewardSeries = listOf(
+                    NativeQuantitySeries(
+                        "XXBT",
+                        listOf(
+                            NativeQuantityPoint(now.minusSeconds(30), BigDecimal("0.001")),
+                            NativeQuantityPoint(now, BigDecimal("0.002")),
+                        ),
+                    ),
+                    NativeQuantitySeries(
+                        "XETH",
+                        listOf(NativeQuantityPoint(now, BigDecimal("0.1"))),
+                    ),
                 ),
                 allocations = TestFixtures.DEFAULT_TEST_ALLOCATIONS,
             )
@@ -781,22 +975,29 @@ class HistoryPageComponentTest : StringSpec() {
                 "Asset Holdings Over Time",
                 "Allocation Deviation from Target",
                 "Cumulative Net Cash Flow",
-                "Staking Rewards",
-                "All-Time High",
+                "Rewards by Asset",
                 "Balance Checkpoints",
                 "id=\"history-holdings-chart\"",
                 "id=\"history-allocation-chart\"",
                 "id=\"history-cash-flow-chart\"",
                 "id=\"history-rewards-chart\"",
-                "id=\"history-rewards-total\"",
-                "id=\"stat-all-time-high\"",
-                "Total rewards: \$60.00",
+                "data-history-series-select=\"history-cash-flow-chart\"",
+                "data-history-series-select=\"history-rewards-chart\"",
+                "data-history-series-asset=\"ZUSD\"",
+                "data-history-series-asset=\"XXBT\"",
+                "ZUSD · 60 ZUSD",
+                "XXBT · 0.002 XXBT",
+                "XETH · 0.1 XETH",
                 "#history-allocation-section",
                 "#history-cash-flow-section",
                 "#history-rewards-section",
                 "id=\"history-sync-text\"",
             ).forEach { html shouldContain it }
-            html.countOccurrences("class=\"history-chart-scrubber-input\"") shouldBe 5
+            html shouldContain "Each asset is charted in its own native unit"
+            html shouldContain "no historical price conversion is applied"
+            html shouldNotContain "All-Time High"
+            html shouldNotContain "Total rewards:"
+            html.countOccurrences("class=\"history-chart-scrubber-input\"") shouldBe 3
         }
 
         "multi-series SVG escapes untrusted asset symbols in titles and series attributes" {
@@ -914,41 +1115,6 @@ class HistoryPageComponentTest : StringSpec() {
             deviations[1].second[0].value shouldBeEqualComparingTo BigDecimal("10")
             deviations[1].second[1].value shouldBeEqualComparingTo BigDecimal("-30")
         }
-
-        "cumulative funding and reward series value ledger legs at observed prices" {
-            val now = Instant.ofEpochSecond(1_700_000_000)
-            val early =
-                sampleObservation("o1", now.minusSeconds(120), "1000.00", listOf(Triple("BTC", "600.00", "50000.00")))
-            val late = sampleObservation("o2", now, "1000.00", listOf(Triple("BTC", "600.00", "60000.00")))
-
-            val flow = cumulativeFundingFlow(
-                listOf(
-                    sampleLedger("d1", now.minusSeconds(120), "deposit", "ZUSD", "100.00"),
-                    sampleLedger("w1", now.minusSeconds(60), "withdrawal", "ZUSD", "-40.00"),
-                    sampleLedger("d2", now.minusSeconds(30), "deposit", "XXBT", "0.5"),
-                    sampleLedger("t1", now.minusSeconds(10), "trade", "ZUSD", "999.00"),
-                    sampleLedger("bad", now.minusSeconds(5), "deposit", "ZUSD", "??"),
-                ),
-                listOf(early, late),
-            )
-            flow.size shouldBe 3
-            flow[0].value shouldBeEqualComparingTo BigDecimal("100.00")
-            flow[1].value shouldBeEqualComparingTo BigDecimal("60.00")
-            flow[2].value shouldBeEqualComparingTo BigDecimal("30060")
-
-            val (rewardPoints, total) = cumulativeRewardValue(
-                listOf(
-                    sampleLedger("r1", now.minusSeconds(100), "staking", "XXBT", "0.001", subtype = "reward"),
-                    sampleLedger("r2", now.minusSeconds(10), "staking", "XXBT", "0.001", subtype = "reward"),
-                    sampleLedger("r3", now.minusSeconds(5), "staking", "XETH", "0.1", subtype = "reward"),
-                ),
-                listOf(early, late),
-            )
-            rewardPoints.size shouldBe 2
-            rewardPoints[0].value shouldBeEqualComparingTo BigDecimal("50")
-            rewardPoints[1].value shouldBeEqualComparingTo BigDecimal("110")
-            total shouldBeEqualComparingTo BigDecimal("110")
-        }
     }
 
     private fun samplePageData(observations: List<HistoryObservation>): HistoryPageData = HistoryPageData(
@@ -1018,6 +1184,37 @@ class HistoryPageComponentTest : StringSpec() {
         hasValidAmount = true,
         hasValidFee = true,
         hasValidBalance = true,
+        isValidRecord = true,
+    )
+
+    private fun sampleTrade(id: String, rawRecordJson: String? = null): HistoryTrade = HistoryTrade(
+        accountIdentityDigest = validHash,
+        tradeId = id,
+        orderTxid = "order-$id",
+        postTxid = "post-$id",
+        pair = "XXBTZUSD",
+        baseAsset = "BTC",
+        quoteCurrency = "USD",
+        feeCurrency = "USD",
+        time = Instant.ofEpochSecond(1_700_000_000),
+        rawTime = "1700000000",
+        type = "buy",
+        orderType = "limit",
+        price = "50000.0",
+        cost = "5000.0",
+        fee = "8.0",
+        volume = "0.1",
+        margin = "0.0",
+        misc = "",
+        tradeSequenceId = id,
+        maker = true,
+        ledgerIds = listOf("ledger-$id"),
+        rawRecordJson = rawRecordJson,
+        hasValidTime = true,
+        hasValidPrice = true,
+        hasValidCost = true,
+        hasValidFee = true,
+        hasValidVolume = true,
         isValidRecord = true,
     )
 

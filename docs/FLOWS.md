@@ -224,6 +224,29 @@ visible in the feed's sync status. The History UI exposes per-feed progress,
 time ranges, event filters, paginated trade and ledger tables, a portfolio-value
 chart, and ledger-reported balance checkpoints.
 
+`HistorySyncCoordinator` owns automatic account synchronization. Once an
+authenticated identity is verified, a periodic trigger runs every 60 seconds.
+The first recent scan covers 24 hours; later scans overlap the last completed
+window by 24 hours so late exchange records can be picked up. A qualifying live
+order submission requests a nonblocking recent refresh after five seconds;
+conflated requests do not cancel a scan already in progress. A frozen, durable
+backfill continues from its committed per-feed cursor, yielding between pages
+when recent work arrives and resuming after restart. A seven-day repair window
+is rechecked daily. Transient failures use jittered exponential backoff from 30
+seconds up to 15 minutes; account-scope changes and API-key restriction changes
+block that sync until an operator selects **Retry**. Simulation scopes do not
+fetch Kraken trades or ledgers.
+
+The Data status page reads coordinator revisions and per-feed jobs. A new
+revision refreshes affected History panels in the open page without navigation;
+the client retains the selected range, scope, page, chart viewport, and scroll
+position.
+
+The reporting service derives period extrema and first-to-last value changes
+from complete direct samples. Trade volume and fees remain grouped by the
+exchange-reported currency; funding and rewards remain in native asset units.
+No historical amount is converted using a nearest portfolio-cycle price.
+
 History write transactions use SQLite `IMMEDIATE` mode, acquiring the writer
 reservation before reading transaction state. Sync startup/status changes and
 asynchronous cycle recording can overlap; acquiring the writer first avoids a

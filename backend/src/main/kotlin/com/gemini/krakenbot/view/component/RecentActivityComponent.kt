@@ -1,20 +1,30 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.CurrentCycleActivity
+import com.gemini.krakenbot.service.CurrentCycleActivityMode
+import com.gemini.krakenbot.service.CurrentPortfolioState
+import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.RecentActivityText
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
-import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.withQuery
+import kotlinx.html.ButtonType
 import kotlinx.html.DIV
-import java.time.Duration
+import kotlinx.html.a
+import kotlinx.html.button
+import kotlinx.html.details
+import kotlinx.html.id
+import kotlinx.html.summary
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -44,40 +54,109 @@ class RecentActivityComponent {
     }
 
     private val cycleTimeFormatter =
-        DateTimeFormatter.ofPattern("MMM d · h:mm a")
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.US)
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
-    fun render(snapshot: PortfolioSnapshot) {
+    fun render(activities: List<CurrentCycleActivity>, sourceId: String) {
         div.glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
-            val now = Instant.now()
             div(CssClass.Activity.Feed) {
-                renderCycle(snapshot, now)
+                id = RecentActivityText.FEED_ID
+                attributes[RecentActivityText.SOURCE_ID_ATTRIBUTE] = sourceId
+                attributes[RecentActivityText.FILTER_ATTRIBUTE] = RecentActivityText.FILTER_VALUE_ALL
+                attributes[RecentActivityText.VISIBLE_COUNT_ATTRIBUTE] = RecentActivityText.PAGE_SIZE
+                div(CssClass.Activity.FeedFooter) {
+                    renderFilterButton(RecentActivityText.FILTER_VALUE_ALL, RecentActivityText.FILTER_ALL, true)
+                    renderFilterButton(RecentActivityText.FILTER_VALUE_ORDERS, RecentActivityText.FILTER_ORDERS)
+                    renderFilterButton(RecentActivityText.FILTER_VALUE_PROBLEMS, RecentActivityText.FILTER_PROBLEMS)
+                }
+                p {
+                    id = RecentActivityText.PERSISTENCE_WARNING_ID
+                    attributes["hidden"] = "hidden"
+                    +RecentActivityText.PERSISTENCE_UNAVAILABLE
+                }
+                div {
+                    id = RecentActivityText.GROUPS_ID
+                    val visibleItems = activities.take(CurrentPortfolioState.MAX_RECENT_ACTIVITIES)
+                    visibleItems.forEachIndexed { index, activity ->
+                        renderCycle(activity, hidden = index >= RecentActivityText.PAGE_SIZE.toInt())
+                    }
+                }
+                div(CssClass.Activity.FeedFooter) {
+                    button(type = ButtonType.button, classes = CssClass.Button.Secondary.value) {
+                        id = RecentActivityText.SHOW_OLDER_ID
+                        if (activities.size <= RecentActivityText.PAGE_SIZE.toInt()) {
+                            attributes["hidden"] = "hidden"
+                        }
+                        +RecentActivityText.SHOW_OLDER
+                    }
+                    a(
+                        href = Routes.HISTORY
+                            .withQuery(
+                                RecentActivityText.HISTORY_TAB_QUERY_KEY,
+                                RecentActivityText.HISTORY_TAB_ACTIVITY,
+                            )
+                            .withQuery(
+                                RecentActivityText.HISTORY_ACTIVITY_QUERY_KEY,
+                                RecentActivityText.HISTORY_ACTIVITY_BOT,
+                            ),
+                        classes = CssClass.Button.Secondary.value,
+                    ) {
+                        +RecentActivityText.VIEW_FULL_ACTIVITY
+                    }
+                }
             }
         }
     }
 
-    private fun DIV.renderCycle(snapshot: PortfolioSnapshot, now: Instant) {
-        val tradeActions = snapshot.actions.filter { TradeAction.from(it) != TradeAction.INFO }
-        val infoAction = snapshot.actions.firstOrNull { TradeAction.from(it) == TradeAction.INFO }
-        div(CssClass.Activity.Cycle) {
-            div(CssClass.Activity.CycleHeader) {
+    private fun DIV.renderFilterButton(value: String, label: String, selected: Boolean = false) {
+        button(
+            type = ButtonType.button,
+            classes = if (selected) CssClass.Button.Primary.value else CssClass.Button.Secondary.value,
+        ) {
+            attributes[RecentActivityText.FILTER_ATTRIBUTE] = value
+            +label
+        }
+    }
+
+    private fun DIV.renderCycle(activity: CurrentCycleActivity, hidden: Boolean) {
+        val outcome = activity.outcome.toLabel()
+        val orders = activity.actions.any { TradeAction.from(it) != TradeAction.INFO } ||
+            activity.outcome in setOf(HistoryCycleOutcome.DRY_RUN_PLAN, HistoryCycleOutcome.ORDERS_ATTEMPTED)
+        val problem = activity.outcome == HistoryCycleOutcome.PROBLEM || activity.actions.any(::isProblemAction)
+        val actions = activity.actions
+        details(CssClass.Activity.Cycle.value) {
+            if (hidden) attributes["hidden"] = "hidden"
+            attributes[RecentActivityText.CYCLE_ID_ATTRIBUTE] = activity.cycleId
+            attributes[RecentActivityText.OCCURRED_AT_ATTRIBUTE] = activity.occurredAt.toEpochMilli().toString()
+            attributes[RecentActivityText.MODE_ATTRIBUTE] = activity.mode.name
+            attributes[RecentActivityText.OUTCOME_ATTRIBUTE] = activity.outcome?.name ?: "RECORDED"
+            attributes[RecentActivityText.PROBLEM_ATTRIBUTE] = problem.toString()
+            attributes[RecentActivityText.ORDERS_ATTRIBUTE] = orders.toString()
+            summary(CssClass.Activity.CycleHeader.value) {
                 span(CssClass.Activity.CycleMeta) {
-                    +if (tradeActions.isNotEmpty()) {
-                        "${tradeActions.size}${tradeSuffix(tradeActions.size)}"
-                    } else {
-                        ViewText.ACTIVITY_NO_TRADES
-                    }
+                    +"${ViewText.ACTIVITY_CYCLE_PREFIX} ${activity.cycleId}"
                 }
                 span(CssClass.Activity.CycleTime) {
-                    +"${relativeTime(snapshot.timestamp, now)} · ${cycleTimeFormatter.format(snapshot.timestamp)}"
+                    +cycleTimeFormatter.format(activity.occurredAt)
+                }
+                span(CssClass.Activity.CycleMeta) { +activity.mode.label() }
+                span(CssClass.Activity.CycleMeta) { +outcome }
+                val actionCount = activity.actions.size
+                span(CssClass.Activity.CycleMeta) {
+                    attributes[RecentActivityText.ACTION_COUNT_ATTRIBUTE] = actionCount.toString()
+                    val actionLabel = if (actionCount == 1) {
+                        RecentActivityText.ACTION_COUNT_ONE
+                    } else {
+                        RecentActivityText.ACTION_COUNT_MANY
+                    }
+                    +"$actionCount $actionLabel"
                 }
             }
-            val displayedActions = listOfNotNull(infoAction) + tradeActions
-            if (displayedActions.isNotEmpty()) {
+            if (actions.isNotEmpty()) {
                 div(CssClass.Activity.CycleBody) {
-                    displayedActions.forEach { action ->
+                    actions.forEach { action ->
                         renderItem(action)
                     }
                 }
@@ -90,6 +169,7 @@ class RecentActivityComponent {
         val isTrade = tradeAction != TradeAction.INFO
         val itemClass = if (isTrade) CssClass.Activity.ItemTrade else CssClass.Activity.Item
         div(itemClass) {
+            attributes[RecentActivityText.ACTION_ATTRIBUTE] = action
             if (isTrade) {
                 span(tradeAction.badgeClass) { +tradeAction.label }
             }
@@ -103,17 +183,24 @@ class RecentActivityComponent {
     }
 
     private companion object {
-        fun tradeSuffix(count: Int): String =
-            if (count == 1) ViewText.ACTIVITY_ACTION_SUFFIX else ViewText.ACTIVITY_ACTIONS_SUFFIX
+        fun HistoryCycleOutcome?.toLabel(): String = when (this) {
+            HistoryCycleOutcome.NO_TRADE -> RecentActivityText.OUTCOME_NO_TRADE
+            HistoryCycleOutcome.DRY_RUN_PLAN -> RecentActivityText.OUTCOME_DRY_RUN_PLAN
+            HistoryCycleOutcome.ORDERS_ATTEMPTED -> RecentActivityText.OUTCOME_ORDERS_ATTEMPTED
+            HistoryCycleOutcome.PROBLEM -> RecentActivityText.OUTCOME_PROBLEM
+            HistoryCycleOutcome.RECORDED, null -> RecentActivityText.OUTCOME_RECORDED
+        }
 
-        fun relativeTime(timestamp: Instant, now: Instant): String {
-            val seconds = Duration.between(timestamp, now).seconds.coerceAtLeast(0)
-            return when {
-                seconds < 60 -> ViewText.ACTIVITY_JUST_NOW
-                seconds < 3_600 -> "${seconds / 60}${ViewText.ACTIVITY_MINUTES_AGO_SUFFIX}"
-                seconds < 86_400 -> "${seconds / 3_600}${ViewText.ACTIVITY_HOURS_AGO_SUFFIX}"
-                else -> "${seconds / 86_400}${ViewText.ACTIVITY_DAYS_AGO_SUFFIX}"
-            }
+        fun CurrentCycleActivityMode.label(): String = when (this) {
+            CurrentCycleActivityMode.SIMULATION -> ViewText.MODE_SIMULATION
+            CurrentCycleActivityMode.DRY_RUN -> ViewText.MODE_DRY_RUN
+            CurrentCycleActivityMode.LIVE -> ViewText.MODE_LIVE
+        }
+
+        fun isProblemAction(action: String): Boolean {
+            val normalized = action.uppercase(Locale.ROOT).trimStart()
+            return normalized.startsWith("ERROR") || normalized.startsWith("FAILED") ||
+                normalized.startsWith("WARNING")
         }
     }
 }

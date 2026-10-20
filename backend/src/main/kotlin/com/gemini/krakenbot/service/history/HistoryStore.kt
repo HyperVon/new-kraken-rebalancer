@@ -35,8 +35,6 @@ interface HistoryStore {
 
     suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade>
 
-    suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary
-
     suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger>
 
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>

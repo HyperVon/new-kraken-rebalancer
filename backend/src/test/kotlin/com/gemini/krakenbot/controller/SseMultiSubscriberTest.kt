@@ -2,6 +2,9 @@ package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.CurrentCycleActivity
+import com.gemini.krakenbot.service.CurrentCycleActivityMode
+import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -65,6 +68,25 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 client.sse("/api/status/stream") {
                     val event = incoming.take(1).toList().single()
                     event.data shouldBe objectMapper.writeValueAsString(current)
+                }
+            }
+        }
+
+        "activity-only failed cycles emit SSE without a current snapshot" {
+            val activity = CurrentCycleActivity(
+                cycleId = "failed-without-snapshot",
+                occurredAt = Instant.parse("2026-10-10T12:03:00Z"),
+                mode = CurrentCycleActivityMode.LIVE,
+                outcome = HistoryCycleOutcome.PROBLEM,
+                actions = listOf("ERROR: price lookup failed"),
+            )
+            currentPortfolioState.publishActivity(activity, "test-source")
+
+            testApplication {
+                val client = createClient { install(ClientSSE) }
+                application { configureTestEnv() }
+                client.sse("/api/status/stream") {
+                    incoming.take(1).toList().single().data shouldBe activity.cycleId
                 }
             }
         }

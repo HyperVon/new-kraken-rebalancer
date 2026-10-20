@@ -18,6 +18,42 @@ class HistoryViewsTest :
             historyViewQuery("?redirect=https://example.com&asset=%3Cscript%3E&range=") shouldBe "asset=%3Cscript%3E"
             historyViewQuery("") shouldBe ""
             historyViewQuery("https://example.com/") shouldBe ""
+            historyViewQuery("?range=custom&start=2026-03-05&end=2026-03-07&tz=Europe%2FBerlin&scope=older") shouldBe
+                "range=custom&start=2026-03-05&end=2026-03-07&tz=Europe%2FBerlin&scope=older"
+            historyViewQuery(
+                "?range=7d&tab=activity&activity=trades&activityCursors=cursor1&tradesOffset=50",
+            ) shouldBe "range=7d&tab=activity&activity=trades"
+        }
+
+        "v1 saved views migrate without losing filters or the selected tab" {
+            val legacyJson =
+                "{\"views\":[{\"name\":\"Old view\",\"query\":\"range=custom&start=2026-03-05&" +
+                    "end=2026-03-07&tz=Europe%2FBerlin&scope=older&asset=XBT&tab=activity&activity=transactions&" +
+                    "activityCursors=cursor1%2Cdefault\"}],\"default\":\"Old view\"}"
+            val store = parseHistoryViewStore(
+                legacyJson,
+            )
+
+            store.views shouldBe listOf(
+                SavedHistoryView(
+                    "Old view",
+                    "range=custom&start=2026-03-05&end=2026-03-07&tz=Europe%2FBerlin&scope=older&" +
+                        "asset=XBT&tab=activity&activity=transactions",
+                ),
+            )
+            store.defaultOption shouldBe "Old view"
+            historyDefaultRange(legacyJson) shouldBe "custom"
+        }
+
+        "an explicit URL range beats a saved default and an absent default selects 30 days" {
+            val savedDefault = historyDefaultRange(
+                """{"views":[{"name":"Week","query":"range=7d"}],"default":"Week"}""",
+            )
+
+            savedDefault shouldBe "7d"
+            historyRangeForQuery("?range=24h", savedDefault) shouldBe "24h"
+            historyRangeForQuery("?scope=older", savedDefault) shouldBe "30d"
+            historyRangeForQuery("", null) shouldBe "30d"
         }
 
         "corrupt saved data is ignored and repeated names keep only their latest safe query" {
@@ -179,11 +215,11 @@ class HistoryViewsTest :
                 select.options.length shouldBe 5
                 select.value = "preset:Week · Allocation"
                 select.dispatchEvent(Event("change"))
-                destination shouldBe "/history?range=7d#history-allocation-section"
+                destination shouldBe "/history?range=7d&tab=portfolio#history-allocation-section"
                 (root.querySelector("#history-delete-view") as HTMLButtonElement).disabled shouldBe true
                 select.value = "preset:Month · Net Cash Flow"
                 select.dispatchEvent(Event("change"))
-                destination shouldBe "/history?range=30d#history-cash-flow-section"
+                destination shouldBe "/history?range=30d&tab=portfolio#history-cash-flow-section"
             } finally {
                 root.remove()
             }

@@ -4,10 +4,19 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
+import java.sql.Statement
+import java.util.Properties
 
 class HistoryDatabaseTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -56,6 +65,27 @@ class HistoryDatabaseTest : StringSpec() {
                 val db = HistoryDatabase(dbPath)
                 shouldThrow<IllegalStateException> {
                     db.connect()
+                }
+            }
+        }
+
+        "connect closes the connection when the schema marker query fails" {
+            withTempDirectory { dir ->
+                val dbPath = Files.createFile(dir.resolve("marker-query-fails.db"))
+                val database = HistoryDatabase(dbPath)
+                val connection = mockk<Connection>(relaxed = true)
+                val statement = mockk<Statement>(relaxed = true)
+                mockkStatic(DriverManager::class)
+                try {
+                    every { DriverManager.getConnection(any<String>(), any<Properties>()) } returns connection
+                    every { connection.createStatement() } returns statement
+                    every { statement.executeQuery(any<String>()) } throws SQLException("schema marker unavailable")
+
+                    shouldThrow<SQLException> { database.connect() }
+
+                    verify(exactly = 1) { connection.close() }
+                } finally {
+                    unmockkStatic(DriverManager::class)
                 }
             }
         }

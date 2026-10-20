@@ -145,12 +145,14 @@ Dry Run, or Live Trading mode.
   above the allocation bars.
   Amber = over target, blue = under target (not profit/loss green/red); a small
   legend sits above the table.
-- **Recent Activity** — actions from the latest completed cycle, with a short
-  summary and compact timestamps:
+- **Recent Activity** — the newest 20 cycle outcomes with a short summary and
+  timestamps. Use **Show older** to page through the in-memory history, which is
+  capped at 120 cycles. Failed cycles without a portfolio snapshot remain
+  visible:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
 
-<a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Recent actions from the latest completed cycle" width="960"></a>
-*Dashboard — activity from the latest completed cycle.*
+<a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Recent cycle activity and outcomes" width="960"></a>
+*Dashboard — recent cycle activity and outcomes.*
 
 Use this page as your “is the bot healthy right now?” view.
 
@@ -225,6 +227,10 @@ effect only after that cycle finishes.
 Saving fails closed when any numeric field is missing, malformed, or non-finite,
 or when allocation rows are incomplete. The current configuration remains
 active and the Settings form shows the validation error.
+
+After a successful save, the page stays on Settings and reports whether the new
+values are active or pending the current execution cycle. Validation failures
+preserve the entered values so you can correct the form without re-entering it.
 
 ### Target allocations
 
@@ -317,22 +323,31 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 
 ## History
 
-<a href="images/history.png"><img src="images/history.png" alt="History with portfolio values, trades, and ledger activity" width="960"></a>
+<a href="images/history.png"><img src="images/history.png" alt="History with portfolio values, range statistics, and page tabs" width="960"></a>
 *History — simulated portfolio samples and account-sync status in an isolated capture.*
 
-The **History** page combines directly recorded portfolio values with Kraken's
-trade and ledger records. It provides time-range controls and dropdown filters
-for asset, pair, and event type, populated from the selected account and range.
-Use **Portfolio value**, **Trades**, and **Transactions** to jump to a section.
-Long trade and transaction tables scroll within their panels; their headings
-stay visible. Each table is independently paginated. **Clear filters** keeps
-the selected time range. Use **Save view** to name the current range and filters,
-then choose it from **Saved views** on a later visit. Views are stored in this
-browser; **Delete view** removes the selected preset. Event filters affect
-account records; the portfolio-value chart continues to show the whole managed
-portfolio for the selected range.
-Ledger balance checkpoints can be charted for a selected asset using the
-exchange-reported balances attached to ledger events.
+The **History** page separates three views:
+
+- **Portfolio** shows directly recorded values, selected-period statistics,
+  asset holdings, target deviations, native-quantity funding/reward charts, and
+  exchange-reported balance checkpoints.
+- **Activity** contains separate **Bot activity**, **Trades**, and
+  **Transactions** tabs. Exchange tables scroll within their panels and are
+  independently paginated. Bot activity shows cycle outcome, mode, details, and
+  cycle identity; Kraken trade and ledger rows do not establish authoritative
+  bot linkage or order lifecycle, so linkage is displayed as **Unknown**.
+- **Data status** shows per-feed recent, backfill, repair, and failure progress.
+  The **Retry** control is manual recovery; ordinary synchronization continues
+  automatically after the account identity is verified.
+
+Time-range and scope controls apply across the History views. Asset, pair, and
+event-type filters apply to Kraken trades and ledgers; they do not apply to bot
+activity. The activity CSV export uses the selected range, scope, and mode and
+explicitly explains that those exchange-record filters do not apply. Trade and
+ledger CSV exports match their respective filtered table results. Use **Clear
+filters** to retain the selected time range. Use **Save view** to name the
+current range and filters, then choose it from **Saved views** on a later visit.
+Views are stored in this browser; **Delete view** removes the selected preset.
 
 The portfolio-value chart uses a completed per-cycle sample of the configured
 managed assets, priced from the cycle's direct balance and ticker evidence. It
@@ -345,9 +360,22 @@ profit or investment-return calculation.
 Ranges with at most 2,000 observations show every sample. Larger ranges are
 sampled across the full time span: each time bucket retains its first and last
 observations, complete-value extrema, and incomplete-cycle boundary markers.
+The coverage label distinguishes total recorded observations from the number of
+representative points actually plotted.
 The chart connects adjacent complete samples with lines. An incomplete cycle
 breaks the line, so the chart never bridges a missing observation. The line
 joins recorded endpoints only; it does not infer values between samples.
+
+The **Latest observed value** is timestamped and may fall outside the selected
+range. **Observed value change** compares the first and last complete values in
+the selected period and includes deposits, withdrawals, and market moves.
+**Range high** and **Range low** are calculated only from complete observations
+inside that period. Exchange-fill counts and bot-cycle counts are separate;
+trade volume and fees are grouped by their reported currency. Deposits,
+withdrawals, and rewards are shown in native asset units. The rewards chart lets
+you select an asset and never values old ledger events using a nearby cycle
+price. Missing or invalid amounts are marked unavailable or incomplete rather
+than presented as zero.
 
 Hover or tap the chart for exact values and UTC timestamps. Dense portfolio
 lines use smaller point markers to keep the trend readable; **Points** makes
@@ -358,15 +386,21 @@ latest samples; **Earlier** and **Later** move through the zoomed range. Use
 The holdings chart always shows individual checkpoints. If the chart library
 cannot load, the native chart remains available with point tooltips.
 
-For an authenticated account, History synchronization fetches Kraken Trades
-and Ledgers in bounded pages and commits each page before continuing. The page
-shows labeled per-feed states and keeps any failure message visible. Expand
+For a verified account, History synchronization runs automatically. Recent
+trade and ledger windows refresh every 60 seconds, starting with the last 24
+hours and overlapping the prior scan by 24 hours. After a qualifying live order
+submission, a nonblocking recent refresh is requested five seconds later. Older
+history is backfilled in durable pages, yielding to recent work and resuming from
+its committed cursor after restart; a bounded seven-day window is repaired daily.
+Transient failures use capped exponential backoff. Account-scope or API-key
+restriction failures remain visible until **Retry** is used. Expand
 **Sync details** for stored/fetched counts, the last page time, and scan window.
-It offers **Sync now** after the account identity has
-been verified. Records are scoped to that account and the value series is also
-scoped to the configured asset set. Changing accounts or the managed asset set
-does not combine those series. The local account reference is stored as a
-digest; the raw identity is not displayed.
+
+Records are scoped to the authenticated account and the portfolio-value series
+is also scoped to the configured asset set. Changing accounts or the managed
+asset set does not combine those series. The local account reference is stored
+as a digest; the raw identity is not displayed. Kraken history requires the
+read permissions described in [SECURITY.md](../SECURITY.md).
 
 Simulation creates a separate process-scoped value series from emulator cycle
 snapshots. It cannot authenticate an account or import Kraken trades and
