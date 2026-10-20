@@ -11,7 +11,7 @@ sqliteJdbc = "3.53.4.0"
 kotlinCssJvm = "2026.10.0"
 logback = "1.6.5"
 jacksonBom = "2.22.3"
-kotest = "6.2.5"
+kotest = "6.2.6"
 mockk = "1.14.11"
 ktlint = "1.8.0"
 
