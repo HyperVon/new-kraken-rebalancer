@@ -28,6 +28,9 @@ import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryPage
+import com.gemini.krakenbot.service.history.HistoryRangePreset
+import com.gemini.krakenbot.service.history.HistoryRangeSelection
+import com.gemini.krakenbot.service.history.HistoryRanges
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
@@ -88,17 +91,19 @@ import kotlinx.html.unsafe
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
-import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 private const val DEFAULT_HISTORY_RANGE = "30d"
-private val HISTORY_RANGE_WINDOWS: Map<String, Duration?> = mapOf(
-    "24h" to Duration.ofHours(24),
-    "7d" to Duration.ofDays(7),
-    "30d" to Duration.ofDays(30),
-    "90d" to Duration.ofDays(90),
-    "all" to null,
-)
+
+internal fun historyRangeSelection(preset: String?, start: String?, end: String?): HistoryRangeSelection? {
+    val parsed = HistoryRangePreset.fromKey(preset) ?: return null
+    if (parsed != HistoryRangePreset.CUSTOM) return HistoryRangeSelection.rolling(parsed)
+    val customStart = start?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+    val customEnd = end?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+    return runCatching { HistoryRangeSelection.custom(customStart, customEnd) }.getOrNull()
+}
 private const val HX_REQUEST_HEADER = "HX-Request"
 private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
 private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
@@ -796,17 +801,21 @@ class DashboardController(
 
     private suspend fun RoutingContext.buildHistoryPageData(config: AppConfig): HistoryPageData {
         val params = call.request.queryParameters
-        val range = params["range"]?.takeIf { it in HISTORY_RANGE_WINDOWS } ?: DEFAULT_HISTORY_RANGE
+        val requestedPreset = params["preset"] ?: params["range"]
+        val zone = params["tz"]?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+        val resolvedRange = historyRangeSelection(requestedPreset, params["start"], params["end"])
+            ?.let { HistoryRanges.resolve(it, Instant.now(), zone) }
+        val range = resolvedRange?.selection?.preset?.key ?: DEFAULT_HISTORY_RANGE
         val tradesOffset = params["tradesOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val ledgersOffset = params["ledgersOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val scope = historyObservationRecorder?.currentSourceScope(config)
         val digest = scope?.accountIdentityDigest?.takeIf { it.isNotBlank() }
-        val from = HISTORY_RANGE_WINDOWS.getValue(range)?.let { Instant.now().minus(it) }
+        val from = resolvedRange?.from
         val portfolioChart = historyApi?.let { api ->
             scope?.let { sourceScope ->
                 try {
                     api.charts(
-                        params = call.historyApiRangeParams(),
+                        params = call.historyApiRangeParams().copy(preset = range),
                         currentScope = sourceScope,
                         scopeId = params["scope"],
                         selectionParam = "portfolio",
@@ -819,15 +828,12 @@ class DashboardController(
         }
         val statistics = historyApi?.let { api ->
             scope?.let { sourceScope ->
-                val requestedPreset = params["preset"] ?: params["range"]
-                if (requestedPreset == "custom") {
+                if (range == HistoryRangePreset.CUSTOM.key) {
                     null
                 } else {
                     try {
                         api.summary(
-                            params = call.historyApiRangeParams().copy(
-                                preset = requestedPreset?.takeIf { it in HISTORY_RANGE_WINDOWS } ?: range,
-                            ),
+                            params = call.historyApiRangeParams().copy(preset = range),
                             currentScope = sourceScope,
                             scopeId = params["scope"],
                             targetAllocations = config.allocations,
@@ -840,6 +846,7 @@ class DashboardController(
         }
         val filters = HistoryEventQuery(
             from = from,
+            until = resolvedRange?.until,
             accountIdentityDigest = digest,
             assetKey = params["asset"]?.trim()?.takeIf(String::isNotEmpty),
             pair = params["pair"]?.trim()?.takeIf(String::isNotEmpty),
@@ -849,7 +856,11 @@ class DashboardController(
         fun empty(offset: Int = 0) = HistoryPage<Nothing>(emptyList(), 0L, HISTORY_PAGE_LIMIT, offset, false)
         if (service == null || digest == null) {
             val observations = if (service != null && scope != null) {
-                service.queryChartObservations(sourceScope = scope, from = from)
+                service.queryChartObservations(
+                    sourceScope = scope,
+                    from = from,
+                    until = resolvedRange?.until,
+                )
             } else {
                 emptyList()
             }
@@ -878,7 +889,11 @@ class DashboardController(
             filters = filters,
             tradesOffset = tradesOffset,
             ledgersOffset = ledgersOffset,
-            observations = service.queryChartObservations(sourceScope = scope, from = from),
+            observations = service.queryChartObservations(
+                sourceScope = scope,
+                from = from,
+                until = resolvedRange?.until,
+            ),
             checkpoints = if (filters.assetKey == null) {
                 empty()
             } else {

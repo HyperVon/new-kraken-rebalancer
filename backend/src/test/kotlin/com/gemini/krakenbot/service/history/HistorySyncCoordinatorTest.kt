@@ -26,6 +26,7 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HistorySyncCoordinatorTest : StringSpec() {
@@ -178,11 +179,12 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
-        "an api-key window without overlap records processed coverage" {
+        "an api-key window without overlap backs off without advancing coverage" {
             withFixture { fixture ->
                 val trades = fixture.tradesScript()
                 fixture.coordinator.runCoalescedPass()
                 val callsAfterFirstPass = trades.calls.size
+                val completedBefore = fixture.recentJob().completedThroughSec
 
                 fixture.clock.advance(Duration.ofMinutes(5))
                 val secondPassNow = fixture.clock.now.epochSecond
@@ -199,9 +201,42 @@ class HistorySyncCoordinatorTest : StringSpec() {
 
                 trades.calls.size shouldBe callsAfterFirstPass
                 val job = fixture.recentJob()
-                job.state shouldBe HistorySyncJobState.COMPLETE
-                job.completedThroughSec shouldBe secondPassNow
+                job.state shouldBe HistorySyncJobState.FAILED
+                job.completedThroughSec shouldBe completedBefore
                 job.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_NO_OVERLAP
+                job.nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(1))
+            }
+        }
+
+        "a clamped backfill keeps its frozen window and retries after the key widens" {
+            withFixture { fixture ->
+                val restrictedFrom = fixture.clock.now.epochSecond - 2L * 86_400
+                var restricted = true
+                fixture.kraken.authenticatedAccountInfoFactory = { identity ->
+                    AuthenticatedAccountInfo(
+                        identity = identity,
+                        queryFromSec = restrictedFrom.takeIf { restricted },
+                        queryToSec = null,
+                        queryBoundsVerified = true,
+                    )
+                }
+                fixture.tradesScript()
+
+                fixture.coordinator.runCoalescedPass()
+
+                val clamped = fixture.backfillJob()
+                clamped.windowStartSec shouldBe 0
+                clamped.state shouldBe HistorySyncJobState.FAILED
+                clamped.completedThroughSec shouldBe null
+                clamped.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_PARTIAL
+
+                restricted = false
+                fixture.clock.advance(Duration.ofMinutes(1))
+                fixture.coordinator.runCoalescedPass()
+
+                val resumed = fixture.backfillJob()
+                resumed.windowStartSec shouldBe 0
+                resumed.state shouldBe HistorySyncJobState.COMPLETE
             }
         }
 
@@ -268,6 +303,35 @@ class HistorySyncCoordinatorTest : StringSpec() {
                 val resumed = fixture.backfillJob()
                 resumed.state shouldBe HistorySyncJobState.COMPLETE
                 resumed.completedThroughSec shouldBe fixture.backfillEndSec
+            }
+        }
+
+        "a partial recent scan resumes its frozen window before starting a newer one" {
+            withFixture { fixture ->
+                val now = fixture.clock.now
+                fixture.store.upsertSyncJob(
+                    HistorySyncJob(
+                        accountIdentityDigest = fixture.digest,
+                        feed = HistoryFeed.TRADES,
+                        purpose = HistorySyncPurpose.RECENT,
+                        state = HistorySyncJobState.RUNNING,
+                        windowStartSec = fixture.recentStartSec,
+                        windowEndSec = now.epochSecond,
+                        cursor = "C1",
+                        completedThroughSec = null,
+                        lastError = null,
+                        nextRetryAt = null,
+                        lastSuccessAt = null,
+                        updatedAt = now,
+                    ),
+                )
+                val trades = fixture.tradesScript()
+                trades.onPage(fixture.recentStartSec, "C1", "T2", nextCursor = null)
+
+                fixture.coordinator.runCoalescedPass()
+
+                trades.calls.count { it.startSec == fixture.recentStartSec && it.cursor == "C1" } shouldBe 1
+                fixture.recentJob().state shouldBe HistorySyncJobState.COMPLETE
             }
         }
 
@@ -586,7 +650,7 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
-        "a window outside the API key bounds is recorded as processed coverage" {
+        "a window outside the API key bounds fails closed and stays retryable" {
             withFixture { fixture ->
                 fixture.kraken.authenticatedAccountInfoFactory = { identity ->
                     AuthenticatedAccountInfo(
@@ -600,9 +664,10 @@ class HistorySyncCoordinatorTest : StringSpec() {
                 fixture.coordinator.runCoalescedPass()
 
                 val skipped = fixture.recentJob()
-                skipped.state shouldBe HistorySyncJobState.COMPLETE
+                skipped.state shouldBe HistorySyncJobState.FAILED
                 skipped.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_NO_OVERLAP
-                skipped.completedThroughSec shouldBe fixture.clock.now.epochSecond
+                skipped.completedThroughSec shouldBe null
+                skipped.nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(1))
             }
         }
 
@@ -648,7 +713,7 @@ class HistorySyncCoordinatorTest : StringSpec() {
     private data class PageSpec(val ids: List<String>, val nextCursor: String?)
 
     private class TradeScript {
-        val calls = mutableListOf<PageCall>()
+        val calls = CopyOnWriteArrayList<PageCall>()
         var failWhen: (Long?, String?) -> Boolean = { _, _ -> false }
         var beforeSupply: (Long?, String?) -> Unit = { _, _ -> }
         private val specs = mutableMapOf<Pair<Long?, String?>, PageSpec>()
@@ -676,7 +741,7 @@ class HistorySyncCoordinatorTest : StringSpec() {
     }
 
     private class LedgerScript {
-        val calls = mutableListOf<PageCall>()
+        val calls = CopyOnWriteArrayList<PageCall>()
         private val specs = mutableMapOf<Pair<Long?, String?>, PageSpec>()
 
         fun onPage(startSec: Long?, cursor: String?, vararg ids: String, nextCursor: String?) {

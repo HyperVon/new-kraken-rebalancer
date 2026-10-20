@@ -16,6 +16,45 @@ class HistoryChartRefreshTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "server-rendered full range pins the initial chart axis" {
+            val wrapper = document.createElement("div") as HTMLElement
+            wrapper.innerHTML =
+                """<svg data-full-from="2026-09-20T00:00:00Z" data-full-to="2026-10-20T00:00:00Z"></svg>"""
+            document.body!!.appendChild(wrapper)
+            try {
+                val from = js("Date.parse('2026-09-20T00:00:00Z')") as Double
+                val to = js("Date.parse('2026-10-20T00:00:00Z')") as Double
+
+                historyDomRange(wrapper) shouldBe ChartRange(from, to - 1.0)
+            } finally {
+                wrapper.remove()
+            }
+        }
+
+        "initial chart creation pins the server-rendered full range" {
+            val root = chartRefreshRoot("history-value-chart")
+            root.className = "chart-container"
+            root.innerHTML =
+                """<svg data-full-from="1970-01-01T00:00:01Z" data-full-to="1970-01-01T00:00:03Z">""" +
+                """<circle data-time="1000" data-value="10.00"></circle></svg>"""
+            var created: dynamic = null
+            try {
+                initHistoryCharts { _, config ->
+                    json(
+                        "data" to config.data,
+                        "options" to config.options,
+                        "update" to { _: dynamic -> Unit },
+                    ).also { created = it }
+                }
+
+                (created.options.scales.x.min as Double) shouldBe 1000.0
+                (created.options.scales.x.max as Double) shouldBe 2999.0
+            } finally {
+                root.remove()
+                historyChartSessions.remove("history-value-chart")
+            }
+        }
+
         "key reconciliation updates renamed series removes absent series and adds newly recorded series" {
             val root = chartRefreshRoot("history-holdings-chart")
             val session = chartRefreshSession(root, "history-holdings-chart")
@@ -99,8 +138,10 @@ class HistoryChartRefreshTest : StringSpec() {
                         root.querySelector("polyline") shouldBe null
                     }
                     applyHistoryChartSeries(id, chartRefreshResponse(chartRefreshSeries("XXBT", "BTC", 0.75)))
-                    selector.value shouldBe "ZUSD"
-                    session.chart.data.datasets.length as Int shouldBe 0
+                    selector.value shouldBe "XXBT"
+                    selector.options.length shouldBe 1
+                    session.chart.data.datasets.length as Int shouldBe 1
+                    session.chart.data.datasets[0].historySeriesKey as String shouldBe "XXBT"
                 } finally {
                     wrapper.remove()
                     disposeDetachedHistoryCharts()
@@ -224,7 +265,11 @@ class HistoryChartRefreshTest : StringSpec() {
                 scope.dispatchEvent(Event("change"))
                 val transitioned = initial.filter { it.first.startsWith("/api/history/charts?") }.takeLast(6)
                 transitioned.size shouldBe 6
-                transitioned.all { "scope=ACCOUNT" in it.first } shouldBe true
+                transitioned.all {
+                    "scope=ACCOUNT%3Aolder" in it.first || "scope=ACCOUNT:older" in it.first
+                } shouldBe true
+                transitioned.forEach { it.second(chartRefreshResponse(chartRefreshSeries("XXBT", "BTC", 4.0))) }
+                sessions.values.forEach { it.chart.data.datasets[0].data[0].y as Double shouldBe 4.0 }
             } finally {
                 disposeHistoryAutoRefresh()
                 wrapper.remove()

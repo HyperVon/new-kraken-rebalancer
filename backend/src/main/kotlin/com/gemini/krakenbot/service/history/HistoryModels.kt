@@ -347,6 +347,8 @@ object HistorySyncErrors {
         "History sync stopped because Kraken API-key time restrictions could not be verified."
     const val API_KEY_WINDOW_NO_OVERLAP =
         "History sync window does not overlap this Kraken API key's allowed query dates."
+    const val API_KEY_WINDOW_PARTIAL =
+        "This Kraken API key's allowed query dates cover only part of the remaining history."
     const val API_KEY_RESTRICTIONS_CHANGED =
         "History sync stopped because Kraken API-key query restrictions changed."
     const val PAGE_RESTARTED = "History page was retried from the start of its bounded time window."

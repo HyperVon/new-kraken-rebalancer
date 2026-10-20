@@ -80,24 +80,37 @@ class SettingsTest : StringSpec() {
                 input.value shouldBe "61"
                 status.textContent shouldBe "Unsaved changes"
 
-                val activeSave = dispatchSettingsResponse(
+                dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "62")
+                val inFlightEdit = dispatchSettingsResponse(
                     status = 200,
                     response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:40:00Z\"}",
                 )
-                (activeSave.shouldSwap as Boolean).shouldBeFalse()
-                input.value shouldBe "61"
-                status.textContent shouldBe "Saved and active"
-                status.getAttribute("datetime") shouldBe "2026-10-19T14:40:00Z"
+                (inFlightEdit.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "62"
+                status.textContent shouldBe "Unsaved changes"
+                status.classList.contains("hidden").shouldBeFalse()
 
-                dispatchSettingsInput(input, "62")
+                dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "63")
+                dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
+                val previewEdit = dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:41:00Z\"}",
+                )
+                (previewEdit.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "63"
+                status.textContent shouldBe "Unsaved changes"
+
+                dispatchSettingsBeforeRequest("/settings", form)
                 val deferredSave = dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":true,\"savedAt\":\"2026-10-19T14:41:00Z\"}",
+                    response = "{\"configPublicationPending\":true,\"savedAt\":\"2026-10-19T14:42:00Z\"}",
                 )
                 (deferredSave.shouldSwap as Boolean).shouldBeFalse()
-                input.value shouldBe "62"
+                input.value shouldBe "63"
                 status.textContent shouldBe "Saved — applies after current cycle"
-                status.getAttribute("datetime") shouldBe "2026-10-19T14:41:00Z"
+                status.getAttribute("datetime") shouldBe "2026-10-19T14:42:00Z"
             } finally {
                 document.body!!.removeChild(form)
                 initSettings()
@@ -485,6 +498,17 @@ private fun dispatchSettingsInput(input: HTMLInputElement, value: String) {
     val event = document.createEvent("Event")
     event.initEvent(type = "input", bubbles = true, cancelable = true)
     input.dispatchEvent(event)
+}
+
+private fun dispatchSettingsBeforeRequest(path: String, target: Element) {
+    val requestConfig = js("({})")
+    requestConfig.path = path
+    requestConfig.verb = "post"
+    val detail = js("({})")
+    detail.requestConfig = requestConfig
+    val event = document.createEvent("CustomEvent")
+    event.asDynamic().initCustomEvent("htmx:beforeRequest", true, true, detail)
+    target.dispatchEvent(event)
 }
 
 private fun dispatchSettingsResponse(status: Int, response: String): dynamic {

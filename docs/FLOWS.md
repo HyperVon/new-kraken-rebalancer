@@ -232,9 +232,9 @@ order submission requests a nonblocking recent refresh after five seconds;
 conflated requests do not cancel a scan already in progress. A frozen, durable
 backfill continues from its committed per-feed cursor, yielding between pages
 when recent work arrives and resuming after restart. A seven-day repair window
-is rechecked daily. Transient failures use jittered exponential backoff from 30
-seconds up to 15 minutes; account-scope changes and API-key restriction changes
-block that sync until an operator selects **Retry**. Simulation scopes do not
+is rechecked daily. Transient failures use a jittered 1, 2, 5, then 15 minute
+retry schedule until the operation succeeds; account-scope changes and API-key
+restriction changes block that sync until an operator selects **Retry**. Simulation scopes do not
 fetch Kraken trades or ledgers.
 
 The Data status page reads coordinator revisions and per-feed jobs. A new

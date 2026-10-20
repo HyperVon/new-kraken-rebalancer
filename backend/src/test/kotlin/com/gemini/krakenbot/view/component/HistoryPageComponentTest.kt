@@ -2,6 +2,14 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.service.history.HistoryApiChartsResponse
+import com.gemini.krakenbot.service.history.HistoryApiCoverage
+import com.gemini.krakenbot.service.history.HistoryApiFullRange
+import com.gemini.krakenbot.service.history.HistoryApiPoint
+import com.gemini.krakenbot.service.history.HistoryApiRange
+import com.gemini.krakenbot.service.history.HistoryApiScope
+import com.gemini.krakenbot.service.history.HistoryApiScopeSelection
+import com.gemini.krakenbot.service.history.HistoryApiSeries
 import com.gemini.krakenbot.service.history.HistoryAssetValue
 import com.gemini.krakenbot.service.history.HistoryAssetValueStatus
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
@@ -75,6 +83,41 @@ class HistoryPageComponentTest : StringSpec() {
             dataStatus shouldContain "id=\"history-scope-select\""
             dataStatus shouldContain "id=\"history-coverage-selected\""
             (html.indexOf("history-stats-grid") < html.indexOf("id=\"history-value-chart\"")) shouldBe true
+        }
+
+        "recorded scope chart pins the selected period and renders one legend for multiple series" {
+            val html = render(
+                samplePageData(emptyList()).copy(
+                    portfolioChart = recordedChart(
+                        series = listOf(
+                            chartSeries("BTC + USD | older", "BTC + USD"),
+                            chartSeries("BTC + USD | current", "BTC + USD (current)"),
+                        ),
+                        fromIso = "2026-09-20T00:00:00Z",
+                        toIso = "2026-10-20T00:00:00Z",
+                    ),
+                ),
+            )
+
+            html shouldContain "data-full-from=\"2026-09-20T00:00:00Z\""
+            html shouldContain "data-full-to=\"2026-10-20T00:00:00Z\""
+            html shouldContain "history-chart-legend"
+            html shouldContain "BTC + USD (current)"
+        }
+
+        "recorded scope chart omits the legend for a single series and tolerates missing bounds" {
+            val html = render(
+                samplePageData(emptyList()).copy(
+                    portfolioChart = recordedChart(
+                        series = listOf(chartSeries("BTC + USD", "BTC + USD")),
+                        fromIso = null,
+                        toIso = null,
+                    ),
+                ),
+            )
+
+            html shouldNotContain "data-full-from"
+            html shouldNotContain "history-chart-legend"
         }
 
         "renders the range, custom-date, portfolio-scope, and coverage controls" {
@@ -1138,6 +1181,30 @@ class HistoryPageComponentTest : StringSpec() {
             deviations[1].second[1].value shouldBeEqualComparingTo BigDecimal("-30")
         }
     }
+
+    private fun recordedChart(
+        series: List<HistoryApiSeries>,
+        fromIso: String?,
+        toIso: String?,
+    ): HistoryApiChartsResponse = HistoryApiChartsResponse(
+        range = HistoryApiRange(fromIso, toIso, "UTC", "30d"),
+        scope = HistoryApiScope("ACCOUNT:test", listOf("BTC", "USD"), fromIso, toIso, true),
+        coverage = HistoryApiCoverage(fromIso, toIso, null, null, null, null, false, 0),
+        series = series,
+        fullRange = HistoryApiFullRange(fromIso, toIso, 1, 1, false),
+        generationMs = 1,
+        scopeSelection = HistoryApiScopeSelection.ACCOUNT_RECORDED,
+    )
+
+    private fun chartSeries(label: String, legendLabel: String): HistoryApiSeries = HistoryApiSeries(
+        key = label,
+        label = label,
+        unit = "USD",
+        points = listOf(
+            HistoryApiPoint(1L, "1970-01-01T00:00:01Z", BigDecimal("10.00"), true),
+        ),
+        legendLabel = legendLabel,
+    )
 
     private fun samplePageData(observations: List<HistoryObservation>): HistoryPageData = HistoryPageData(
         range = "30d",

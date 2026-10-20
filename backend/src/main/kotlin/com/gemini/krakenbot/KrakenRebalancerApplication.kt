@@ -100,7 +100,6 @@ fun main(args: Array<String>) {
             // Stop and join the worker before closing its Koin-managed client and dependency graph.
             // Use the job actually cancelled by stop() so a replacement worker created after a
             // pause/resume is fully drained before the dependency graph is torn down.
-            historySyncCoordinator.stop()
             val stoppedWorker = portfolioManager.stopRebalancingLoop()
             val workerJoined =
                 runBlocking {
@@ -112,6 +111,9 @@ fun main(args: Array<String>) {
             if (!workerJoined) {
                 log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
             }
+            // Keep the coordinator alive until the worker is drained so it can service a History
+            // refresh requested before shutdown finishes.
+            historySyncCoordinator.stop()
             applicationScope.cancel()
             httpClient.close()
             stopKoin()

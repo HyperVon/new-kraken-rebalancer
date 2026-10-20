@@ -24,6 +24,8 @@ HtmlAttrs:
   DATA_HISTORY_SOURCE_KEY: "data-history-source-key"
   DATA_HISTORY_SOURCE_LABEL: "data-history-source-label"
   DATA_HISTORY_SCOPE_SELECTION: "data-history-scope-selection"
+  DATA_FULL_FROM: "data-full-from"
+  DATA_FULL_TO: "data-full-to"
   DATA_TIME: "data-time"
   DATA_VALUE: "data-value"
   DATA_GAP: "data-gap"

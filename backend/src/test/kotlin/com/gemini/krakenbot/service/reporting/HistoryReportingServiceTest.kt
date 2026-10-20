@@ -102,6 +102,25 @@ class HistoryReportingServiceTest : StringSpec() {
             rewards.incompleteReason shouldBe "Not synchronized for this period"
         }
 
+        "uncovered ledgers cannot mark deposit or withdrawal rows complete" {
+            coEvery { historyService.queryLedgers(any()) } returns page(
+                listOf(
+                    ledger("l1", type = "deposit", asset = "ZUSD", amount = "100.00"),
+                    ledger("l2", type = "withdrawal", asset = "XXBT", amount = "-0.25"),
+                ),
+            )
+            coEvery { historyService.syncProgress(any()) } returns emptyList()
+
+            val flows = reporting.depositsWithdrawals(period)
+
+            flows.deposits.complete shouldBe false
+            flows.deposits.incompleteReason shouldBe "Not synchronized for this period"
+            flows.withdrawals.complete shouldBe false
+            flows.withdrawals.incompleteReason shouldBe "Not synchronized for this period"
+            flows.complete shouldBe false
+            flows.incompleteReason shouldBe "Not synchronized for this period"
+        }
+
         "trade volume and fees group by currency and never sum mixed currencies" {
             coEvery { historyService.queryTrades(any()) } returns page(
                 listOf(

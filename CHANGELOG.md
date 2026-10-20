@@ -41,6 +41,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Keep the History value axis on the full selected period instead of the rounded
   bounds Chart.js derives from the plotted points, and name each recorded scope
   series by its assets in the chart legend.
+- Keep API-key-restricted History windows retryable instead of marking them
+  complete, preserving the frozen backfill range and resuming interrupted recent
+  scans from their committed cursor; gate deposit/withdrawal completeness on
+  ledger coverage and withhold invalid checkpoint quantities.
 - Replace the misleading History All-Time High and mixed-currency aggregates
   with selected-range values and per-currency amounts; missing evidence remains
   unavailable or incomplete instead of becoming zero.

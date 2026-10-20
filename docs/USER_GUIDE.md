@@ -404,8 +404,9 @@ hours and overlapping the prior scan by 24 hours. After a qualifying live order
 submission, a nonblocking recent refresh is requested five seconds later. Older
 history is backfilled in durable pages, yielding to recent work and resuming from
 its committed cursor after restart; a bounded seven-day window is repaired daily.
-Transient failures use capped exponential backoff. Account-scope or API-key
-restriction failures remain visible until **Retry** is used. Expand
+Transient failures use a jittered 1, 2, 5, then 15 minute retry schedule until
+the operation succeeds. Account-scope or API-key restriction changes remain
+visible until **Retry** is used. Expand
 **Sync details** for stored/fetched counts, the last page time, and scan window.
 
 Records are scoped to the authenticated account and the portfolio-value series

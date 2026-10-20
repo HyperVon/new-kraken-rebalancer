@@ -559,7 +559,7 @@ class HistoryApiPresenterTest : StringSpec() {
                 listOf("STAKING", "DIVIDEND", "REWARD", "EARN", "AIRDROP", "TRANSFER")
         }
 
-        "invalid and null checkpoint quantities are incomplete" {
+        "invalid and missing checkpoint quantities are incomplete and withheld" {
             val rows = listOf(
                 checkpoint("invalid", HistoryBalanceStatus.INVALID, BigDecimal("1.5")),
                 checkpoint("missing", HistoryBalanceStatus.VALID, null),
@@ -573,7 +573,7 @@ class HistoryApiPresenterTest : StringSpec() {
             series.map { it.key } shouldContainExactly listOf("XXBT")
             points.size shouldBe 2
             points.map { it.complete } shouldContainExactly listOf(false, false)
-            points[0].v!!.shouldBeEqualComparingTo(BigDecimal("1.5"))
+            points[0].v.shouldBeNull()
             points[1].v.shouldBeNull()
         }
 

@@ -8,6 +8,7 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.SettingsState
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
@@ -65,6 +66,13 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
     val target = event.asDynamic().target as? Element ?: return
     val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
     if (target.id != SettingsState.FORM_ID && !form.contains(target)) return
+    val requestConfig = event.asDynamic().detail?.requestConfig
+    val path = (requestConfig?.path as? String)
+        ?: target.getAttribute("hx-post")
+        ?: target.getAttribute("hx-get")
+        ?: return
+    if (requestConfig?.verb?.toString()?.equals("post", ignoreCase = true) == false) return
+    if (path.substringBefore('?').trimEnd('/') != Routes.SETTINGS.trimEnd('/')) return
     submittedSettingsSnapshot = settingsSnapshot(form)
 }
 

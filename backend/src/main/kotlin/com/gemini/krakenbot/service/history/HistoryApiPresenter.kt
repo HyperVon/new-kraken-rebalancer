@@ -124,7 +124,9 @@ class HistoryApiPresenter(
                 valuesFirstIso = firstRecordedAt?.toString(),
                 valuesLastIso = lastRecordedAt?.toString(),
                 incomplete = incompleteCount > 0 || firstRecordedAt == null || boundaries.isNotEmpty(),
-                gapCount = incompleteCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                gapCount = maxOf(incompleteCount, boundaries.size.toLong())
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt(),
             ),
             series = series,
             fullRange = HistoryApiFullRange(

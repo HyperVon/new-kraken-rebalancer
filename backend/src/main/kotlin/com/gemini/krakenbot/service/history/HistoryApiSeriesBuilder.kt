@@ -148,11 +148,12 @@ internal fun checkpointQuantitySeries(rows: List<HistoryBalanceCheckpoint>): Lis
             points = rows.mapNotNull { row ->
                 if (row.rawAssetKey?.trim() != asset) return@mapNotNull null
                 val observedAt = row.observedAt ?: return@mapNotNull null
+                val valid = row.status == HistoryBalanceStatus.VALID
                 HistoryApiPoint(
                     t = observedAt.toEpochMilli(),
                     isoTime = observedAt.toString(),
-                    v = row.quantity,
-                    complete = row.status == HistoryBalanceStatus.VALID && row.quantity != null,
+                    v = row.quantity.takeIf { valid },
+                    complete = valid && row.quantity != null,
                 )
             },
         )

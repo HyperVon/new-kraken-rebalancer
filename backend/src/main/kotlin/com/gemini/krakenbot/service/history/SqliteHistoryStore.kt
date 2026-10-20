@@ -499,17 +499,31 @@ class SqliteHistoryStore(
                         conditions.add("occurred_at_ns < ?")
                         values.add(it.toEpochNanos())
                     }
-                    query.sortCursor?.let { cursor ->
-                        addSortCursor("occurred_at_ns", "cycle_id", cursor, conditions, values)
-                    }
-                    val where = "WHERE ${conditions.joinToString(" AND ")}"
+                    val rangeWhere = "WHERE ${conditions.joinToString(" AND ")}"
                     val total = connection.prepareStatement(
-                        "SELECT COUNT(*) FROM history_cycle_activity $where",
+                        "SELECT COUNT(*) FROM history_cycle_activity $rangeWhere",
                     ).use { statement ->
                         bindValues(statement, values)
                         statement.executeQuery().use { resultSet ->
                             check(resultSet.next())
                             resultSet.getLong(1)
+                        }
+                    }
+                    query.sortCursor?.let { cursor ->
+                        addSortCursor("occurred_at_ns", "cycle_id", cursor, conditions, values)
+                    }
+                    val where = "WHERE ${conditions.joinToString(" AND ")}"
+                    val pageTotal = if (query.sortCursor == null) {
+                        total
+                    } else {
+                        connection.prepareStatement(
+                            "SELECT COUNT(*) FROM history_cycle_activity $where",
+                        ).use { statement ->
+                            bindValues(statement, values)
+                            statement.executeQuery().use { resultSet ->
+                                check(resultSet.next())
+                                resultSet.getLong(1)
+                            }
                         }
                     }
                     val items = connection.prepareStatement(
@@ -530,7 +544,7 @@ class SqliteHistoryStore(
                         total = total,
                         limit = query.limit,
                         offset = query.offset,
-                        hasMore = query.offset + items.size < total,
+                        hasMore = query.offset + items.size < pageTotal,
                     )
                 }
             }
@@ -974,7 +988,8 @@ class SqliteHistoryStore(
 
     private fun queryTrades(connection: Connection, query: HistoryEventQuery): HistoryPage<HistoryTrade> {
         val filter = tradeFilter(query)
-        val total = countRows(connection, "history_trades", filter)
+        val total = countRows(connection, "history_trades", tradeFilter(query, includeSortCursor = false))
+        val pageTotal = if (query.sortCursor == null) total else countRows(connection, "history_trades", filter)
         val rows = connection.prepareStatement(
             "SELECT * FROM history_trades ${filter.where} ORDER BY time_ns DESC, trade_id DESC LIMIT ? OFFSET ?",
         ).use { statement ->
@@ -985,12 +1000,13 @@ class SqliteHistoryStore(
                 buildList { while (resultSet.next()) add(resultSet.toHistoryTrade()) }
             }
         }
-        return HistoryPage(rows, total, query.limit, query.offset, query.offset + rows.size < total)
+        return HistoryPage(rows, total, query.limit, query.offset, query.offset + rows.size < pageTotal)
     }
 
     private fun queryLedgers(connection: Connection, query: HistoryEventQuery): HistoryPage<HistoryLedger> {
         val filter = ledgerFilter(query)
-        val total = countRows(connection, "history_ledgers", filter)
+        val total = countRows(connection, "history_ledgers", ledgerFilter(query, includeSortCursor = false))
+        val pageTotal = if (query.sortCursor == null) total else countRows(connection, "history_ledgers", filter)
         val rows = connection.prepareStatement(
             "SELECT * FROM history_ledgers ${filter.where} ORDER BY time_ns DESC, ledger_id DESC LIMIT ? OFFSET ?",
         ).use { statement ->
@@ -1001,7 +1017,7 @@ class SqliteHistoryStore(
                 buildList { while (resultSet.next()) add(resultSet.toHistoryLedger()) }
             }
         }
-        return HistoryPage(rows, total, query.limit, query.offset, query.offset + rows.size < total)
+        return HistoryPage(rows, total, query.limit, query.offset, query.offset + rows.size < pageTotal)
     }
 
     private fun queryBalanceCheckpoints(
@@ -1071,7 +1087,7 @@ class SqliteHistoryStore(
         return SqlFilter(conditions, values)
     }
 
-    private fun tradeFilter(query: HistoryEventQuery): SqlFilter {
+    private fun tradeFilter(query: HistoryEventQuery, includeSortCursor: Boolean = true): SqlFilter {
         val conditions = mutableListOf<String>()
         val values = mutableListOf<Any?>()
         query.accountIdentityDigest?.let {
@@ -1100,11 +1116,13 @@ class SqliteHistoryStore(
             conditions += "type = ?"
             values += it
         }
-        addSortCursor("time_ns", "trade_id", query.sortCursor, conditions, values)
+        if (includeSortCursor) {
+            addSortCursor("time_ns", "trade_id", query.sortCursor, conditions, values)
+        }
         return SqlFilter(conditions, values)
     }
 
-    private fun ledgerFilter(query: HistoryEventQuery): SqlFilter {
+    private fun ledgerFilter(query: HistoryEventQuery, includeSortCursor: Boolean = true): SqlFilter {
         val conditions = mutableListOf<String>()
         val values = mutableListOf<Any?>()
         query.accountIdentityDigest?.let {
@@ -1126,7 +1144,9 @@ class SqliteHistoryStore(
             conditions += "type = ?"
             values += it
         }
-        addSortCursor("time_ns", "ledger_id", query.sortCursor, conditions, values)
+        if (includeSortCursor) {
+            addSortCursor("time_ns", "ledger_id", query.sortCursor, conditions, values)
+        }
         return SqlFilter(conditions, values)
     }
 
@@ -1896,6 +1916,42 @@ class SqliteHistoryStore(
         lastSuccessAt: Instant?,
         updatedAt: Instant,
     ) {
+        val existing = connection.prepareStatement(
+            "SELECT window_start_sec, window_end_sec, completed_through_sec FROM history_sync_jobs " +
+                "WHERE account_identity_digest = ? AND feed = ? AND purpose = ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed.name)
+            statement.setString(3, purpose.name)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) {
+                    null
+                } else {
+                    Triple(
+                        resultSet.getNullableLong("window_start_sec"),
+                        resultSet.getNullableLong("window_end_sec"),
+                        resultSet.getNullableLong("completed_through_sec"),
+                    )
+                }
+            }
+        }
+        // A backfill keeps its frozen window across API-key clamping; it only completes when the
+        // whole frozen window was fetchable, so a later unrestricted key can resume older history.
+        val backfill = purpose == HistorySyncPurpose.BACKFILL
+        val effectiveStart = if (backfill) existing?.first ?: windowStartSec else windowStartSec
+        val effectiveEnd = if (backfill) existing?.second ?: windowEndSec else windowEndSec
+        val coversFrozen = !backfill || (
+            windowStartSec != null && windowEndSec != null &&
+                effectiveStart != null && effectiveEnd != null &&
+                windowStartSec <= effectiveStart && windowEndSec >= effectiveEnd
+            )
+        val effectiveState =
+            if (state == HistorySyncJobState.COMPLETE && !coversFrozen) HistorySyncJobState.RUNNING else state
+        val effectiveCompleted = when {
+            !backfill -> completedThroughSec
+            effectiveState != HistorySyncJobState.COMPLETE -> existing?.third
+            else -> effectiveEnd
+        }
         connection.prepareStatement(
             "INSERT INTO history_sync_jobs(" +
                 "account_identity_digest, feed, purpose, state, window_start_sec, window_end_sec, cursor, " +
@@ -1916,11 +1972,11 @@ class SqliteHistoryStore(
             statement.setString(1, accountIdentityDigest)
             statement.setString(2, feed.name)
             statement.setString(3, purpose.name)
-            statement.setString(4, state.name)
-            statement.setNullableLong(5, windowStartSec)
-            statement.setNullableLong(6, windowEndSec)
+            statement.setString(4, effectiveState.name)
+            statement.setNullableLong(5, effectiveStart)
+            statement.setNullableLong(6, effectiveEnd)
             statement.setString(7, cursor)
-            statement.setNullableLong(8, completedThroughSec)
+            statement.setNullableLong(8, effectiveCompleted)
             statement.setString(9, lastError)
             setInstant(statement, 10, lastSuccessAt)
             statement.setLong(11, updatedAt.toEpochNanos())

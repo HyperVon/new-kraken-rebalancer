@@ -2024,6 +2024,7 @@ class SqliteHistoryStoreTest : StringSpec() {
                     HistoryEventQuery(accountIdentityDigest = accountDigest, limit = 2),
                 )
                 firstTrades.items.map { it.tradeId } shouldBe listOf("newest", "middle")
+                firstTrades.total shouldBe 3
                 firstTrades.hasMore shouldBe true
                 commitTrades("late-trade", listOf(tradeEntry("inserted-newer", base.plusSeconds(4))))
 
@@ -2035,6 +2036,8 @@ class SqliteHistoryStoreTest : StringSpec() {
                     ),
                 )
                 remainingTrades.items.map { it.tradeId } shouldBe listOf("older")
+                remainingTrades.total shouldBe 4
+                remainingTrades.hasMore shouldBe false
                 (firstTrades.items + remainingTrades.items).map { it.tradeId }.toSet() shouldBe
                     setOf("newest", "middle", "older")
 
@@ -2050,6 +2053,7 @@ class SqliteHistoryStoreTest : StringSpec() {
                     HistoryEventQuery(accountIdentityDigest = accountDigest, limit = 2),
                 )
                 firstLedgers.items.map { it.ledgerId } shouldBe listOf("newest-ledger", "middle-ledger")
+                firstLedgers.total shouldBe 3
                 commitLedgers(
                     "late-ledger",
                     listOf(ledgerEntry("inserted-newer-ledger", base.plusSeconds(4))),
@@ -2066,6 +2070,8 @@ class SqliteHistoryStoreTest : StringSpec() {
                     ),
                 )
                 remainingLedgers.items.map { it.ledgerId } shouldBe listOf("older-ledger")
+                remainingLedgers.total shouldBe 4
+                remainingLedgers.hasMore shouldBe false
                 (firstLedgers.items + remainingLedgers.items).map { it.ledgerId }.toSet() shouldBe
                     setOf("newest-ledger", "middle-ledger", "older-ledger")
 
@@ -2105,6 +2111,8 @@ class SqliteHistoryStoreTest : StringSpec() {
                     ),
                 )
                 remainingActivities.items.map { it.cycleId } shouldBe listOf("cycle-0")
+                remainingActivities.total shouldBe 4
+                remainingActivities.hasMore shouldBe false
                 (firstActivities.items + remainingActivities.items).map { it.cycleId }.toSet() shouldBe
                     setOf("cycle-2", "cycle-1", "cycle-0")
             }

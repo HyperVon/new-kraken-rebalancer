@@ -1086,6 +1086,47 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
+        "a dry-run cycle does not request the urgent post-order history refresh" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = false, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                coEvery { analyzer.fetchObservedBalances() } returns
+                    ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                coEvery { analyzer.fetchObservedPrices() } returns ObservedPrices(emptyMap())
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = mapOf("BTC" to BigDecimal("0.001")),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+                val mockExecutor = mockk<OrderExecutor>()
+                coEvery {
+                    mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
+                } returns OrderExecutionOutcome(liveSubmissionAttempted = false, exchangeOrderAttempted = true)
+                val mockSync = mockk<com.gemini.krakenbot.service.history.HistorySyncCoordinator>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = mockExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                    historySyncCoordinator = mockSync,
+                )
+
+                manager.performRebalanceCycle()
+
+                verify(exactly = 0) { mockSync.requestUrgentAfterOrderCycle() }
+            }
+        }
+
         "a live submission that throws afterwards still requests the urgent history refresh" {
             runTest {
                 val config = TestFixtures.config(

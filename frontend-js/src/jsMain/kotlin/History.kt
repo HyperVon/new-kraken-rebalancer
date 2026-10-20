@@ -1499,7 +1499,15 @@ internal fun applyHistoryChartSeries(
             option.textContent = entry.label
             assetSelector.appendChild(option)
         }
-        if (selected.isNotBlank()) assetSelector.value = selected
+        val available = allSeries.map { it.key }.toSet()
+        historyArrayItems(assetSelector.options).forEach { option ->
+            if ((option.value as? String) !in available) option.remove()
+        }
+        if (selected.isNotBlank() && selected in available) {
+            assetSelector.value = selected
+        } else {
+            assetSelector.value = allSeries.firstOrNull()?.key.orEmpty()
+        }
     }
     val selectedAsset = selector?.value?.takeIf(String::isNotBlank)
         ?: container.querySelector("[${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}]:not([hidden])")
@@ -1605,6 +1613,18 @@ internal fun applyHistoryChartSeries(
     }
     if (createdSelector) initHistorySeriesSelectors()
     return true
+}
+
+/** The full selected period rendered by the server, so the first paint never fits the axis to points. */
+internal fun historyDomRange(container: Element): ChartRange? {
+    val svg = container.querySelector("svg")
+    val min = historyIsoTime(
+        container.getAttribute(HtmlAttrs.DATA_FULL_FROM) ?: svg?.getAttribute(HtmlAttrs.DATA_FULL_FROM),
+    ) ?: return null
+    val max = historyIsoTime(
+        container.getAttribute(HtmlAttrs.DATA_FULL_TO) ?: svg?.getAttribute(HtmlAttrs.DATA_FULL_TO),
+    ) ?: return null
+    return if (max > min) ChartRange(min, max - 1.0) else null
 }
 
 private fun historyChartRange(response: dynamic, points: List<HistoryChartPoint>): ChartRange {
@@ -2328,8 +2348,8 @@ internal fun initHistoryRangeControls(
         activeQuery = query
         activeQueryVersion++
         val queryVersion = activeQueryVersion
-        val requestVersion = panelRequestVersion
         historyStatusPoller?.refreshContext()
+        val requestVersion = panelRequestVersion
         val state = historyRangeState(query, savedDefaultRange, timezone())
         updateRangeControls(state)
         updateHistoryTabPanels(query)
@@ -2794,10 +2814,18 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
         }
         if (empty) return@forEach
         val canvas = canvasFor(container)
+        val domRange = historyDomRange(container)
         val config = when {
-            native -> historyMultiSeriesConfig(series, percent = false, unit = series.firstOrNull()?.first)
-            single != null && series.size <= 1 -> historyChartConfig(points, single)
-            else -> historyMultiSeriesConfig(series, multiples[id] == true)
+            native -> historyMultiSeriesConfig(
+                series,
+                percent = false,
+                axisRange = domRange,
+                unit = series.firstOrNull()?.first,
+            )
+
+            single != null && series.size <= 1 -> historyChartConfig(points, single, domRange)
+
+            else -> historyMultiSeriesConfig(series, multiples[id] == true, axisRange = domRange)
         }
         applyLegendVisibility(config, id)
         val chart = try {
@@ -2811,6 +2839,7 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
             return@forEach
         }
         removeChartFallbackNotice(container)
+        domRange?.let { setChartXRange(chart, it) }
         svg.setAttribute("hidden", "")
         svg.setAttribute("style", "display:none")
         val chartPoints = if (native) series.firstOrNull()?.second.orEmpty() else points
@@ -2819,7 +2848,7 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
             canvas = canvas,
             chart = chart,
             evidenceSignature = signature,
-            fullRange = ChartRange(chartPoints.first().time, chartPoints.last().time),
+            fullRange = domRange ?: ChartRange(chartPoints.first().time, chartPoints.last().time),
         )
         historyChartSessions[id] = session
         refreshedHistoryEvidenceSignatures.remove(id)

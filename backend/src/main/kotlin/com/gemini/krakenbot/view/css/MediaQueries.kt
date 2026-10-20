@@ -99,7 +99,7 @@ object MediaQueries {
                 gridTemplateColumns = GridTemplateColumns("1fr")
             }
             ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(4, 1fr)")
+                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
                 gap = 0.625.rem
             }
             ".${CssClass.History.StatsGrid} ${CssClass.StatusCard.Default.querySelector}" {

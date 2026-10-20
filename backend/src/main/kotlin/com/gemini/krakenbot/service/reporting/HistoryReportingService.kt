@@ -265,19 +265,25 @@ class HistoryReportingService(
         }
         val deposits = ledgers.filter { it.normalizedType() == KrakenApiConstants.LEDGER_TYPE_DEPOSIT }
         val withdrawals = ledgers.filter { it.normalizedType() == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL }
-        val depositTotals = sumNativeQuantities(deposits)
-        val withdrawalTotals = sumNativeQuantities(withdrawals)
-        val amountComplete = depositTotals.complete && withdrawalTotals.complete
+        fun gated(total: NativeAssetQuantities): NativeAssetQuantities {
+            val complete = total.complete && coverage.ledgersCovered
+            return total.copy(
+                complete = complete,
+                incompleteReason = when {
+                    complete -> null
+                    !total.complete -> ViewText.HISTORY_REPORT_INCOMPLETE
+                    else -> ViewText.HISTORY_REPORT_NOT_SYNCHRONIZED
+                },
+            )
+        }
+        val depositsGated = gated(sumNativeQuantities(deposits))
+        val withdrawalsGated = gated(sumNativeQuantities(withdrawals))
         return DepositsWithdrawals(
             notice = notice,
-            deposits = depositTotals,
-            withdrawals = withdrawalTotals,
-            complete = amountComplete && coverage.ledgersCovered,
-            incompleteReason = when {
-                !amountComplete -> ViewText.HISTORY_REPORT_INCOMPLETE
-                !coverage.ledgersCovered -> ViewText.HISTORY_REPORT_NOT_SYNCHRONIZED
-                else -> null
-            },
+            deposits = depositsGated,
+            withdrawals = withdrawalsGated,
+            complete = depositsGated.complete && withdrawalsGated.complete,
+            incompleteReason = depositsGated.incompleteReason ?: withdrawalsGated.incompleteReason,
         )
     }
 

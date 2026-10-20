@@ -1065,10 +1065,19 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             if (observations.isNotEmpty() && !hasCompleteValue) {
                 p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
             }
+            val recordedSeries = recordedChart?.series?.map { series ->
+                series.legendLabel to series.points.mapNotNull { point ->
+                    point.v?.takeIf { point.complete }?.let {
+                        HistorySeriesPoint(Instant.ofEpochMilli(point.t), it)
+                    }
+                }
+            }?.filter { it.second.isNotEmpty() }.orEmpty()
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
                 if (recordedChart != null) {
                     attributes[HtmlAttrs.DATA_HISTORY_SCOPE_SELECTION] = recordedChart.scopeSelection.name
+                    recordedChart.fullRange.fromIso?.let { attributes[HtmlAttrs.DATA_FULL_FROM] = it }
+                    recordedChart.fullRange.toIso?.let { attributes[HtmlAttrs.DATA_FULL_TO] = it }
                     recordedChart.series.forEach { series ->
                         div {
                             attributes["hidden"] = "hidden"
@@ -1076,13 +1085,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                             attributes[HtmlAttrs.DATA_HISTORY_SOURCE_LABEL] = series.label
                         }
                     }
-                    val series = recordedChart.series.map { series ->
-                        series.label to series.points.mapNotNull { point ->
-                            point.v?.takeIf { point.complete }?.let {
-                                HistorySeriesPoint(Instant.ofEpochMilli(point.t), it)
-                            }
-                        }
-                    }.filter { it.second.isNotEmpty() }
+                    val series = recordedSeries
                     if (series.isEmpty()) {
                         p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
                     } else {
@@ -1097,6 +1100,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     unsafe { +valuePointSvg(observations) }
                 }
             }
+            if (recordedSeries.size > 1) renderSeriesLegend(recordedSeries)
             div {
                 attributes["class"] = HistoryRangeCss.BANNER
                 id = HistoryRangeIds.NEW_DATA_BANNER
@@ -1436,6 +1440,9 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                                     val timestamp = recordTimestamp(t.time, t.rawTime)
                                     if (timestamp != ViewText.EM_DASH) title = timestamp
                                     details {
+                                        listOfNotNull(t.tradeId, t.orderTxid, t.postTxid)
+                                            .firstOrNull { it.isNotBlank() }
+                                            ?.let { attributes[HtmlAttrs.DATA_HISTORY_DETAIL_KEY] = "trade:$it" }
                                         summary { +timestamp }
                                         dl {
                                             detail(HistoryRangeText.DETAILS_TIMESTAMP, timestamp)
@@ -1547,6 +1554,9 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                                     val timestamp = recordTimestamp(l.time, l.rawTime)
                                     if (timestamp != ViewText.EM_DASH) title = timestamp
                                     details {
+                                        listOfNotNull(l.ledgerId, l.refid)
+                                            .firstOrNull { it.isNotBlank() }
+                                            ?.let { attributes[HtmlAttrs.DATA_HISTORY_DETAIL_KEY] = "ledger:$it" }
                                         summary { +timestamp }
                                         dl {
                                             detail(HistoryRangeText.DETAILS_TIMESTAMP, timestamp)

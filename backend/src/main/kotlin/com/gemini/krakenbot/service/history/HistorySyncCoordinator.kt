@@ -239,8 +239,21 @@ class HistorySyncCoordinator(
             if (failureBlocks(key, now)) continue
             val jobs = store.loadSyncJobs(digest)
             val start = recentScanStartForFeed(jobs, feed, now)
+            val partial = jobs.firstOrNull {
+                it.feed == feed && it.purpose == HistorySyncPurpose.RECENT
+            }?.takeIf { it.state == HistorySyncJobState.RUNNING && it.cursor != null }
             val result = runCatching {
-                synchronizer.syncWindow(feed, start, now.epochSecond, HistorySyncPurpose.RECENT)
+                if (partial != null && partial.windowStartSec != null && partial.windowEndSec != null) {
+                    synchronizer.syncWindow(
+                        feed,
+                        partial.windowStartSec,
+                        partial.windowEndSec,
+                        HistorySyncPurpose.RECENT,
+                        resumeCursor = partial.cursor,
+                    )
+                } else {
+                    synchronizer.syncWindow(feed, start, now.epochSecond, HistorySyncPurpose.RECENT)
+                }
             }
             val failure = result.exceptionOrNull()
             if (failure != null) {
@@ -315,18 +328,30 @@ class HistorySyncCoordinator(
     ) {
         when {
             status.state == HistorySyncState.COMPLETE -> {
-                clearFailure(FailureKey(feed, purpose))
-                clearJobFailure(digest, feed, purpose)
+                val job = if (purpose == HistorySyncPurpose.BACKFILL) {
+                    store.loadSyncJobs(digest).firstOrNull { it.feed == feed && it.purpose == purpose }
+                } else {
+                    null
+                }
+                if (job?.state == HistorySyncJobState.RUNNING) {
+                    // The scan only covered the API-key-clamped part of the frozen window; keep the
+                    // backfill retryable so a broader key can still import the missing history.
+                    registerFailure(
+                        key = FailureKey(feed, purpose),
+                        message = HistorySyncErrors.API_KEY_WINDOW_PARTIAL,
+                        digest = digest,
+                        feed = feed,
+                        purpose = purpose,
+                    )
+                } else {
+                    clearFailure(FailureKey(feed, purpose))
+                    clearJobFailure(digest, feed, purpose)
+                }
             }
 
             status.lastError == HistorySyncErrors.ACCOUNT_SCOPE_CHANGED ||
                 status.lastError == HistorySyncErrors.API_KEY_RESTRICTIONS_CHANGED -> {
                 blockSync(digest, feed, purpose, status.lastError)
-            }
-
-            status.lastError == HistorySyncErrors.API_KEY_WINDOW_NO_OVERLAP -> {
-                // Nothing is fetchable inside this window; record it as processed coverage.
-                markWindowSkipped(digest, feed, purpose, status)
             }
 
             status.state == HistorySyncState.FAILED -> {
@@ -339,37 +364,6 @@ class HistorySyncCoordinator(
                 )
             }
         }
-    }
-
-    private suspend fun markWindowSkipped(
-        digest: String,
-        feed: HistoryFeed,
-        purpose: HistorySyncPurpose,
-        status: HistorySyncStatus,
-    ) {
-        val now = nowProvider()
-        val jobs = store.loadSyncJobs(digest).firstOrNull { it.feed == feed && it.purpose == purpose }
-        val skipped = jobs?.copy(
-            state = HistorySyncJobState.COMPLETE,
-            completedThroughSec = status.windowEnd?.epochSecond,
-            lastError = status.lastError,
-            nextRetryAt = null,
-            updatedAt = now,
-        ) ?: HistorySyncJob(
-            accountIdentityDigest = digest,
-            feed = feed,
-            purpose = purpose,
-            state = HistorySyncJobState.COMPLETE,
-            windowStartSec = status.windowStart?.epochSecond,
-            windowEndSec = status.windowEnd?.epochSecond,
-            cursor = null,
-            completedThroughSec = status.windowEnd?.epochSecond,
-            lastError = status.lastError,
-            nextRetryAt = null,
-            lastSuccessAt = null,
-            updatedAt = now,
-        )
-        store.upsertSyncJob(skipped)
     }
 
     /**
@@ -541,9 +535,11 @@ class HistorySyncCoordinator(
     private data class FailureKey(val feed: HistoryFeed?, val purpose: HistorySyncPurpose?)
 
     private class FailureState {
-        var attempts: Int = 0
-        var nextAttemptAt: Instant = Instant.EPOCH
-        var message: String = ""
+        @Volatile var attempts: Int = 0
+
+        @Volatile var nextAttemptAt: Instant = Instant.EPOCH
+
+        @Volatile var message: String = ""
     }
 
     private sealed interface Trigger {
