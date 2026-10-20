@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.history
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics
+import com.gemini.krakenbot.view.util.HistoryChartSelections
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
@@ -9,18 +10,18 @@ import java.time.ZoneId
 /** Structured, UI-displayable rejection of History read API request parameters. */
 class HistoryApiRequestException(message: String) : IllegalArgumentException(message)
 
-enum class HistoryChartSelection {
-    PORTFOLIO,
-    HOLDINGS,
-    ALLOCATION,
-    DEPOSITS,
-    REWARDS,
-    CHECKPOINTS,
+enum class HistoryChartSelection(val param: String) {
+    PORTFOLIO(HistoryChartSelections.PORTFOLIO),
+    HOLDINGS(HistoryChartSelections.HOLDINGS),
+    ALLOCATION(HistoryChartSelections.ALLOCATION),
+    DEPOSITS(HistoryChartSelections.DEPOSITS),
+    REWARDS(HistoryChartSelections.REWARDS),
+    CHECKPOINTS(HistoryChartSelections.CHECKPOINTS),
     ;
 
     companion object {
         fun fromParam(raw: String?): HistoryChartSelection? =
-            if (raw == null) PORTFOLIO else entries.firstOrNull { it.name.equals(raw.trim(), ignoreCase = true) }
+            if (raw == null) PORTFOLIO else entries.firstOrNull { it.param.equals(raw.trim(), ignoreCase = true) }
     }
 }
 
@@ -84,7 +85,34 @@ data class HistoryApiPoint(
     val complete: Boolean,
 )
 
-data class HistoryApiSeries(val key: String, val label: String, val unit: String, val points: List<HistoryApiPoint>)
+enum class HistoryApiScopeSelection { CURRENT_SCOPE, EXPLICIT_SCOPE, ACCOUNT_RECORDED }
+
+enum class HistoryApiBoundaryKind { ASSET_SET_CHANGE, OVERLAPPING_SCOPES }
+
+data class HistoryApiBoundary(
+    val kind: HistoryApiBoundaryKind,
+    val fromIso: String,
+    val toIso: String,
+    val scopeIds: List<String>,
+)
+
+data class HistoryApiSeriesProvenance(
+    val scope: HistoryApiScope,
+    val walletScopes: List<String>,
+    val balanceSources: List<String>,
+    val priceSources: List<String>,
+    val valuationCurrency: String,
+)
+
+data class HistoryApiSeries(
+    val key: String,
+    val label: String,
+    val unit: String,
+    val points: List<HistoryApiPoint>,
+    val provenance: HistoryApiSeriesProvenance? = null,
+    /** Short display name for chart legends; the full label keeps the recorded period. */
+    val legendLabel: String = label,
+)
 
 data class HistoryApiFullRange(
     val fromIso: String?,
@@ -101,6 +129,9 @@ data class HistoryApiChartsResponse(
     val series: List<HistoryApiSeries>,
     val fullRange: HistoryApiFullRange,
     val generationMs: Long,
+    val scopeSelection: HistoryApiScopeSelection = HistoryApiScopeSelection.CURRENT_SCOPE,
+    val recordedScopes: List<HistoryApiScope> = emptyList(),
+    val boundaries: List<HistoryApiBoundary> = emptyList(),
 )
 
 data class HistoryApiSummaryResponse(
@@ -109,6 +140,7 @@ data class HistoryApiSummaryResponse(
     val coverage: HistoryApiCoverage,
     val statistics: HistoryPeriodStatistics,
     val generationMs: Long,
+    val scopeSelection: HistoryApiScopeSelection = HistoryApiScopeSelection.CURRENT_SCOPE,
 )
 
 data class HistoryApiScopesResponse(val scopes: List<HistoryApiScope>)
@@ -144,6 +176,7 @@ data class HistoryApiSyncJob(
 
 data class HistoryApiSyncProgress(
     val feed: String,
+    val recentWindowStartIso: String?,
     val recentCompletedThroughIso: String?,
     val recentLastSuccessAtIso: String?,
     val backfillState: String,
@@ -158,6 +191,8 @@ data class HistoryApiDataStatusResponse(
     val range: HistoryApiRange,
     val dataRevision: Long,
     val blockedReason: String?,
+    val syncFailure: String?,
+    val nextRetryAtIso: String?,
     val coverage: HistoryApiCoverage,
     val jobs: List<HistoryApiSyncJob>,
     val progress: List<HistoryApiSyncProgress>,

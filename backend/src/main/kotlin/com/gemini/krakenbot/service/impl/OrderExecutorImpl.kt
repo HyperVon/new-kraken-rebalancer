@@ -14,6 +14,7 @@ import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.OrderAttemptTracker
 import com.gemini.krakenbot.service.OrderExecutionOutcome
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
@@ -58,6 +59,7 @@ class OrderExecutorImpl(
         actionLog: MutableList<String>,
         cycleId: String,
         availableBalances: RawBalances?,
+        attempts: OrderAttemptTracker,
     ): OrderExecutionOutcome {
         val executionJournal = if (!settings.dryRun && !settings.simulation) {
             val journal = orderIntentService
@@ -72,7 +74,6 @@ class OrderExecutorImpl(
         } else {
             null
         }
-        val attempts = OrderAttemptTracker()
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
         // each placement so a mid-cycle config flip cannot change backend or dry-run mode.
         krakenService.withStableBackend { backend ->

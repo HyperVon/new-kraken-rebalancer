@@ -11,6 +11,8 @@ import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.OrderAttemptTracker
+import com.gemini.krakenbot.service.OrderExecutionOutcome
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
@@ -429,8 +431,10 @@ class PortfolioManagerImpl(
         var executionAttemptedLive = false
         var executionAttemptedExchange = false
         var executionFailed = false
+        val executionAttempts = OrderAttemptTracker()
+        var executionOutcome: OrderExecutionOutcome? = null
         try {
-            val executionOutcome = orderExecutor.executeOrders(
+            executionOutcome = orderExecutor.executeOrders(
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
                 currentValuesUSD = currentValuesUSD,
@@ -439,9 +443,8 @@ class PortfolioManagerImpl(
                 actionLog = actionLog,
                 cycleId = cycleId,
                 availableBalances = balances,
+                attempts = executionAttempts,
             )
-            executionAttemptedLive = executionOutcome.liveSubmissionAttempted
-            executionAttemptedExchange = executionOutcome.exchangeOrderAttempted
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -449,6 +452,16 @@ class PortfolioManagerImpl(
             markCycleError("Order execution failed")
             executionFailed = true
             actionLog.add(ViewText.ERROR_ORDER_EXECUTION_FAILED_PREFIX + (e.message ?: e.javaClass.simpleName))
+        } finally {
+            // The tracker outlives an exception thrown after a submission, so the post-order
+            // History refresh is still scheduled when an order may have reached the exchange.
+            executionAttemptedLive = executionOutcome?.liveSubmissionAttempted == true ||
+                executionAttempts.liveSubmissionAttempted
+            executionAttemptedExchange = executionOutcome?.exchangeOrderAttempted == true ||
+                executionAttempts.exchangeOrderAttempted
+            if (executionAttemptedLive) {
+                historySyncCoordinator?.requestUrgentAfterOrderCycle()
+            }
         }
         var finalBalances = observedBalances
         var finalPrices = observedPrices
@@ -530,9 +543,6 @@ class PortfolioManagerImpl(
             dryRun = config.settings.dryRun,
             outcome = cycleOutcome,
         )
-        if (executionAttemptedLive) {
-            historySyncCoordinator?.requestUrgentAfterOrderCycle()
-        }
 
         log.info("--- Cycle Complete ---")
         return snapshot

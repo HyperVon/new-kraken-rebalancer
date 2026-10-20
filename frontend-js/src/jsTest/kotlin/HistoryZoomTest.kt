@@ -416,12 +416,12 @@ class HistoryZoomTest :
             }
         }
 
-        "setViewport reports its interval and range writes prefer the zoom plugin scale" {
+        "setViewport reports its interval and pins the visible window on the chart options" {
             val detailCalls = mutableListOf<Pair<Double, Double>>()
-            historyViewportDetailHandler = { from, to -> detailCalls.add(from to to) }
+            historyViewportDetailHandler = { _, from, to -> detailCalls.add(from to to) }
             val updates = mutableListOf<Any?>()
             val zoomCalls = mutableListOf<dynamic>()
-            val chart = json(
+            val chart: dynamic = json(
                 "zoomScale" to { mode: dynamic, range: dynamic, transition: dynamic ->
                     zoomCalls.add(json("mode" to mode, "min" to range.min, "max" to range.max, "t" to transition))
                 },
@@ -438,9 +438,11 @@ class HistoryZoomTest :
                 historyChartSessions["history-value-chart"] = session
                 session.setViewport(ChartViewport(ChartRange(1000.0, 3000.0), ChartRange(2000.0, 3000.0)))
                 detailCalls shouldBe listOf(2000.0 to 3000.0)
+                assertHistoryValue(chart.options.scales.x.min, 2000.0)
+                assertHistoryValue(chart.options.scales.x.max, 3000.0)
                 zoomCalls.size shouldBe 1
                 assertHistoryValue(zoomCalls[0]["min"], 2000.0)
-                assertHistoryValue(zoomCalls[0]["t"], "none")
+                assertHistoryValue(zoomCalls[0]["max"], 3000.0)
                 updates shouldBe listOf<Any?>("none")
                 val plain: dynamic = json("update" to { arg: dynamic -> updates.add(arg) })
                 setChartXRange(plain, ChartRange(5.0, 6.0))

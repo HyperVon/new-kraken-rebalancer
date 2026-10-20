@@ -101,7 +101,10 @@ class HistorySynchronizer(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                throw IllegalStateException("History sync requires an authenticated, bound Kraken account.", error)
+                throw HistoryAccountUnavailableException(
+                    "History sync requires an authenticated, bound Kraken account.",
+                    error,
+                )
             }
             val permittedStartSec = maxOf(startSec, identity.queryFromSec ?: startSec)
             val permittedEndSec = minOf(endSec, identity.queryToSec ?: endSec)

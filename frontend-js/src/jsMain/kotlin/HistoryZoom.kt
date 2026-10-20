@@ -132,10 +132,10 @@ private fun strideSample(points: List<HistoryChartPoint>, limit: Int): List<Hist
 }
 
 /** Seam for the follow-up track: re-query GET /api/history/charts for the zoomed interval. */
-internal var historyViewportDetailHandler: ((Double, Double) -> Unit)? = null
+internal var historyViewportDetailHandler: ((String, Double, Double) -> Unit)? = null
 
-internal fun requestViewportDetail(fromMs: Double, toMs: Double) {
-    historyViewportDetailHandler?.invoke(fromMs, toMs)
+internal fun requestViewportDetail(chartId: String, fromMs: Double, toMs: Double) {
+    historyViewportDetailHandler?.invoke(chartId, fromMs, toMs)
 }
 
 internal val historyChartSessions = mutableMapOf<String, HistoryChartSession>()
@@ -157,7 +157,7 @@ internal class HistoryChartSession(
         setChartXRange(chart, next.visible)
         updateChart(chart)
         syncHistoryScrubber(this)
-        requestViewportDetail(next.visible.min, next.visible.max)
+        requestViewportDetail(container.id, next.visible.min, next.visible.max)
     }
 
     fun dispose() {
@@ -174,7 +174,17 @@ internal fun disposeDetachedHistoryCharts() {
     historyChartSessions.values.filter { !it.container.isConnected }.forEach { it.dispose() }
 }
 
+/**
+ * Pins the visible window on the chart options. Chart.js otherwise rounds a linear axis to its own
+ * "nice" bounds, which would shrink the axis to the plotted points and hide the selected period.
+ * The zoom plugin keeps its own scale state, so it is aligned with the same window afterwards.
+ */
 internal fun setChartXRange(chart: dynamic, range: ChartRange) {
+    if (chart.options == null || chart.options == undefined) chart.options = json()
+    if (chart.options.scales == null || chart.options.scales == undefined) chart.options.scales = json()
+    if (chart.options.scales.x == null || chart.options.scales.x == undefined) chart.options.scales.x = json()
+    chart.options.scales.x.min = range.min
+    chart.options.scales.x.max = range.max
     val zoomScale = chart?.zoomScale
     if (zoomScale != null && zoomScale != undefined && jsTypeOf(zoomScale) == "function") {
         zoomScale(
@@ -182,13 +192,7 @@ internal fun setChartXRange(chart: dynamic, range: ChartRange) {
             json(ChartProps.MIN to range.min, ChartProps.MAX to range.max),
             ChartProps.TRANSITION_NONE,
         )
-        return
     }
-    if (chart.options == null || chart.options == undefined) chart.options = json()
-    if (chart.options.scales == null || chart.options.scales == undefined) chart.options.scales = json()
-    if (chart.options.scales.x == null || chart.options.scales.x == undefined) chart.options.scales.x = json()
-    chart.options.scales.x.min = range.min
-    chart.options.scales.x.max = range.max
 }
 
 internal fun updateChart(chart: dynamic) {

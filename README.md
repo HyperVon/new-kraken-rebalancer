@@ -377,7 +377,7 @@ active Settings.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
 
-<a href="docs/images/history.png"><img src="docs/images/history.png" alt="History with range statistics and portfolio value coverage" width="960"></a>
+<a href="docs/images/history.png"><img src="docs/images/history.png" alt="History with the portfolio value chart, range statistics, and recorded scope series" width="960"></a>
 
 ---
 

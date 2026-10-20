@@ -16,6 +16,23 @@ data class OrderExecutionOutcome(
     val exchangeOrderAttempted: Boolean = false,
 )
 
+/**
+ * Records structured submission attempts for the cycle outcome and post-order sync signal. The
+ * caller owns the tracker so attempt evidence survives an exception thrown after the submission.
+ */
+class OrderAttemptTracker {
+    @Volatile
+    var liveSubmissionAttempted: Boolean = false
+
+    @Volatile
+    var exchangeOrderAttempted: Boolean = false
+
+    fun record(isLiveSubmission: Boolean) {
+        if (isLiveSubmission) liveSubmissionAttempted = true
+        exchangeOrderAttempted = true
+    }
+}
+
 interface OrderExecutor {
     suspend fun executeOrders(
         buyOrders: RebalanceOrders,
@@ -26,5 +43,6 @@ interface OrderExecutor {
         actionLog: MutableList<String>,
         cycleId: String = "",
         availableBalances: RawBalances? = null,
+        attempts: OrderAttemptTracker = OrderAttemptTracker(),
     ): OrderExecutionOutcome
 }

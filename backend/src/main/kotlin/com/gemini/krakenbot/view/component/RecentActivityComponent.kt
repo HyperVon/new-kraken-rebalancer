@@ -135,13 +135,9 @@ class RecentActivityComponent {
             attributes[RecentActivityText.PROBLEM_ATTRIBUTE] = problem.toString()
             attributes[RecentActivityText.ORDERS_ATTRIBUTE] = orders.toString()
             summary(CssClass.Activity.CycleHeader.value) {
-                span(CssClass.Activity.CycleMeta) {
-                    +"${ViewText.ACTIVITY_CYCLE_PREFIX} ${activity.cycleId}"
-                }
                 span(CssClass.Activity.CycleTime) {
                     +cycleTimeFormatter.format(activity.occurredAt)
                 }
-                span(CssClass.Activity.CycleMeta) { +activity.mode.label() }
                 span(CssClass.Activity.CycleMeta) { +outcome }
                 val actionCount = activity.actions.size
                 span(CssClass.Activity.CycleMeta) {
@@ -154,11 +150,15 @@ class RecentActivityComponent {
                     +"$actionCount $actionLabel"
                 }
             }
-            if (actions.isNotEmpty()) {
-                div(CssClass.Activity.CycleBody) {
-                    actions.forEach { action ->
-                        renderItem(action)
-                    }
+            div(CssClass.Activity.CycleBody) {
+                div(CssClass.Activity.CycleIdentity) {
+                    +"${ViewText.ACTIVITY_CYCLE_PREFIX} ${activity.cycleId}"
+                }
+                div(CssClass.Activity.CycleIdentity) {
+                    +activity.mode.label()
+                }
+                actions.forEach { action ->
+                    renderItem(action)
                 }
             }
         }

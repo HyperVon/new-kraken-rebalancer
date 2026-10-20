@@ -324,13 +324,15 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 ## History
 
 <a href="images/history.png"><img src="images/history.png" alt="History with portfolio values, range statistics, and page tabs" width="960"></a>
-*History — simulated portfolio samples and account-sync status in an isolated capture.*
+*History — recorded portfolio values from a verified fake account in an isolated capture, with the current scope and an earlier recorded scope shown as separate series.*
 
 The **History** page separates three views:
 
-- **Portfolio** shows directly recorded values, selected-period statistics,
-  asset holdings, target deviations, native-quantity funding/reward charts, and
-  exchange-reported balance checkpoints.
+- **Portfolio** opens with a value-led summary and the primary chart. Open
+  **Explore holdings, allocation and flows** to choose one secondary analysis:
+  holdings, target deviations, native-quantity funding/rewards, or balance
+  checkpoints. **Chart tools** holds the presentation, zoom, pan, reset and expand
+  controls; drag-to-zoom remains available directly on the chart.
 - **Activity** contains separate **Bot activity**, **Trades**, and
   **Transactions** tabs. Exchange tables scroll within their panels and are
   independently paginated. Bot activity shows cycle outcome, mode, details, and
@@ -338,7 +340,8 @@ The **History** page separates three views:
   bot linkage or order lifecycle, so linkage is displayed as **Unknown**.
 - **Data status** shows per-feed recent, backfill, repair, and failure progress.
   The **Retry** control is manual recovery; ordinary synchronization continues
-  automatically after the account identity is verified.
+  automatically after the account identity is verified. Coverage, recorded-source
+  provenance and the compact **Saved views** management action also live here.
 
 Time-range and scope controls apply across the History views. Asset, pair, and
 event-type filters apply to Kraken trades and ledgers; they do not apply to bot
@@ -356,6 +359,15 @@ historical OHLC prices. Incomplete samples do not expose a total, and missing
 time periods are not interpolated. Deposits, withdrawals, manual trades, and
 other account activity can change the observed value, so the chart is not a
 profit or investment-return calculation.
+
+When the account has more than one recorded scope, the value chart presents every
+recorded scope as its own series, with the current scope marked **(current)**, and
+never sums them. An asset-set change or an overlapping scope lifespan is drawn as
+a gap, and values inside an overlap are withheld because two records of different
+asset sets are not one total. The axis always spans the full selected period, so a
+period with only a few observations still reads against the range you selected. The
+recorded sources, their symbols, and their recording windows are listed on **Data
+status**.
 
 Ranges with at most 2,000 observations show every sample. Larger ranges are
 sampled across the full time span: each time bucket retains its first and last

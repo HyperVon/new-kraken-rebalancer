@@ -332,15 +332,6 @@ object MediaQueries {
                 put("white-space", "nowrap")
             }
             "${CssClass.Activity.CycleHeader.querySelector} > span:nth-child(3)" {
-                put("grid-column", "1")
-                put("grid-row", "3")
-            }
-            "${CssClass.Activity.CycleHeader.querySelector} > span:nth-child(4)" {
-                put("grid-column", "2")
-                put("grid-row", "3")
-                put("text-align", "right")
-            }
-            "${CssClass.Activity.CycleHeader.querySelector} > span:nth-child(5)" {
                 put("grid-column", "2")
                 put("grid-row", "2")
                 put("text-align", "right")

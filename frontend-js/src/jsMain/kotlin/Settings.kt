@@ -35,6 +35,7 @@ private val SETTINGS_FIELD_NAMES = setOf(
 
 private var settingsResponseListenerInstalled = false
 private var beforeUnloadListenerInstalled = false
+private var submittedSettingsSnapshot: String? = null
 private val beforeUnloadListener: (Event) -> Unit = { event ->
     event.preventDefault()
     event.asDynamic().returnValue = ""
@@ -51,8 +52,20 @@ fun registerSettingsGlobals() {
     window.asDynamic().addAssetRow = { addAssetRow() }
     if (!settingsResponseListenerInstalled) {
         document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, ::handleSettingsSaveResponse)
+        document.addEventListener(HtmlEvents.HTMX_BEFORE_REQUEST, ::captureSubmittedSettingsSnapshot)
         settingsResponseListenerInstalled = true
     }
+}
+
+/**
+ * Remembers the settings the operator submitted. A response acknowledges this snapshot only, so
+ * edits made while the request was in flight stay unsaved.
+ */
+private fun captureSubmittedSettingsSnapshot(event: Event) {
+    val target = event.asDynamic().target as? Element ?: return
+    val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
+    if (target.id != SettingsState.FORM_ID && !form.contains(target)) return
+    submittedSettingsSnapshot = settingsSnapshot(form)
 }
 
 fun updateAllocationTotal() {
@@ -224,7 +237,9 @@ private fun handleSettingsSaveResponse(event: Event) {
     val configPublicationPending = response.configPublicationPending as? Boolean ?: return
     val savedAt = response.savedAt as? String ?: return
 
-    form.setAttribute(SettingsState.BASELINE_ATTRIBUTE, settingsSnapshot(form))
+    val submitted = submittedSettingsSnapshot
+    submittedSettingsSnapshot = null
+    form.setAttribute(SettingsState.BASELINE_ATTRIBUTE, submitted ?: settingsSnapshot(form))
     val status = document.getElementById(SettingsState.SAVE_STATUS_ID) as? HTMLElement ?: return
     status.textContent = if (configPublicationPending) {
         SettingsState.SAVED_APPLIES_AFTER_CURRENT_CYCLE
@@ -233,6 +248,7 @@ private fun handleSettingsSaveResponse(event: Event) {
     }
     status.setAttribute("datetime", savedAt)
     status.classList.remove(CssClass.Utility.Hidden.value)
+    // Edits made while the request was in flight are not covered by the acknowledgement.
     updateSettingsState()
 }
 

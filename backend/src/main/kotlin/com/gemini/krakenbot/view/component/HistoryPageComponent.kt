@@ -4,6 +4,9 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.service.history.HistoryApiBoundaryKind
+import com.gemini.krakenbot.service.history.HistoryApiChartsResponse
+import com.gemini.krakenbot.service.history.HistoryApiScopeSelection
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
 import com.gemini.krakenbot.service.history.HistoryEventFilterOptions
@@ -27,6 +30,7 @@ import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.HistoryAnalysis
 import com.gemini.krakenbot.view.util.HistoryChartActions
 import com.gemini.krakenbot.view.util.HistoryRangeCss
 import com.gemini.krakenbot.view.util.HistoryRangeIds
@@ -110,6 +114,7 @@ data class HistoryPageData(
     val fundingSeries: List<NativeQuantitySeries> = emptyList(),
     val rewardSeries: List<NativeQuantitySeries> = emptyList(),
     val allocations: List<Allocation> = emptyList(),
+    val portfolioChart: HistoryApiChartsResponse? = null,
 )
 
 class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefault()) {
@@ -137,26 +142,32 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     h1 { +ViewText.HISTORY_TITLE }
                     p { +ViewText.HISTORY_PAGE_INTRO }
                 }
-                renderToolbar(data)
-                renderPageTabs()
+                div(CssClass.History.WorkspaceBar) {
+                    renderPageTabs()
+                    renderToolbar(data)
+                }
                 div {
                     id = HistoryRangeIds.PANEL_PORTFOLIO
                     attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_PORTFOLIO
                     renderValueChart(data)
-                    renderStatsGrid(data)
-                    renderCoverage()
-                    renderSectionNav()
-                    renderHoldingsChart(data)
-                    renderAllocationChart(data)
-                    renderCashFlowChart(data)
-                    renderRewardsChart(data)
-                    renderCheckpointChart(data)
+                    details(CssClass.History.Disclosure.value) {
+                        summary { +ViewText.HISTORY_EXPLORE_ANALYSIS }
+                        div {
+                            renderAnalysisSelector()
+                            renderHoldingsChart(data)
+                            renderAllocationChart(data)
+                            renderCashFlowChart(data)
+                            renderRewardsChart(data)
+                            renderCheckpointChart(data)
+                        }
+                    }
                 }
                 div {
                     id = HistoryRangeIds.PANEL_ACTIVITY
                     attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_ACTIVITY
                     attributes["hidden"] = "hidden"
                     renderActivityNav()
+                    renderFilters(data)
                     renderNewRecordsNotice()
                     renderBotActivity()
                     renderTrades(data)
@@ -168,6 +179,9 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     attributes["hidden"] = "hidden"
                     renderSync(data, csrfToken)
                     renderRefreshStatus()
+                    renderCoverage()
+                    renderRecordedSources(data)
+                    renderSavedViews()
                     renderRepairForm(csrfToken)
                 }
             }
@@ -175,17 +189,26 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         }
     }
 
-    private fun DIV.renderSectionNav() {
-        nav(classes = CssClass.History.SectionNav.value) {
+    private fun DIV.renderAnalysisSelector() {
+        label {
+            htmlFor = HistoryRangeIds.ANALYSIS_NAV
+            +ViewText.HISTORY_ANALYSIS
+        }
+        select(classes = CssClass.History.FilterInput.value + " " + CssClass.History.AnalysisSelect.value) {
+            id = HistoryRangeIds.ANALYSIS_NAV
+            attributes[HtmlAttrs.DATA_HISTORY_ANALYSIS] = "true"
             listOf(
-                HtmlIds.HISTORY_PORTFOLIO_SECTION to ViewText.HISTORY_JUMP_PORTFOLIO,
-                HtmlIds.HISTORY_HOLDINGS_SECTION to ViewText.HISTORY_JUMP_HOLDINGS,
-                HtmlIds.HISTORY_ALLOCATION_SECTION to ViewText.HISTORY_JUMP_ALLOCATION,
-                HtmlIds.HISTORY_CASH_FLOW_SECTION to ViewText.HISTORY_JUMP_CASH_FLOW,
-                HtmlIds.HISTORY_REWARDS_SECTION to ViewText.HISTORY_JUMP_REWARDS,
-                HistoryRangeIds.CHECKPOINTS_SECTION to ViewText.HISTORY_CHECKPOINT_TITLE,
-            ).forEach { (section, label) ->
-                a(href = "#$section", classes = CssClass.History.TimeRangeBtn.value) { +label }
+                HistoryAnalysis.HOLDINGS to ViewText.HISTORY_ASSET_HOLDINGS,
+                HistoryAnalysis.ALLOCATION to ViewText.HISTORY_ALLOCATION_DRIFT,
+                HistoryAnalysis.CASH_FLOW to ViewText.HISTORY_NET_CASH_FLOW,
+                HistoryAnalysis.REWARDS to ViewText.HISTORY_STAKING_REWARDS,
+                HistoryAnalysis.CHECKPOINTS to ViewText.HISTORY_CHECKPOINT_TITLE,
+            ).forEach { (analysis, label) ->
+                option {
+                    value = analysis
+                    selected = analysis == HistoryAnalysis.HOLDINGS
+                    +label
+                }
             }
         }
     }
@@ -619,8 +642,78 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     attributes["hidden"] = "hidden"
                 }
             }
+        }
+    }
+
+    /** Account record filters belong to Activity, not to the recorded portfolio value chart. */
+    private fun DIV.renderFilters(data: HistoryPageData) {
+        form(action = Routes.HISTORY, method = FormMethod.get, classes = CssClass.History.FilterRow.value) {
+            input(type = InputType.hidden, name = "range") {
+                id = "history-filter-range"
+                value = data.range
+            }
+            input(type = InputType.hidden, name = "scope") { id = "history-filter-scope" }
+            input(type = InputType.hidden, name = "start") { id = "history-filter-start" }
+            input(type = InputType.hidden, name = "end") { id = "history-filter-end" }
+            input(type = InputType.hidden, name = "tz") { id = "history-filter-tz" }
+            input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_TAB) {
+                id = HistoryRangeIds.FILTER_TAB
+                value = HistoryRangeQuery.TAB_ACTIVITY
+            }
+            input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_ACTIVITY) {
+                id = HistoryRangeIds.FILTER_ACTIVITY
+                value = HistoryRangeQuery.ACTIVITY_BOT
+            }
+            filterSelect(
+                HtmlIds.HISTORY_FILTER_ASSET,
+                "asset",
+                ViewText.HISTORY_FILTER_ASSET,
+                ViewText.HISTORY_FILTER_ALL_ASSETS,
+                data.filters.assetKey,
+                data.filterOptions.assets,
+            ) { asset -> Asset.normalizeLedgerAsset(asset) }
+            filterSelect(
+                HtmlIds.HISTORY_FILTER_PAIR,
+                "pair",
+                ViewText.HISTORY_FILTER_PAIR,
+                ViewText.HISTORY_FILTER_ALL_PAIRS,
+                data.filters.pair,
+                data.filterOptions.pairs,
+            )
+            filterSelect(
+                HtmlIds.HISTORY_FILTER_TYPE,
+                "type",
+                ViewText.HISTORY_FILTER_TYPE,
+                ViewText.HISTORY_FILTER_ALL_TYPES,
+                data.filters.type,
+                data.filterOptions.types,
+            )
+            button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) {
+                +ViewText.HISTORY_APPLY_FILTERS
+            }
+            if (data.filters.assetKey != null || data.filters.pair != null || data.filters.type != null) {
+                a(
+                    href = Routes.HISTORY.withQuery("range", data.range),
+                    classes = CssClass.History.PaginationBtn.value,
+                ) { +ViewText.HISTORY_CLEAR_FILTERS }
+            }
+            p(CssClass.History.MutedSmallText) {
+                +ViewText.HISTORY_FILTER_SCOPE
+            }
+        }
+    }
+
+    /**
+     * Scope provenance lives in Data details: the recorded portfolios, their asset sets and the
+     * periods each one covers, so asset-set changes and gaps stay visible without a prominent
+     * selector in the default view.
+     */
+    private fun DIV.renderRecordedSources(data: HistoryPageData) {
+        details {
+            id = HistoryRangeIds.SCOPE_DETAILS
+            attributes["class"] = CssClass.History.SyncBanner.value
+            summary { +ViewText.HISTORY_RECORDED_SOURCES }
             div(CssClass.History.FilterRow) {
-                id = "history-scope-row"
                 label {
                     htmlFor = "history-scope-select"
                     +"Recorded portfolio"
@@ -641,96 +734,63 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     +"Earlier recorded portfolios available"
                 }
             }
-            form(action = Routes.HISTORY, method = FormMethod.get, classes = CssClass.History.FilterRow.value) {
-                input(type = InputType.hidden, name = "range") {
-                    id = "history-filter-range"
-                    value = data.range
+            div(CssClass.History.MutedSmallText) {
+                id = HistoryRangeIds.SCOPE_LIST
+                data.portfolioChart?.series?.mapNotNull { it.provenance }?.forEach { provenance ->
+                    p {
+                        +provenance.scope.symbols.joinToString(" / ")
+                        +" · ${provenance.scope.earliestIso} – ${provenance.scope.latestIso}"
+                    }
+                    dl {
+                        dt { +ViewText.HISTORY_RECORDED_SOURCES }
+                        dd {
+                            +listOf(
+                                provenance.scope.id,
+                                provenance.walletScopes.joinToString(", "),
+                                provenance.balanceSources.joinToString(", "),
+                                provenance.priceSources.joinToString(", "),
+                                provenance.valuationCurrency,
+                            ).joinToString(" · ")
+                        }
+                    }
                 }
-                input(type = InputType.hidden, name = "scope") { id = "history-filter-scope" }
-                input(type = InputType.hidden, name = "start") { id = "history-filter-start" }
-                input(type = InputType.hidden, name = "end") { id = "history-filter-end" }
-                input(type = InputType.hidden, name = "tz") { id = "history-filter-tz" }
-                input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_TAB) {
-                    id = HistoryRangeIds.FILTER_TAB
-                    value = HistoryRangeQuery.TAB_PORTFOLIO
-                }
-                input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_ACTIVITY) {
-                    id = HistoryRangeIds.FILTER_ACTIVITY
-                    value = HistoryRangeQuery.ACTIVITY_BOT
-                }
-                filterSelect(
-                    HtmlIds.HISTORY_FILTER_ASSET,
-                    "asset",
-                    ViewText.HISTORY_FILTER_ASSET,
-                    ViewText.HISTORY_FILTER_ALL_ASSETS,
-                    data.filters.assetKey,
-                    data.filterOptions.assets,
-                ) { asset ->
-                    val normalized = Asset.normalizeLedgerAsset(asset)
-                    if (normalized.equals(asset, ignoreCase = true)) asset else "$asset ($normalized)"
-                }
-                filterSelect(
-                    HtmlIds.HISTORY_FILTER_PAIR,
-                    "pair",
-                    ViewText.HISTORY_FILTER_PAIR,
-                    ViewText.HISTORY_FILTER_ALL_PAIRS,
-                    data.filters.pair,
-                    data.filterOptions.pairs,
-                )
-                filterSelect(
-                    HtmlIds.HISTORY_FILTER_TYPE,
-                    "type",
-                    ViewText.HISTORY_FILTER_TYPE,
-                    ViewText.HISTORY_FILTER_ALL_TYPES,
-                    data.filters.type,
-                    data.filterOptions.types,
-                )
-                button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) {
-                    +ViewText.HISTORY_APPLY_FILTERS
-                }
-                if (data.filters.assetKey != null || data.filters.pair != null || data.filters.type != null) {
-                    a(
-                        href = Routes.HISTORY.withQuery("range", data.range),
-                        classes = CssClass.History.PaginationBtn.value,
-                    ) { +ViewText.HISTORY_CLEAR_FILTERS }
-                }
-            }
-            renderSavedViews()
-            p(CssClass.History.MutedSmallText) {
-                +ViewText.HISTORY_FILTER_SCOPE
-                +" They do not filter portfolio-value observations, which use the selected recorded portfolio."
             }
         }
     }
 
+    /** Saved-view management is collapsed behind a single disclosure control. */
     private fun DIV.renderSavedViews() {
-        div(CssClass.History.FilterRow) {
+        details {
             id = HtmlIds.HISTORY_SAVED_VIEWS
+            attributes["class"] = CssClass.History.FilterRow.value
             attributes["hidden"] = "hidden"
-            label {
-                htmlFor = HtmlIds.HISTORY_SAVED_VIEW
-                +ViewText.HISTORY_SAVED_VIEWS
-                select(classes = CssClass.History.FilterInput.value) {
-                    id = HtmlIds.HISTORY_SAVED_VIEW
-                    option {
-                        value = ""
-                        +ViewText.HISTORY_CURRENT_VIEW
+            summary { +ViewText.HISTORY_SAVED_VIEWS }
+            div(CssClass.History.FilterRow) {
+                label {
+                    htmlFor = HtmlIds.HISTORY_SAVED_VIEW
+                    +ViewText.HISTORY_SAVED_VIEWS
+                    select(classes = CssClass.History.FilterInput.value) {
+                        id = HtmlIds.HISTORY_SAVED_VIEW
+                        option {
+                            value = ""
+                            +ViewText.HISTORY_CURRENT_VIEW
+                        }
                     }
                 }
-            }
-            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
-                id = HtmlIds.HISTORY_SAVE_VIEW
-                +ViewText.HISTORY_SAVE_VIEW
-            }
-            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
-                id = HtmlIds.HISTORY_SET_DEFAULT_VIEW
-                disabled = true
-                +ViewText.HISTORY_SET_DEFAULT
-            }
-            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
-                id = HtmlIds.HISTORY_DELETE_VIEW
-                disabled = true
-                +ViewText.HISTORY_DELETE_VIEW
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HtmlIds.HISTORY_SAVE_VIEW
+                    +ViewText.HISTORY_SAVE_VIEW
+                }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HtmlIds.HISTORY_SET_DEFAULT_VIEW
+                    disabled = true
+                    +ViewText.HISTORY_SET_DEFAULT
+                }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HtmlIds.HISTORY_DELETE_VIEW
+                    disabled = true
+                    +ViewText.HISTORY_DELETE_VIEW
+                }
             }
         }
     }
@@ -790,18 +850,21 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
                 HtmlIds.HISTORY_STAT_RANGE_HIGH,
             )
-            statusCard(
-                ViewText.HISTORY_RANGE_LOW,
-                Icons.CHART,
-                statistics?.rangeExtrema?.low?.let { Formatter.formatSignedUsd(it.valueUsd) }
-                    ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
-                HtmlIds.HISTORY_STAT_RANGE_LOW,
-            )
         }
-        div(CssClass.Layout.GlassPanel) {
+    }
+
+    private fun DIV.renderPeriodDetails(data: HistoryPageData) {
+        val statistics = data.statistics
+        div {
             details(CssClass.History.ReportDetails.value) {
                 summary { +ViewText.HISTORY_SELECTED_PERIOD_DETAILS }
                 dl {
+                    reportRow(
+                        ViewText.HISTORY_RANGE_LOW,
+                        statistics?.rangeExtrema?.low?.let { Formatter.formatSignedUsd(it.valueUsd) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_RANGE_LOW,
+                    )
                     reportRow(
                         ViewText.HISTORY_OBSERVED_AT,
                         latestValueDetails(statistics),
@@ -972,6 +1035,9 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
 
     private fun DIV.renderValueChart(data: HistoryPageData) {
         val observations = data.observations.sortedBy { it.observedAt }
+        val recordedChart = data.portfolioChart?.takeIf {
+            it.scopeSelection == HistoryApiScopeSelection.ACCOUNT_RECORDED
+        }
         val hasCompleteValue = observations.any {
             it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null
         }
@@ -983,15 +1049,53 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 }
                 chartControls()
             }
+            renderStatsGrid(data)
+            if (recordedChart != null) {
+                p(CssClass.History.ChartCaption) {
+                    +ViewText.HISTORY_SCOPE_SUMMARY
+                    +" ${recordedChart.scope.symbols.joinToString(" / ")}"
+                }
+                if (recordedChart.boundaries.isNotEmpty()) {
+                    p(CssClass.History.ChartCaption) { +ViewText.HISTORY_SCOPE_TRANSITIONS }
+                }
+                if (recordedChart.boundaries.any { it.kind == HistoryApiBoundaryKind.OVERLAPPING_SCOPES }) {
+                    p(CssClass.Utility.TextDanger) { +ViewText.HISTORY_SCOPE_CONFLICT }
+                }
+            }
             if (observations.isNotEmpty() && !hasCompleteValue) {
                 p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
             }
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                if (observations.isEmpty()) {
+                if (recordedChart != null) {
+                    attributes[HtmlAttrs.DATA_HISTORY_SCOPE_SELECTION] = recordedChart.scopeSelection.name
+                    recordedChart.series.forEach { series ->
+                        div {
+                            attributes["hidden"] = "hidden"
+                            attributes[HtmlAttrs.DATA_HISTORY_SOURCE_KEY] = series.key
+                            attributes[HtmlAttrs.DATA_HISTORY_SOURCE_LABEL] = series.label
+                        }
+                    }
+                    val series = recordedChart.series.map { series ->
+                        series.label to series.points.mapNotNull { point ->
+                            point.v?.takeIf { point.complete }?.let {
+                                HistorySeriesPoint(Instant.ofEpochMilli(point.t), it)
+                            }
+                        }
+                    }.filter { it.second.isNotEmpty() }
+                    if (series.isEmpty()) {
+                        p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+                    } else {
+                        val times = recordedChart.series.flatMap { it.points }.map { Instant.ofEpochMilli(it.t) } +
+                            listOfNotNull(recordedChart.fullRange.fromIso, recordedChart.fullRange.toIso)
+                                .map(Instant::parse)
+                        unsafe { +multiSeriesSvg(series, zeroLine = false, sampleTimes = times) }
+                    }
+                } else if (observations.isEmpty()) {
                     p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+                } else {
+                    unsafe { +valuePointSvg(observations) }
                 }
-                if (observations.isNotEmpty()) unsafe { +valuePointSvg(observations) }
             }
             div {
                 attributes["class"] = HistoryRangeCss.BANNER
@@ -1008,7 +1112,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             }
             renderChartScrubber(HtmlIds.HISTORY_VALUE_CHART)
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
-            p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
+            renderPeriodDetails(data)
         }
     }
 
@@ -1016,16 +1120,50 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         div(CssClass.History.ChartControls) {
             attributes[HtmlAttrs.DATA_HISTORY_CONTROLS] = "true"
             attributes["hidden"] = "hidden"
-            if (!pointsOnly) {
-                chartButton(HtmlAttrs.DATA_HISTORY_VIEW, HistoryChartActions.VIEW_LINE, ViewText.HISTORY_CHART_LINE)
-                chartButton(HtmlAttrs.DATA_HISTORY_VIEW, HistoryChartActions.VIEW_POINTS, ViewText.HISTORY_CHART_POINTS)
+            details(CssClass.History.ToolsMenu.value) {
+                summary { +ViewText.HISTORY_CHART_TOOLS }
+                div {
+                    if (!pointsOnly) {
+                        chartButton(
+                            HtmlAttrs.DATA_HISTORY_VIEW,
+                            HistoryChartActions.VIEW_LINE,
+                            ViewText.HISTORY_CHART_LINE,
+                        )
+                        chartButton(
+                            HtmlAttrs.DATA_HISTORY_VIEW,
+                            HistoryChartActions.VIEW_POINTS,
+                            ViewText.HISTORY_CHART_POINTS,
+                        )
+                    }
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_ZOOM,
+                        HistoryChartActions.ZOOM_IN,
+                        ViewText.HISTORY_CHART_ZOOM_IN,
+                    )
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_ZOOM,
+                        HistoryChartActions.ZOOM_OUT,
+                        ViewText.HISTORY_CHART_ZOOM_OUT,
+                    )
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_PAN,
+                        HistoryChartActions.PAN_EARLIER,
+                        ViewText.HISTORY_CHART_EARLIER,
+                    )
+                    chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_LATER, ViewText.HISTORY_CHART_LATER)
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_ZOOM,
+                        HistoryChartActions.ZOOM_RESET,
+                        ViewText.HISTORY_CHART_RESET,
+                    )
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_EXPAND,
+                        HistoryChartActions.EXPAND,
+                        ViewText.HISTORY_CHART_EXPAND,
+                    )
+                    p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
+                }
             }
-            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_IN, ViewText.HISTORY_CHART_ZOOM_IN)
-            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_OUT, ViewText.HISTORY_CHART_ZOOM_OUT)
-            chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_EARLIER, ViewText.HISTORY_CHART_EARLIER)
-            chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_LATER, ViewText.HISTORY_CHART_LATER)
-            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_RESET, ViewText.HISTORY_CHART_RESET)
-            chartButton(HtmlAttrs.DATA_HISTORY_EXPAND, HistoryChartActions.EXPAND, ViewText.HISTORY_CHART_EXPAND)
         }
     }
 
@@ -1049,9 +1187,13 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         }
         div(CssClass.Layout.GlassPanel) {
             id = HistoryRangeIds.CHECKPOINTS_SECTION
+            analysisPanel(HistoryAnalysis.CHECKPOINTS)
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
-                    +"${ViewText.HISTORY_CHECKPOINT_TITLE}${asset?.let { " ($it)" }.orEmpty()}"
+                    +(
+                        ViewText.HISTORY_CHECKPOINT_TITLE +
+                            asset?.let { " (${Asset.normalizeLedgerAsset(it)})" }.orEmpty()
+                        )
                 }
                 chartControls(pointsOnly = true)
             }
@@ -1075,6 +1217,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         renderSeriesChart(
             sectionId = HtmlIds.HISTORY_HOLDINGS_SECTION,
             chartId = HtmlIds.HISTORY_HOLDINGS_CHART,
+            analysis = HistoryAnalysis.HOLDINGS,
             title = ViewText.HISTORY_ASSET_HOLDINGS,
             series = assetValueSeries(data.observations),
             sampleTimes = data.observations.map { it.observedAt },
@@ -1087,6 +1230,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         renderSeriesChart(
             sectionId = HtmlIds.HISTORY_ALLOCATION_SECTION,
             chartId = HtmlIds.HISTORY_ALLOCATION_CHART,
+            analysis = HistoryAnalysis.ALLOCATION,
             title = ViewText.HISTORY_ALLOCATION_DRIFT,
             series = allocationDeviationSeries(
                 data.observations,
@@ -1104,6 +1248,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         renderNativeQuantityChart(
             sectionId = HtmlIds.HISTORY_CASH_FLOW_SECTION,
             chartId = HtmlIds.HISTORY_CASH_FLOW_CHART,
+            analysis = HistoryAnalysis.CASH_FLOW,
             title = ViewText.HISTORY_NET_CASH_FLOW,
             series = data.fundingSeries,
             caption = ViewText.HISTORY_CASH_FLOW_CAPTION,
@@ -1115,6 +1260,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         renderNativeQuantityChart(
             sectionId = HtmlIds.HISTORY_REWARDS_SECTION,
             chartId = HtmlIds.HISTORY_REWARDS_CHART,
+            analysis = HistoryAnalysis.REWARDS,
             title = ViewText.HISTORY_STAKING_REWARDS,
             series = data.rewardSeries,
             caption = ViewText.HISTORY_REWARDS_CAPTION,
@@ -1122,9 +1268,16 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         )
     }
 
+    /** Marks one secondary analysis panel; only the selected analysis is visible at a time. */
+    private fun DIV.analysisPanel(analysis: String) {
+        attributes[HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL] = analysis
+        if (analysis != HistoryAnalysis.HOLDINGS) attributes["hidden"] = "hidden"
+    }
+
     private fun DIV.renderNativeQuantityChart(
         sectionId: String,
         chartId: String,
+        analysis: String,
         title: String,
         series: List<NativeQuantitySeries>,
         caption: String,
@@ -1132,6 +1285,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     ) {
         div(CssClass.Layout.GlassPanel) {
             id = sectionId
+            analysisPanel(analysis)
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) { +title }
             }
@@ -1144,7 +1298,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                             option {
                                 value = item.asset
                                 selected = index == 0
-                                +item.asset
+                                +Asset.normalizeLedgerAsset(item.asset)
                             }
                         }
                     }
@@ -1160,12 +1314,13 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                             attributes[HtmlAttrs.DATA_HISTORY_SERIES_ASSET] = item.asset
                             if (index > 0) attributes["hidden"] = "hidden"
                             val points = item.points.map { HistorySeriesPoint(it.observedAt, it.cumulativeQuantity) }
+                            val displayAsset = Asset.normalizeLedgerAsset(item.asset)
                             unsafe {
                                 +multiSeriesSvg(
-                                    series = listOf(item.asset to points),
+                                    series = listOf(displayAsset to points),
                                     zeroLine = false,
                                     sampleTimes = emptyList(),
-                                    formatValue = { "${Formatter.formatQuantity(it)} ${item.asset}" },
+                                    formatValue = { "${Formatter.formatQuantity(it)} $displayAsset" },
                                 )
                             }
                         }
@@ -1182,6 +1337,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     private fun DIV.renderSeriesChart(
         sectionId: String,
         chartId: String,
+        analysis: String,
         title: String,
         series: List<Pair<String, List<HistorySeriesPoint>>>,
         caption: String,
@@ -1193,6 +1349,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     ) {
         div(CssClass.Layout.GlassPanel) {
             id = sectionId
+            analysisPanel(analysis)
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) { +title }
                 headerStat?.invoke(this)

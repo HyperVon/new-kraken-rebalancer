@@ -355,6 +355,13 @@ object HistorySyncErrors {
 
 enum class HistorySyncState { NOT_STARTED, RUNNING, COMPLETE, PAUSED, FAILED }
 
+/**
+ * The authenticated account could not be established for a scan. This is an account-level
+ * condition: every feed is unavailable until the account can be verified again.
+ */
+class HistoryAccountUnavailableException(message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
+
 /** Job identity: recent refresh, older backfill, and the daily late-record repair stay independent. */
 enum class HistorySyncPurpose { RECENT, BACKFILL, REPAIR }
 
@@ -384,6 +391,7 @@ data class HistorySyncJob(
 data class HistorySyncProgressSummary(
     val accountIdentityDigest: String,
     val feed: HistoryFeed,
+    val recentWindowStartSec: Long?,
     val recentCompletedThroughSec: Long?,
     val recentLastSuccessAt: Instant?,
     val backfillState: HistorySyncJobState,

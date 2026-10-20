@@ -4,7 +4,9 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
+import com.gemini.krakenbot.service.history.HistoryActivityQuery
 import com.gemini.krakenbot.service.history.HistoryEventQuery
+import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
 import com.gemini.krakenbot.service.history.HistoryObservationStatus
@@ -12,6 +14,8 @@ import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncJobState
+import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
 import com.gemini.krakenbot.service.history.HistoryTrade
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ViewText
@@ -19,11 +23,21 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
-// Matches SqliteHistoryStore.MAX_CYCLE_ACTIVITY_LIMIT; larger limits are rejected by the store.
-private const val CYCLE_ACTIVITY_FETCH_LIMIT = 100
-
 private const val REWARD_SUBTYPE = "reward"
 private val REWARD_TRANSFER_SUBTYPES = setOf("airdrop", "reward")
+
+/** Slack between the requested interval and the last scanned horizon before coverage is refused. */
+private const val COVERAGE_TOLERANCE_SECONDS = 300L
+
+/**
+ * Verified coverage of the requested interval per feed. Amount validity alone cannot prove that
+ * an empty result is a real zero: without coverage the History is simply not synchronized yet.
+ */
+private data class FeedCoverage(val tradesCovered: Boolean, val ledgersCovered: Boolean) {
+    companion object {
+        val UNVERIFIED = FeedCoverage(tradesCovered = false, ledgersCovered = false)
+    }
+}
 
 class HistoryReportingService(
     private val historyService: HistoryService,
@@ -99,7 +113,10 @@ class HistoryReportingService(
         )
     }
 
-    suspend fun tradeStatistics(period: HistoryReportingPeriod): TradeStatistics {
+    suspend fun tradeStatistics(period: HistoryReportingPeriod): TradeStatistics =
+        tradeStatistics(period, feedCoverage(period))
+
+    private suspend fun tradeStatistics(period: HistoryReportingPeriod, coverage: FeedCoverage): TradeStatistics {
         val digest = period.sourceScope.accountIdentityDigest
             ?: return TradeStatistics(
                 tradeCount = null,
@@ -139,25 +156,39 @@ class HistoryReportingService(
                 excludedCount++
             }
         }
+        val amountComplete = excludedCount == 0
         return TradeStatistics(
             tradeCount = trades.size.toLong(),
             volumeByCurrency = volumeByCurrency,
             feesByCurrency = feesByCurrency,
             excludedCount = excludedCount,
-            complete = excludedCount == 0,
-            incompleteReason = if (excludedCount == 0) null else ViewText.HISTORY_REPORT_INCOMPLETE,
+            complete = amountComplete && coverage.tradesCovered,
+            incompleteReason = when {
+                !amountComplete -> ViewText.HISTORY_REPORT_INCOMPLETE
+                !coverage.tradesCovered -> ViewText.HISTORY_REPORT_NOT_SYNCHRONIZED
+                else -> null
+            },
         )
     }
 
+    /**
+     * Range-aware total for the selected interval. The Dashboard ring keeps its own recent cap;
+     * reporting totals count every stored cycle inside the period.
+     */
     suspend fun botCycles(period: HistoryReportingPeriod): BotCycles {
-        val cycles = historyService.queryCycleActivities(period.sourceScope, CYCLE_ACTIVITY_FETCH_LIMIT)
-        val from = period.from
-        val sawBeforePeriodStart = from != null && cycles.any { it.occurredAt < from }
-        val truncated = cycles.size >= CYCLE_ACTIVITY_FETCH_LIMIT && !sawBeforePeriodStart
+        val page = historyService.queryActivityPage(
+            HistoryActivityQuery(
+                sourceScope = period.sourceScope,
+                from = period.from,
+                until = period.until,
+                limit = 1,
+            ),
+        )
+        val total = page.total
         return BotCycles(
-            cycleCount = cycles.count { period.contains(it.occurredAt) }.toLong(),
-            complete = !truncated,
-            incompleteReason = if (truncated) ViewText.HISTORY_REPORT_INCOMPLETE else null,
+            cycleCount = total ?: page.items.size.toLong(),
+            complete = total != null,
+            incompleteReason = if (total != null) null else ViewText.HISTORY_REPORT_INCOMPLETE,
         )
     }
 
@@ -212,6 +243,15 @@ class HistoryReportingService(
                 complete = false,
                 incompleteReason = ViewText.HISTORY_REPORT_UNAVAILABLE,
             )
+        return depositsWithdrawals(period, digest, feedCoverage(period))
+    }
+
+    private suspend fun depositsWithdrawals(
+        period: HistoryReportingPeriod,
+        digest: String,
+        coverage: FeedCoverage,
+    ): DepositsWithdrawals {
+        val notice = ViewText.HISTORY_LEDGER_CLASSIFICATION_NOTICE
         val ledgers = fetchAllPages { offset ->
             historyService.queryLedgers(
                 HistoryEventQuery(
@@ -227,19 +267,31 @@ class HistoryReportingService(
         val withdrawals = ledgers.filter { it.normalizedType() == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL }
         val depositTotals = sumNativeQuantities(deposits)
         val withdrawalTotals = sumNativeQuantities(withdrawals)
-        val complete = depositTotals.complete && withdrawalTotals.complete
+        val amountComplete = depositTotals.complete && withdrawalTotals.complete
         return DepositsWithdrawals(
             notice = notice,
             deposits = depositTotals,
             withdrawals = withdrawalTotals,
-            complete = complete,
-            incompleteReason = if (complete) null else ViewText.HISTORY_REPORT_INCOMPLETE,
+            complete = amountComplete && coverage.ledgersCovered,
+            incompleteReason = when {
+                !amountComplete -> ViewText.HISTORY_REPORT_INCOMPLETE
+                !coverage.ledgersCovered -> ViewText.HISTORY_REPORT_NOT_SYNCHRONIZED
+                else -> null
+            },
         )
     }
 
     suspend fun rewards(period: HistoryReportingPeriod): NativeAssetQuantities {
         val digest = period.sourceScope.accountIdentityDigest
             ?: return NativeAssetQuantities(emptyMap(), 0, false, ViewText.HISTORY_REPORT_UNAVAILABLE)
+        return rewards(period, digest, feedCoverage(period))
+    }
+
+    private suspend fun rewards(
+        period: HistoryReportingPeriod,
+        digest: String,
+        coverage: FeedCoverage,
+    ): NativeAssetQuantities {
         val rewardLedgers = fetchAllPages { offset ->
             historyService.queryLedgers(
                 HistoryEventQuery(
@@ -251,7 +303,14 @@ class HistoryReportingService(
                 ),
             )
         }.filter { it.isRewardLedger() }
-        return sumNativeQuantities(rewardLedgers)
+        val totals = sumNativeQuantities(rewardLedgers)
+        if (totals.complete && !coverage.ledgersCovered) {
+            return totals.copy(
+                complete = false,
+                incompleteReason = ViewText.HISTORY_REPORT_NOT_SYNCHRONIZED,
+            )
+        }
+        return totals
     }
 
     fun fundingQuantitySeries(ledgers: List<HistoryLedger>): List<NativeQuantitySeries> =
@@ -273,17 +332,78 @@ class HistoryReportingService(
     suspend fun computeStatistics(
         period: HistoryReportingPeriod,
         targetAllocations: List<Allocation> = emptyList(),
-    ): HistoryPeriodStatistics = HistoryPeriodStatistics(
-        generatedAt = nowProvider(),
-        latestObservedValue = latestObservedValue(period),
-        observedValueChange = observedValueChange(period),
-        rangeExtrema = rangeExtrema(period),
-        trades = tradeStatistics(period),
-        botCycles = botCycles(period),
-        allocationDeviation = allocationDeviation(period, targetAllocations),
-        depositsWithdrawals = depositsWithdrawals(period),
-        rewards = rewards(period),
-    )
+    ): HistoryPeriodStatistics {
+        val coverage = feedCoverage(period)
+        val digest = period.sourceScope.accountIdentityDigest
+        return HistoryPeriodStatistics(
+            generatedAt = nowProvider(),
+            latestObservedValue = latestObservedValue(period),
+            observedValueChange = observedValueChange(period),
+            rangeExtrema = rangeExtrema(period),
+            trades = tradeStatistics(period, coverage),
+            botCycles = botCycles(period),
+            allocationDeviation = allocationDeviation(period, targetAllocations),
+            depositsWithdrawals = if (digest == null) {
+                depositsWithdrawals(period)
+            } else {
+                depositsWithdrawals(period, digest, coverage)
+            },
+            rewards = if (digest == null) {
+                rewards(period)
+            } else {
+                rewards(period, digest, coverage)
+            },
+        )
+    }
+
+    /**
+     * Durable per-feed coverage of the requested interval. Without a verified account there is no
+     * coverage at all, so an empty result stays unproven rather than becoming an authoritative zero.
+     */
+    private suspend fun feedCoverage(period: HistoryReportingPeriod): FeedCoverage {
+        val digest = period.sourceScope.accountIdentityDigest ?: return FeedCoverage.UNVERIFIED
+        val progress = historyService.syncProgress(digest)
+        return FeedCoverage(
+            tradesCovered = coversPeriod(progress.firstOrNull { it.feed == HistoryFeed.TRADES }, period),
+            ledgersCovered = coversPeriod(progress.firstOrNull { it.feed == HistoryFeed.LEDGERS }, period),
+        )
+    }
+
+    /**
+     * A feed covers the requested interval only when its durable progress proves the interval was
+     * scanned. The recent scan covers the last day; the older backfill covers everything before it.
+     */
+    private fun coversPeriod(progress: HistorySyncProgressSummary?, period: HistoryReportingPeriod): Boolean {
+        if (progress == null) return false
+        val untilSec = period.until?.epochSecond ?: return false
+        val fromSec = period.from?.epochSecond ?: 0L
+        return coveredSegments(progress).any { segment ->
+            fromSec >= segment.first - COVERAGE_TOLERANCE_SECONDS &&
+                untilSec <= segment.last + COVERAGE_TOLERANCE_SECONDS
+        }
+    }
+
+    /** Merged intervals of the requested feed that durable progress proves were scanned. */
+    private fun coveredSegments(progress: HistorySyncProgressSummary): List<LongRange> {
+        val raw = mutableListOf<LongRange>()
+        if (progress.backfillState == HistorySyncJobState.COMPLETE) {
+            progress.backfillCompletedThroughSec?.let { raw += 0L..it }
+        }
+        val recentFrom = progress.recentWindowStartSec
+        val recentThrough = progress.recentCompletedThroughSec
+        if (recentFrom != null && recentThrough != null) raw += recentFrom..recentThrough
+        if (raw.isEmpty()) return emptyList()
+        val merged = mutableListOf<LongRange>()
+        for (segment in raw.sortedBy { it.first }) {
+            val last = merged.lastOrNull()
+            if (last != null && segment.first <= last.last + 1) {
+                merged[merged.lastIndex] = last.first..maxOf(last.last, segment.last)
+            } else {
+                merged += segment
+            }
+        }
+        return merged
+    }
 
     private suspend fun completeObservations(
         sourceScope: HistorySourceScope,

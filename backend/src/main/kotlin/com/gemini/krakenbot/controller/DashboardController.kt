@@ -802,6 +802,21 @@ class DashboardController(
         val scope = historyObservationRecorder?.currentSourceScope(config)
         val digest = scope?.accountIdentityDigest?.takeIf { it.isNotBlank() }
         val from = HISTORY_RANGE_WINDOWS.getValue(range)?.let { Instant.now().minus(it) }
+        val portfolioChart = historyApi?.let { api ->
+            scope?.let { sourceScope ->
+                try {
+                    api.charts(
+                        params = call.historyApiRangeParams(),
+                        currentScope = sourceScope,
+                        scopeId = params["scope"],
+                        selectionParam = "portfolio",
+                        maxPoints = null,
+                    )
+                } catch (_: HistoryApiRequestException) {
+                    null
+                }
+            }
+        }
         val statistics = historyApi?.let { api ->
             scope?.let { sourceScope ->
                 val requestedPreset = params["preset"] ?: params["range"]
@@ -843,6 +858,7 @@ class DashboardController(
                 empty(), empty(tradesOffset), empty(ledgersOffset), emptyList(), accountAvailable = false,
                 statistics = statistics,
                 allocations = config.allocations,
+                portfolioChart = portfolioChart,
             )
         }
         val chartLedgerQuery = filters.copy(pair = null, type = null, limit = HISTORY_MAX_PAGE_LIMIT)
@@ -877,6 +893,7 @@ class DashboardController(
             rewardSeries = historyReportingService?.rewardQuantitySeries(rewardLedgers).orEmpty(),
             statistics = statistics,
             allocations = config.allocations,
+            portfolioChart = portfolioChart,
         )
     }
 

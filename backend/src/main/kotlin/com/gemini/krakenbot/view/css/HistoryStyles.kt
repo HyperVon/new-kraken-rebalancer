@@ -77,10 +77,49 @@ object HistoryStyles {
         }
         ".${CssClass.History.StatsGrid}" {
             display = Display.grid
-            gridTemplateColumns = GridTemplateColumns("repeat(2, minmax(0, 1fr))")
+            gridTemplateColumns = GridTemplateColumns("2fr 1.25fr 1fr")
+            gap = 1.rem
+            marginBottom = 1.rem
+            alignItems = Align.end
+        }
+        ".${CssClass.History.StatsGrid} > div" {
+            background = "none"
+            put("border", "0")
+            put("box-shadow", "none")
+            padding = Padding(0.rem)
+        }
+        ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Icon}" { display = Display.none }
+        ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Value}" { fontSize = 1.25.rem }
+        ".${CssClass.History.StatsGrid} > :first-child .${CssClass.StatusCard.Value}" { fontSize = 2.5.rem }
+        ".${CssClass.History.WorkspaceBar}" {
+            display = Display.flex
+            alignItems = Align.center
+            justifyContentRaw("space-between")
+            flexWrapRaw("wrap")
             gap = 0.75.rem
             marginBottom = 1.rem
-            alignItems = Align.start
+        }
+        ".${CssClass.History.WorkspaceBar} .${CssClass.History.SectionNav}" { marginBottom = 0.rem }
+        ".${CssClass.History.Disclosure}" {
+            marginTop = 1.rem
+            marginBottom = 1.rem
+        }
+        ".${CssClass.History.Disclosure} > summary, .${CssClass.History.ToolsMenu} > summary" {
+            put("cursor", "pointer")
+            fontSize = 0.8125.rem
+            color = CssTheme.colorTextSecondary
+            padding = Padding(0.5.rem, 0.rem)
+        }
+        ".${CssClass.History.Disclosure}[open] > summary" { marginBottom = 1.rem }
+        ".${CssClass.History.ToolsMenu}" { position = Position.relative }
+        ".${CssClass.History.ToolsMenu}[open] > div" {
+            display = Display.flex
+            flexWrapRaw("wrap")
+            gap = 0.5.rem
+            padding = Padding(0.75.rem)
+            background = CssTheme.colorGlass.value
+            solidBorder(CssTheme.colorGlassBorder)
+            borderRadius = CssTheme.radiusMd
         }
         ".${CssClass.History.ReportDetails} summary" {
             put("cursor", "pointer")
@@ -117,11 +156,8 @@ object HistoryStyles {
             alignItems = Align.center
             flexWrapRaw("wrap")
             gap = 0.75.rem
-            marginBottom = 1.rem
-            padding = Padding(0.875.rem)
-            background = CssTheme.colorGlass.value
-            solidBorder(CssTheme.colorGlassBorder)
-            borderRadius = CssTheme.radiusLg
+            marginBottom = 0.rem
+            padding = Padding(0.rem)
         }
         ".${CssClass.History.TimeRangeSelector}" {
             width = 100.pct
@@ -312,6 +348,11 @@ object HistoryStyles {
         ".${CssClass.History.FilterRow} label .${CssClass.History.FilterInput}" {
             width = 100.pct
         }
+        ".${CssClass.History.FilterInput}.${CssClass.History.AnalysisSelect}" {
+            widthRaw("auto")
+            minWidthRaw("16rem")
+            maxWidthRaw("100%")
+        }
         ".${CssClass.History.FilterInput}" {
             padding = Padding(0.375.rem, 0.625.rem)
             fontSize = 0.8125.rem
@@ -388,6 +429,11 @@ object HistoryStyles {
             gap = 0.375.rem
         }
         ".${CssClass.History.SyncBanner} dd" { put("margin", "0") }
+        ".${HistoryRangeCss.COVERAGE_ROW}" {
+            display = Display.flex
+            flexWrapRaw("wrap")
+            gap = 0.75.rem
+        }
         ".${HistoryRangeCss.CHIP}" {
             display = Display.inlineBlock
             padding = Padding(0.25.rem, 0.625.rem)
@@ -488,9 +534,13 @@ object HistoryStyles {
             overflowWrapRaw("anywhere")
         }
         "@media (max-width: 639px)" {
+            ".${CssClass.History.StatsGrid}" {
+                gridTemplateColumns = GridTemplateColumns("repeat(2, minmax(0, 1fr))")
+            }
             ".${CssClass.History.StatsGrid} > :first-child" { put("grid-column", "1 / -1") }
             ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Title}" { fontSize = 0.75.rem }
             ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Value}" { fontSize = 1.125.rem }
+            ".${CssClass.History.StatsGrid} > :first-child .${CssClass.StatusCard.Value}" { fontSize = 2.rem }
             ".${CssClass.History.ReportDetails} dl" {
                 gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
                 gap = 0.125.rem

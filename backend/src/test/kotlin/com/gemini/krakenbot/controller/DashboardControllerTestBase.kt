@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistoryStore
 import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.history.HistoryValuesCoverage
 import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
@@ -38,6 +39,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
+import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import io.ktor.server.sse.SSE as ServerSSE
 
@@ -59,6 +61,18 @@ abstract class DashboardControllerTestBase : StringSpec() {
     protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
     protected var historyApiNow: () -> Instant = { Instant.now() }
     protected val historyReportingService by lazy { HistoryReportingService(historyService, historyApiNow) }
+
+    init {
+        runBlocking {
+            coEvery { historyStore.valuesCoverage(any()) } returns HistoryValuesCoverage(
+                sourceKey = "ACCOUNT:test",
+                firstRecordedAt = null,
+                lastRecordedAt = null,
+                completeCount = 0L,
+                incompleteCount = 0L,
+            )
+        }
+    }
 
     protected open fun historyApi(): HistoryApiPresenter = HistoryApiPresenter(
         historyService = historyService,

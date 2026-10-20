@@ -13,6 +13,8 @@ import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.joinRebalancingWorker
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
+import com.gemini.krakenbot.service.OrderAttemptTracker
+import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
@@ -184,7 +186,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 100.0) }
                 val failedExecutor = mockk<OrderExecutor>()
                 coEvery {
-                    failedExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                    failedExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
                 } throws IllegalStateException("order adapter failed")
                 val manager = PortfolioManagerImpl(
                     configService = configService,
@@ -199,7 +201,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 manager.getOperationalStatus().lastCycleError shouldBe "Order execution failed"
                 snapshot.actions.any { it.contains("order adapter failed") } shouldBe true
                 coVerify(exactly = 1) {
-                    failedExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                    failedExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
                 }
             }
         }
@@ -291,7 +293,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val executionStarted = CompletableDeferred<Unit>()
                 val blockingExecutor = mockk<OrderExecutor>()
                 coEvery {
-                    blockingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                    blockingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
                 } coAnswers {
                     executionStarted.complete(Unit)
                     awaitCancellation()
@@ -460,7 +462,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 cycleJob.join()
 
                 coVerify(exactly = 0) {
-                    executor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                    executor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
                 }
                 // The session is owned by the loop body, not by performRebalanceCycle.
                 coVerify(exactly = 0) { configService.beginExecutionSession() }
@@ -564,7 +566,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 var executionCalls = 0
                 val blockingExecutor = mockk<OrderExecutor>()
                 coEvery {
-                    blockingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                    blockingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
                 } coAnswers {
                     executionCalls++
                     when (executionCalls) {
@@ -644,7 +646,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { mapOf(Asset.USD to 100.0) }
                 val failingExecutor = mockk<OrderExecutor>()
-                coEvery { failingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any()) } throws
+                coEvery {
+                    failingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
+                } throws
                     RuntimeException("exchange rejected")
 
                 val manager = PortfolioManagerImpl(
@@ -703,7 +707,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                     )
                 }
                 coVerify(exactly = 0) {
-                    mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                    mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
                 }
             }
         }
@@ -891,7 +895,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                     mockk(relaxed = true)
 
                 val failingExecutor = mockk<OrderExecutor>()
-                coEvery { failingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any()) } throws
+                coEvery {
+                    failingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
+                } throws
                     RuntimeException("Kraken API error during order placement")
 
                 val manager = PortfolioManagerImpl(
@@ -1060,8 +1066,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
                     mockk(relaxed = true)
                 val mockExecutor = mockk<OrderExecutor>()
-                coEvery { mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any()) } returns
-                    OrderExecutionOutcome(liveSubmissionAttempted = true, exchangeOrderAttempted = true)
+                coEvery {
+                    mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
+                } returns OrderExecutionOutcome(liveSubmissionAttempted = true, exchangeOrderAttempted = true)
                 val mockSync = mockk<com.gemini.krakenbot.service.history.HistorySyncCoordinator>(relaxed = true)
 
                 val manager = PortfolioManagerImpl(
@@ -1075,6 +1082,50 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 val snapshot = manager.performRebalanceCycle()
                 snapshot.shouldNotBeNull()
+                verify(exactly = 1) { mockSync.requestUrgentAfterOrderCycle() }
+            }
+        }
+
+        "a live submission that throws afterwards still requests the urgent history refresh" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = false, dryRun = false),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+                every { configService.getConfig() } returns config
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val preObserved = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val prePrices = ObservedPrices(emptyMap())
+                coEvery { analyzer.fetchObservedBalances() } returns preObserved
+                coEvery { analyzer.fetchObservedPrices() } returns prePrices
+                coEvery { analyzer.calculatePortfolioValues(any(), any()) } returns
+                    Result.Success(PortfolioValues(BigDecimal("100.00"), mapOf(Asset.USD to BigDecimal("100.00"))))
+                coEvery { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns RebalancePlan(
+                    buyOrders = mapOf("BTC" to BigDecimal("0.001")),
+                    sellOrders = emptyMap(),
+                    events = emptyList(),
+                )
+                coEvery { analyzer.buildSnapshot(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+                    mockk(relaxed = true)
+                val mockExecutor = mockk<OrderExecutor>()
+                coEvery {
+                    mockExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any(), any())
+                } answers {
+                    arg<OrderAttemptTracker>(8).record(isLiveSubmission = true)
+                    throw IllegalStateException("settlement failed after submission")
+                }
+                val mockSync = mockk<com.gemini.krakenbot.service.history.HistorySyncCoordinator>(relaxed = true)
+
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = mockExecutor,
+                    krakenService = krakenService,
+                    currentPortfolioState = currentPortfolioState,
+                    historySyncCoordinator = mockSync,
+                )
+
+                manager.performRebalanceCycle()
                 verify(exactly = 1) { mockSync.requestUrgentAfterOrderCycle() }
             }
         }

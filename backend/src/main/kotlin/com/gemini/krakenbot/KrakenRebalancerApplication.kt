@@ -91,6 +91,8 @@ fun main(args: Array<String>) {
     )
     historyObservationRecorder.start(applicationScope)
     historySyncCoordinator.start(applicationScope)
+    // Catch up the recent history window right away; the periodic ticker keeps it current afterwards.
+    historySyncCoordinator.requestRecentRefresh()
     portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(

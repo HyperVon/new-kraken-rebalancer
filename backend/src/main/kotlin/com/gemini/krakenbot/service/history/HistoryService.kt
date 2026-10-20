@@ -51,6 +51,12 @@ interface HistoryService {
 
     suspend fun queryCycleActivities(sourceScope: HistorySourceScope, limit: Int = 6): List<HistoryCycleActivity>
 
+    /** Range-aware activity page; the returned total counts every matching row, not one page. */
+    suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity>
+
+    /** Durable per-feed coverage of the stored History for one verified account. */
+    suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary>
+
     suspend fun getSyncStatus(sourceScope: HistorySourceScope): List<HistorySyncStatus>
 
     suspend fun getDashboardHistory(
@@ -127,6 +133,12 @@ class HistoryServiceImpl(private val store: HistoryStore) : HistoryService {
         sourceScope: HistorySourceScope,
         limit: Int,
     ): List<HistoryCycleActivity> = store.queryCycleActivities(sourceScope, limit)
+
+    override suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity> =
+        store.queryActivityPage(query)
+
+    override suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary> =
+        store.syncProgress(accountIdentityDigest)
 
     override suspend fun getSyncStatus(sourceScope: HistorySourceScope): List<HistorySyncStatus> =
         sourceScope.accountIdentityDigest?.let { store.syncStatus(it) }.orEmpty()

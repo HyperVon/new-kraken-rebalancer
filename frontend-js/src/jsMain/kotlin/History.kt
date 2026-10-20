@@ -1,8 +1,11 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HistoryAnalysis
 import com.gemini.krakenbot.view.util.HistoryChartActions
+import com.gemini.krakenbot.view.util.HistoryChartSelections
 import com.gemini.krakenbot.view.util.HistoryRangeCss
 import com.gemini.krakenbot.view.util.HistoryRangeEvents
 import com.gemini.krakenbot.view.util.HistoryRangeIds
@@ -174,11 +177,43 @@ internal fun initHistorySeriesSelectors() {
                 val panel = series.item(seriesIndex) as? HTMLElement ?: continue
                 panel.hidden = panel.getAttribute(HtmlAttrs.DATA_HISTORY_SERIES_ASSET) != select.value
             }
+            val response = chart.asDynamic().historySeriesResponse
+            if (response != null && response != undefined) {
+                applyHistoryChartSeries(chartId, response)
+            } else {
+                refreshedHistoryEvidenceSignatures.remove(chartId)
+                initHistoryCharts()
+            }
         }
 
         select.addEventListener("change", { updateSelection() })
         updateSelection()
     }
+}
+
+/** Shows one secondary analysis; all rendered analyses receive the same revision updates. */
+internal fun initHistoryAnalysisSelector(onSelect: (String) -> Unit) {
+    val selector = document.querySelector("[${HtmlAttrs.DATA_HISTORY_ANALYSIS}]") as? HTMLSelectElement ?: return
+    if (selector.asDynamic().historyAnalysisInitialized == true) return
+    selector.asDynamic().historyAnalysisInitialized = true
+    selector.addEventListener(HtmlEvents.CHANGE, {
+        if (historyShowAnalysis(selector.value)) onSelect(selector.value)
+    })
+}
+
+/** Shows one analysis without rebuilding its chart or losing the selected viewport. */
+internal fun historyShowAnalysis(analysis: String): Boolean {
+    val panels = document.querySelectorAll("[${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}]")
+    var found = false
+    for (index in 0 until panels.length) {
+        val panel = panels.item(index) as? HTMLElement ?: continue
+        val matches = panel.getAttribute(HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL) == analysis
+        if (matches) found = true
+        panel.hidden = !matches
+    }
+    if (!found) return false
+    (document.querySelector("[${HtmlAttrs.DATA_HISTORY_ANALYSIS}]") as? HTMLSelectElement)?.value = analysis
+    return true
 }
 
 private fun historyParams(query: String): dynamic = js("new URLSearchParams(query)")
@@ -493,7 +528,12 @@ internal fun historyRangeState(query: String, savedDefaultRange: String?, timezo
     )
 }
 
-internal fun historyApiQuery(state: HistoryRangeState, chart: Boolean, pinnedRange: dynamic = null): String {
+internal fun historyApiQuery(
+    state: HistoryRangeState,
+    chart: Boolean,
+    pinnedRange: dynamic = null,
+    selection: String = HistoryChartSelections.PORTFOLIO,
+): String {
     val params: dynamic = js("new URLSearchParams()")
     params.set(HistoryRangeQuery.PARAM_PRESET, state.preset)
     params.set(HistoryRangeQuery.PARAM_TZ, state.timezone)
@@ -503,7 +543,7 @@ internal fun historyApiQuery(state: HistoryRangeState, chart: Boolean, pinnedRan
     }
     state.scope?.let { params.set(HistoryRangeQuery.PARAM_SCOPE, it) }
     if (chart) {
-        params.set(HistoryRangeQuery.PARAM_SELECTION, "PORTFOLIO")
+        params.set(HistoryRangeQuery.PARAM_SELECTION, selection)
         params.set(HistoryRangeQuery.PARAM_MAX_POINTS, "2000")
     }
     if (state.preset != "custom" && pinnedRange != null && pinnedRange != undefined) {
@@ -770,6 +810,7 @@ internal fun historyRefreshBadge(
     response: dynamic,
     pending: Boolean = false,
     failed: Boolean = false,
+    now: Double = Date.now(),
 ): HistoryRefreshBadge {
     val blocked = historyStatusString(response, "blockedReason")
     val jobs = historyArrayItems(response?.jobs)
@@ -792,15 +833,36 @@ internal fun historyRefreshBadge(
                 historyStatusString(it, "recentLastSuccessAtIso") != null
         }
     }
+    val stale = listOf("TRADES", "LEDGERS").any { feed ->
+        val horizon = historyRecentHorizon(progress, feed) ?: return@any true
+        val rangeEnd: String? = response?.range?.toIso as? String
+        val expected: Double = historyIsoTime(rangeEnd) ?: now
+        expected - horizon > HISTORY_STALE_HORIZON_MS
+    }
     return when {
         blocked != null -> HistoryRefreshBadge(HistoryRangeText.STATE_ACTION_NEEDED, HistoryRangeCss.CHIP_ERROR)
         failed || retryScheduled -> HistoryRefreshBadge(HistoryRangeText.STATE_DELAYED, HistoryRangeCss.CHIP_WARN)
         errors -> HistoryRefreshBadge(HistoryRangeText.STATE_ACTION_NEEDED, HistoryRangeCss.CHIP_ERROR)
         backfillActive -> HistoryRefreshBadge(HistoryRangeText.STATE_BACKFILLING, HistoryRangeCss.CHIP_BUSY)
         pending || active -> HistoryRefreshBadge(HistoryRangeText.STATE_UPDATING, HistoryRangeCss.CHIP_BUSY)
+        recentComplete && stale -> HistoryRefreshBadge(HistoryRangeText.STATE_DELAYED, HistoryRangeCss.CHIP_WARN)
         recentComplete -> HistoryRefreshBadge(HistoryRangeText.STATE_UP_TO_DATE, HistoryRangeCss.CHIP_OK)
         else -> HistoryRefreshBadge(HistoryRangeText.STATE_UPDATING, HistoryRangeCss.CHIP_BUSY)
     }
+}
+
+/** A completed recent horizon older than this no longer counts as up to date. */
+private const val HISTORY_STALE_HORIZON_MS = 300_000.0
+
+/** The instant up to which one feed has completed its recent window. */
+private fun historyRecentHorizon(progress: List<dynamic>, feed: String): Double? {
+    for (entry in progress) {
+        val item: Any = entry
+        if (!historyStatusMatchesFeed(historyStatusString(item, "feed"), feed)) continue
+        val iso: String = historyStatusString(item, "recentCompletedThroughIso") ?: continue
+        return historyIsoTime(iso)
+    }
+    return null
 }
 
 internal data class HistoryRefreshTargets(
@@ -1025,8 +1087,14 @@ private fun historyOriginalValue(item: dynamic, amountKey: String, currency: Str
     "${historyStatusString(item, amountKey)?.takeIf(String::isNotBlank) ?: ViewText.EM_DASH} " +
         (currency?.takeIf(String::isNotBlank) ?: ViewText.HISTORY_UNKNOWN_CURRENCY)
 
-private fun historyAppendDetails(cell: Element, summaryText: String, fields: List<Pair<String, String>>) {
+private fun historyAppendDetails(
+    cell: Element,
+    summaryText: String,
+    fields: List<Pair<String, String>>,
+    detailKey: String,
+) {
     val details = document.createElement("details")
+    details.setAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY, detailKey)
     val summary = document.createElement("summary")
     summary.textContent = summaryText
     details.appendChild(summary)
@@ -1043,8 +1111,46 @@ private fun historyAppendDetails(cell: Element, summaryText: String, fields: Lis
     cell.appendChild(details)
 }
 
+/** Keys of the record details the operator has open, so a refresh can restore them. */
+private fun historyExpandedDetailKeys(body: Element): Set<String> {
+    val details = body.querySelectorAll("details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]")
+    val keys = mutableSetOf<String>()
+    for (index in 0 until details.length) {
+        val element = details.item(index) as? HTMLElement ?: continue
+        if (!element.hasAttribute("open")) continue
+        element.getAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY)
+            ?.takeIf(String::isNotBlank)
+            ?.let(keys::add)
+    }
+    return keys
+}
+
+private fun historyRestoreExpandedDetails(body: Element, keys: Set<String>) {
+    if (keys.isEmpty()) return
+    val details = body.querySelectorAll("details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]")
+    for (index in 0 until details.length) {
+        val element = details.item(index) as? HTMLElement ?: continue
+        val key = element.getAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY) ?: continue
+        if (key in keys) element.setAttribute("open", "")
+    }
+}
+
 private fun historyRecordStatus(item: dynamic): String =
     if (item?.isValidRecord == true) HistoryRangeText.RECORD_VALID else HistoryRangeText.RECORD_INCOMPLETE
+
+/** Stable identity of one record, so an expanded detail survives an automatic refresh. */
+private fun historyRecordDetailKey(item: dynamic, kind: String): String {
+    val candidates = when (kind) {
+        "trade" -> listOf("tradeId", "orderTxid", "postTxid")
+        "ledger" -> listOf("ledgerId", "refid")
+        else -> listOf("cycleId", "id")
+    }
+    val identity = candidates
+        .mapNotNull { historyStatusString(item, it)?.takeIf(String::isNotBlank) }
+        .firstOrNull()
+        ?: historyStatusString(item, "time").orEmpty()
+    return "$kind:$identity"
+}
 
 private fun historyStringList(value: dynamic): List<String> = historyArrayItems(value).mapNotNull { it as? String }
 
@@ -1079,6 +1185,7 @@ private fun historyAppendTradeRow(body: Element, item: dynamic) {
             HistoryRangeText.DETAILS_LEDGER_ID to ledgerIds,
             HistoryRangeText.DETAILS_BOT_LINK to HistoryRangeText.UNKNOWN_LINKAGE,
         ),
+        historyRecordDetailKey(item, "trade"),
     )
     row.appendChild(timeCell)
     historyRecordCell(row, historyRecordValue(item, "pair"), CssClass.Table.SymbolCol.value)
@@ -1115,6 +1222,7 @@ private fun historyAppendLedgerRow(body: Element, item: dynamic) {
             HistoryRangeText.DETAILS_REFERENCE_ID to historyRecordValue(item, "refid"),
             HistoryRangeText.DETAILS_BOT_LINK to HistoryRangeText.UNKNOWN_LINKAGE,
         ),
+        historyRecordDetailKey(item, "ledger"),
     )
     row.appendChild(timeCell)
     val type = historyRecordValue(item, "type").replaceFirstChar { it.uppercase() }
@@ -1152,6 +1260,7 @@ private fun historyAppendActivityRow(body: Element, item: dynamic) {
     val actions = historyStringList(item?.actions)
     val cell = document.createElement("td")
     val details = document.createElement("details")
+    details.setAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY, historyRecordDetailKey(item, "activity"))
     val summary = document.createElement("summary")
     summary.textContent = HistoryRangeText.VIEW_ACTIONS
     details.appendChild(summary)
@@ -1170,6 +1279,7 @@ private fun historyAppendActivityRow(body: Element, item: dynamic) {
 internal fun updateHistoryActivities(response: dynamic, query: String) {
     val body = document.getElementById(HistoryRangeIds.ACTIVITY_BODY) ?: return
     val items = historyArrayItems(response?.items).take(HistoryRangeProps.RECORD_PAGE_SIZE)
+    val expanded = historyExpandedDetailKeys(body)
     body.innerHTML = ""
     if (items.isEmpty()) {
         val row = document.createElement("tr")
@@ -1182,6 +1292,7 @@ internal fun updateHistoryActivities(response: dynamic, query: String) {
     } else {
         items.forEach { historyAppendActivityRow(body, it) }
     }
+    historyRestoreExpandedDetails(body, expanded)
     val stack = historyActivityCursorStack(query)
     val first = stack.size * HistoryRangeProps.RECORD_PAGE_SIZE + 1
     document.getElementById(HistoryRangeIds.ACTIVITY_RANGE)?.textContent =
@@ -1225,6 +1336,7 @@ internal fun updateHistoryTable(table: String, response: dynamic, query: String,
     val wrapper = body.closest(".${CssClass.Table.Wrapper.value}") as? HTMLElement
     val wrapperScrollTop = wrapper?.scrollTop ?: 0
     val pageScrollY = (window.asDynamic().scrollY as? Number)?.toDouble()
+    val expanded = historyExpandedDetailKeys(body)
     body.innerHTML = ""
     if (items.isEmpty()) {
         val row = document.createElement("tr")
@@ -1237,6 +1349,7 @@ internal fun updateHistoryTable(table: String, response: dynamic, query: String,
     } else {
         items.forEach { if (trades) historyAppendTradeRow(body, it) else historyAppendLedgerRow(body, it) }
     }
+    historyRestoreExpandedDetails(body, expanded)
     if (wrapper != null) wrapper.scrollTop = wrapperScrollTop.toDouble()
     if (pageScrollY != null) window.scrollTo(0.0, pageScrollY)
 
@@ -1272,25 +1385,233 @@ private fun historyIsoTime(raw: dynamic): Double? {
     return (parsed as? Number)?.toDouble()?.takeIf(Double::isFinite)
 }
 
-private fun historyPortfolioPoints(response: dynamic): List<HistoryChartPoint> {
-    val rawSeries = response.series
+private data class HistoryApiChartSeries(
+    val key: String,
+    val label: String,
+    val legendLabel: String,
+    val points: List<HistoryChartPoint>,
+)
+
+/** Every API series with its display name and points; asset names are canonical for display. */
+internal fun historyApiSeries(response: dynamic): List<Pair<String, List<HistoryChartPoint>>> =
+    historyKeyedApiSeries(response).map { it.label to it.points }
+
+private fun historyKeyedApiSeries(response: dynamic): List<HistoryApiChartSeries> {
+    val rawSeries = response?.series
     val count = (rawSeries?.length as? Number)?.toInt() ?: return emptyList()
-    val portfolio = (0 until count).map { rawSeries[it] }.firstOrNull { it.key == "portfolio" } ?: return emptyList()
-    val rawPoints = portfolio.points
-    val pointCount = (rawPoints?.length as? Number)?.toInt() ?: return emptyList()
-    return (0 until pointCount).mapNotNull { index ->
-        val point = rawPoints[index]
-        val time = (point.t as? Number)?.toDouble() ?: historyIsoTime(point.tIso) ?: return@mapNotNull null
-        val value = (point.v as? Number)?.toDouble()?.takeIf { point.complete == true && it.isFinite() }
-        HistoryChartPoint(time, value)
-    }.sortedBy { it.time }
+    return (0 until count).mapNotNull { index ->
+        val series = rawSeries[index]
+        val key = series.key as? String ?: return@mapNotNull null
+        val label = series.label as? String ?: return@mapNotNull null
+        val legendLabel = (series.legendLabel as? String)?.takeIf { it.isNotBlank() } ?: label
+        val rawPoints = series.points
+        val pointCount = (rawPoints?.length as? Number)?.toInt() ?: 0
+        val points = (0 until pointCount).mapNotNull { pointIndex ->
+            val point = rawPoints[pointIndex]
+            val time = (point.t as? Number)?.toDouble() ?: historyIsoTime(point.tIso) ?: return@mapNotNull null
+            val value = (point.v as? Number)?.toDouble()?.takeIf { point.complete == true && it.isFinite() }
+            HistoryChartPoint(time, value)
+        }.sortedBy { it.time }
+        HistoryApiChartSeries(key, label, legendLabel, points)
+    }
+}
+
+/** Chart id and API selection of the secondary analysis currently on screen. */
+internal fun historyVisibleAnalysis(): Pair<String, String>? {
+    val panels = document.querySelectorAll("[${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}]")
+    val analysis = (0 until panels.length)
+        .mapNotNull { panels.item(it) as? HTMLElement }
+        .firstOrNull { !it.hidden }
+        ?.getAttribute(HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL)
+        ?: return null
+    return when (analysis) {
+        HistoryAnalysis.HOLDINGS -> HtmlIds.HISTORY_HOLDINGS_CHART to HistoryChartSelections.HOLDINGS
+        HistoryAnalysis.ALLOCATION -> HtmlIds.HISTORY_ALLOCATION_CHART to HistoryChartSelections.ALLOCATION
+        HistoryAnalysis.CASH_FLOW -> HtmlIds.HISTORY_CASH_FLOW_CHART to HistoryChartSelections.DEPOSITS
+        HistoryAnalysis.REWARDS -> HtmlIds.HISTORY_REWARDS_CHART to HistoryChartSelections.REWARDS
+        HistoryAnalysis.CHECKPOINTS -> HtmlIds.HISTORY_ASSET_CHART to HistoryChartSelections.CHECKPOINTS
+        else -> null
+    }
+}
+
+/** API selection of one chart id, for the chart the operator is zooming. */
+internal fun historyChartSelectionFor(chartId: String): String = when (chartId) {
+    HtmlIds.HISTORY_HOLDINGS_CHART -> HistoryChartSelections.HOLDINGS
+    HtmlIds.HISTORY_ALLOCATION_CHART -> HistoryChartSelections.ALLOCATION
+    HtmlIds.HISTORY_CASH_FLOW_CHART -> HistoryChartSelections.DEPOSITS
+    HtmlIds.HISTORY_REWARDS_CHART -> HistoryChartSelections.REWARDS
+    HtmlIds.HISTORY_ASSET_CHART -> HistoryChartSelections.CHECKPOINTS
+    else -> HistoryChartSelections.PORTFOLIO
+}
+
+/** Debounce window for the zoomed-interval request, so a drag gesture issues one query. */
+private const val HISTORY_VIEWPORT_DETAIL_DEBOUNCE_MS = 250
+
+/**
+ * Replaces the zoomed window with the observations of that interval. The full range stays as it
+ * was, so resetting the zoom still returns to the whole recorded period.
+ */
+private fun applyHistoryViewportDetail(chartId: String, response: dynamic) {
+    val session = historyChartSessions[chartId] ?: return
+    if (!applyHistoryChartSeries(chartId, response, viewportDetail = true)) return
+    setChartXRange(session.chart, session.viewport.visible)
+    updateChart(session.chart)
+    syncHistoryScrubber(session)
+}
+
+/** The server-rendered legend, which the interactive chart legend replaces once the chart is enhanced. */
+private fun serverChartLegend(container: Element): HTMLElement? =
+    container.parentElement?.querySelector(".${CssClass.History.ChartLegend.value}") as? HTMLElement
+
+/**
+ * Applies an API series response to a rendered chart. The existing chart instance is kept, so the
+ * viewport, the zoom level, the hidden series and the selected native asset survive the refresh.
+ */
+internal fun applyHistoryChartSeries(
+    chartId: String,
+    response: dynamic,
+    preserveViewport: Boolean = true,
+    viewportDetail: Boolean = false,
+): Boolean {
+    val container = document.getElementById(chartId) ?: return false
+    container.asDynamic().historySeriesResponse = response
+    val allSeries = historyKeyedApiSeries(response)
+    var selector = document.querySelector("[${HtmlAttrs.DATA_HISTORY_SERIES_SELECT}='$chartId']") as? HTMLSelectElement
+    val native = chartId in setOf(
+        HtmlIds.HISTORY_CASH_FLOW_CHART,
+        HtmlIds.HISTORY_REWARDS_CHART,
+        HtmlIds.HISTORY_ASSET_CHART,
+    )
+    var createdSelector = false
+    if (native && selector == null && allSeries.size > 1) {
+        selector = document.createElement("select") as HTMLSelectElement
+        selector.setAttribute(HtmlAttrs.DATA_HISTORY_SERIES_SELECT, chartId)
+        container.parentNode?.insertBefore(selector, container)
+        createdSelector = true
+    }
+    val assetSelector = selector
+    if (native && assetSelector != null) {
+        val selected = assetSelector.value
+        val choices = historyArrayItems(assetSelector.options).mapNotNull { it.value as? String }.toSet()
+        allSeries.filter { it.key !in choices }.forEach { entry ->
+            val option = document.createElement("option")
+            option.setAttribute("value", entry.key)
+            option.textContent = entry.label
+            assetSelector.appendChild(option)
+        }
+        if (selected.isNotBlank()) assetSelector.value = selected
+    }
+    val selectedAsset = selector?.value?.takeIf(String::isNotBlank)
+        ?: container.querySelector("[${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}]:not([hidden])")
+            ?.getAttribute(HtmlAttrs.DATA_HISTORY_SERIES_ASSET)
+        ?: allSeries.firstOrNull()?.key
+    val series = if (native) allSeries.filter { it.key == selectedAsset } else allSeries
+    val session = historyChartSessions[chartId]
+    val points = allSeries.flatMap { it.points }.sortedBy { it.time }
+    val incomingRange = historyChartRange(response, points)
+    val range = if (session != null && (viewportDetail || (preserveViewport && session.viewport.isZoomed))) {
+        session.viewport.full
+    } else {
+        incomingRange
+    }
+    val oldEvidence = container.querySelectorAll("svg, [${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}]")
+    for (index in 0 until oldEvidence.length) (oldEvidence.item(index) as? Element)?.remove()
+    allSeries.forEach { entry ->
+        val holder = document.createElement("div") as HTMLElement
+        if (native) {
+            holder.setAttribute(HtmlAttrs.DATA_HISTORY_SERIES_ASSET, entry.key)
+            holder.hidden = entry.key != selectedAsset
+        }
+        holder.innerHTML = historyPortfolioSvg(
+            entry.points,
+            range,
+            entry.label,
+            money = !native && chartId != HtmlIds.HISTORY_ALLOCATION_CHART,
+            hidden = session != null,
+            seriesKey = entry.key,
+            showLine = chartId != HtmlIds.HISTORY_ASSET_CHART,
+            unit = if (native) entry.label else null,
+        )
+        container.appendChild(holder)
+    }
+    if (allSeries.isEmpty()) {
+        container.asDynamic().insertAdjacentHTML(
+            "beforeend",
+            historyPortfolioSvg(emptyList(), range, "No recorded values", !native, session != null),
+        )
+    }
+    if (session == null) {
+        initHistoryCharts()
+        if (createdSelector) initHistorySeriesSelectors()
+        return true
+    }
+    val config = historyMultiSeriesConfig(
+        series.map { it.legendLabel to it.points },
+        percent = chartId == HtmlIds.HISTORY_ALLOCATION_CHART,
+        axisRange = range,
+        unit = if (native) series.firstOrNull()?.label.orEmpty() else null,
+    )
+    val previous = historyArrayItems(session.chart.data.datasets)
+    val datasets = historyArrayItems(config.data.datasets).mapIndexed { index, fresh ->
+        val entry = series[index]
+        val old = previous.firstOrNull {
+            it.historySeriesKey == entry.key ||
+                ((it.historySeriesKey == null || it.historySeriesKey == undefined) && it.label == entry.legendLabel)
+        }
+        fresh.historySeriesKey = entry.key
+        val hidden = historyLegendHidden[chartId].orEmpty()
+        fresh.hidden = old?.hidden == true || entry.key in hidden || entry.legendLabel in hidden
+        val style = old ?: previous.firstOrNull()
+        if (style != null) {
+            fresh.showLine = style.showLine
+            fresh.pointRadius = style.pointRadius
+        }
+        if (chartId == HtmlIds.HISTORY_ASSET_CHART) fresh.showLine = false
+        fresh
+    }.toTypedArray()
+    session.chart.data.datasets = datasets
+    datasets.forEachIndexed { index, dataset ->
+        if (jsTypeOf(session.chart.setDatasetVisibility) == "function") {
+            session.chart.setDatasetVisibility(index, dataset.hidden != true)
+        }
+    }
+    session.chart.options.scales = config.options.scales
+    session.chart.options.plugins.tooltip = config.options.plugins.tooltip
+    val legendDisplayed = !native && series.size > 1
+    session.chart.options.plugins.legend.display = legendDisplayed
+    serverChartLegend(container)?.hidden = legendDisplayed
+    session.chart.options.plugins.legend.onClick = { _: dynamic, item: dynamic, context: dynamic ->
+        toggleLegendSeries(chartId, item, context.chart)
+        val dataset = context.chart.data.datasets[(item.datasetIndex as Number).toInt()]
+        val hidden = historyLegendHidden.getOrPut(chartId) { mutableSetOf() }
+        val key = dataset.historySeriesKey as String
+        val label = dataset.label as String
+        val nowHidden = label in hidden
+        hidden.remove(label)
+        if (nowHidden) hidden.add(key) else hidden.remove(key)
+    }
+    session.viewport = if (viewportDetail || (preserveViewport && session.viewport.isZoomed)) {
+        session.viewport
+    } else {
+        ChartViewport(range, range)
+    }
+    setChartXRange(session.chart, session.viewport.visible)
+    updateChart(session.chart)
+    syncHistoryScrubber(session)
+    refreshedHistoryEvidenceSignatures[chartId] = if (native) {
+        historyNativeSignature(container)
+    } else {
+        historyEvidenceSignature(container)
+    }
+    if (createdSelector) initHistorySeriesSelectors()
+    return true
 }
 
 private fun historyChartRange(response: dynamic, points: List<HistoryChartPoint>): ChartRange {
-    val selectedMax = historyIsoTime(response.fullRange.toIso) ?: points.lastOrNull()?.time ?: Date.now()
-    val max = if (response.range.preset == "custom") selectedMax - 1.0 else selectedMax
-    val min = historyIsoTime(response.fullRange.fromIso) ?: points.firstOrNull()?.time
-        ?: historyIsoTime(response.range.fromIso) ?: max - 86_400_000.0
+    val selectedMax = historyIsoTime(response.fullRange?.toIso) ?: points.lastOrNull()?.time ?: Date.now()
+    val max = if (response.range?.preset == "custom") selectedMax - 1.0 else selectedMax
+    val min = historyIsoTime(response.fullRange?.fromIso) ?: points.firstOrNull()?.time
+        ?: historyIsoTime(response.range?.fromIso) ?: max - 86_400_000.0
     return ChartRange(min, if (max > min) max else min + 1.0)
 }
 
@@ -1301,18 +1622,25 @@ private fun historySvgEscape(value: String): String = value
     .replace("\"", "&quot;")
     .replace("'", "&#39;")
 
+private fun historyIsoSecond(millis: Double): String =
+    Date(millis).toISOString().let { if (it.endsWith(".000Z")) it.dropLast(5) + "Z" else it }
+
 private fun historyPortfolioSvg(
     points: List<HistoryChartPoint>,
     range: ChartRange,
     label: String,
     money: Boolean,
     hidden: Boolean,
+    seriesKey: String = "portfolio",
+    showLine: Boolean = true,
+    unit: String? = null,
 ): String {
     val left = 120.0
     val right = 928.0
     val top = 18.0
     val bottom = 196.0
     val values = points.mapNotNull { it.value }
+    fun valueLabel(value: Double) = historyNumber(value, money) + (unit?.let { " $it" } ?: "")
     val low = values.minOrNull() ?: 0.0
     val high = values.maxOrNull() ?: 1.0
     val valueSpan = (high - low).takeIf { it > 0.0 } ?: 1.0
@@ -1326,7 +1654,7 @@ private fun historyPortfolioSvg(
         val y = top + (bottom - top) * index / 4.0
         "<line class=\"${CssClass.History.GridLine.value}\" x1=\"$left\" x2=\"$right\" y1=\"$y\" y2=\"$y\"/>" +
             "<text class=\"${CssClass.History.AxisLabel.value}\" x=\"112\" y=\"${y + 4}\" text-anchor=\"end\">" +
-            historySvgEscape(historyNumber(value, money)) + "</text>"
+            historySvgEscape(valueLabel(value)) + "</text>"
     }
     val segments = mutableListOf<List<HistoryChartPoint>>()
     var segment = mutableListOf<HistoryChartPoint>()
@@ -1339,22 +1667,24 @@ private fun historyPortfolioSvg(
         }
     }
     if (segment.size > 1) segments += segment
-    val lines = segments.joinToString("") { values ->
+    val lines = (if (showLine) segments else emptyList()).joinToString("") { values ->
         val linePoints = values.joinToString(" ") { "${x(it.time)},${y(it.value!!)}" }
         "<polyline class=\"${CssClass.History.Line.value}\" points=\"$linePoints\"/>"
     }
     val markers = points.mapIndexedNotNull { index, point ->
         if (point.value == null) {
             "<circle class=\"${CssClass.History.GapMarker.value}\" data-time=\"${point.time}\" data-gap=\"true\" " +
-                "data-series=\"portfolio\" cx=\"${x(point.time)}\" cy=\"$bottom\" r=\"3\"/>"
+                "data-series=\"${historySvgEscape(seriesKey)}\" cx=\"${x(point.time)}\" cy=\"$bottom\" r=\"3\"/>"
         } else {
             val visible = index % visibleStep == 0 || index == points.lastIndex
             "<circle class=\"${CssClass.History.Point.value}\" data-time=\"${point.time}\" " +
-                "data-value=\"${point.value}\" data-series=\"portfolio\" cx=\"${x(point.time)}\" " +
+                "data-value=\"${point.value}\" data-series=\"${historySvgEscape(
+                    seriesKey,
+                )}\" cx=\"${x(point.time)}\" " +
                 "cy=\"${y(point.value)}\" r=\"${if (visible) 3 else 0}\"><title>" +
                 "${historySvgEscape(
                     historyDateLabel(point.time),
-                )} · ${historySvgEscape(historyNumber(point.value, money))}" +
+                )} · ${historySvgEscape(valueLabel(point.value))}" +
                 "</title></circle>"
         }
     }.joinToString("")
@@ -1367,70 +1697,21 @@ private fun historyPortfolioSvg(
     } else {
         "$lines$markers"
     }
+    val fullFrom = historyIsoSecond(range.min)
+    val fullTo = historyIsoSecond(range.max)
     return "<svg class=\"${CssClass.History.ChartSvg.value}\" viewBox=\"0 0 960 240\" " +
         "preserveAspectRatio=\"none\"$display " +
-        "data-full-from=\"${range.min}\" data-full-to=\"${range.max}\">" +
+        "data-full-from=\"$fullFrom\" data-full-to=\"$fullTo\">" +
         "<title>${historySvgEscape(label)}</title>$grid$emptyMessage" +
         "<text class=\"${CssClass.History.AxisLabel.value}\" x=\"$left\" y=\"222\">$startLabel</text>" +
         "<text class=\"${CssClass.History.AxisLabel.value}\" x=\"$right\" y=\"222\" " +
         "text-anchor=\"end\">$endLabel</text></svg>"
 }
 
-private fun updatedHistoryViewport(previous: ChartViewport, full: ChartRange): ChartViewport {
-    if (!previous.isZoomed || full.span <= 0.0) return ChartViewport(full, full)
-    val span = previous.visible.span.coerceAtMost(full.span)
-    if (span <= 0.0) return ChartViewport(full, full)
-    val min = previous.visible.min.coerceIn(full.min, full.max - span)
-    return ChartViewport(full, ChartRange(min, min + span))
-}
-
 private fun updateHistoryPortfolioChart(response: dynamic, preserveViewport: Boolean = false) {
-    val points = historyPortfolioPoints(response)
-    val range = historyChartRange(response, points)
-    val rawSeries = response.series
-    val count = (rawSeries?.length as? Number)?.toInt() ?: 0
-    val portfolio = (0 until count).map { rawSeries[it] }.firstOrNull { it.key == "portfolio" }
-    val label = portfolio?.label as? String ?: "Portfolio value"
-    val unit = portfolio?.unit as? String ?: "USD"
-    val container = document.getElementById(HtmlIds.HISTORY_VALUE_CHART) ?: return
-    val session = historyChartSessions[container.id]
+    val session = historyChartSessions[HtmlIds.HISTORY_VALUE_CHART]
     val wasZoomed = preserveViewport && session?.viewport?.isZoomed == true
-    val svg = historyPortfolioSvg(
-        points,
-        range,
-        label,
-        money = unit.equals("USD", ignoreCase = true),
-        hidden =
-        session != null,
-    )
-    val oldSvg = container.querySelector("svg")
-    if (oldSvg == null) {
-        container.innerHTML = svg
-    } else {
-        oldSvg.asDynamic().outerHTML = svg
-    }
-    val fullFrom = response.fullRange.fromIso as? String
-    val fullTo = response.fullRange.toIso as? String
-    if (session != null) {
-        session.viewport = if (preserveViewport) {
-            updatedHistoryViewport(session.viewport, range)
-        } else {
-            ChartViewport(range, range)
-        }
-        session.chart.options.scales.x.ticks.callback = { value: dynamic ->
-            historyAxisTimeLabel((value as Number).toDouble(), range)
-        }
-        session.chart.data.datasets[0].data = representativePoints(points)
-            .map { json("x" to it.time, "y" to it.value) }
-            .toTypedArray()
-        setChartXRange(session.chart, session.viewport.visible)
-        updateChart(session.chart)
-        syncHistoryScrubber(session)
-    }
-    val axis = container.querySelector("svg")
-    axis?.setAttribute("data-full-from", fullFrom?.let(::historySvgEscape) ?: range.min.toString())
-    axis?.setAttribute("data-full-to", fullTo?.let(::historySvgEscape) ?: range.max.toString())
-    refreshedHistoryEvidenceSignatures[container.id] = historyEvidenceSignature(container)
+    applyHistoryChartSeries(HtmlIds.HISTORY_VALUE_CHART, response, preserveViewport)
     document.getElementById(HistoryRangeIds.NEW_DATA_BANNER)?.let { (it as HTMLElement).hidden = !wasZoomed }
 }
 
@@ -1480,7 +1761,7 @@ private fun updateHistoryCoverage(response: dynamic, chartResponse: dynamic, old
     document.getElementById("history-coverage-count")?.textContent =
         "${ViewText.HISTORY_COVERAGE_RECORDED}: $totalObservations$plotted · $completeness · " +
         "${ViewText.HISTORY_COVERAGE_GAPS}: $gapCount"
-    val points = historyPortfolioPoints(chartResponse)
+    val points = historyKeyedApiSeries(chartResponse).flatMap { it.points }.sortedBy { it.time }
     val first = points.firstOrNull()?.time
     val last = points.lastOrNull()?.time
     val full = historyChartRange(chartResponse, points)
@@ -1714,6 +1995,10 @@ internal fun initHistoryRangeControls(
     var panelRequestVersion = 0
     var activeQueryVersion = 0
     val pendingPanelCancels = mutableListOf<() -> Unit>()
+    var viewportDetailTimer: Int? = null
+    var viewportDetailCancel: (() -> Unit)? = null
+    var viewportDetailVersion = 0
+    val chartRequestVersions = mutableMapOf<String, Int>()
 
     fun setRangeError(message: String?) {
         errorMessage.hidden = message == null
@@ -1804,6 +2089,10 @@ internal fun initHistoryRangeControls(
 
     fun cancelPanelRequests() {
         panelRequestVersion++
+        viewportDetailVersion++
+        viewportDetailTimer?.let { window.clearTimeout(it) }
+        viewportDetailCancel?.invoke()
+        chartRequestVersions.keys.toList().forEach { chartRequestVersions[it] = chartRequestVersions.getValue(it) + 1 }
         pendingPanelCancels.toList().forEach { it() }
         pendingPanelCancels.clear()
     }
@@ -1902,22 +2191,93 @@ internal fun initHistoryRangeControls(
         requestPanel(url, onSuccess = { response -> updateHistoryTable(tableName, response, activeQuery, limit) })
     }
 
+    fun refreshAnalysisCharts(state: HistoryRangeState, initial: Boolean = false, preserveViewport: Boolean = true) {
+        val chartIds = listOf(
+            HtmlIds.HISTORY_HOLDINGS_CHART,
+            HtmlIds.HISTORY_ALLOCATION_CHART,
+            HtmlIds.HISTORY_CASH_FLOW_CHART,
+            HtmlIds.HISTORY_REWARDS_CHART,
+            HtmlIds.HISTORY_ASSET_CHART,
+        ).filter { document.getElementById(it) != null }
+        chartIds.forEach { chartId ->
+            val selection = historyChartSelectionFor(chartId)
+            val queryVersion = activeQueryVersion
+            val version = (chartRequestVersions[chartId] ?: 0) + 1
+            chartRequestVersions[chartId] = version
+            val session = historyChartSessions[chartId]
+            val pinnedRange = if (preserveViewport && session?.viewport?.isZoomed == true) {
+                json(
+                    "fromIso" to Date(session.viewport.full.min).toISOString(),
+                    "toIso" to Date(session.viewport.full.max).toISOString(),
+                )
+            } else {
+                null
+            }
+            val chartQuery = historyApiQuery(state, chart = true, pinnedRange = pinnedRange, selection = selection)
+            val success: (dynamic) -> Unit = { response ->
+                if (queryVersion == activeQueryVersion && chartRequestVersions[chartId] == version) {
+                    applyHistoryChartSeries(chartId, response, preserveViewport)
+                }
+            }
+            val url = queryUrl(HistoryRangeQuery.API_CHARTS, chartQuery)
+            if (initial) fetchJson(url, success, {}) else requestPanel(url, success)
+        }
+    }
+
+    initHistoryAnalysisSelector {
+        historyVisibleAnalysis()?.first?.let { historyChartSessions[it]?.chart?.resize() }
+    }
+
+    historyViewportDetailHandler = { chartId, fromMs, toMs ->
+        viewportDetailTimer?.let { window.clearTimeout(it) }
+        viewportDetailCancel?.invoke()
+        val version = ++viewportDetailVersion
+        viewportDetailTimer = window.setTimeout({
+            val state = historyRangeState(activeQuery, savedDefaultRange, timezone())
+            val selection = historyChartSelectionFor(chartId)
+            val chartVersion = (chartRequestVersions[chartId] ?: 0) + 1
+            chartRequestVersions[chartId] = chartVersion
+            val fromIso = Date(fromMs).toISOString()
+            val toIso = Date(toMs).toISOString()
+            val detailParams = historyParams(historyApiQuery(state, chart = true, selection = selection))
+            detailParams.set(HistoryRangeQuery.PARAM_FROM, fromIso)
+            detailParams.set(HistoryRangeQuery.PARAM_TO, toIso)
+            val detailQuery = detailParams.toString()
+            viewportDetailCancel = panelRequest(
+                queryUrl(HistoryRangeQuery.API_CHARTS, detailQuery),
+                { response ->
+                    if (version != viewportDetailVersion || chartRequestVersions[chartId] != chartVersion) {
+                        return@panelRequest
+                    }
+                    applyHistoryViewportDetail(chartId, response)
+                },
+                {
+                    if (version == viewportDetailVersion) viewportDetailCancel = null
+                },
+            )
+        }, HISTORY_VIEWPORT_DETAIL_DEBOUNCE_MS)
+    }
+
     fun refreshChangedPanels(previous: dynamic, current: dynamic) {
         val targets = historyRefreshTargets(previous, current)
         cancelPanelRequests()
         val state = historyRangeState(activeQuery, savedDefaultRange, timezone())
-        val pinnedRange = if (historyChartSessions.values.any { it.viewport.isZoomed }) {
+        val pinnedRange = if (historyChartSessions[HtmlIds.HISTORY_VALUE_CHART]?.viewport?.isZoomed == true) {
             latestChartResponse?.range
         } else {
             null
         }
         if (targets.charts) {
+            val chartVersion = (chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] ?: 0) + 1
+            chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] = chartVersion
             val chartQuery = historyApiQuery(state, chart = true, pinnedRange = pinnedRange)
             requestPanel(queryUrl(HistoryRangeQuery.API_CHARTS, chartQuery), onSuccess = { response ->
+                if (chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] != chartVersion) return@requestPanel
                 latestChartResponse = response
                 updateHistoryPortfolioChart(response, preserveViewport = true)
                 refreshCoverage()
             })
+            refreshAnalysisCharts(state)
         }
         if (targets.summary) {
             val summaryQuery = historyApiQuery(state, chart = false, pinnedRange = pinnedRange)
@@ -1938,7 +2298,10 @@ internal fun initHistoryRangeControls(
         val state = historyRangeState(activeQuery, savedDefaultRange, timezone())
         val chartQuery = historyApiQuery(state, chart = true)
         val summaryQuery = historyApiQuery(state, chart = false)
+        val chartVersion = (chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] ?: 0) + 1
+        chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] = chartVersion
         requestPanel(queryUrl(HistoryRangeQuery.API_CHARTS, chartQuery), onSuccess = { response ->
+            if (chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] != chartVersion) return@requestPanel
             latestChartResponse = response
             updateHistoryPortfolioChart(response)
             refreshCoverage()
@@ -1948,6 +2311,7 @@ internal fun initHistoryRangeControls(
             updateHistoryStatistics(response)
             refreshCoverage()
         })
+        refreshAnalysisCharts(state, preserveViewport = false)
         val tabs = historyPageTabState(activeQuery)
         if (tabs.tab == HistoryRangeQuery.TAB_ACTIVITY && tabs.activity == HistoryRangeQuery.ACTIVITY_BOT) {
             loadActivityPage(activeQuery)
@@ -1964,6 +2328,7 @@ internal fun initHistoryRangeControls(
         activeQuery = query
         activeQueryVersion++
         val queryVersion = activeQueryVersion
+        val requestVersion = panelRequestVersion
         historyStatusPoller?.refreshContext()
         val state = historyRangeState(query, savedDefaultRange, timezone())
         updateRangeControls(state)
@@ -1981,20 +2346,25 @@ internal fun initHistoryRangeControls(
         latestSummaryResponse = null
         val chartQuery = historyApiQuery(state, chart = true)
         val summaryQuery = historyApiQuery(state, chart = false)
+        val chartVersion = (chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] ?: 0) + 1
+        chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] = chartVersion
         fetchJson(queryUrl(HistoryRangeQuery.API_CHARTS, chartQuery), { response ->
-            if (queryVersion == activeQueryVersion) {
+            if (queryVersion == activeQueryVersion && requestVersion == panelRequestVersion &&
+                chartRequestVersions[HtmlIds.HISTORY_VALUE_CHART] == chartVersion
+            ) {
                 latestChartResponse = response
                 updateHistoryPortfolioChart(response)
                 refreshCoverage()
             }
         }, {})
         fetchJson(queryUrl(HistoryRangeQuery.API_SUMMARY, summaryQuery), { response ->
-            if (queryVersion == activeQueryVersion) {
+            if (queryVersion == activeQueryVersion && requestVersion == panelRequestVersion) {
                 latestSummaryResponse = response
                 updateHistoryStatistics(response)
                 refreshCoverage()
             }
         }, {})
+        refreshAnalysisCharts(state, initial = true, preserveViewport = false)
         loadActivityPage(query)
     }
 
@@ -2281,6 +2651,7 @@ internal fun historyMultiSeriesConfig(
     series: List<Pair<String, List<HistoryChartPoint>>>,
     percent: Boolean,
     axisRange: ChartRange? = null,
+    unit: String? = null,
 ): dynamic {
     val shortWindow = axisRange?.span?.let { it < 3_600_000.0 } == true
     val dense = series.maxOfOrNull { it.second.size } ?: 0
@@ -2324,10 +2695,10 @@ internal fun historyMultiSeriesConfig(
                             val value = (item.parsed.y as Number).toDouble()
                             val label = item.dataset.label
                             val prefix = if (label != null && label != undefined) "$label · " else ""
-                            prefix + if (percent) {
-                                historyNumber(value, false) + " pp"
-                            } else {
-                                historyNumber(value, true)
+                            prefix + when {
+                                percent -> historyNumber(value, false) + " pp"
+                                unit != null -> historyNumber(value, false) + " $unit"
+                                else -> historyNumber(value, true)
                             }
                         },
                     ),
@@ -2364,7 +2735,11 @@ internal fun historyMultiSeriesConfig(
                         "maxTicksLimit" to 6,
                         "callback" to { value: dynamic ->
                             val number = (value as Number).toDouble()
-                            if (percent) historyNumber(number, false) + " pp" else historyNumber(number, true)
+                            when {
+                                percent -> historyNumber(number, false) + " pp"
+                                unit != null -> historyNumber(number, false) + " $unit"
+                                else -> historyNumber(number, true)
+                            }
                         },
                     ),
                 ),
@@ -2383,17 +2758,24 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
     val singles = mapOf(
         HtmlIds.HISTORY_VALUE_CHART to true,
         HtmlIds.HISTORY_ASSET_CHART to false,
-        HtmlIds.HISTORY_CASH_FLOW_CHART to true,
-        HtmlIds.HISTORY_REWARDS_CHART to true,
     )
     val multiples = mapOf(
         HtmlIds.HISTORY_HOLDINGS_CHART to false,
         HtmlIds.HISTORY_ALLOCATION_CHART to true,
     )
-    (singles + multiples).forEach { (id, _) ->
+    val nativeCharts = setOf(
+        HtmlIds.HISTORY_CASH_FLOW_CHART,
+        HtmlIds.HISTORY_REWARDS_CHART,
+        HtmlIds.HISTORY_ASSET_CHART,
+    )
+    (singles + multiples + nativeCharts.map { it to true }).forEach { (id, _) ->
         val container = document.getElementById(id) ?: return@forEach
         val svg = container.querySelector("svg") ?: return@forEach
-        val signature = historyEvidenceSignature(container)
+        val native = id in nativeCharts &&
+            container.querySelector("[${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}]") != null
+        val points = if (native) emptyList() else historyChartPoints(container)
+        val series = if (native) historyNativeSeries(container) else historySeriesPoints(container)
+        val signature = if (native) historyNativeSignature(container) else historyEvidenceSignature(container)
         val existing = historyChartSessions[id]
         if (existing != null) {
             if ((refreshedHistoryEvidenceSignatures[id] ?: existing.evidenceSignature) == signature) {
@@ -2403,19 +2785,19 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
             existing.dispose()
         }
         val single = singles[id]
-        val points = historyChartPoints(container)
-        val series = historySeriesPoints(container)
-        val empty = if (single != null) {
+        val empty = if (native) {
+            series.all { it.second.isEmpty() }
+        } else if (single != null) {
             points.none { it.value != null }
         } else {
-            series.isEmpty()
+            series.all { it.second.isEmpty() }
         }
         if (empty) return@forEach
         val canvas = canvasFor(container)
-        val config = if (single != null) {
-            historyChartConfig(points, single)
-        } else {
-            historyMultiSeriesConfig(series, multiples[id] == true)
+        val config = when {
+            native -> historyMultiSeriesConfig(series, percent = false, unit = series.firstOrNull()?.first)
+            single != null && series.size <= 1 -> historyChartConfig(points, single)
+            else -> historyMultiSeriesConfig(series, multiples[id] == true)
         }
         applyLegendVisibility(config, id)
         val chart = try {
@@ -2431,20 +2813,53 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
         removeChartFallbackNotice(container)
         svg.setAttribute("hidden", "")
         svg.setAttribute("style", "display:none")
+        val chartPoints = if (native) series.firstOrNull()?.second.orEmpty() else points
         val session = HistoryChartSession(
             container = container,
             canvas = canvas,
             chart = chart,
             evidenceSignature = signature,
-            fullRange = ChartRange(points.first().time, points.last().time),
+            fullRange = ChartRange(chartPoints.first().time, chartPoints.last().time),
         )
         historyChartSessions[id] = session
         refreshedHistoryEvidenceSignatures.remove(id)
         bindLegendPersistence(chart, id)
         attachChartGestures(session)
-        setupHistoryChartControls(session, points, single ?: true)
+        setupHistoryChartControls(session, chartPoints, single ?: true)
+        val response = container.asDynamic().historySeriesResponse
+        if (response != null && response != undefined) applyHistoryChartSeries(id, response, preserveViewport = false)
     }
     initHistoryScrubbers()
+}
+
+/**
+ * The selected native asset of one quantity chart, with its display name. Only the visible panel
+ * contributes points, so BTC, ETH and USD quantities never merge into one dollar series.
+ */
+internal fun historyNativeSeries(container: Element): List<Pair<String, List<HistoryChartPoint>>> {
+    val panels = container.querySelectorAll("[${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}]")
+    if (panels.length == 0) return emptyList()
+    val selected = (0 until panels.length)
+        .mapNotNull { panels.item(it) as? HTMLElement }
+        .firstOrNull { !it.hidden }
+        ?: (panels.item(0) as? HTMLElement)
+        ?: return emptyList()
+    val rawAsset = selected.getAttribute(HtmlAttrs.DATA_HISTORY_SERIES_ASSET) ?: return emptyList()
+    val points = historyChartPoints(selected)
+    if (points.isEmpty()) return emptyList()
+    return listOf(Asset.normalizeLedgerAsset(rawAsset) to points)
+}
+
+/** Evidence of the selected native asset only, so a new selection rebuilds the chart. */
+private fun historyNativeSignature(container: Element): String {
+    val panels = container.querySelectorAll("[${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}]")
+    val selected = (0 until panels.length)
+        .mapNotNull { panels.item(it) as? HTMLElement }
+        .firstOrNull { !it.hidden }
+        ?: (panels.item(0) as? HTMLElement)
+        ?: return "none"
+    val asset = selected.getAttribute(HtmlAttrs.DATA_HISTORY_SERIES_ASSET).orEmpty()
+    return "$asset|${historyEvidenceSignature(selected)}"
 }
 
 private fun canvasFor(container: Element): HTMLCanvasElement {

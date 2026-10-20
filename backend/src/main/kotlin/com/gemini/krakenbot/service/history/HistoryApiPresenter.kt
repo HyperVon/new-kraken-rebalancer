@@ -42,10 +42,15 @@ class HistoryApiPresenter(
     ): HistoryApiChartsResponse {
         val startedNanos = System.nanoTime()
         val window = resolveWindow(params, nowProvider())
-        val scope = resolveScope(scopeId, currentScope)
         val selection = HistoryChartSelection.fromParam(selectionParam)
             ?: throw HistoryApiRequestException(ViewText.HISTORY_API_SELECTION_UNKNOWN)
         val pointCap = (maxPoints ?: HISTORY_MAX_CHART_POINTS).coerceIn(2, HISTORY_MAX_CHART_POINTS)
+        if (scopeId.isNullOrBlank() && currentScope.mode == HistorySourceMode.ACCOUNT &&
+            selection == HistoryChartSelection.PORTFOLIO
+        ) {
+            return recordedPortfolioCharts(currentScope, window, pointCap, startedNanos)
+        }
+        val scope = resolveScope(scopeId, currentScope)
         val observations = historyService.queryChartObservations(scope, window.from, window.until, pointCap)
         val intervalTotal = historyService.queryValues(
             HistoryRangeQuery(from = window.from, until = window.until, sourceScope = scope, limit = 1),
@@ -66,6 +71,73 @@ class HistoryApiPresenter(
                     observations.size.toLong() < intervalTotal,
             ),
             generationMs = elapsedMs(startedNanos),
+            scopeSelection = if (scopeId.isNullOrBlank()) {
+                HistoryApiScopeSelection.CURRENT_SCOPE
+            } else {
+                HistoryApiScopeSelection.EXPLICIT_SCOPE
+            },
+        )
+    }
+
+    private suspend fun recordedPortfolioCharts(
+        currentScope: HistorySourceScope,
+        window: HistoryApiWindow,
+        pointCap: Int,
+        startedNanos: Long,
+    ): HistoryApiChartsResponse {
+        val digest = checkNotNull(currentScope.accountIdentityDigest)
+        val scopes = (
+            historyStore.listRecordedScopes(digest).filter {
+                it.mode == HistorySourceMode.ACCOUNT && it.accountIdentityDigest == digest
+            }.map { it.toSourceScope() } + currentScope
+            ).distinctBy { it.sourceKey }
+        val coverages = scopes.associateWith { historyStore.valuesCoverage(it) }
+        val scopeDtos = scopes.map { scope ->
+            val coverage = coverages.getValue(scope)
+            HistoryApiScope(
+                id = scope.sourceKey,
+                symbols = scope.managedScopeSymbols.sorted(),
+                earliestIso = coverage.firstRecordedAt?.toString(),
+                latestIso = coverage.lastRecordedAt?.toString(),
+                current = scope.sourceKey == currentScope.sourceKey,
+            )
+        }
+        val observations = scopes.associate { scope ->
+            scope.sourceKey to historyService.queryChartObservations(scope, window.from, window.until, pointCap)
+        }
+        val totals = scopes.map { scope ->
+            historyService.queryValues(
+                HistoryRangeQuery(from = window.from, until = window.until, sourceScope = scope, limit = 1),
+            ).total ?: observations.getValue(scope.sourceKey).size.toLong()
+        }
+        val boundaries = recordedScopeBoundaries(scopeDtos, window)
+        val series = scopeDtos.map { scope ->
+            recordedPortfolioSeries(scope, observations.getValue(scope.id), boundaries)
+        }
+        val incompleteCount = coverages.values.sumOf { it.incompleteCount }
+        val firstRecordedAt = coverages.values.mapNotNull { it.firstRecordedAt }.minOrNull()
+        val lastRecordedAt = coverages.values.mapNotNull { it.lastRecordedAt }.maxOrNull()
+        return HistoryApiChartsResponse(
+            range = window.rangeDto(),
+            scope = scopeDto(currentScope, currentScope),
+            coverage = buildCoverage(currentScope).copy(
+                valuesFirstIso = firstRecordedAt?.toString(),
+                valuesLastIso = lastRecordedAt?.toString(),
+                incomplete = incompleteCount > 0 || firstRecordedAt == null || boundaries.isNotEmpty(),
+                gapCount = incompleteCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            ),
+            series = series,
+            fullRange = HistoryApiFullRange(
+                fromIso = window.selectedFrom?.toString(),
+                toIso = window.selectedUntil.toString(),
+                pointCount = series.maxOfOrNull { it.points.size } ?: 0,
+                totalObservations = totals.sum(),
+                representative = observations.values.sumOf { it.size.toLong() } < totals.sum(),
+            ),
+            generationMs = elapsedMs(startedNanos),
+            scopeSelection = HistoryApiScopeSelection.ACCOUNT_RECORDED,
+            recordedScopes = scopeDtos,
+            boundaries = boundaries,
         )
     }
 
@@ -85,6 +157,11 @@ class HistoryApiPresenter(
             coverage = buildCoverage(scope),
             statistics = reportingService.computeStatistics(period, targetAllocations),
             generationMs = elapsedMs(startedNanos),
+            scopeSelection = if (scopeId.isNullOrBlank()) {
+                HistoryApiScopeSelection.CURRENT_SCOPE
+            } else {
+                HistoryApiScopeSelection.EXPLICIT_SCOPE
+            },
         )
     }
 
@@ -173,6 +250,8 @@ class HistoryApiPresenter(
             range = window.rangeDto(),
             dataRevision = historyStore.currentDataRevision(),
             blockedReason = syncCoordinator.blockedReason(),
+            syncFailure = syncCoordinator.lastFailure(),
+            nextRetryAtIso = syncCoordinator.nextRetryAt()?.toString(),
             coverage = buildCoverage(currentScope),
             jobs = jobs.map(::syncJobDto),
             progress = progress.map(::syncProgressDto),
@@ -478,6 +557,7 @@ class HistoryApiPresenter(
 
     private fun syncProgressDto(progress: HistorySyncProgressSummary): HistoryApiSyncProgress = HistoryApiSyncProgress(
         feed = progress.feed.name,
+        recentWindowStartIso = progress.recentWindowStartSec?.let(::instantFromSec),
         recentCompletedThroughIso = progress.recentCompletedThroughSec?.let(::instantFromSec),
         recentLastSuccessAtIso = progress.recentLastSuccessAt?.toString(),
         backfillState = progress.backfillState.name,

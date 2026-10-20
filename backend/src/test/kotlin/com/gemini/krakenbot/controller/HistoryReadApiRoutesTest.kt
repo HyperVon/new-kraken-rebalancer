@@ -182,7 +182,17 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 val response = client.get(Routes.API_HISTORY_CHARTS)
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
-                json.keys() shouldBe setOf("range", "scope", "coverage", "series", "fullRange", "generationMs")
+                json.keys() shouldBe setOf(
+                    "range",
+                    "scope",
+                    "coverage",
+                    "series",
+                    "fullRange",
+                    "generationMs",
+                    "scopeSelection",
+                    "recordedScopes",
+                    "boundaries",
+                )
                 json["range"].keys() shouldBe setOf("fromIso", "toIso", "tz", "preset")
                 json["scope"].keys() shouldBe setOf("id", "symbols", "earliestIso", "latestIso", "current")
                 json["coverage"].keys() shouldBe setOf(
@@ -197,7 +207,8 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 )
                 json["fullRange"].keys() shouldBe
                     setOf("fromIso", "toIso", "pointCount", "totalObservations", "representative")
-                json["series"][0].keys() shouldBe setOf("key", "label", "unit", "points")
+                json["series"][0].keys() shouldBe
+                    setOf("key", "label", "legendLabel", "unit", "points", "provenance")
                 json["series"][0]["points"][0].keys() shouldBe setOf("t", "tIso", "v", "complete")
                 (json["generationMs"].asLong() >= 0) shouldBe true
             }
@@ -495,7 +506,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 val response = client.get(Routes.API_HISTORY_SUMMARY)
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
-                json.keys() shouldBe setOf("range", "scope", "coverage", "statistics", "generationMs")
+                json.keys() shouldBe setOf("range", "scope", "coverage", "statistics", "generationMs", "scopeSelection")
                 json["statistics"].keys() shouldBe setOf(
                     "generatedAt",
                     "latestObservedValue",
@@ -556,13 +567,13 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     feed = HistoryFeed.TRADES,
                     purpose = HistorySyncPurpose.RECENT,
                     state = HistorySyncJobState.COMPLETE,
-                    windowStartSec = null,
-                    windowEndSec = null,
+                    windowStartSec = 1_700_000_000L,
+                    windowEndSec = 1_700_003_600L,
                     cursor = null,
-                    completedThroughSec = null,
+                    completedThroughSec = 1_700_003_600L,
                     lastError = "boom",
                     nextRetryAt = Instant.parse("2026-03-10T13:00:00Z"),
-                    lastSuccessAt = null,
+                    lastSuccessAt = Instant.parse("2026-03-10T12:55:00Z"),
                     updatedAt = fixedNow,
                 ),
                 HistorySyncJob(
@@ -598,30 +609,54 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 HistorySyncProgressSummary(
                     accountIdentityDigest = accountDigest,
                     feed = HistoryFeed.TRADES,
-                    recentCompletedThroughSec = null,
-                    recentLastSuccessAt = null,
+                    recentWindowStartSec = 1_700_000_000L,
+                    recentCompletedThroughSec = 1_700_003_600L,
+                    recentLastSuccessAt = Instant.parse("2026-03-10T12:55:00Z"),
                     backfillState = HistorySyncJobState.PENDING,
-                    backfillCompletedThroughSec = null,
-                    backfillCursor = null,
-                    repairLastRunAt = null,
+                    backfillCompletedThroughSec = 1_700_000_000L,
+                    backfillCursor = "c0",
+                    repairLastRunAt = Instant.parse("2026-03-09T00:00:00Z"),
                     lastError = null,
-                    nextRetryAt = null,
+                    nextRetryAt = Instant.parse("2026-03-10T13:05:00Z"),
                 ),
             )
             every { historySyncCoordinator.blockedReason() } returns "operator-blocked"
+            every { historySyncCoordinator.lastFailure() } returns "TRADES sync failed"
+            every { historySyncCoordinator.nextRetryAt() } returns Instant.parse("2026-03-10T13:05:00Z")
 
             testApplication {
                 application { configureTestEnv() }
                 val response = client.get(Routes.API_HISTORY_DATA_STATUS)
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
-                json.keys() shouldBe setOf("range", "dataRevision", "blockedReason", "coverage", "jobs", "progress")
+                json.keys() shouldBe setOf(
+                    "range",
+                    "dataRevision",
+                    "blockedReason",
+                    "syncFailure",
+                    "nextRetryAtIso",
+                    "coverage",
+                    "jobs",
+                    "progress",
+                )
                 json["dataRevision"].asLong() shouldBe 42L
                 json["blockedReason"].asText() shouldBe "operator-blocked"
+                json["syncFailure"].asText() shouldBe "TRADES sync failed"
+                json["nextRetryAtIso"].asText() shouldBe "2026-03-10T13:05:00Z"
                 json["jobs"].map { it["purpose"].asText() } shouldContainExactly listOf("RECENT", "BACKFILL", "REPAIR")
                 json["jobs"][0]["lastError"].asText() shouldBe "boom"
                 json["jobs"][0]["nextRetryAtIso"].asText() shouldBe "2026-03-10T13:00:00Z"
+                json["jobs"][0]["windowStartIso"].asText() shouldBe "2023-11-14T22:13:20Z"
+                json["jobs"][0]["windowEndIso"].asText() shouldBe "2023-11-14T23:13:20Z"
+                json["jobs"][0]["completedThroughIso"].asText() shouldBe "2023-11-14T23:13:20Z"
+                json["jobs"][0]["lastSuccessAtIso"].asText() shouldBe "2026-03-10T12:55:00Z"
                 json["progress"][0]["feed"].asText() shouldBe "TRADES"
+                json["progress"][0]["recentWindowStartIso"].asText() shouldBe "2023-11-14T22:13:20Z"
+                json["progress"][0]["recentCompletedThroughIso"].asText() shouldBe "2023-11-14T23:13:20Z"
+                json["progress"][0]["recentLastSuccessAtIso"].asText() shouldBe "2026-03-10T12:55:00Z"
+                json["progress"][0]["backfillCursor"].asText() shouldBe "c0"
+                json["progress"][0]["repairLastRunAtIso"].asText() shouldBe "2026-03-09T00:00:00Z"
+                json["progress"][0]["nextRetryAtIso"].asText() shouldBe "2026-03-10T13:05:00Z"
             }
         }
 

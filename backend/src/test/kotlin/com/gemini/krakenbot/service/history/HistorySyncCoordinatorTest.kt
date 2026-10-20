@@ -18,7 +18,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import java.security.MessageDigest
 import java.time.Duration
@@ -401,14 +403,13 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
-        "the default retry jitter stays within one quarter of its capped delay" {
+        "the default retry jitter stays within one quarter of its step delay" {
             val policy = HistorySyncRetryPolicy()
             repeat(16) { attempt ->
-                val bounded = attempt.coerceAtMost(10)
-                val cappedMs = minOf(30_000L * (1L shl bounded), 900_000L)
+                val step = HistorySyncRetryPolicy.DEFAULT_STEPS[attempt.coerceAtMost(3)]
                 val delayMs = policy.nextDelay(attempt).toMillis()
-                (delayMs >= cappedMs) shouldBe true
-                (delayMs <= cappedMs + cappedMs / 4) shouldBe true
+                (delayMs >= step.toMillis()) shouldBe true
+                (delayMs <= step.toMillis() + step.toMillis() / 4) shouldBe true
             }
         }
 
@@ -466,17 +467,173 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
-        "retry policy is deterministic without jitter and bounded by its maximum" {
-            val policy = HistorySyncRetryPolicy(
-                baseDelay = Duration.ofSeconds(30),
-                maxDelay = Duration.ofMinutes(15),
-                jitter = { it },
-            )
-            policy.nextDelay(0) shouldBe Duration.ofSeconds(30)
-            policy.nextDelay(1) shouldBe Duration.ofSeconds(60)
-            policy.nextDelay(4) shouldBe Duration.ofMinutes(8)
-            policy.nextDelay(5) shouldBe Duration.ofMinutes(15)
+        "retry policy escalates through the 1, 2, 5 and 15 minute steps" {
+            val policy = HistorySyncRetryPolicy(jitter = { it })
+            policy.nextDelay(0) shouldBe Duration.ofMinutes(1)
+            policy.nextDelay(1) shouldBe Duration.ofMinutes(2)
+            policy.nextDelay(2) shouldBe Duration.ofMinutes(5)
+            policy.nextDelay(3) shouldBe Duration.ofMinutes(15)
             policy.nextDelay(50) shouldBe Duration.ofMinutes(15)
+        }
+        "a long backfill yields to the periodic recent refresh without a manual request" {
+            withFixture { fixture ->
+                val trades = fixture.tradesScript()
+                trades.onPage(0L, null, "T1", nextCursor = "C1")
+                trades.onPage(0L, "C1", "T2", nextCursor = "C2")
+                trades.onPage(0L, "C2", "T3", nextCursor = null)
+                var ticked = false
+                trades.beforeSupply = { startSec, cursor ->
+                    if (startSec == 0L && cursor == null && !ticked) {
+                        ticked = true
+                        fixture.emitPeriodicTick()
+                    }
+                }
+
+                fixture.coordinator.start()
+                try {
+                    fixture.emitPeriodicTick()
+
+                    awaitTrue { trades.calls.count { it.startSec == 0L } >= 1 }
+                    awaitTrue { trades.calls.count { it.startSec == fixture.recentStartSec } >= 2 }
+                    awaitQuiescent({ trades.calls.size })
+
+                    // The periodic deadline interleaved a recent scan into the running backfill.
+                    trades.calls.map { it.startSec }
+                        .filter { it == fixture.recentStartSec || it == 0L } shouldBe listOf(
+                        fixture.recentStartSec,
+                        0L,
+                        fixture.recentStartSec,
+                        0L,
+                        0L,
+                    )
+                    fixture.backfillJob().state shouldBe HistorySyncJobState.COMPLETE
+                } finally {
+                    fixture.coordinator.stop()
+                }
+            }
+        }
+
+        "a failing feed escalates its own retry while a healthy feed keeps syncing" {
+            withFixture { fixture ->
+                val trades = fixture.tradesScript()
+                trades.failWhen = { _, _ -> true }
+                val ledgers = fixture.ledgersScript()
+
+                fixture.coordinator.runCoalescedPass()
+
+                val failedJob = fixture.recentJob()
+                failedJob.state shouldBe HistorySyncJobState.FAILED
+                failedJob.lastError shouldBe HistorySyncErrors.PAGE_FAILED
+                failedJob.nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(1))
+                val ledgersAfterFirstPass = ledgers.calls.size
+
+                fixture.clock.advance(Duration.ofMinutes(2))
+                fixture.coordinator.runCoalescedPass()
+
+                fixture.recentJob().nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(2))
+                (ledgers.calls.size > ledgersAfterFirstPass) shouldBe true
+
+                fixture.clock.advance(Duration.ofMinutes(6))
+                fixture.coordinator.runCoalescedPass()
+
+                fixture.recentJob().nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(5))
+
+                fixture.clock.advance(Duration.ofMinutes(16))
+                fixture.coordinator.runCoalescedPass()
+
+                fixture.recentJob().nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(15))
+            }
+        }
+
+        "a recovered feed clears its persisted failure and retry schedule" {
+            withFixture { fixture ->
+                val trades = fixture.tradesScript()
+                trades.failWhen = { _, _ -> true }
+
+                fixture.coordinator.runCoalescedPass()
+                fixture.recentJob().nextRetryAt shouldNotBe null
+
+                trades.failWhen = { _, _ -> false }
+                fixture.clock.advance(Duration.ofMinutes(2))
+                fixture.coordinator.runCoalescedPass()
+
+                val recovered = fixture.recentJob()
+                recovered.nextRetryAt shouldBe null
+                recovered.lastError shouldBe null
+            }
+        }
+
+        "a changed account scope blocks the sync and marks the job as blocked" {
+            withFixture { fixture ->
+                val script = fixture.tradesScript()
+                val delegate = fixture.kraken.tradePageSupplier
+                fixture.kraken.tradePageSupplier = { startSec, endSec, cursor, limit ->
+                    // The account identity changes while the page is in flight.
+                    fixture.kraken.authenticatedAccountInfoFactory = { _ ->
+                        AuthenticatedAccountInfo("BB11 OTHER ACCOUNT", queryBoundsVerified = true)
+                    }
+                    delegate(startSec, endSec, cursor, limit)
+                }
+                script.onPage(fixture.recentStartSec, null, "T1", nextCursor = null)
+
+                fixture.coordinator.runCoalescedPass()
+
+                fixture.coordinator.blockedReason() shouldBe HistorySyncErrors.ACCOUNT_SCOPE_CHANGED
+                val blocked = fixture.recentJob()
+                blocked.state shouldBe HistorySyncJobState.BLOCKED
+                blocked.lastError shouldBe HistorySyncErrors.ACCOUNT_SCOPE_CHANGED
+                blocked.nextRetryAt shouldBe null
+            }
+        }
+
+        "a window outside the API key bounds is recorded as processed coverage" {
+            withFixture { fixture ->
+                fixture.kraken.authenticatedAccountInfoFactory = { identity ->
+                    AuthenticatedAccountInfo(
+                        identity = identity,
+                        queryFromSec = fixture.clock.now.epochSecond + 3_600,
+                        queryToSec = fixture.clock.now.epochSecond + 7_200,
+                        queryBoundsVerified = true,
+                    )
+                }
+
+                fixture.coordinator.runCoalescedPass()
+
+                val skipped = fixture.recentJob()
+                skipped.state shouldBe HistorySyncJobState.COMPLETE
+                skipped.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_NO_OVERLAP
+                skipped.completedThroughSec shouldBe fixture.clock.now.epochSecond
+            }
+        }
+
+        "a failing feed keeps its own escalation while the other feed keeps syncing" {
+            withFixture { fixture ->
+                val coordinator = fixture.coordinatorWithFailingSynchronizer(
+                    IllegalStateException("exchange page unavailable " + "A".repeat(40) + "\nsecond line"),
+                )
+
+                coordinator.runCoalescedPass()
+
+                val failed = fixture.recentJob()
+                failed.state shouldBe HistorySyncJobState.FAILED
+                failed.lastError shouldBe "exchange page unavailable [redacted]"
+                failed.nextRetryAt shouldBe fixture.clock.now.plus(Duration.ofMinutes(1))
+                coordinator.nextRetryAt() shouldBe failed.nextRetryAt
+                // A single failing feed is not an account-wide failure.
+                coordinator.lastFailure() shouldBe null
+            }
+        }
+
+        "an unavailable account stops the pass and reports the failure without a retry job" {
+            withFixture { fixture ->
+                fixture.kraken.authenticatedAccountIdentitySupplier = { null }
+
+                fixture.coordinator.runCoalescedPass()
+
+                fixture.coordinator.lastFailure() shouldBe "History sync could not verify the authenticated account."
+                fixture.coordinator.nextRetryAt() shouldNotBe null
+                fixture.store.loadSyncJobs(fixture.digest) shouldBe emptyList()
+            }
         }
     }
 
@@ -550,6 +707,7 @@ class HistorySyncCoordinatorTest : StringSpec() {
         val identity = mockk<DataDirectoryIdentity>(relaxed = true)
         val delays = mutableListOf<Duration>()
         val applicationScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher())
+        val periodicTicks = Channel<Unit>(Channel.CONFLATED)
         var settings = TestFixtures.settings(simulation = false, dryRun = true)
         val recentStartSec = clock.now.epochSecond - HistorySyncCoordinator.RECENT_FIRST_WINDOW_SECONDS
         val backfillEndSec = recentStartSec
@@ -577,6 +735,36 @@ class HistorySyncCoordinatorTest : StringSpec() {
 
         fun restartCoordinator(): HistorySyncCoordinator = newCoordinator()
 
+        /** A coordinator whose exchange calls fail with the given error, for the failure paths. */
+        fun coordinatorWithFailingSynchronizer(error: Throwable): HistorySyncCoordinator {
+            val failing = mockk<HistorySynchronizer>()
+            coEvery { failing.accountIdentityDigest() } returns digest
+            coEvery {
+                failing.syncWindow(any(), any(), any(), any())
+            } throws error
+            coEvery {
+                failing.syncWindow(any(), any(), any(), any(), any(), any())
+            } throws error
+            return HistorySyncCoordinator(
+                applicationScope = applicationScope,
+                synchronizer = failing,
+                store = store,
+                settingsProvider = { settings },
+                nowProvider = { clock.now },
+                delayFn = { duration ->
+                    delays.add(duration)
+                    clock.advance(duration)
+                },
+                retryPolicy = HistorySyncRetryPolicy(jitter = { it }),
+                periodicTicks = periodicTicks.receiveAsFlow(),
+            )
+        }
+
+        /** Emits the periodic recent-refresh deadline without any manual refresh request. */
+        fun emitPeriodicTick() {
+            periodicTicks.trySend(Unit)
+        }
+
         private fun newCoordinator() = HistorySyncCoordinator(
             applicationScope = applicationScope,
             synchronizer = synchronizer,
@@ -588,6 +776,7 @@ class HistorySyncCoordinatorTest : StringSpec() {
                 clock.advance(duration)
             },
             retryPolicy = HistorySyncRetryPolicy(jitter = { it }),
+            periodicTicks = periodicTicks.receiveAsFlow(),
         )
 
         fun tradesScript(): TradeScript {

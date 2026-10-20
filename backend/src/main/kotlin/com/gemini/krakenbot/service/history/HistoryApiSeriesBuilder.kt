@@ -1,11 +1,13 @@
 package com.gemini.krakenbot.service.history
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 
 internal const val HISTORY_API_PORTFOLIO_KEY = "portfolio"
 internal const val HISTORY_API_ALLOCATION_UNIT = "percent"
@@ -21,6 +23,85 @@ internal fun portfolioSeries(observations: List<HistoryObservation>): List<Histo
         points = observations.map(::historyPoint),
     ),
 )
+
+internal fun recordedScopeBoundaries(
+    scopes: List<HistoryApiScope>,
+    window: HistoryApiWindow,
+): List<HistoryApiBoundary> {
+    val spans = scopes.mapNotNull { scope ->
+        val first = scope.earliestIso?.let(Instant::parse) ?: return@mapNotNull null
+        val last = scope.latestIso?.let(Instant::parse) ?: return@mapNotNull null
+        Triple(scope.id, first, last)
+    }.sortedWith(compareBy({ it.second }, { it.first }))
+    val boundaries = mutableListOf<HistoryApiBoundary>()
+    fun add(kind: HistoryApiBoundaryKind, from: Instant, to: Instant, ids: List<String>) {
+        if (from >= window.until || (window.from != null && to < window.from)) return
+        boundaries += HistoryApiBoundary(
+            kind = kind,
+            fromIso = maxOf(from, window.from ?: from).toString(),
+            toIso = minOf(to, window.until.minusNanos(1)).toString(),
+            scopeIds = ids,
+        )
+    }
+    spans.forEachIndexed { index, first ->
+        spans.drop(index + 1).forEach { second ->
+            val from = maxOf(first.second, second.second)
+            val to = minOf(first.third, second.third)
+            if (from <= to) {
+                add(HistoryApiBoundaryKind.OVERLAPPING_SCOPES, from, to, listOf(first.first, second.first))
+            }
+        }
+    }
+    spans.zipWithNext().forEach { (first, second) ->
+        if (first.third < second.second) {
+            add(
+                HistoryApiBoundaryKind.ASSET_SET_CHANGE,
+                first.third,
+                second.second,
+                listOf(first.first, second.first),
+            )
+        }
+    }
+    return boundaries.sortedWith(compareBy({ Instant.parse(it.fromIso) }, { it.kind.name }))
+}
+
+internal fun recordedPortfolioSeries(
+    scope: HistoryApiScope,
+    observations: List<HistoryObservation>,
+    boundaries: List<HistoryApiBoundary>,
+): HistoryApiSeries {
+    val conflicts = boundaries.filter {
+        it.kind == HistoryApiBoundaryKind.OVERLAPPING_SCOPES && scope.id in it.scopeIds
+    }.map { Instant.parse(it.fromIso) to Instant.parse(it.toIso) }
+    // Scope lifespans are conservative conflict windows, not evidence of interchangeable account totals.
+    val points = observations.map { observation ->
+        val point = historyPoint(observation)
+        if (conflicts.any { (from, to) -> observation.observedAt >= from && observation.observedAt <= to }) {
+            point.copy(v = null, complete = false)
+        } else {
+            point
+        }
+    } + conflicts.flatMap { (from, to) ->
+        listOf(from, to).map { at ->
+            HistoryApiPoint(t = at.toEpochMilli(), isoTime = at.toString(), v = null, complete = false)
+        }
+    }
+    val unit = observations.firstOrNull()?.valuationCurrency ?: "USD"
+    return HistoryApiSeries(
+        key = scope.id,
+        label = "${scope.symbols.joinToString(" + ")} | ${scope.earliestIso ?: "?"} .. ${scope.latestIso ?: "?"}",
+        legendLabel = scope.symbols.joinToString(" + ") + if (scope.current) " (current)" else "",
+        unit = unit,
+        points = points.distinctBy { it.isoTime }.sortedBy { Instant.parse(it.isoTime) },
+        provenance = HistoryApiSeriesProvenance(
+            scope = scope,
+            walletScopes = observations.map { it.walletScope }.distinct().sorted(),
+            balanceSources = observations.map { it.balanceSource }.distinct().sorted(),
+            priceSources = observations.map { it.priceSource }.distinct().sorted(),
+            valuationCurrency = unit,
+        ),
+    )
+}
 
 internal fun holdingsSeries(observations: List<HistoryObservation>): List<HistoryApiSeries> {
     val unit = observations.firstOrNull()?.valuationCurrency ?: "USD"
@@ -41,7 +122,7 @@ internal fun ledgerQuantitySeries(rows: List<HistoryLedger>): List<HistoryApiSer
     return assets.map { asset ->
         HistoryApiSeries(
             key = asset,
-            label = asset,
+            label = Asset.normalizeLedgerAsset(asset),
             unit = asset,
             points = rows.mapNotNull { row ->
                 if (row.asset?.trim() != asset) return@mapNotNull null
@@ -62,7 +143,7 @@ internal fun checkpointQuantitySeries(rows: List<HistoryBalanceCheckpoint>): Lis
     return assets.map { asset ->
         HistoryApiSeries(
             key = asset,
-            label = asset,
+            label = Asset.normalizeLedgerAsset(asset),
             unit = asset,
             points = rows.mapNotNull { row ->
                 if (row.rawAssetKey?.trim() != asset) return@mapNotNull null

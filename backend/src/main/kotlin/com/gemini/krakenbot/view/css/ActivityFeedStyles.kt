@@ -64,7 +64,17 @@ object ActivityFeedStyles {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted
             fontFamily = CssTheme.fontMono
+        }
+
+        "${CssClass.Activity.CycleHeader.querySelector} > span:nth-child(2)" {
             marginLeftRaw("auto")
+        }
+
+        ".${CssClass.Activity.CycleIdentity.value}" {
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextMuted
+            fontFamily = CssTheme.fontMono
+            padding = Padding(0.375.rem, 0.px)
         }
 
         ".${CssClass.Activity.CycleMeta.value}" {

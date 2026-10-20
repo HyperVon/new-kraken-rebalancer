@@ -284,6 +284,7 @@ class HistoryRangeTest : StringSpec() {
                     "scales" to json(
                         "x" to json("min" to 1_500.0, "max" to 2_000.0, "ticks" to json()),
                     ),
+                    "plugins" to json("legend" to json("display" to true)),
                 ),
                 "update" to { _: dynamic -> },
             )
@@ -534,7 +535,7 @@ class HistoryRangeTest : StringSpec() {
 
                 val svg = root.querySelector("#history-value-chart svg")!!
                 val fullFrom = svg.getAttribute("data-full-from")!!
-                fullFrom.toDouble() shouldBe epoch("2020-01-01T00:00:00Z")
+                epoch(fullFrom) shouldBe epoch("2020-01-01T00:00:00Z")
                 svg.querySelectorAll("polyline").length shouldBe 2
                 svg.querySelectorAll("circle[data-gap='true']").length shouldBe 1
                 svg.querySelectorAll("circle[r='0']").length shouldBe 8

@@ -14,6 +14,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.Base64
 
 class HistoryApiPresenterTest : StringSpec() {
@@ -412,6 +413,56 @@ class HistoryApiPresenterTest : StringSpec() {
 
             point.v.shouldBeNull()
             point.complete shouldBe false
+        }
+
+        "recorded scope boundaries skip undated scopes and clip overlaps to the selected window" {
+            val scopes = listOf(
+                HistoryApiScope(
+                    id = "ACCOUNT:old",
+                    symbols = listOf("BTC", "USD"),
+                    earliestIso = "2026-03-01T00:00:00Z",
+                    latestIso = "2026-03-05T00:00:00Z",
+                    current = false,
+                ),
+                HistoryApiScope(
+                    id = "ACCOUNT:new",
+                    symbols = listOf("BTC", "ETH", "USD"),
+                    earliestIso = "2026-03-03T00:00:00Z",
+                    latestIso = "2026-03-09T00:00:00Z",
+                    current = true,
+                ),
+                HistoryApiScope(
+                    id = "ACCOUNT:future",
+                    symbols = listOf("USD"),
+                    earliestIso = "2026-03-08T00:00:00Z",
+                    latestIso = "2026-03-09T00:00:00Z",
+                    current = false,
+                ),
+                HistoryApiScope("ACCOUNT:empty", listOf("USD"), earliestIso = null, latestIso = null, current = false),
+            )
+            val window = HistoryApiWindow(
+                preset = "7d",
+                zone = ZoneOffset.UTC,
+                selectedFrom = Instant.parse("2026-03-02T00:00:00Z"),
+                selectedUntil = Instant.parse("2026-03-08T00:00:00Z"),
+                from = Instant.parse("2026-03-02T00:00:00Z"),
+                until = Instant.parse("2026-03-08T00:00:00Z"),
+                now = fixedNow,
+            )
+
+            val boundaries = recordedScopeBoundaries(scopes, window)
+
+            boundaries.single().kind shouldBe HistoryApiBoundaryKind.OVERLAPPING_SCOPES
+            boundaries.single().fromIso shouldBe "2026-03-03T00:00:00Z"
+            boundaries.single().toIso shouldBe "2026-03-05T00:00:00Z"
+            boundaries.single().scopeIds shouldContainExactly listOf("ACCOUNT:old", "ACCOUNT:new")
+            val conflict = observation("old-conflict", Instant.parse("2026-03-04T00:00:00Z"), "150.00")
+            val series = recordedPortfolioSeries(scopes[0], listOf(conflict), boundaries)
+            series.points.size shouldBe 3
+            series.points.forEach { point ->
+                point.v.shouldBeNull()
+                point.complete shouldBe false
+            }
         }
 
         "ledger chart selection excludes deposits from non-deposit ledger families" {

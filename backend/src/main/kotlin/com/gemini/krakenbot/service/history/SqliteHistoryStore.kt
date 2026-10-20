@@ -471,6 +471,7 @@ class SqliteHistoryStore(
                     HistorySyncProgressSummary(
                         accountIdentityDigest = accountIdentityDigest,
                         feed = feed,
+                        recentWindowStartSec = recent?.windowStartSec,
                         recentCompletedThroughSec = recent?.completedThroughSec,
                         recentLastSuccessAt = recent?.lastSuccessAt,
                         backfillState = backfill?.state ?: HistorySyncJobState.PENDING,

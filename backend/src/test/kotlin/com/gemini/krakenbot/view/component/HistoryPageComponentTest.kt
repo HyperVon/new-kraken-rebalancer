@@ -60,6 +60,23 @@ class HistoryPageComponentTest : StringSpec() {
         }
 
     init {
+        "portfolio prioritizes values and keeps analysis tools and administration out of the default view" {
+            val html = render(samplePageData(emptyList()))
+            val portfolio = html.substringAfter("id=\"history-panel-portfolio\"")
+                .substringBefore("id=\"history-panel-activity\"")
+            val dataStatus = html.substringAfter("id=\"history-panel-data-status\"")
+
+            portfolio shouldContain "<details class=\"history-disclosure\">"
+            portfolio shouldContain "Explore holdings, allocation and flows"
+            portfolio shouldContain "<details class=\"history-tools-menu\">"
+            portfolio shouldContain "Chart tools"
+            portfolio shouldNotContain "id=\"history-scope-select\""
+            portfolio shouldNotContain "id=\"history-coverage\""
+            dataStatus shouldContain "id=\"history-scope-select\""
+            dataStatus shouldContain "id=\"history-coverage-selected\""
+            (html.indexOf("history-stats-grid") < html.indexOf("id=\"history-value-chart\"")) shouldBe true
+        }
+
         "renders the range, custom-date, portfolio-scope, and coverage controls" {
             val html = render(samplePageData(emptyList()).copy(range = "90d"))
 
@@ -89,7 +106,11 @@ class HistoryPageComponentTest : StringSpec() {
                 "data-history-feed=\"LEDGERS\"",
                 "id=\"history-new-data-banner\"",
                 "id=\"history-new-records-notice\"",
-                "They do not filter portfolio-value observations, which use the selected recorded portfolio.",
+                "id=\"history-analysis-nav\"",
+                "data-history-analysis=\"true\"",
+                "data-history-analysis-panel=\"HOLDINGS\"",
+                "id=\"history-scope-details\"",
+                "id=\"history-scope-list\"",
             ).forEach { html shouldContain it }
             html shouldContain "Earlier recorded portfolios available"
             Regex("""<a\b(?=[^>]*data-history-range="90d")(?=[^>]*class="time-range-btn active")[^>]*>""")
@@ -254,17 +275,18 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html.countOccurrences("<select") shouldBe 5
+            html.countOccurrences("<select") shouldBe 6
             html shouldContain "name=\"asset\""
             html shouldContain "name=\"pair\""
             html shouldContain "name=\"type\""
-            html shouldContain "XXBT (BTC)"
+            html shouldContain "value=\"XXBT\""
+            html shouldNotContain "XXBT (BTC)"
             html shouldContain "selected"
             html shouldNotContain "type=\"text\""
-            html shouldContain "href=\"#history-portfolio-section\""
+            html shouldContain "href=\"/history?tab=portfolio\""
             html shouldContain "href=\"/history?tab=activity&amp;activity=trades\""
             html shouldContain "href=\"/history?tab=activity&amp;activity=transactions\""
-            html shouldContain "id=\"history-portfolio-section\""
+            html shouldContain "id=\"history-panel-portfolio\""
             html shouldContain "id=\"history-trades-section\""
             html shouldContain "id=\"history-ledgers-section\""
             html shouldContain "data-history-tab=\"portfolio\""
@@ -985,12 +1007,12 @@ class HistoryPageComponentTest : StringSpec() {
                 "data-history-series-select=\"history-rewards-chart\"",
                 "data-history-series-asset=\"ZUSD\"",
                 "data-history-series-asset=\"XXBT\"",
-                "ZUSD · 60 ZUSD",
-                "XXBT · 0.002 XXBT",
-                "XETH · 0.1 XETH",
-                "#history-allocation-section",
-                "#history-cash-flow-section",
-                "#history-rewards-section",
+                "USD · 60 USD",
+                "BTC · 0.002 BTC",
+                "ETH · 0.1 ETH",
+                "id=\"history-allocation-section\"",
+                "id=\"history-cash-flow-section\"",
+                "id=\"history-rewards-section\"",
                 "id=\"history-sync-text\"",
             ).forEach { html shouldContain it }
             html shouldContain "Each asset is charted in its own native unit"

@@ -1,0 +1,320 @@
+package com.gemini.krakenbot.frontend
+
+import com.gemini.krakenbot.view.util.HistoryAnalysis
+import com.gemini.krakenbot.view.util.HistoryChartSelections
+import com.gemini.krakenbot.view.util.HistoryRangeIds
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import kotlinx.browser.document
+import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.events.Event
+import kotlin.js.json
+
+class HistoryInteractionTest :
+    StringSpec({
+        "a native quantity chart uses only the selected asset and its display unit" {
+            val container: HTMLElement = document.createElement("div") as HTMLElement
+            container.innerHTML = """
+                <div ${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}="XXBT">
+                  <svg>
+                    <circle data-time="1000" data-value="0.5" data-series="BTC"></circle>
+                    <circle data-time="2000" data-value="0.75" data-series="BTC"></circle>
+                  </svg>
+                </div>
+                <div ${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}="ZUSD" hidden>
+                  <svg>
+                    <circle data-time="1000" data-value="100" data-series="USD"></circle>
+                  </svg>
+                </div>
+            """.trimIndent()
+
+            val series = historyNativeSeries(container)
+
+            series.size shouldBe 1
+            series[0].first shouldBe "BTC"
+            series[0].second.map { it.value } shouldBe listOf(0.5, 0.75)
+        }
+
+        "a native quantity chart without samples has no series" {
+            val container: HTMLElement = document.createElement("div") as HTMLElement
+            container.innerHTML = """
+                <div ${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}="XXBT"><svg></svg></div>
+            """.trimIndent()
+
+            historyNativeSeries(container) shouldBe emptyList()
+        }
+
+        "the visible analysis panel decides the chart and its API selection" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <div ${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}="${HistoryAnalysis.HOLDINGS}" hidden></div>
+                <div ${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}="${HistoryAnalysis.CASH_FLOW}"></div>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            historyVisibleAnalysis() shouldBe (HtmlIds.HISTORY_CASH_FLOW_CHART to HistoryChartSelections.DEPOSITS)
+
+            root.innerHTML = """
+                <div ${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}="${HistoryAnalysis.ALLOCATION}"></div>
+            """.trimIndent()
+
+            historyVisibleAnalysis() shouldBe
+                (HtmlIds.HISTORY_ALLOCATION_CHART to HistoryChartSelections.ALLOCATION)
+            root.remove()
+        }
+
+        "every chart id maps to the selection its API expects" {
+            historyChartSelectionFor(HtmlIds.HISTORY_VALUE_CHART) shouldBe HistoryChartSelections.PORTFOLIO
+            historyChartSelectionFor(HtmlIds.HISTORY_HOLDINGS_CHART) shouldBe HistoryChartSelections.HOLDINGS
+            historyChartSelectionFor(HtmlIds.HISTORY_ALLOCATION_CHART) shouldBe HistoryChartSelections.ALLOCATION
+            historyChartSelectionFor(HtmlIds.HISTORY_CASH_FLOW_CHART) shouldBe HistoryChartSelections.DEPOSITS
+            historyChartSelectionFor(HtmlIds.HISTORY_REWARDS_CHART) shouldBe HistoryChartSelections.REWARDS
+            historyChartSelectionFor(HtmlIds.HISTORY_ASSET_CHART) shouldBe HistoryChartSelections.CHECKPOINTS
+        }
+
+        "the single analysis selector changes one panel and does not register duplicate listeners" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <select ${HtmlAttrs.DATA_HISTORY_ANALYSIS}="true">
+                  <option value="${HistoryAnalysis.HOLDINGS}">Holdings</option>
+                  <option value="${HistoryAnalysis.REWARDS}">Rewards</option>
+                </select>
+                <div ${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}="${HistoryAnalysis.HOLDINGS}"></div>
+                <div ${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}="${HistoryAnalysis.REWARDS}" hidden></div>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            val selections = mutableListOf<String>()
+            initHistoryAnalysisSelector { selections += it }
+            initHistoryAnalysisSelector { selections += it }
+            val selector = root.querySelector("select") as HTMLSelectElement
+            selector.value = HistoryAnalysis.REWARDS
+            selector.dispatchEvent(Event("change"))
+            val panels = root.querySelectorAll("[${HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL}]")
+            (panels.item(0) as HTMLElement?)?.hidden shouldBe true
+            (panels.item(1) as HTMLElement?)?.hidden shouldBe false
+            selector.value shouldBe HistoryAnalysis.REWARDS
+            selections shouldBe listOf(HistoryAnalysis.REWARDS)
+            root.remove()
+        }
+
+        "an API response exposes every series with its display name" {
+            val response = json(
+                "series" to arrayOf(
+                    json(
+                        "key" to "portfolio",
+                        "label" to "Portfolio value",
+                        "unit" to "USD",
+                        "points" to arrayOf(
+                            json("t" to 1000.0, "v" to 10.0, "complete" to true),
+                            json("t" to 2000.0, "v" to 20.0, "complete" to true),
+                        ),
+                    ),
+                    json(
+                        "key" to "XXBT",
+                        "label" to "BTC",
+                        "unit" to "XXBT",
+                        "points" to arrayOf(json("t" to 1000.0, "v" to 0.5, "complete" to true)),
+                    ),
+                ),
+            )
+
+            val series = historyApiSeries(response)
+
+            series.size shouldBe 2
+            series[0].first shouldBe "Portfolio value"
+            series[0].second.size shouldBe 2
+            series[1].first shouldBe "BTC"
+            series[1].second.single().value shouldBe 0.5
+        }
+
+        "a response without series has none" {
+            historyApiSeries(json()) shouldBe emptyList()
+            historyApiSeries(json("series" to arrayOf<dynamic>())) shouldBe emptyList()
+        }
+
+        "a point without a value stays an explicit break" {
+            val response = json(
+                "series" to arrayOf(
+                    json(
+                        "key" to "portfolio",
+                        "label" to "Portfolio value",
+                        "unit" to "USD",
+                        "points" to arrayOf(
+                            json("t" to 1000.0, "v" to null, "complete" to false),
+                            json("tIso" to "2026-03-01T10:00:00Z", "v" to 5.0, "complete" to true),
+                        ),
+                    ),
+                ),
+            )
+
+            val points = historyApiSeries(response).single().second
+
+            points.size shouldBe 2
+            points[0].value shouldBe null
+            points[1].value shouldBe 5.0
+        }
+
+        "an expanded record detail survives a table refresh" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <table><tbody id="${HtmlIds.HISTORY_TRADES_BODY}"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            val response = json(
+                "items" to arrayOf(
+                    json(
+                        "time" to "2026-03-01T10:00:00Z",
+                        "pair" to "XXBTZUSD",
+                        "type" to "buy",
+                        "volume" to "0.1",
+                        "price" to "50000",
+                        "cost" to "5000",
+                        "tradeId" to "T-1",
+                    ),
+                ),
+                "total" to 1,
+            )
+            updateHistoryTable("trades", response, "?range=7d", 50)
+
+            val details = document.querySelector(
+                "#${HtmlIds.HISTORY_TRADES_BODY} details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]",
+            ) as HTMLElement?
+            details?.setAttribute("open", "")
+
+            updateHistoryTable("trades", response, "?range=7d", 50)
+
+            val refreshed = document.querySelector(
+                "#${HtmlIds.HISTORY_TRADES_BODY} details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]",
+            ) as HTMLElement?
+            refreshed?.getAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY) shouldBe "trade:T-1"
+            refreshed?.hasAttribute("open") shouldBe true
+            root.remove()
+        }
+
+        "a stale completed horizon is not reported as up to date" {
+            val response = json(
+                "range" to json("toIso" to "2026-03-10T12:00:00Z"),
+                "jobs" to arrayOf<dynamic>(),
+                "progress" to arrayOf(
+                    json(
+                        "feed" to "TRADES",
+                        "recentCompletedThroughIso" to "2026-03-10T11:00:00Z",
+                        "recentLastSuccessAtIso" to "2026-03-10T11:00:00Z",
+                    ),
+                    json(
+                        "feed" to "LEDGERS",
+                        "recentCompletedThroughIso" to "2026-03-10T12:00:00Z",
+                        "recentLastSuccessAtIso" to "2026-03-10T12:00:00Z",
+                    ),
+                ),
+            )
+
+            historyRefreshBadge(response).label shouldBe "Delayed"
+
+            val fresh = json(
+                "range" to json("toIso" to "2026-03-10T12:00:00Z"),
+                "jobs" to arrayOf<dynamic>(),
+                "progress" to arrayOf(
+                    json(
+                        "feed" to "TRADES",
+                        "recentCompletedThroughIso" to "2026-03-10T11:59:30Z",
+                        "recentLastSuccessAtIso" to "2026-03-10T11:59:30Z",
+                    ),
+                    json(
+                        "feed" to "LEDGERS",
+                        "recentCompletedThroughIso" to "2026-03-10T12:00:00Z",
+                        "recentLastSuccessAtIso" to "2026-03-10T12:00:00Z",
+                    ),
+                ),
+            )
+
+            historyRefreshBadge(fresh).label shouldBe "Up to date"
+        }
+
+        "a missing recent horizon keeps the status in the updating state" {
+            val response = json(
+                "range" to json("toIso" to "2026-03-10T12:00:00Z"),
+                "jobs" to arrayOf<dynamic>(),
+                "progress" to arrayOf<dynamic>(),
+            )
+
+            historyRefreshBadge(response).label shouldBe "Updating"
+            historyRefreshBadge(response).label shouldNotBe "Up to date"
+        }
+
+        "the activity table keeps its own expanded detail rows" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <table><tbody id="${HistoryRangeIds.ACTIVITY_BODY}"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            val response = json(
+                "items" to arrayOf(
+                    json(
+                        "occurredAt" to "2026-03-01T10:00:00Z",
+                        "outcome" to "Rebalanced",
+                        "mode" to "DRY RUN",
+                        "cycleId" to "cycle-1",
+                        "actions" to arrayOf("Sold BTC"),
+                    ),
+                ),
+            )
+            updateHistoryActivities(response, "?range=7d")
+
+            val details = document.querySelector(
+                "#${HistoryRangeIds.ACTIVITY_BODY} details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]",
+            ) as HTMLElement?
+            details?.setAttribute("open", "")
+
+            updateHistoryActivities(response, "?range=7d")
+
+            val refreshed = document.querySelector(
+                "#${HistoryRangeIds.ACTIVITY_BODY} details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]",
+            ) as HTMLElement?
+            refreshed?.getAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY) shouldBe "activity:cycle-1"
+            refreshed?.hasAttribute("open") shouldBe true
+            root.remove()
+        }
+        "an empty chart and an unknown analysis have no series and no panel" {
+            val container: HTMLElement = document.createElement("div") as HTMLElement
+            historyNativeSeries(container) shouldBe emptyList()
+
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            document.body?.appendChild(root)
+            historyVisibleAnalysis() shouldBe null
+            historyShowAnalysis(HistoryAnalysis.ALLOCATION) shouldBe false
+            root.remove()
+        }
+
+        "a native quantity chart falls back to the first asset when no panel is visible" {
+            val container: HTMLElement = document.createElement("div") as HTMLElement
+            container.innerHTML = """
+                <div ${HtmlAttrs.DATA_HISTORY_SERIES_ASSET}="ZUSD" hidden>
+                  <svg><circle data-time="1000" data-value="100" data-series="USD"></circle></svg>
+                </div>
+            """.trimIndent()
+
+            val series = historyNativeSeries(container)
+
+            series.size shouldBe 1
+            series[0].first shouldBe "USD"
+        }
+
+        "a chart without an analysis button registers no selector" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            document.body?.appendChild(root)
+            val selected = mutableListOf<String>()
+
+            initHistoryAnalysisSelector { selected += it }
+
+            selected shouldBe emptyList()
+            root.remove()
+        }
+    })

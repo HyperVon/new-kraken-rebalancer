@@ -6,6 +6,7 @@ import com.gemini.krakenbot.service.history.HistoryAssetValue
 import com.gemini.krakenbot.service.history.HistoryAssetValueStatus
 import com.gemini.krakenbot.service.history.HistoryCycleActivity
 import com.gemini.krakenbot.service.history.HistoryEventQuery
+import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
 import com.gemini.krakenbot.service.history.HistoryObservationStatus
@@ -14,6 +15,8 @@ import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncJobState
+import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
 import com.gemini.krakenbot.service.history.HistoryTrade
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -55,6 +58,50 @@ class HistoryReportingServiceTest : StringSpec() {
     )
 
     init {
+        coEvery { historyService.syncProgress(any()) } returns listOf(
+            coveredProgress(HistoryFeed.TRADES),
+            coveredProgress(HistoryFeed.LEDGERS),
+        )
+        coEvery { historyService.queryActivityPage(any()) } returns activityPage(emptyList(), total = 0L)
+
+        "uncovered empty trade history is not an authoritative zero" {
+            coEvery { historyService.queryTrades(any()) } returns page(emptyList())
+            coEvery { historyService.syncProgress(any()) } returns emptyList()
+
+            val stats = reporting.tradeStatistics(period)
+
+            stats.tradeCount shouldBe 0L
+            stats.complete shouldBe false
+            stats.incompleteReason shouldBe "Not synchronized for this period"
+        }
+
+        "a stale recent horizon leaves the selected period unsynchronized" {
+            coEvery { historyService.queryTrades(any()) } returns page(emptyList())
+            coEvery { historyService.syncProgress(any()) } returns listOf(
+                coveredProgress(HistoryFeed.TRADES).copy(
+                    recentCompletedThroughSec = Instant.parse("2026-05-02T00:00:00Z").epochSecond,
+                ),
+            )
+
+            val stats = reporting.tradeStatistics(period)
+
+            stats.complete shouldBe false
+            stats.incompleteReason shouldBe "Not synchronized for this period"
+        }
+
+        "uncovered ledger aggregates are not an authoritative zero" {
+            coEvery { historyService.queryLedgers(any()) } returns page(emptyList())
+            coEvery { historyService.syncProgress(any()) } returns emptyList()
+
+            val flows = reporting.depositsWithdrawals(period)
+            val rewards = reporting.rewards(period)
+
+            flows.complete shouldBe false
+            flows.incompleteReason shouldBe "Not synchronized for this period"
+            rewards.complete shouldBe false
+            rewards.incompleteReason shouldBe "Not synchronized for this period"
+        }
+
         "trade volume and fees group by currency and never sum mixed currencies" {
             coEvery { historyService.queryTrades(any()) } returns page(
                 listOf(
@@ -199,10 +246,12 @@ class HistoryReportingServiceTest : StringSpec() {
                     trade("t2", cost = "20.00", fee = "0.20", quoteCurrency = "USD"),
                 ),
             )
-            coEvery { historyService.queryCycleActivities(any(), any()) } returns listOf(
-                cycle("c1", Instant.parse("2026-05-05T00:00:00Z")),
-                cycle("c2", Instant.parse("2026-05-06T00:00:00Z")),
-                cycle("c3", Instant.parse("2026-05-07T00:00:00Z")),
+            coEvery { historyService.queryActivityPage(any()) } returns activityPage(
+                listOf(
+                    cycle("c1", Instant.parse("2026-05-05T00:00:00Z")),
+                    cycle("c2", Instant.parse("2026-05-06T00:00:00Z")),
+                    cycle("c3", Instant.parse("2026-05-07T00:00:00Z")),
+                ),
             )
 
             val trades = reporting.tradeStatistics(period)
@@ -348,23 +397,25 @@ class HistoryReportingServiceTest : StringSpec() {
             rewards.quantitiesByAsset shouldBe emptyMap()
         }
 
-        "bot cycle count at the fetch limit is Incomplete rather than a complete undercount" {
+        "bot cycle totals count every cycle in the selected interval beyond the recent page cap" {
             val start = Instant.parse("2026-05-01T00:00:00Z")
-            coEvery { historyService.queryCycleActivities(any(), any()) } returns
-                (0 until 100).map { index -> cycle("c$index", start.plusSeconds(index.toLong())) }
+            coEvery { historyService.queryActivityPage(any()) } returns activityPage(
+                (0 until 100).map { index -> cycle("c$index", start.plusSeconds(index.toLong())) },
+                total = 250L,
+            )
 
             val botCycles = reporting.botCycles(period)
 
-            botCycles.cycleCount shouldBe 100L
-            botCycles.complete shouldBe false
-            botCycles.incompleteReason shouldBe "Incomplete"
+            botCycles.cycleCount shouldBe 250L
+            botCycles.complete shouldBe true
+            botCycles.incompleteReason shouldBe null
         }
 
         "empty complete query reports zero with a complete state" {
             coEvery { historyService.queryValues(any()) } returns page(emptyList())
             coEvery { historyService.queryTrades(any()) } returns page(emptyList())
             coEvery { historyService.queryLedgers(any()) } returns page(emptyList())
-            coEvery { historyService.queryCycleActivities(any(), any()) } returns emptyList()
+            coEvery { historyService.queryActivityPage(any()) } returns activityPage(emptyList(), total = 0L)
 
             val stats = reporting.computeStatistics(period, listOf(Allocation("BTC", 60.0), Allocation("USD", 40.0)))
 
@@ -427,13 +478,12 @@ class HistoryReportingServiceTest : StringSpec() {
             bounded.isOutside(Instant.parse("2026-05-31T23:59:59Z")) shouldBe false
         }
 
-        "bot cycle count completes when fetched rows reach before the period start" {
+        "bot cycle totals count the selected interval without a recent page cap" {
             val start = Instant.parse("2026-05-01T00:00:00Z")
-            val rows = buildList {
-                add(cycle("before", start.minusSeconds(1)))
-                repeat(99) { index -> add(cycle("c$index", start.plusSeconds(index.toLong()))) }
-            }
-            coEvery { historyService.queryCycleActivities(any(), any()) } returns rows
+            coEvery { historyService.queryActivityPage(any()) } returns activityPage(
+                (0 until 99).map { index -> cycle("c$index", start.plusSeconds(index.toLong())) },
+                total = 99L,
+            )
 
             val botCycles = reporting.botCycles(period)
 
@@ -615,5 +665,31 @@ class HistoryReportingServiceTest : StringSpec() {
         occurredAt = occurredAt,
         dryRun = true,
         actions = emptyList(),
+    )
+
+    private fun activityPage(
+        cycles: List<HistoryCycleActivity>,
+        total: Long = cycles.size.toLong(),
+    ): HistoryPage<HistoryCycleActivity> = HistoryPage(
+        items = cycles,
+        total = total,
+        limit = cycles.size.coerceAtLeast(1),
+        offset = 0,
+        hasMore = false,
+    )
+
+    /** Durable progress that proves the reporting period was scanned for one feed. */
+    private fun coveredProgress(feed: HistoryFeed): HistorySyncProgressSummary = HistorySyncProgressSummary(
+        accountIdentityDigest = accountDigest,
+        feed = feed,
+        recentWindowStartSec = Instant.parse("2026-05-01T00:00:00Z").epochSecond,
+        recentCompletedThroughSec = Instant.parse("2026-06-01T00:00:00Z").epochSecond,
+        recentLastSuccessAt = fixedNow,
+        backfillState = HistorySyncJobState.COMPLETE,
+        backfillCompletedThroughSec = Instant.parse("2026-05-01T00:00:00Z").epochSecond,
+        backfillCursor = null,
+        repairLastRunAt = null,
+        lastError = null,
+        nextRetryAt = null,
     )
 }

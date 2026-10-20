@@ -21,6 +21,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **History presentation**: prioritize the portfolio value and compact summary,
+  combine navigation and date controls, and disclose chart tools and one optional
+  analysis instead of presenting stacked toolbars. Keep coverage, recorded-source
+  provenance and saved-view management on Data status.
+- **Recorded account scopes**: present every recorded scope automatically as a
+  separate value series, with asset-set changes and overlapping scope lifespans
+  marked as gaps rather than summed into one line.
 - **Dashboard activity**: retain recent cycle outcomes, including failures, with
   older-page navigation bounded to the latest 120 records.
 - **History charts and coverage**: show stored observation and representative
@@ -31,6 +38,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Keep the History value axis on the full selected period instead of the rounded
+  bounds Chart.js derives from the plotted points, and name each recorded scope
+  series by its assets in the chart legend.
 - Replace the misleading History All-Time High and mixed-currency aggregates
   with selected-range values and per-currency amounts; missing evidence remains
   unavailable or incomplete instead of becoming zero.

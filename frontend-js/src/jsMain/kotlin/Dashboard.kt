@@ -350,22 +350,20 @@ private fun renderRecentActivityItem(item: RecentActivityItem): HTMLElement {
     row.setAttribute(RecentActivityText.ORDERS_ATTRIBUTE, itemHasOrders(item).toString())
     val summary = document.createElement("summary") as HTMLElement
     summary.className = CssClass.Activity.CycleHeader.value
-    appendActivityText(summary, CssClass.Activity.CycleMeta.value, "${ViewText.ACTIVITY_CYCLE_PREFIX} ${item.cycleId}")
     appendActivityText(summary, CssClass.Activity.CycleTime.value, activityLocalTime(item.occurredAt))
-    appendActivityText(summary, CssClass.Activity.CycleMeta.value, activityModeLabel(item.mode))
     appendActivityText(summary, CssClass.Activity.CycleMeta.value, activityOutcomeLabel(item.outcome))
     val actionCount = item.actions.size
     val countLabel = if (actionCount == 1) RecentActivityText.ACTION_COUNT_ONE else RecentActivityText.ACTION_COUNT_MANY
     appendActivityText(summary, CssClass.Activity.CycleMeta.value, "$actionCount $countLabel")
     row.appendChild(summary)
-    if (item.actions.isNotEmpty()) {
-        val body = document.createElement("div") as HTMLElement
-        body.className = CssClass.Activity.CycleBody.value
-        item.actions.forEachIndexed { index, action ->
-            body.appendChild(renderRecentActivityAction(action, item.displayedActions.getOrNull(index)))
-        }
-        row.appendChild(body)
+    val body = document.createElement("div") as HTMLElement
+    body.className = CssClass.Activity.CycleBody.value
+    appendActivityText(body, CssClass.Activity.CycleIdentity.value, "${ViewText.ACTIVITY_CYCLE_PREFIX} ${item.cycleId}")
+    appendActivityText(body, CssClass.Activity.CycleIdentity.value, activityModeLabel(item.mode))
+    item.actions.forEachIndexed { index, action ->
+        body.appendChild(renderRecentActivityAction(action, item.displayedActions.getOrNull(index)))
     }
+    row.appendChild(body)
     row.asDynamic().open = item.cycleId in recentActivityUiState.expandedCycleIds
     row.addEventListener("toggle", {
         if (row.asDynamic().open as Boolean) {
