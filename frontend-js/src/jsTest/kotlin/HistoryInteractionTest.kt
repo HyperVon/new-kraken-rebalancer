@@ -5,6 +5,7 @@ import com.gemini.krakenbot.view.util.HistoryChartSelections
 import com.gemini.krakenbot.view.util.HistoryRangeIds
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -298,6 +299,7 @@ class HistoryInteractionTest :
                         "asset" to "ZUSD",
                         "amount" to "100.00",
                         "fee" to "0.50",
+                        "feeCurrency" to "ZUSD",
                         "isValidRecord" to true,
                     ),
                 ),
@@ -307,7 +309,84 @@ class HistoryInteractionTest :
             val row = document.querySelector("#${HtmlIds.HISTORY_LEDGERS_BODY} tr") as HTMLElement
             val cells = row.querySelectorAll("td")
             (cells.item(2) as HTMLElement).textContent shouldBe "USD"
+            (cells.item(4) as HTMLElement).textContent shouldBe "0.50 USD"
             row.innerHTML.contains("ZUSD") shouldBe true
+            root.remove()
+        }
+
+        "a trade row settles its fee in the quote currency and hides a zero fee" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <table><tbody id="${HtmlIds.HISTORY_TRADES_BODY}"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            updateHistoryTable(
+                "trades",
+                json(
+                    "items" to arrayOf(
+                        json(
+                            "time" to "2026-03-01T10:00:00Z",
+                            "pair" to "XXBTZUSD",
+                            "type" to "buy",
+                            "volume" to "0.1",
+                            "price" to "50000",
+                            "cost" to "5000",
+                            "fee" to "0.25",
+                            "quoteCurrency" to "ZUSD",
+                            "tradeId" to "T-2",
+                        ),
+                        json(
+                            "time" to "2026-03-02T10:00:00Z",
+                            "pair" to "XXBTZUSD",
+                            "type" to "buy",
+                            "volume" to "0.1",
+                            "price" to "50000",
+                            "cost" to "5000",
+                            "fee" to "0",
+                            "quoteCurrency" to "ZUSD",
+                            "tradeId" to "T-3",
+                        ),
+                    ),
+                    "total" to 2,
+                ),
+                "?range=7d",
+                50,
+            )
+
+            val cells = document.querySelectorAll("#${HtmlIds.HISTORY_TRADES_BODY} tr td")
+            // The server renders a trade fee in the currency Kraken reported for it.
+            (cells.item(6) as HTMLElement).textContent shouldBe "0.25 ZUSD"
+            (cells.item(13) as HTMLElement).textContent shouldBe "—"
+            root.remove()
+        }
+
+        "a ledger row without a fee shows no fee" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <table><tbody id="${HtmlIds.HISTORY_LEDGERS_BODY}"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            val response = json(
+                "items" to arrayOf(
+                    json(
+                        "ledgerId" to "L-2",
+                        "time" to "2026-03-01T10:00:00Z",
+                        "type" to "deposit",
+                        "asset" to "ZUSD",
+                        "amount" to "100.00",
+                        "fee" to "0",
+                        "feeCurrency" to "ZUSD",
+                        "isValidRecord" to true,
+                    ),
+                ),
+            )
+            updateHistoryTable("ledgers", response, "?range=7d", 50)
+
+            val row = document.querySelector("#${HtmlIds.HISTORY_LEDGERS_BODY} tr") as HTMLElement
+            val cells = row.querySelectorAll("td")
+            (cells.item(4) as HTMLElement).textContent shouldBe "—"
             root.remove()
         }
 

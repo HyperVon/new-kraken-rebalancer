@@ -111,6 +111,61 @@ class HistoryReportingServiceTest : StringSpec() {
             stats.incompleteReason shouldBe null
         }
 
+        "an unbounded period is covered by the coverage that reaches its end" {
+            coEvery { historyService.queryTrades(any()) } returns page(emptyList())
+            coEvery { historyService.syncProgress(any()) } returns listOf(
+                coveredProgress(HistoryFeed.TRADES).copy(
+                    coveredWindows = listOf(
+                        HistorySyncCoverageWindow(
+                            startSec = Instant.parse("2024-01-01T00:00:00Z").epochSecond,
+                            endSec = Instant.parse("2026-06-01T00:00:00Z").epochSecond,
+                        ),
+                    ),
+                ),
+            )
+
+            val stats = reporting.tradeStatistics(
+                HistoryReportingPeriod(
+                    sourceScope = accountScope,
+                    from = null,
+                    until = Instant.parse("2026-06-01T00:00:00Z"),
+                ),
+            )
+
+            stats.complete shouldBe true
+            stats.incompleteReason shouldBe null
+        }
+
+        "a gap inside the covered intervals leaves the period unsynchronized" {
+            coEvery { historyService.queryTrades(any()) } returns page(emptyList())
+            coEvery { historyService.syncProgress(any()) } returns listOf(
+                coveredProgress(HistoryFeed.TRADES).copy(
+                    coveredWindows = listOf(
+                        HistorySyncCoverageWindow(
+                            startSec = Instant.parse("2026-05-01T00:00:00Z").epochSecond,
+                            endSec = Instant.parse("2026-05-01T00:20:00Z").epochSecond,
+                        ),
+                        HistorySyncCoverageWindow(
+                            startSec = Instant.parse("2026-05-01T00:22:00Z").epochSecond,
+                            endSec = Instant.parse("2026-05-01T01:00:00Z").epochSecond,
+                        ),
+                    ),
+                ),
+            )
+
+            // The period spans the two-minute gap between the intervals and also fits inside the
+            // tolerance of the first interval, so only the interior gap can leave it unsynchronized.
+            val stats = reporting.tradeStatistics(
+                period.copy(
+                    from = Instant.parse("2026-05-01T00:05:00Z"),
+                    until = Instant.parse("2026-05-01T00:22:00Z"),
+                ),
+            )
+
+            stats.complete shouldBe false
+            stats.incompleteReason shouldBe "Not synchronized for this period"
+        }
+
         "uncovered ledger aggregates are not an authoritative zero" {
             coEvery { historyService.queryLedgers(any()) } returns page(emptyList())
             coEvery { historyService.syncProgress(any()) } returns emptyList()

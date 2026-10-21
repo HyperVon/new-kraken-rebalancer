@@ -1196,9 +1196,7 @@ private fun historyAppendTradeRow(body: Element, item: dynamic) {
     historyRecordCell(row, historyRecordValue(item, "price"), CssClass.Table.MonoCol.value)
     historyRecordCell(row, historyRecordValue(item, "cost"), CssClass.Table.MonoCol.value)
     val fee = historyRecordValue(item, "fee")
-    val feeDisplay = listOfNotNull(fee.takeIf(String::isNotBlank), feeCurrency?.takeIf(String::isNotBlank))
-        .joinToString(" ")
-    historyRecordCell(row, feeDisplay)
+    historyRecordCell(row, historyFeeCell(fee, feeCurrency), CssClass.Table.MonoCol.value)
     body.appendChild(row)
 }
 
@@ -1236,17 +1234,25 @@ private fun historyAppendLedgerRow(body: Element, item: dynamic) {
     historyRecordCell(row, displayAsset, CssClass.Table.SymbolCol.value)
     historyRecordCell(row, historyRecordValue(item, "amount"), CssClass.Table.MonoCol.value)
     val fee = historyRecordValue(item, "fee")
-    // Kraken settles a ledger fee in the ledger's own asset, so the refreshed row shows the same
-    // canonical asset name as the server-rendered row.
-    val feeCurrency = historyRecordValue(item, "feeCurrency").ifBlank { displayAsset }
-    historyRecordCell(
-        row,
-        listOf(fee, feeCurrency).filter(String::isNotBlank).joinToString(" "),
-        CssClass.Table.MonoCol.value,
-    )
+    // Kraken settles a ledger fee in the ledger's own asset.
+    historyRecordCell(row, historyFeeCell(fee, displayAsset), CssClass.Table.MonoCol.value)
     historyRecordCell(row, historyRecordValue(item, "balance"), CssClass.Table.MonoCol.value)
     body.appendChild(row)
 }
+
+/**
+ * The fee cell of a trade or ledger row. A record without a fee, or with a zero fee, shows no fee
+ * at all, exactly like the server-rendered row; a real fee settles in the record's own currency.
+ */
+private fun historyFeeCell(fee: String, currency: String?): String {
+    val amount = historyFeeAmount(fee)
+    if (amount == null || amount == 0.0) return ViewText.EM_DASH
+    val asset = currency?.takeIf(String::isNotBlank) ?: ViewText.HISTORY_UNKNOWN_CURRENCY
+    return "$fee $asset"
+}
+
+/** The fee of a ledger record, or null when the record carries no usable fee. */
+private fun historyFeeAmount(fee: String): Double? = fee.trim().takeIf(String::isNotEmpty)?.toDoubleOrNull()
 
 private fun historyAppendActivityRow(body: Element, item: dynamic) {
     val row = document.createElement("tr")
@@ -1450,13 +1456,32 @@ internal fun historyChartSelectionFor(chartId: String): String = when (chartId) 
 }
 
 /**
- * Baseline a chart's cumulative series is measured from. The server-rendered period start is used
- * until the chart has answered once, so the first refresh keeps the same running total.
+ * Baseline a chart's cumulative series is measured from. The chart's own server-rendered period is
+ * used until the chart has answered once, so the first refresh keeps the same running total.
  */
 internal fun historyChartBaseline(chartId: String): String? = historyChartBaselines[chartId]
-    ?: document.getElementById(HtmlIds.HISTORY_VALUE_CHART)
-        ?.getAttribute(HtmlAttrs.DATA_FULL_FROM)
+    ?: document.getElementById(chartId)
+        ?.let { container ->
+            container.getAttribute(HtmlAttrs.DATA_FULL_FROM)
+                ?: container.querySelector("svg")?.getAttribute(HtmlAttrs.DATA_FULL_FROM)
+        }
         ?.takeIf(String::isNotBlank)
+
+/**
+ * The selected period's start is shared by every chart, so a new period replaces the baseline of
+ * all of them at once.
+ */
+private fun applyHistoryPeriodBaseline(baseline: String?) {
+    if (baseline.isNullOrBlank()) return
+    listOf(
+        HtmlIds.HISTORY_VALUE_CHART,
+        HtmlIds.HISTORY_HOLDINGS_CHART,
+        HtmlIds.HISTORY_ALLOCATION_CHART,
+        HtmlIds.HISTORY_CASH_FLOW_CHART,
+        HtmlIds.HISTORY_REWARDS_CHART,
+        HtmlIds.HISTORY_ASSET_CHART,
+    ).forEach { historyChartBaselines[it] = baseline }
+}
 
 /** Debounce window for the zoomed-interval request, so a drag gesture issues one query. */
 private const val HISTORY_VIEWPORT_DETAIL_DEBOUNCE_MS = 250
@@ -1490,9 +1515,6 @@ internal fun applyHistoryChartSeries(
     val container = document.getElementById(chartId) ?: return false
     container.asDynamic().historySeriesResponse = response
     val allSeries = historyKeyedApiSeries(response)
-    historyStatusString(response.fullRange, "baselineFromIso")
-        ?.takeIf(String::isNotBlank)
-        ?.let { historyChartBaselines[chartId] = it }
     var selector = document.querySelector("[${HtmlAttrs.DATA_HISTORY_SERIES_SELECT}='$chartId']") as? HTMLSelectElement
     val native = chartId in setOf(
         HtmlIds.HISTORY_CASH_FLOW_CHART,
@@ -2255,15 +2277,24 @@ internal fun initHistoryRangeControls(
             } else {
                 null
             }
+            val requestedBaseline = if (pinnedRange != null) historyChartBaseline(chartId) else null
             val chartQuery = historyApiQuery(
                 state = state,
                 chart = true,
                 pinnedRange = pinnedRange,
                 selection = selection,
-                baselineFrom = historyChartBaseline(chartId),
+                // A zoomed request measures its running total from the selected period, not from the
+                // zoom window; an unzoomed request already starts at the selected period.
+                baselineFrom = requestedBaseline,
             )
             val success: (dynamic) -> Unit = { response ->
                 if (queryVersion == activeQueryVersion && chartRequestVersions[chartId] == version) {
+                    // The response reports the baseline the server measured from. A pinned request
+                    // without an explicit baseline would report its zoom window instead, so that
+                    // answer is not kept as the period baseline.
+                    if (pinnedRange == null || requestedBaseline != null) {
+                        applyHistoryPeriodBaseline(historyStatusString(response.fullRange, "baselineFromIso"))
+                    }
                     applyHistoryChartSeries(chartId, response, preserveViewport)
                 }
             }
@@ -2409,6 +2440,9 @@ internal fun initHistoryRangeControls(
             ) {
                 latestChartResponse = response
                 updateHistoryPortfolioChart(response)
+                // A new period measures its cumulative series from its own baseline, so every
+                // chart's baseline becomes the new period's start.
+                applyHistoryPeriodBaseline(historyStatusString(response.fullRange, "baselineFromIso"))
                 refreshCoverage()
             }
         }, {})

@@ -180,16 +180,15 @@ internal fun holdingsSeries(observations: List<HistoryObservation>): List<Histor
 /**
  * Allocation deviation in percentage points: the observed share minus the configured target.
  * The same helper serves the server-rendered chart, so the refreshed chart never changes meaning.
+ * Only configured targets have a reference to deviate from, so only they are charted.
  */
 internal fun allocationSeries(
     observations: List<HistoryObservation>,
     targets: Map<String, BigDecimal>,
 ): List<HistoryApiSeries> {
     val ordered = observations.sortedBy { it.observedAt }
-    val symbols = (targets.keys + ordered.flatMap { observation -> observation.assets.map { it.symbol } })
-        .toSortedSet()
-    return symbols.map { symbol ->
-        val target = targets[symbol] ?: BigDecimal.ZERO
+    return targets.keys.toSortedSet().map { symbol ->
+        val target = targets.getValue(symbol)
         HistoryApiSeries(
             key = symbol,
             label = symbol,

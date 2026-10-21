@@ -237,7 +237,10 @@ key later permits older history. A seven-day repair window
 is rechecked daily; the repair keeps its own frozen window and cursor and yields
 between pages to a pending recent refresh. Every successfully scanned interval is
 merged into a durable per-feed coverage union, so a rolling refresh keeps the
-periods it already covered. Transient failures use a jittered 1, 2, 5, then 15 minute
+periods it already covered. A range is reported as unsynchronized when that
+union does not reach across it: a gap between two covered intervals leaves the
+range unsynchronized, and a range without a start bound needs coverage that
+reaches its end. Transient failures use a jittered 1, 2, 5, then 15 minute
 retry schedule until the operation succeeds; account-scope changes and API-key
 restriction changes block that sync until an operator selects **Retry**. Simulation scopes do not
 fetch Kraken trades or ledgers.

@@ -12,6 +12,10 @@ import java.math.RoundingMode
  * target. A holding exactly at its target has zero deviation. One definition serves the
  * server-rendered chart, the summary statistic and the refreshed chart API, so the same sample
  * never changes meaning between them.
+ *
+ * A complete observation lists every holding, so an asset the portfolio does not hold is worth
+ * zero and deviates by its full target. A holding whose value is unknown states no deviation: the
+ * sample is incomplete for that asset rather than a confident zero.
  */
 internal fun allocationDeviationPercent(
     observation: HistoryObservation,
@@ -21,7 +25,12 @@ internal fun allocationDeviationPercent(
     if (observation.status != HistoryObservationStatus.COMPLETE) return null
     val totalUsd = observation.totalUsd ?: return null
     if (totalUsd.signum() <= 0) return null
-    val valueUsd = observation.assets.firstOrNull { it.symbol == symbol }?.valueUsd ?: BigDecimal.ZERO
+    val holding = observation.assets.firstOrNull { it.symbol == symbol }
+    val valueUsd = when {
+        holding == null -> BigDecimal.ZERO
+        holding.valueUsd == null -> return null
+        else -> holding.valueUsd
+    }
     val actualPercent = valueUsd
         .multiply(BigDecimal.valueOf(PrecisionConstants.HUNDRED_INT.toLong()))
         .divide(totalUsd, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)

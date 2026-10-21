@@ -55,5 +55,14 @@ credentials or stores.
   values or periods. Oversized charts sample the full time range within the
   point cap while retaining bucket endpoints, extrema, and incomplete-cycle
   boundaries. Simulation values are scoped separately from account data.
+- The allocation deviation has one definition for the rendered page, the chart
+  API, and the summary: percentage points against the configured targets, a
+  target the portfolio does not hold worth zero, and no deviation for an
+  unknown holding value or an incomplete sample.
+- Sync coverage is a durable union of scanned intervals: a gap between two
+  covered intervals leaves a range unsynchronized, and a range without a start
+  bound needs coverage that reaches its end.
+- History ledger rows show the canonical asset name and settle their fee in the
+  same asset, and a record without a fee shows no fee at all.
 - Saving Settings retains active controls and removes retired drawdown,
   deployment, inception, and comparison-start keys from the saved JSON.

@@ -30,7 +30,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Interrupted recent scans**: a failed recent scan resumes from its committed
   cursor inside its frozen window.
 - **Ledger asset names**: refreshed ledger rows show the canonical asset name
-  and settle their fee in the same asset as the server-rendered row.
+  and settle their fee in the same asset as the server-rendered row, and a
+  record without a fee shows no fee at all.
 - **Bot-activity details**: an expanded activity detail survives the automatic
   activity reload.
 
@@ -55,7 +56,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   provenance and saved-view management on Data status.
 - **Recorded account scopes**: present every recorded scope automatically as a
   separate value series, with asset-set changes and overlapping scope lifespans
-  marked as gaps rather than summed into one line.
+  marked as gaps rather than summed into one line. Superseded by 6.20.1, which
+  keeps the totals of scopes that follow each other and only withholds scopes
+  observed at the same instant.
 - **Dashboard activity**: retain recent cycle outcomes, including failures, with
   older-page navigation bounded to the latest 120 records.
 - **History charts and coverage**: show stored observation and representative

@@ -209,14 +209,12 @@ class HistoryReportingService(
                 incompleteReason = ViewText.HISTORY_REPORT_UNAVAILABLE,
             )
         }
-        val valuesBySymbol = latest.assets.mapNotNull { asset -> asset.valueUsd?.let { asset.symbol to it } }.toMap()
         val deviationsBySymbol = LinkedHashMap<String, BigDecimal>()
         for ((symbol, targetPercent) in targetsUsed) {
-            val valueUsd = valuesBySymbol[symbol] ?: continue
-            val actualPercent = valueUsd
-                .multiply(BigDecimal.valueOf(PrecisionConstants.HUNDRED_INT.toLong()))
-                .divide(totalUsd, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
-            deviationsBySymbol[symbol] = actualPercent.subtract(targetPercent)
+            // The chart API and the rendered page measure the same deviation, so a holding with an
+            // unknown value is left out here as well instead of becoming a confident zero.
+            val deviation = allocationDeviationPercent(latest, symbol, targetPercent) ?: continue
+            deviationsBySymbol[symbol] = deviation
         }
         val complete = deviationsBySymbol.size == targetsUsed.size
         return AllocationDeviation(
@@ -379,9 +377,18 @@ class HistoryReportingService(
     private fun coversPeriod(progress: HistorySyncProgressSummary?, period: HistoryReportingPeriod): Boolean {
         if (progress == null) return false
         val untilSec = period.until?.epochSecond ?: return false
-        val fromSec = period.from?.epochSecond ?: 0L
-        return coveredSegments(progress).any { segment ->
-            fromSec >= segment.first - COVERAGE_TOLERANCE_SECONDS &&
+        // An unbounded period starts where the account's coverage starts, not at the epoch.
+        val fromSec = period.from?.epochSecond
+        val requestStart = fromSec ?: Long.MIN_VALUE
+        val segments = coveredSegments(progress)
+        if (segments.isEmpty()) return false
+        // A gap between two covered intervals is never covered, not even inside the tolerance.
+        val interiorGap = segments.zipWithNext().any { (earlier, later) ->
+            later.first > earlier.last + 1 && earlier.last >= requestStart && later.first <= untilSec
+        }
+        if (interiorGap) return false
+        return segments.any { segment ->
+            (fromSec == null || fromSec >= segment.first - COVERAGE_TOLERANCE_SECONDS) &&
                 untilSec <= segment.last + COVERAGE_TOLERANCE_SECONDS
         }
     }

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.history
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
@@ -193,7 +194,8 @@ class HistoryDatabaseTest : StringSpec() {
                             rs.next() shouldBe true
                             rs.getString(1) shouldBe "RECENT"
                             rs.getString(2) shouldBe "COMPLETE"
-                            rs.getLong(3) shouldBe 1_700_000_000L
+                            // The horizon is the latest completed window of the feed.
+                            rs.getLong(3) shouldBe 1_700_001_500L
                             rs.next() shouldBe false
                         }
                     }
@@ -201,6 +203,27 @@ class HistoryDatabaseTest : StringSpec() {
                         stmt.executeQuery("SELECT revision FROM history_data_revision WHERE id = 1").use { rs ->
                             rs.next() shouldBe true
                             rs.getLong(1) shouldBe 1
+                        }
+                    }
+                    conn.prepareStatement(
+                        "SELECT feed, start_sec, end_sec, updated_at_ns FROM history_sync_coverage " +
+                            "WHERE account_identity_digest = ? ORDER BY start_sec",
+                    ).use { statement ->
+                        statement.setString(1, ACCOUNT_DIGEST)
+                        statement.executeQuery().use { rs ->
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe "TRADES"
+                            rs.getLong(2) shouldBe 0L
+                            rs.getLong(3) shouldBe 1_700_000_000L
+                            val migratedAtNs = rs.getLong(4)
+                            migratedAtNs shouldBeGreaterThan 0L
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe "TRADES"
+                            rs.getLong(2) shouldBe 1_700_001_000L
+                            rs.getLong(3) shouldBe 1_700_001_500L
+                            // Both seeded intervals carry the migration's own timestamp.
+                            rs.getLong(4) shouldBe migratedAtNs
+                            rs.next() shouldBe false
                         }
                     }
                 }
@@ -293,6 +316,14 @@ class HistoryDatabaseTest : StringSpec() {
                 "INSERT INTO history_sync_windows(scan_id, account_identity_digest, feed, start_sec, end_sec, " +
                     "state, started_at_ns, completed_at_ns) " +
                     "VALUES ('scan-complete', ?, 'TRADES', 0, 1700000000, 'COMPLETE', 1, 2)",
+            ).use { statement ->
+                statement.setString(1, ACCOUNT_DIGEST)
+                statement.executeUpdate()
+            }
+            conn.prepareStatement(
+                "INSERT INTO history_sync_windows(scan_id, account_identity_digest, feed, start_sec, end_sec, " +
+                    "state, started_at_ns, completed_at_ns) " +
+                    "VALUES ('scan-complete-later', ?, 'TRADES', 1700001000, 1700001500, 'COMPLETE', 1, 2)",
             ).use { statement ->
                 statement.setString(1, ACCOUNT_DIGEST)
                 statement.executeUpdate()

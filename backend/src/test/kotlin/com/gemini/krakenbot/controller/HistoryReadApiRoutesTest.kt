@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.controller
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.service.history.HistoryAssetValue
 import com.gemini.krakenbot.service.history.HistoryAssetValueStatus
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
@@ -411,7 +413,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
             }
         }
 
-        "allocation series reports each asset share of the observation total" {
+        "allocation series reports the deviation from the configured target" {
             stubReads(
                 observations = listOf(
                     observation(
@@ -437,16 +439,54 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     ),
                 ),
             )
+            every { configService.getConfig() } returns TestFixtures.config(
+                allocations = listOf(
+                    Allocation("BTC", 40.0),
+                    Allocation("ETH", 60.0),
+                ),
+            )
 
             testApplication {
                 application { configureTestEnv() }
                 val response = client.get("${Routes.API_HISTORY_CHARTS}?preset=30d&selection=allocation")
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
+                json["series"].map { it["key"].asText() } shouldContainExactly listOf("BTC", "ETH")
                 json["series"][0]["unit"].asText() shouldBe "percent"
                 val values = json["series"].associate { it["key"].asText() to it["points"][0]["v"] }
-                values.getValue("BTC").decimalValue() shouldBeEqualComparingTo BigDecimal("60.00")
-                values.getValue("USD").decimalValue() shouldBeEqualComparingTo BigDecimal("40.00")
+                // 60% held against a 40% target is +20 percentage points of drift.
+                values.getValue("BTC").decimalValue() shouldBeEqualComparingTo BigDecimal("20")
+                // The portfolio does not hold the second target, so it drifts by its full target.
+                values.getValue("ETH").decimalValue() shouldBeEqualComparingTo BigDecimal("-60")
+            }
+        }
+
+        "allocation series without a configured target reports no series" {
+            stubReads(
+                observations = listOf(
+                    observation(
+                        "alloc",
+                        Instant.parse("2026-03-01T00:00:00Z"),
+                        "1000.00",
+                        assets = listOf(
+                            HistoryAssetValue(
+                                symbol = "BTC",
+                                status = HistoryAssetValueStatus.COMPLETE,
+                                quantity = BigDecimal("1"),
+                                priceUsd = BigDecimal("600.00"),
+                                valueUsd = BigDecimal("600.00"),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+
+            testApplication {
+                application { configureTestEnv() }
+                val response = client.get("${Routes.API_HISTORY_CHARTS}?preset=30d&selection=allocation")
+                response.status shouldBe HttpStatusCode.OK
+                val json = body(response.bodyAsText())
+                json["series"].map { it["key"].asText() } shouldBe emptyList()
             }
         }
 

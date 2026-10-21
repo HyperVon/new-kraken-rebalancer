@@ -363,6 +363,9 @@ class HistoryApiPresenter(
         val baseline = requested ?: selectedFrom
         if (baseline == null) return null
         if (!baseline.isBefore(until)) return selectedFrom
+        // A baseline after the period start would restart the accumulation inside the period and
+        // drop the capital that arrived before it.
+        if (selectedFrom != null && baseline.isAfter(selectedFrom)) return selectedFrom
         return baseline
     }
 

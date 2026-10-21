@@ -2032,9 +2032,9 @@ internal fun allocationDeviationSeries(
     targets: Map<String, BigDecimal>,
 ): List<Pair<String, List<HistorySeriesPoint>>> {
     val ordered = observations.sortedBy { it.observedAt }
-    val symbols = (targets.keys + ordered.flatMap { observation -> observation.assets.map { it.symbol } }).toSortedSet()
-    return symbols.map { symbol ->
-        val target = targets[symbol] ?: BigDecimal.ZERO
+    // Only configured targets have a reference to deviate from, so only they are charted.
+    return targets.keys.toSortedSet().map { symbol ->
+        val target = targets.getValue(symbol)
         symbol to ordered.mapNotNull { observation ->
             allocationDeviationPercent(observation, symbol, target)?.let { deviation ->
                 HistorySeriesPoint(observation.observedAt, deviation)

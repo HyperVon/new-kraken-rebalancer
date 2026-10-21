@@ -398,7 +398,7 @@ class HistoryApiPresenterTest : StringSpec() {
                 assets = listOf(asset("BTC", valueUsd = null)),
             )
 
-            val point = allocationSeries(listOf(nullTotal), emptyMap()).single().points.single()
+            val point = allocationSeries(listOf(nullTotal), mapOf("BTC" to BigDecimal("40"))).single().points.single()
 
             point.v.shouldBeNull()
             point.complete shouldBe false
@@ -412,7 +412,7 @@ class HistoryApiPresenterTest : StringSpec() {
                 assets = listOf(asset("BTC", valueUsd = "0")),
             )
 
-            val point = allocationSeries(listOf(zeroTotal), emptyMap()).single().points.single()
+            val point = allocationSeries(listOf(zeroTotal), mapOf("BTC" to BigDecimal("40"))).single().points.single()
 
             point.v.shouldBeNull()
             point.complete shouldBe false
@@ -466,6 +466,13 @@ class HistoryApiPresenterTest : StringSpec() {
             val api = allocationSeries(listOf(sample), targets)
             val rendered = allocationDeviationSeries(listOf(sample), targets)
 
+            api.map { it.key } shouldContainExactly listOf("BTC", "ETH")
+            api.forEach { entry ->
+                val deviation = entry.points.single().v!!
+                deviation.shouldBeEqualComparingTo(
+                    if (entry.key == "BTC") BigDecimal("5") else BigDecimal("-5"),
+                )
+            }
             api.map { it.key } shouldContainExactly rendered.map { it.first }
             api.forEach { entry ->
                 val renderedPoints = rendered.first { it.first == entry.key }.second

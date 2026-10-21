@@ -219,11 +219,48 @@ class HistoryChartRefreshTest : StringSpec() {
                 val refreshed = updates.first {
                     it.first.startsWith("/api/history/charts?") && chartRefreshSelection(it.first) == "DEPOSITS"
                 }.first
-                refreshed.contains("baselineFrom=2026-03-01T00%3A00%3A00Z") shouldBe true
+                // The whole selected period is requested, so the server already measures it from the
+                // period start and no baseline needs to be pinned.
+                refreshed.contains("baselineFrom=") shouldBe false
+
+                sessions.getValue("history-cash-flow-chart").viewport = ChartViewport(
+                    ChartRange(1000.0, 3000.0),
+                    ChartRange(1500.0, 2500.0),
+                )
+                runTick()
+                statuses[2](json("dataRevision" to 3))
+                val zoomed = updates.last {
+                    it.first.startsWith("/api/history/charts?") && chartRefreshSelection(it.first) == "DEPOSITS"
+                }.first
+                zoomed.contains("baselineFrom=2026-03-01T00%3A00%3A00Z") shouldBe true
+
+                // A refreshed period replaces the baseline of every chart with its own start.
+                val refreshedChart = updates.last {
+                    it.first.startsWith("/api/history/charts?") && chartRefreshSelection(it.first) == "DEPOSITS"
+                }.second
+                refreshedChart(
+                    json(
+                        "series" to arrayOf(chartRefreshSeries("ZUSD", "USD", 100.0)),
+                        "range" to
+                            json(
+                                "preset" to "30d",
+                                "fromIso" to "2026-02-01T00:00:00Z",
+                                "toIso" to "2026-03-30T00:00:00Z",
+                            ),
+                        "fullRange" to json(
+                            "fromIso" to "2026-02-01T00:00:00Z",
+                            "toIso" to "2026-03-30T00:00:00Z",
+                            "pointCount" to 1,
+                            "baselineFromIso" to "2026-02-01T00:00:00Z",
+                        ),
+                    ),
+                )
+                historyChartBaseline("history-cash-flow-chart") shouldBe "2026-02-01T00:00:00Z"
             } finally {
                 disposeHistoryAutoRefresh()
                 wrapper.remove()
                 disposeDetachedHistoryCharts()
+                historyChartBaselines.clear()
                 window.asDynamic().setInterval = oldSetInterval
                 window.asDynamic().clearInterval = oldClearInterval
             }

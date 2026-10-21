@@ -394,6 +394,17 @@ you select an asset and never values old ledger events using a nearby cycle
 price. Missing or invalid amounts are marked unavailable or incomplete rather
 than presented as zero.
 
+**Target deviations** are shown in percentage points: the share the portfolio
+holds of an asset minus the share you configured for it. The chart lists the
+configured targets only. A target the portfolio does not hold is worth zero, so
+it deviates by its full target; a holding whose value is unknown, or an
+incomplete sample, states no deviation at all instead of a confident zero.
+
+A range is reported as **not synchronized** when the recorded coverage does not
+reach across it: a gap between two covered intervals leaves the range
+unsynchronized, and a range without a start bound needs coverage that reaches
+its end.
+
 Hover or tap the chart for exact values and UTC timestamps. Dense portfolio
 lines use smaller point markers to keep the trend readable; **Points** makes
 them larger again. **Points** and

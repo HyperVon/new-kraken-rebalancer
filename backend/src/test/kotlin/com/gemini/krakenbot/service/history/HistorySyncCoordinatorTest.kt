@@ -238,6 +238,33 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
+        "a backfill window the key truncates at its end stays retryable" {
+            withFixture { fixture ->
+                val restrictedTo = fixture.clock.now.epochSecond - 2L * 86_400
+                fixture.kraken.authenticatedAccountInfoFactory = { identity ->
+                    AuthenticatedAccountInfo(
+                        identity = identity,
+                        queryFromSec = null,
+                        queryToSec = restrictedTo,
+                        queryBoundsVerified = true,
+                    )
+                }
+                fixture.tradesScript()
+
+                fixture.coordinator.runCoalescedPass()
+
+                val backfill = fixture.backfillJob()
+                backfill.state shouldBe HistorySyncJobState.FAILED
+                // The scan only reached the key's permitted end, so the window never completed.
+                backfill.windowEndSec shouldBe restrictedTo
+                backfill.completedThroughSec shouldBe null
+                backfill.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_PARTIAL
+                // A failed window keeps a retry time and is not blocked, so it runs again.
+                backfill.nextRetryAt shouldNotBe null
+                backfill.state shouldNotBe HistorySyncJobState.BLOCKED
+            }
+        }
+
         "operator retry clears blocked jobs and manual refresh serves one feed" {
             withFixture { fixture ->
                 val trades = fixture.tradesScript()
