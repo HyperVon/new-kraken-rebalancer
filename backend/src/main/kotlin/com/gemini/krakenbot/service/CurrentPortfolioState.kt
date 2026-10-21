@@ -1,28 +1,40 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.time.Instant
+import java.util.UUID
 
-/** Bounded in-memory view of the latest completed cycles; it never reads persisted history. */
+/** Process-local snapshot and cycle-activity state; it never reads persisted history. */
 class CurrentPortfolioState {
     private val mutableSnapshot = MutableStateFlow<PortfolioSnapshot?>(null)
+    private val mutableActivityUpdate = MutableStateFlow<CurrentCycleActivity?>(null)
     private val lock = Any()
     private val recent = ArrayDeque<PortfolioSnapshot>()
+    private val recentActivities = ArrayDeque<CurrentCycleActivity>()
     private var sourceScope: String? = null
+    private var activitySourceId = UUID.randomUUID().toString()
 
     val snapshot: StateFlow<PortfolioSnapshot?> = mutableSnapshot.asStateFlow()
+    val activityUpdates: StateFlow<CurrentCycleActivity?> = mutableActivityUpdate.asStateFlow()
 
-    fun publish(snapshot: PortfolioSnapshot, sourceScope: String) {
+    fun publish(snapshot: PortfolioSnapshot, sourceScope: String, activity: CurrentCycleActivity? = null) {
         synchronized(lock) {
-            if (this.sourceScope != sourceScope) {
-                recent.clear()
-                this.sourceScope = sourceScope
-            }
+            useSource(sourceScope)
             recent.addLast(snapshot)
             while (recent.size > MAX_RECENT_SNAPSHOTS) recent.removeFirst()
+            activity?.let(::appendActivity)
             mutableSnapshot.value = snapshot
+        }
+    }
+
+    fun publishActivity(activity: CurrentCycleActivity, sourceScope: String) {
+        synchronized(lock) {
+            useSource(sourceScope)
+            appendActivity(activity)
         }
     }
 
@@ -31,12 +43,50 @@ class CurrentPortfolioState {
         CurrentPortfolioDashboardView(
             latest = mutableSnapshot.value,
             recentSnapshots = recent.toList(),
+            recentActivities = recentActivities.sortedActivities(),
+            activitySourceId = activitySourceId,
         )
     }
 
+    private fun useSource(sourceScope: String) {
+        if (this.sourceScope == sourceScope) return
+        recent.clear()
+        recentActivities.clear()
+        this.sourceScope = sourceScope
+        activitySourceId = UUID.randomUUID().toString()
+        mutableSnapshot.value = null
+        mutableActivityUpdate.value = null
+    }
+
+    private fun appendActivity(activity: CurrentCycleActivity) {
+        recentActivities.removeAll { it.cycleId == activity.cycleId }
+        recentActivities.addLast(activity)
+        while (recentActivities.size > MAX_RECENT_ACTIVITIES) recentActivities.removeFirst()
+        mutableActivityUpdate.value = activity
+    }
+
+    private fun ArrayDeque<CurrentCycleActivity>.sortedActivities(): List<CurrentCycleActivity> =
+        sortedWith(compareByDescending<CurrentCycleActivity> { it.occurredAt }.thenByDescending { it.cycleId })
+
     companion object {
         const val MAX_RECENT_SNAPSHOTS = 24
+        const val MAX_RECENT_ACTIVITIES = 120
     }
 }
 
-data class CurrentPortfolioDashboardView(val latest: PortfolioSnapshot?, val recentSnapshots: List<PortfolioSnapshot>)
+enum class CurrentCycleActivityMode { SIMULATION, DRY_RUN, LIVE }
+
+data class CurrentCycleActivity(
+    val cycleId: String,
+    val occurredAt: Instant,
+    val mode: CurrentCycleActivityMode,
+    val outcome: HistoryCycleOutcome?,
+    val actions: List<String>,
+)
+
+data class CurrentPortfolioDashboardView(
+    val latest: PortfolioSnapshot?,
+    val recentSnapshots: List<PortfolioSnapshot>,
+    val recentActivities: List<CurrentCycleActivity> = emptyList(),
+    val activitySourceId: String = "",
+)

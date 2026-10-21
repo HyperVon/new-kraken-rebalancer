@@ -18,12 +18,15 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.history.HistoryApiPresenter
+import com.gemini.krakenbot.service.history.HistoryCsvExporter
 import com.gemini.krakenbot.service.history.HistoryCycleGate
 import com.gemini.krakenbot.service.history.HistoryDatabase
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistoryServiceImpl
 import com.gemini.krakenbot.service.history.HistoryStore
+import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
 import com.gemini.krakenbot.service.history.SqliteHistoryStore
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
@@ -35,6 +38,7 @@ import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
@@ -110,6 +114,16 @@ val coreModule =
         }
         single<HistoryStore> { SqliteHistoryStore(get()) }
         single<HistoryService> { HistoryServiceImpl(get()) }
+        single { HistoryCsvExporter(historyService = get(), historyStore = get()) }
+        single { HistoryReportingService(historyService = get()) }
+        single {
+            HistoryApiPresenter(
+                historyService = get(),
+                historyStore = get(),
+                reportingService = get(),
+                syncCoordinator = get(),
+            )
+        }
         single {
             HistoryObservationRecorder(
                 store = get(),
@@ -126,6 +140,14 @@ val coreModule =
                 dataDirectoryIdentity = get(),
                 store = get(),
                 cycleGate = HistoryCycleGate { block -> get<PortfolioManager>().runHistoryPageIfAdmitted(block) },
+            )
+        }
+        single {
+            HistorySyncCoordinator(
+                applicationScope = get(qualifier = named(APPLICATION_SCOPE_QUALIFIER)),
+                synchronizer = get(),
+                store = get(),
+                settingsProvider = { get<ConfigService>().getConfig().settings },
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
@@ -161,6 +183,7 @@ val coreModule =
                 krakenService = get(),
                 currentPortfolioState = get(),
                 historyObservationRecorder = get(),
+                historySyncCoordinator = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {
@@ -190,6 +213,9 @@ val webModule =
                 historyService = get(),
                 historyObservationRecorder = get(),
                 historySynchronizer = get(),
+                historyApi = get(),
+                historyReportingService = get(),
+                historyCsvExporter = get(),
             )
         }
     }

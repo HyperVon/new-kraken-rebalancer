@@ -17,6 +17,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.history.HistoryDatabase
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
+import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
@@ -81,6 +82,7 @@ fun main(args: Array<String>) {
     val portfolioManager = koin.get<PortfolioManager>()
     val orderIntentService = koin.get<OrderIntentService>()
     val historyObservationRecorder = koin.get<HistoryObservationRecorder>()
+    val historySyncCoordinator = koin.get<HistorySyncCoordinator>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
 
@@ -88,6 +90,9 @@ fun main(args: Array<String>) {
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
     historyObservationRecorder.start(applicationScope)
+    historySyncCoordinator.start(applicationScope)
+    // Catch up the recent history window right away; the periodic ticker keeps it current afterwards.
+    historySyncCoordinator.requestRecentRefresh()
     portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
@@ -106,6 +111,9 @@ fun main(args: Array<String>) {
             if (!workerJoined) {
                 log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
             }
+            // Keep the coordinator alive until the worker is drained so it can service a History
+            // refresh requested before shutdown finishes.
+            historySyncCoordinator.stop()
             applicationScope.cancel()
             httpClient.close()
             stopKoin()

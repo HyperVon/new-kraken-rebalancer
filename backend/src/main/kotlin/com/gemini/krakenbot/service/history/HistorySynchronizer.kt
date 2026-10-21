@@ -47,13 +47,19 @@ class HistorySynchronizer(
     private val jobs = mutableMapOf<HistoryFeed, Job>()
 
     /** Starts or joins the one active scan for this feed. */
-    fun startSync(feed: HistoryFeed, startSec: Long, endSec: Long): Job {
+    fun startSync(
+        feed: HistoryFeed,
+        startSec: Long,
+        endSec: Long,
+        purpose: HistorySyncPurpose = HistorySyncPurpose.RECENT,
+        resumeCursor: String? = null,
+    ): Job {
         require(startSec <= endSec)
         synchronized(jobsLock) {
             jobs[feed]?.takeIf(Job::isActive)?.let { return it }
             val job = applicationScope.launch {
                 try {
-                    syncWindow(feed, startSec, endSec)
+                    syncWindow(feed, startSec, endSec, purpose, resumeCursor)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -72,8 +78,19 @@ class HistorySynchronizer(
         }
     }
 
-    /** A scan processes pages serially; storage commits each page before the next request starts. */
-    suspend fun syncWindow(feed: HistoryFeed, startSec: Long, endSec: Long): HistorySyncStatus {
+    /**
+     * A scan processes pages serially; storage commits each page before the next request starts.
+     * [betweenPages] runs after each committed page and may pause the window so pending recent
+     * work can run first; the committed cursor then resumes the same frozen window later.
+     */
+    suspend fun syncWindow(
+        feed: HistoryFeed,
+        startSec: Long,
+        endSec: Long,
+        purpose: HistorySyncPurpose = HistorySyncPurpose.RECENT,
+        resumeCursor: String? = null,
+        betweenPages: suspend () -> Boolean = { false },
+    ): HistorySyncStatus {
         require(startSec <= endSec)
         return feedLocks.getOrPut(feed) { Mutex() }.withLock {
             var restarts = 0
@@ -84,7 +101,10 @@ class HistorySynchronizer(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                throw IllegalStateException("History sync requires an authenticated, bound Kraken account.", error)
+                throw HistoryAccountUnavailableException(
+                    "History sync requires an authenticated, bound Kraken account.",
+                    error,
+                )
             }
             val permittedStartSec = maxOf(startSec, identity.queryFromSec ?: startSec)
             val permittedEndSec = minOf(endSec, identity.queryToSec ?: endSec)
@@ -98,11 +118,13 @@ class HistorySynchronizer(
                     scanId = UUID.randomUUID().toString(),
                     startSec = scanStartSec,
                     endSec = scanEndSec,
+                    cursor = resumeCursor,
+                    purpose = purpose,
                 ),
             )
             val restrictionFailure = when {
-                !identity.queryBoundsVerified -> API_KEY_RESTRICTIONS_UNAVAILABLE
-                !overlapsApiKeyWindow -> API_KEY_WINDOW_NO_OVERLAP
+                !identity.queryBoundsVerified -> HistorySyncErrors.API_KEY_RESTRICTIONS_UNAVAILABLE
+                !overlapsApiKeyWindow -> HistorySyncErrors.API_KEY_WINDOW_NO_OVERLAP
                 else -> null
             }
             if (restrictionFailure != null) {
@@ -131,6 +153,7 @@ class HistorySynchronizer(
                                 endSec = scanEndSec,
                                 requestedCursor = requestedCursor,
                                 committedAt = nowProvider(),
+                                purpose = purpose,
                             )
 
                             @Suppress("UNCHECKED_CAST")
@@ -152,7 +175,14 @@ class HistorySynchronizer(
                             ) {
                                 restarts++
                                 willRestart = true
-                                updatedStatus = restartWindow(currentIdentity.digest, feed, scanStartSec, scanEndSec)
+                                updatedStatus = restartWindow(
+                                    currentIdentity.digest,
+                                    feed,
+                                    scanStartSec,
+                                    scanEndSec,
+                                    purpose,
+                                    requestedCursor,
+                                )
                             }
                             Pair(updatedStatus, willRestart)
                         }
@@ -170,6 +200,8 @@ class HistorySynchronizer(
                                 scanId = status.scanId,
                                 startSec = scanStartSec,
                                 endSec = scanEndSec,
+                                cursor = status.nextCursor,
+                                purpose = purpose,
                             ),
                         )
                         continue
@@ -178,14 +210,23 @@ class HistorySynchronizer(
                     if (status.state == HistorySyncState.FAILED && !restarted) {
                         return@withLock status
                     }
-                    if (status.state == HistorySyncState.RUNNING) yield()
+                    if (status.state == HistorySyncState.RUNNING) {
+                        if (betweenPages()) {
+                            store.pauseSync(identity.digest, feed, status.scanId)
+                            return@withLock status.copy(state = HistorySyncState.PAUSED)
+                        }
+                        yield()
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: HistoryAccountScopeException) {
-                    store.failSync(identity.digest, feed, status.scanId, ACCOUNT_SCOPE_CHANGED)
-                    return@withLock status.copy(state = HistorySyncState.FAILED, lastError = ACCOUNT_SCOPE_CHANGED)
+                    store.failSync(identity.digest, feed, status.scanId, HistorySyncErrors.ACCOUNT_SCOPE_CHANGED)
+                    return@withLock status.copy(
+                        state = HistorySyncState.FAILED,
+                        lastError = HistorySyncErrors.ACCOUNT_SCOPE_CHANGED,
+                    )
                 } catch (error: HistoryRestrictionException) {
-                    val reason = error.message ?: API_KEY_RESTRICTIONS_CHANGED
+                    val reason = error.message ?: HistorySyncErrors.API_KEY_RESTRICTIONS_CHANGED
                     store.failSync(identity.digest, feed, status.scanId, reason)
                     return@withLock status.copy(state = HistorySyncState.FAILED, lastError = reason)
                 } catch (error: Exception) {
@@ -200,11 +241,15 @@ class HistorySynchronizer(
                     )
                     if (restarts == 0) {
                         restarts++
-                        store.failSync(identity.digest, feed, status.scanId, PAGE_RESTARTED)
-                        status = restartWindow(identity.digest, feed, scanStartSec, scanEndSec)
+                        store.failSync(identity.digest, feed, status.scanId, HistorySyncErrors.PAGE_RESTARTED)
+                        status =
+                            restartWindow(identity.digest, feed, scanStartSec, scanEndSec, purpose, status.nextCursor)
                     } else {
-                        store.failSync(identity.digest, feed, status.scanId, PAGE_FAILED)
-                        return@withLock status.copy(state = HistorySyncState.FAILED, lastError = PAGE_FAILED)
+                        store.failSync(identity.digest, feed, status.scanId, HistorySyncErrors.PAGE_FAILED)
+                        return@withLock status.copy(
+                            state = HistorySyncState.FAILED,
+                            lastError = HistorySyncErrors.PAGE_FAILED,
+                        )
                     }
                 }
             }
@@ -212,11 +257,34 @@ class HistorySynchronizer(
         }
     }
 
+    /** Digest of the currently authenticated, bound account, or null when verification fails. */
+    suspend fun accountIdentityDigest(): String? = verifiedAccount()?.digest
+
+    /**
+     * The authenticated account and the query bounds its API key permits. The bounds decide which
+     * history the key can reach at all, so a restricted key must not be asked for older records.
+     */
+    suspend fun verifiedAccount(): VerifiedHistoryAccount? = try {
+        configService.withExecutionSession { authenticatedAccount() }.let { identity ->
+            VerifiedHistoryAccount(
+                digest = identity.digest,
+                queryFromSec = identity.queryFromSec,
+                queryToSec = identity.queryToSec,
+            )
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        null
+    }
+
     private suspend fun restartWindow(
         accountIdentityDigest: String,
         feed: HistoryFeed,
         startSec: Long,
         endSec: Long,
+        purpose: HistorySyncPurpose,
+        cursor: String?,
     ): HistorySyncStatus = store.beginSyncWindow(
         HistorySyncWindow(
             accountIdentityDigest = accountIdentityDigest,
@@ -224,6 +292,8 @@ class HistorySynchronizer(
             scanId = UUID.randomUUID().toString(),
             startSec = startSec,
             endSec = endSec,
+            cursor = cursor,
+            purpose = purpose,
         ),
     )
 
@@ -280,11 +350,15 @@ class HistorySynchronizer(
         val digest = sha256(accountInfo.identity.filterNot(Char::isWhitespace).uppercase(Locale.ROOT))
         if (expectedDigest != null && digest != expectedDigest) throw HistoryAccountScopeException()
         if (startSec != null || endSec != null) {
-            if (!accountInfo.queryBoundsVerified) throw HistoryRestrictionException(API_KEY_RESTRICTIONS_UNAVAILABLE)
+            if (!accountInfo.queryBoundsVerified) {
+                throw HistoryRestrictionException(
+                    HistorySyncErrors.API_KEY_RESTRICTIONS_UNAVAILABLE,
+                )
+            }
             if ((startSec != null && accountInfo.queryFromSec != null && startSec < accountInfo.queryFromSec) ||
                 (endSec != null && accountInfo.queryToSec != null && endSec > accountInfo.queryToSec)
             ) {
-                throw HistoryRestrictionException(API_KEY_RESTRICTIONS_CHANGED)
+                throw HistoryRestrictionException(HistorySyncErrors.API_KEY_RESTRICTIONS_CHANGED)
             }
         }
         try {
@@ -321,14 +395,5 @@ class HistorySynchronizer(
         const val PAGE_SIZE = 100
         const val PAGE_TIMEOUT_MS = 30_000L
         const val CYCLE_YIELD_DELAY_MS = 250L
-        const val ACCOUNT_SCOPE_CHANGED = "History sync stopped because authenticated account or credentials changed."
-        const val API_KEY_RESTRICTIONS_UNAVAILABLE =
-            "History sync stopped because Kraken API-key time restrictions could not be verified."
-        const val API_KEY_WINDOW_NO_OVERLAP =
-            "History sync window does not overlap this Kraken API key's allowed query dates."
-        const val API_KEY_RESTRICTIONS_CHANGED =
-            "History sync stopped because Kraken API-key query restrictions changed."
-        const val PAGE_RESTARTED = "History page was retried from the start of its bounded time window."
-        const val PAGE_FAILED = "History page could not be validated after one bounded restart."
     }
 }

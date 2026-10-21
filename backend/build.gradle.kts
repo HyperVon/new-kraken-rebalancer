@@ -32,6 +32,15 @@ tasks.named<JavaExec>("run") {
     workingDir(rootProject.projectDir)
 }
 
+tasks.register<JavaExec>("browserFixture") {
+    group = "verification"
+    description = "Runs the test-only loopback browser fixture with a fake verified account."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.get().runtimeClasspath
+    jvmArgs(application.applicationDefaultJvmArgs)
+    mainClass.set("com.gemini.krakenbot.browserfixture.BrowserFixtureRunner")
+}
+
 repositories {
     mavenCentral()
 }

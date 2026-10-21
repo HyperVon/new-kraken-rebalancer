@@ -150,6 +150,8 @@ class ConfigServiceImpl internal constructor(
 
     override fun watchConfigChanges(): Flow<Settings> = _configFlow.asSharedFlow()
 
+    override suspend fun isConfigPublicationPending(): Boolean = configLock.withLock { pendingConfig != null }
+
     private fun publishOrStage(config: AppConfig) {
         if (executionSessionDepth > 0) {
             pendingConfig = config

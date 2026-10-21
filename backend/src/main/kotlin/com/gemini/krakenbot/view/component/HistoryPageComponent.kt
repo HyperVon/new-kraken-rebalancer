@@ -3,8 +3,10 @@ package com.gemini.krakenbot.view.component
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.service.history.HistoryApiBoundaryKind
+import com.gemini.krakenbot.service.history.HistoryApiChartsResponse
+import com.gemini.krakenbot.service.history.HistoryApiScopeSelection
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
 import com.gemini.krakenbot.service.history.HistoryEventFilterOptions
@@ -17,16 +19,25 @@ import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySyncStatus
 import com.gemini.krakenbot.service.history.HistoryTrade
-import com.gemini.krakenbot.service.history.HistoryTradeSummary
+import com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics
+import com.gemini.krakenbot.service.reporting.NativeQuantitySeries
+import com.gemini.krakenbot.service.reporting.allocationDeviationPercent
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
+import com.gemini.krakenbot.view.util.ChartGestureScripts
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.HistoryAnalysis
 import com.gemini.krakenbot.view.util.HistoryChartActions
+import com.gemini.krakenbot.view.util.HistoryRangeCss
+import com.gemini.krakenbot.view.util.HistoryRangeIds
+import com.gemini.krakenbot.view.util.HistoryRangeProps
+import com.gemini.krakenbot.view.util.HistoryRangeQuery
+import com.gemini.krakenbot.view.util.HistoryRangeText
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
@@ -50,9 +61,12 @@ import com.gemini.krakenbot.view.util.tr
 import com.gemini.krakenbot.view.util.withQuery
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
+import kotlinx.html.DL
 import kotlinx.html.FormMethod
 import kotlinx.html.HTML
 import kotlinx.html.InputType
+import kotlinx.html.NAV
+import kotlinx.html.TBODY
 import kotlinx.html.a
 import kotlinx.html.body
 import kotlinx.html.button
@@ -83,7 +97,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.abs
 
 /** Everything the History page renders; assembled by the controller from [HistoryService] queries. */
 data class HistoryPageData(
@@ -98,10 +111,11 @@ data class HistoryPageData(
     val syncStatuses: List<HistorySyncStatus>,
     val accountAvailable: Boolean,
     val filterOptions: HistoryEventFilterOptions = HistoryEventFilterOptions(),
-    val tradeSummary: HistoryTradeSummary = HistoryTradeSummary(),
-    val fundingLedgers: List<HistoryLedger> = emptyList(),
-    val rewardLedgers: List<HistoryLedger> = emptyList(),
+    val statistics: HistoryPeriodStatistics? = null,
+    val fundingSeries: List<NativeQuantitySeries> = emptyList(),
+    val rewardSeries: List<NativeQuantitySeries> = emptyList(),
     val allocations: List<Allocation> = emptyList(),
+    val portfolioChart: HistoryApiChartsResponse? = null,
 )
 
 class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefault()) {
@@ -114,7 +128,10 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
-            cdnScript(CdnUrls.CHART_JS, CdnIntegrity.CHART_JS)
+            // Vendored chart stack (Chart.js + Hammer + zoom plugin) keeps interaction CDN-independent.
+            script(src = ChartGestureScripts.CHART_JS) {}
+            script(src = ChartGestureScripts.HAMMER_JS) {}
+            script(src = ChartGestureScripts.CHART_JS_ZOOM) {}
         }
         html.body {
             div(CssClass.Layout.Container) {
@@ -126,35 +143,187 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     h1 { +ViewText.HISTORY_TITLE }
                     p { +ViewText.HISTORY_PAGE_INTRO }
                 }
-                renderToolbar(data)
-                renderSectionNav()
-                renderSync(data, csrfToken)
-                renderStatsGrid(data)
-                renderValueChart(data)
-                renderHoldingsChart(data)
-                renderAllocationChart(data)
-                renderCashFlowChart(data)
-                renderRewardsChart(data)
-                renderCheckpointChart(data)
-                renderTrades(data)
-                renderLedgers(data)
+                div(CssClass.History.WorkspaceBar) {
+                    renderPageTabs()
+                    renderToolbar(data)
+                }
+                div {
+                    id = HistoryRangeIds.PANEL_PORTFOLIO
+                    attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_PORTFOLIO
+                    renderValueChart(data)
+                    details(CssClass.History.Disclosure.value) {
+                        summary { +ViewText.HISTORY_EXPLORE_ANALYSIS }
+                        div {
+                            renderAnalysisSelector()
+                            renderHoldingsChart(data)
+                            renderAllocationChart(data)
+                            renderCashFlowChart(data)
+                            renderRewardsChart(data)
+                            renderCheckpointChart(data)
+                        }
+                    }
+                }
+                div {
+                    id = HistoryRangeIds.PANEL_ACTIVITY
+                    attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_ACTIVITY
+                    attributes["hidden"] = "hidden"
+                    renderActivityNav()
+                    renderFilters(data)
+                    renderNewRecordsNotice()
+                    renderBotActivity()
+                    renderTrades(data)
+                    renderLedgers(data)
+                }
+                div {
+                    id = HistoryRangeIds.PANEL_DATA_STATUS
+                    attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_DATA_STATUS
+                    attributes["hidden"] = "hidden"
+                    renderSync(data, csrfToken)
+                    renderRefreshStatus()
+                    renderCoverage()
+                    renderRecordedSources(data)
+                    renderSavedViews()
+                    renderRepairForm(csrfToken)
+                }
             }
             script(src = rebalancerJsSrc()) {}
         }
     }
 
-    private fun DIV.renderSectionNav() {
-        nav(classes = CssClass.History.SectionNav.value) {
+    private fun DIV.renderAnalysisSelector() {
+        label {
+            htmlFor = HistoryRangeIds.ANALYSIS_NAV
+            +ViewText.HISTORY_ANALYSIS
+        }
+        select(classes = CssClass.History.FilterInput.value + " " + CssClass.History.AnalysisSelect.value) {
+            id = HistoryRangeIds.ANALYSIS_NAV
+            attributes[HtmlAttrs.DATA_HISTORY_ANALYSIS] = "true"
             listOf(
-                HtmlIds.HISTORY_PORTFOLIO_SECTION to ViewText.HISTORY_JUMP_PORTFOLIO,
-                HtmlIds.HISTORY_HOLDINGS_SECTION to ViewText.HISTORY_JUMP_HOLDINGS,
-                HtmlIds.HISTORY_ALLOCATION_SECTION to ViewText.HISTORY_JUMP_ALLOCATION,
-                HtmlIds.HISTORY_CASH_FLOW_SECTION to ViewText.HISTORY_JUMP_CASH_FLOW,
-                HtmlIds.HISTORY_REWARDS_SECTION to ViewText.HISTORY_JUMP_REWARDS,
-                HtmlIds.HISTORY_TRADES_SECTION to ViewText.HISTORY_JUMP_TRADES,
-                HtmlIds.HISTORY_LEDGERS_SECTION to ViewText.HISTORY_JUMP_LEDGERS,
-            ).forEach { (section, label) ->
-                a(href = "#$section", classes = CssClass.History.TimeRangeBtn.value) { +label }
+                HistoryAnalysis.HOLDINGS to ViewText.HISTORY_ASSET_HOLDINGS,
+                HistoryAnalysis.ALLOCATION to ViewText.HISTORY_ALLOCATION_DRIFT,
+                HistoryAnalysis.CASH_FLOW to ViewText.HISTORY_NET_CASH_FLOW,
+                HistoryAnalysis.REWARDS to ViewText.HISTORY_STAKING_REWARDS,
+                HistoryAnalysis.CHECKPOINTS to ViewText.HISTORY_CHECKPOINT_TITLE,
+            ).forEach { (analysis, label) ->
+                option {
+                    value = analysis
+                    selected = analysis == HistoryAnalysis.HOLDINGS
+                    +label
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderPageTabs() {
+        nav(classes = CssClass.History.SectionNav.value) {
+            id = HistoryRangeIds.TAB_NAV
+            pageTab(
+                id = HistoryRangeIds.TAB_PORTFOLIO,
+                tab = HistoryRangeQuery.TAB_PORTFOLIO,
+                label = HistoryRangeText.TAB_PORTFOLIO,
+                active = true,
+            )
+            pageTab(
+                id = HistoryRangeIds.TAB_ACTIVITY,
+                tab = HistoryRangeQuery.TAB_ACTIVITY,
+                label = HistoryRangeText.TAB_ACTIVITY,
+            )
+            pageTab(
+                id = HistoryRangeIds.TAB_DATA_STATUS,
+                tab = HistoryRangeQuery.TAB_DATA_STATUS,
+                label = HistoryRangeText.TAB_DATA_STATUS,
+            )
+        }
+    }
+
+    private fun NAV.pageTab(id: String, tab: String, label: String, active: Boolean = false) {
+        a(
+            href = Routes.HISTORY.withQuery(HistoryRangeQuery.PARAM_TAB, tab),
+            classes = if (active) {
+                CssClass.History.TimeRangeBtnActive.value
+            } else {
+                CssClass.History.TimeRangeBtn.value
+            },
+        ) {
+            this.id = id
+            attributes[HtmlAttrs.DATA_HISTORY_TAB] = tab
+            +label
+        }
+    }
+
+    private fun DIV.renderActivityNav() {
+        nav(classes = CssClass.History.SectionNav.value) {
+            id = HistoryRangeIds.ACTIVITY_NAV
+            activityTab(
+                HistoryRangeIds.ACTIVITY_BOT,
+                HistoryRangeQuery.ACTIVITY_BOT,
+                HistoryRangeText.ACTIVITY_BOT,
+                active = true,
+            )
+            activityTab(
+                HistoryRangeIds.ACTIVITY_TRADES,
+                HistoryRangeQuery.ACTIVITY_TRADES,
+                HistoryRangeText.ACTIVITY_TRADES,
+            )
+            activityTab(
+                HistoryRangeIds.ACTIVITY_TRANSACTIONS,
+                HistoryRangeQuery.ACTIVITY_TRANSACTIONS,
+                HistoryRangeText.ACTIVITY_TRANSACTIONS,
+            )
+        }
+    }
+
+    private fun NAV.activityTab(id: String, activity: String, label: String, active: Boolean = false) {
+        a(
+            href = Routes.HISTORY
+                .withQuery(HistoryRangeQuery.PARAM_TAB, HistoryRangeQuery.TAB_ACTIVITY)
+                .withQuery(HistoryRangeQuery.PARAM_ACTIVITY, activity),
+            classes = if (active) {
+                CssClass.History.TimeRangeBtnActive.value
+            } else {
+                CssClass.History.TimeRangeBtn.value
+            },
+        ) {
+            this.id = id
+            attributes[HtmlAttrs.DATA_HISTORY_TAB] = HistoryRangeQuery.TAB_ACTIVITY
+            attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_TAB] = activity
+            +label
+        }
+    }
+
+    private fun DIV.renderCoverage() {
+        div(CssClass.History.SyncBanner) {
+            id = HistoryRangeIds.COVERAGE
+            dl {
+                dt { +HistoryRangeText.SELECTED_PERIOD }
+                dd {
+                    id = HistoryRangeIds.COVERAGE_SELECTED
+                    +"—"
+                }
+                dt { +HistoryRangeText.VALUES_RECORDED }
+                dd {
+                    id = HistoryRangeIds.COVERAGE_VALUES
+                    +"—"
+                }
+                dt { +HistoryRangeText.TRADES_COVERAGE }
+                dd {
+                    id = HistoryRangeIds.COVERAGE_TRADES
+                    +"—"
+                }
+                dt { +HistoryRangeText.LEDGERS_COVERAGE }
+                dd {
+                    id = HistoryRangeIds.COVERAGE_LEDGERS
+                    +"—"
+                }
+                dt { +HistoryRangeText.VALUE_SAMPLES }
+                dd {
+                    id = HistoryRangeIds.COVERAGE_COUNT
+                    +"—"
+                }
+            }
+            p(CssClass.History.SyncText) {
+                id = HistoryRangeIds.COVERAGE_SPARSE
+                attributes["hidden"] = "hidden"
             }
         }
     }
@@ -228,6 +397,183 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     }
                 }
             }
+            p(CssClass.History.SyncText) {
+                id = HistoryRangeIds.SYNC_ERROR
+                attributes["hidden"] = "hidden"
+            }
+        }
+    }
+
+    private fun DIV.renderRepairForm(csrfToken: String?) {
+        div(CssClass.Layout.GlassPanel + CssClass.History.SyncBanner) {
+            h2(CssClass.History.SyncTitle) { +HistoryRangeText.REPAIR_TITLE }
+            form(
+                action = Routes.API_HISTORY_REPAIR,
+                method = FormMethod.post,
+                classes = CssClass.History.FilterRow.value,
+            ) {
+                id = HistoryRangeIds.REPAIR_FORM
+                input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) { value = csrfToken.orEmpty() }
+                input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_TZ) {
+                    id = HistoryRangeIds.REPAIR_TIMEZONE
+                }
+                label {
+                    htmlFor = HistoryRangeIds.REPAIR_START
+                    +HistoryRangeText.REPAIR_START
+                    input(type = InputType.date, name = HistoryRangeQuery.PARAM_START) {
+                        id = HistoryRangeIds.REPAIR_START
+                    }
+                }
+                label {
+                    htmlFor = HistoryRangeIds.REPAIR_END
+                    +HistoryRangeText.REPAIR_END
+                    input(type = InputType.date, name = HistoryRangeQuery.PARAM_END) {
+                        id = HistoryRangeIds.REPAIR_END
+                    }
+                }
+                span(CssClass.History.MutedSmallText) { id = HistoryRangeIds.REPAIR_TIMEZONE_LABEL }
+                button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) {
+                    +HistoryRangeText.REPAIR_SUBMIT
+                }
+            }
+            p(CssClass.History.SyncText) {
+                id = HistoryRangeIds.REPAIR_ERROR
+                attributes["hidden"] = "hidden"
+            }
+        }
+    }
+
+    private fun DIV.renderBotActivity() {
+        div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
+            id = HistoryRangeIds.ACTIVITY_BOT_PANEL
+            attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_PANEL] = HistoryRangeQuery.ACTIVITY_BOT
+            div(CssClass.History.TradeLogHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
+                    +HistoryRangeText.ACTIVITY_BOT
+                }
+                exportButton("activity", Routes.API_HISTORY_EXPORT_ACTIVITY)
+            }
+            p(CssClass.History.MutedSmallText) { +HistoryRangeText.ACTIVITY_FILTERS_UNSUPPORTED }
+            div(CssClass.Table.Wrapper) {
+                table {
+                    thead {
+                        tr {
+                            listOf(
+                                ViewText.HEADER_TIME,
+                                ViewText.HEADER_STATUS,
+                                HistoryRangeText.MODE,
+                                HistoryRangeText.DETAILS_CYCLE_ID,
+                                HistoryRangeText.VIEW_ACTIONS,
+                            ).forEach { th { +it } }
+                        }
+                    }
+                    tbody {
+                        id = HistoryRangeIds.ACTIVITY_BODY
+                        emptyActivityRow()
+                    }
+                }
+            }
+            div(CssClass.History.Pagination) {
+                id = HistoryRangeIds.ACTIVITY_PAGINATION
+                a(
+                    href = Routes.HISTORY,
+                    classes = CssClass.History.PaginationBtn.value,
+                ) {
+                    id = HistoryRangeIds.ACTIVITY_PREVIOUS
+                    attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_PAGE] = "previous"
+                    attributes["hidden"] = "hidden"
+                    +HistoryRangeText.ACTIVITY_PREVIOUS
+                }
+                span(CssClass.History.MutedSmallText) {
+                    id = HistoryRangeIds.ACTIVITY_RANGE
+                    +"0–0"
+                }
+                a(
+                    href = Routes.HISTORY,
+                    classes = CssClass.History.PaginationBtn.value,
+                ) {
+                    id = HistoryRangeIds.ACTIVITY_NEXT
+                    attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_PAGE] = "next"
+                    attributes["hidden"] = "hidden"
+                    +HistoryRangeText.ACTIVITY_NEXT
+                }
+            }
+        }
+    }
+
+    private fun DIV.exportButton(kind: String, route: String) {
+        a(href = route, classes = CssClass.History.PaginationBtn.value) {
+            attributes[HtmlAttrs.DATA_HISTORY_EXPORT] = kind
+            +HistoryRangeText.EXPORT_CSV
+        }
+    }
+
+    private fun DIV.renderRefreshStatus() {
+        div(CssClass.Layout.GlassPanel + CssClass.History.SyncBanner) {
+            id = HistoryRangeIds.REFRESH_STATUS
+            div(CssClass.History.SyncHeader) {
+                h2(CssClass.History.SyncTitle) { +HistoryRangeText.FRESHNESS }
+                span {
+                    attributes["class"] = HistoryRangeCss.CHIP + " " + HistoryRangeCss.CHIP_BUSY
+                    id = HistoryRangeIds.REFRESH_CHIP
+                    +HistoryRangeText.STATE_UPDATING
+                }
+            }
+            div {
+                attributes["class"] = HistoryRangeCss.COVERAGE_ROW
+                span {
+                    id = HistoryRangeIds.REFRESH_UPDATED
+                    +"${HistoryRangeText.UPDATED} -"
+                }
+                span {
+                    id = HistoryRangeIds.REFRESH_NEXT
+                    +"${HistoryRangeText.NEXT_REFRESH} -"
+                }
+            }
+            p(CssClass.History.SyncText) {
+                id = HistoryRangeIds.REFRESH_ERROR
+                attributes["hidden"] = "hidden"
+            }
+            details {
+                id = HistoryRangeIds.REFRESH_DETAILS
+                summary { +HistoryRangeText.DETAILS_SUMMARY }
+                div {
+                    id = HistoryRangeIds.REFRESH_FEED_PROGRESS
+                    listOf(
+                        "TRADES" to HistoryRangeText.FEED_TRADES,
+                        "LEDGERS" to HistoryRangeText.FEED_LEDGERS,
+                    ).forEach { (feed, label) ->
+                        div {
+                            attributes["class"] = HistoryRangeCss.COVERAGE_ROW
+                            attributes["data-history-feed"] = feed
+                            span(CssClass.History.SyncTitle) { +label }
+                            dl {
+                                dt { +HistoryRangeText.PROGRESS_RECENT }
+                                dd { attributes["data-history-refresh-recent"] = "true" }
+                                dt { +HistoryRangeText.PROGRESS_BACKFILL }
+                                dd { attributes["data-history-refresh-backfill"] = "true" }
+                                dt { +HistoryRangeText.FAILURE }
+                                dd { attributes["data-history-refresh-failure"] = "true" }
+                                dt { +HistoryRangeText.NEXT_RETRY }
+                                dd { attributes["data-history-refresh-retry"] = "true" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderNewRecordsNotice() {
+        div {
+            attributes["class"] = HistoryRangeCss.BANNER
+            id = HistoryRangeIds.NEW_RECORDS_NOTICE
+            attributes["hidden"] = "hidden"
+            p { +HistoryRangeText.NEW_RECORDS }
+            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                id = HistoryRangeIds.NEW_RECORDS_BUTTON
+                +HistoryRangeText.NEW_RECORDS_RETURN
+            }
         }
     }
 
@@ -259,81 +605,193 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                                 CssClass.History.TimeRangeBtn
                             }
                             ).value,
-                    ) { +label }
+                    ) {
+                        attributes["data-history-range"] = key
+                        +label
+                    }
+                }
+                a(
+                    href = "#history-range-custom-panel",
+                    classes = CssClass.History.TimeRangeBtn.value,
+                ) {
+                    attributes["data-history-range"] = "custom"
+                    +"Custom"
                 }
             }
-            form(action = Routes.HISTORY, method = FormMethod.get, classes = CssClass.History.FilterRow.value) {
-                input(type = InputType.hidden, name = "range") { value = data.range }
-                filterSelect(
-                    HtmlIds.HISTORY_FILTER_ASSET,
-                    "asset",
-                    ViewText.HISTORY_FILTER_ASSET,
-                    ViewText.HISTORY_FILTER_ALL_ASSETS,
-                    data.filters.assetKey,
-                    data.filterOptions.assets,
-                ) { asset ->
-                    val normalized = Asset.normalizeLedgerAsset(asset)
-                    if (normalized.equals(asset, ignoreCase = true)) asset else "$asset ($normalized)"
+            div(CssClass.History.FilterRow) {
+                id = "history-range-custom-panel"
+                attributes["hidden"] = "hidden"
+                label {
+                    htmlFor = "history-range-custom-start"
+                    +"Start date"
+                    input(type = InputType.date) { id = "history-range-custom-start" }
                 }
-                filterSelect(
-                    HtmlIds.HISTORY_FILTER_PAIR,
-                    "pair",
-                    ViewText.HISTORY_FILTER_PAIR,
-                    ViewText.HISTORY_FILTER_ALL_PAIRS,
-                    data.filters.pair,
-                    data.filterOptions.pairs,
-                )
-                filterSelect(
-                    HtmlIds.HISTORY_FILTER_TYPE,
-                    "type",
-                    ViewText.HISTORY_FILTER_TYPE,
-                    ViewText.HISTORY_FILTER_ALL_TYPES,
-                    data.filters.type,
-                    data.filterOptions.types,
-                )
-                button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) {
-                    +ViewText.HISTORY_APPLY_FILTERS
+                label {
+                    htmlFor = "history-range-custom-end"
+                    +"End date"
+                    input(type = InputType.date) { id = "history-range-custom-end" }
                 }
-                if (data.filters.assetKey != null || data.filters.pair != null || data.filters.type != null) {
-                    a(
-                        href = Routes.HISTORY.withQuery("range", data.range),
-                        classes = CssClass.History.PaginationBtn.value,
-                    ) { +ViewText.HISTORY_CLEAR_FILTERS }
+                span(CssClass.History.MutedSmallText) {
+                    id = "history-range-custom-tz"
+                }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = "history-range-custom-apply"
+                    +"Apply dates"
+                }
+                p(CssClass.History.SyncText) {
+                    id = "history-range-custom-error"
+                    attributes["hidden"] = "hidden"
                 }
             }
-            renderSavedViews()
-            p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_FILTER_SCOPE }
         }
     }
 
-    private fun DIV.renderSavedViews() {
-        div(CssClass.History.FilterRow) {
-            id = HtmlIds.HISTORY_SAVED_VIEWS
-            attributes["hidden"] = "hidden"
-            label {
-                htmlFor = HtmlIds.HISTORY_SAVED_VIEW
-                +ViewText.HISTORY_SAVED_VIEWS
-                select(classes = CssClass.History.FilterInput.value) {
-                    id = HtmlIds.HISTORY_SAVED_VIEW
-                    option {
-                        value = ""
-                        +ViewText.HISTORY_CURRENT_VIEW
+    /** Account record filters belong to Activity, not to the recorded portfolio value chart. */
+    private fun DIV.renderFilters(data: HistoryPageData) {
+        form(action = Routes.HISTORY, method = FormMethod.get, classes = CssClass.History.FilterRow.value) {
+            input(type = InputType.hidden, name = "range") {
+                id = "history-filter-range"
+                value = data.range
+            }
+            input(type = InputType.hidden, name = "scope") { id = "history-filter-scope" }
+            input(type = InputType.hidden, name = "start") { id = "history-filter-start" }
+            input(type = InputType.hidden, name = "end") { id = "history-filter-end" }
+            input(type = InputType.hidden, name = "tz") { id = "history-filter-tz" }
+            input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_TAB) {
+                id = HistoryRangeIds.FILTER_TAB
+                value = HistoryRangeQuery.TAB_ACTIVITY
+            }
+            input(type = InputType.hidden, name = HistoryRangeQuery.PARAM_ACTIVITY) {
+                id = HistoryRangeIds.FILTER_ACTIVITY
+                value = HistoryRangeQuery.ACTIVITY_BOT
+            }
+            filterSelect(
+                HtmlIds.HISTORY_FILTER_ASSET,
+                "asset",
+                ViewText.HISTORY_FILTER_ASSET,
+                ViewText.HISTORY_FILTER_ALL_ASSETS,
+                data.filters.assetKey,
+                data.filterOptions.assets,
+            ) { asset -> Asset.normalizeLedgerAsset(asset) }
+            filterSelect(
+                HtmlIds.HISTORY_FILTER_PAIR,
+                "pair",
+                ViewText.HISTORY_FILTER_PAIR,
+                ViewText.HISTORY_FILTER_ALL_PAIRS,
+                data.filters.pair,
+                data.filterOptions.pairs,
+            )
+            filterSelect(
+                HtmlIds.HISTORY_FILTER_TYPE,
+                "type",
+                ViewText.HISTORY_FILTER_TYPE,
+                ViewText.HISTORY_FILTER_ALL_TYPES,
+                data.filters.type,
+                data.filterOptions.types,
+            )
+            button(type = ButtonType.submit, classes = CssClass.History.PaginationBtn.value) {
+                +ViewText.HISTORY_APPLY_FILTERS
+            }
+            if (data.filters.assetKey != null || data.filters.pair != null || data.filters.type != null) {
+                a(
+                    href = Routes.HISTORY.withQuery("range", data.range),
+                    classes = CssClass.History.PaginationBtn.value,
+                ) { +ViewText.HISTORY_CLEAR_FILTERS }
+            }
+            p(CssClass.History.MutedSmallText) {
+                +ViewText.HISTORY_FILTER_SCOPE
+            }
+        }
+    }
+
+    /**
+     * Scope provenance lives in Data details: the recorded portfolios, their asset sets and the
+     * periods each one covers, so asset-set changes and gaps stay visible without a prominent
+     * selector in the default view.
+     */
+    private fun DIV.renderRecordedSources(data: HistoryPageData) {
+        details {
+            id = HistoryRangeIds.SCOPE_DETAILS
+            attributes["class"] = CssClass.History.SyncBanner.value
+            summary { +ViewText.HISTORY_RECORDED_SOURCES }
+            div(CssClass.History.FilterRow) {
+                label {
+                    htmlFor = "history-scope-select"
+                    +"Recorded portfolio"
+                    select(classes = CssClass.History.FilterInput.value) {
+                        id = "history-scope-select"
+                        option {
+                            value = ""
+                            +"Loading recorded portfolios"
+                        }
+                    }
+                }
+                a(
+                    href = "#history-scope-select",
+                    classes = CssClass.History.PaginationBtn.value,
+                ) {
+                    id = "history-scope-link"
+                    attributes["hidden"] = "hidden"
+                    +"Earlier recorded portfolios available"
+                }
+            }
+            div(CssClass.History.MutedSmallText) {
+                id = HistoryRangeIds.SCOPE_LIST
+                data.portfolioChart?.series?.mapNotNull { it.provenance }?.forEach { provenance ->
+                    p {
+                        +provenance.scope.symbols.joinToString(" / ")
+                        +" · ${provenance.scope.earliestIso} – ${provenance.scope.latestIso}"
+                    }
+                    dl {
+                        dt { +ViewText.HISTORY_RECORDED_SOURCES }
+                        dd {
+                            +listOf(
+                                provenance.scope.id,
+                                provenance.walletScopes.joinToString(", "),
+                                provenance.balanceSources.joinToString(", "),
+                                provenance.priceSources.joinToString(", "),
+                                provenance.valuationCurrency,
+                            ).joinToString(" · ")
+                        }
                     }
                 }
             }
-            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
-                id = HtmlIds.HISTORY_SAVE_VIEW
-                +ViewText.HISTORY_SAVE_VIEW
-            }
-            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
-                id = HtmlIds.HISTORY_SET_DEFAULT_VIEW
-                disabled = true
-                +ViewText.HISTORY_SET_DEFAULT
-            }
-            button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
-                id = HtmlIds.HISTORY_DELETE_VIEW
-                disabled = true
-                +ViewText.HISTORY_DELETE_VIEW
+        }
+    }
+
+    /** Saved-view management is collapsed behind a single disclosure control. */
+    private fun DIV.renderSavedViews() {
+        details {
+            id = HtmlIds.HISTORY_SAVED_VIEWS
+            attributes["class"] = CssClass.History.FilterRow.value
+            attributes["hidden"] = "hidden"
+            summary { +ViewText.HISTORY_SAVED_VIEWS }
+            div(CssClass.History.FilterRow) {
+                label {
+                    htmlFor = HtmlIds.HISTORY_SAVED_VIEW
+                    +ViewText.HISTORY_SAVED_VIEWS
+                    select(classes = CssClass.History.FilterInput.value) {
+                        id = HtmlIds.HISTORY_SAVED_VIEW
+                        option {
+                            value = ""
+                            +ViewText.HISTORY_CURRENT_VIEW
+                        }
+                    }
+                }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HtmlIds.HISTORY_SAVE_VIEW
+                    +ViewText.HISTORY_SAVE_VIEW
+                }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HtmlIds.HISTORY_SET_DEFAULT_VIEW
+                    disabled = true
+                    +ViewText.HISTORY_SET_DEFAULT
+                }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HtmlIds.HISTORY_DELETE_VIEW
+                    disabled = true
+                    +ViewText.HISTORY_DELETE_VIEW
+                }
             }
         }
     }
@@ -370,20 +828,217 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     }
 
     private fun DIV.renderStatsGrid(data: HistoryPageData) {
+        val statistics = data.statistics
         div(CssClass.History.StatsGrid) {
-            HistoryStatCardDefinition.entries.forEach { card ->
-                statusCard(
-                    title = card.title,
-                    iconSvg = card.iconSvg,
-                    value = card.formatValue(data),
-                    valueId = card.valueId,
-                )
+            statusCard(
+                ViewText.HISTORY_LATEST_OBSERVED_VALUE,
+                Icons.WALLET,
+                statistics?.latestObservedValue?.let { reportUsd(it.valueUsd, it.complete) }
+                    ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                HtmlIds.HISTORY_STAT_LATEST_VALUE,
+            )
+            statusCard(
+                ViewText.HISTORY_OBSERVED_VALUE_CHANGE,
+                Icons.CHART,
+                statistics?.observedValueChange?.let { reportUsd(it.changeUsd, it.complete) }
+                    ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                HtmlIds.HISTORY_STAT_VALUE_CHANGE,
+            )
+            statusCard(
+                ViewText.HISTORY_RANGE_HIGH,
+                Icons.CHART,
+                statistics?.rangeExtrema?.high?.let { Formatter.formatSignedUsd(it.valueUsd) }
+                    ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                HtmlIds.HISTORY_STAT_RANGE_HIGH,
+            )
+        }
+    }
+
+    private fun DIV.renderPeriodDetails(data: HistoryPageData) {
+        val statistics = data.statistics
+        div {
+            details(CssClass.History.ReportDetails.value) {
+                summary { +ViewText.HISTORY_SELECTED_PERIOD_DETAILS }
+                dl {
+                    reportRow(
+                        ViewText.HISTORY_RANGE_LOW,
+                        statistics?.rangeExtrema?.low?.let { Formatter.formatSignedUsd(it.valueUsd) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_RANGE_LOW,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_OBSERVED_AT,
+                        latestValueDetails(statistics),
+                        HtmlIds.HISTORY_STAT_LATEST_META,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_CHANGE_ENDPOINTS,
+                        changeEndpoints(statistics),
+                        HtmlIds.HISTORY_STAT_CHANGE_ENDPOINTS,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_OBSERVED_VALUE_CHANGE,
+                        statistics?.observedValueChange?.includesFlowsNotice ?: ViewText.HISTORY_VALUE_CHANGE_NOTICE,
+                        HtmlIds.HISTORY_STAT_CHANGE_NOTICE,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_RANGE_HIGH,
+                        statistics?.rangeExtrema?.high?.let { timeFormatter.format(it.observedAt) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_RANGE_HIGH_AT,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_RANGE_LOW,
+                        statistics?.rangeExtrema?.low?.let { timeFormatter.format(it.observedAt) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_RANGE_LOW_AT,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_MATCHING_EXCHANGE_FILLS,
+                        statistics?.trades?.let { reportCount(it.tradeCount, it.complete, it.incompleteReason) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_TRADES,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_BOT_CYCLES,
+                        statistics?.botCycles?.let { reportCount(it.cycleCount, it.complete, it.incompleteReason) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_BOT_CYCLES,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_VOLUME_BY_CURRENCY,
+                        statistics?.trades?.let {
+                            reportQuantities(it.volumeByCurrency, it.complete, it.excludedCount, "currency")
+                        } ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_VOLUME,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_FEES_BY_CURRENCY,
+                        statistics?.trades?.let {
+                            reportQuantities(it.feesByCurrency, it.complete, it.excludedCount, "currency")
+                        } ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_FEES,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_EXCLUDED_AMOUNTS,
+                        statistics?.trades?.let { Formatter.formatCount(it.excludedCount.toLong()) }
+                            ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_EXCLUDED,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_ALLOCATION_DEVIATION,
+                        allocationDeviationDetails(statistics),
+                        HtmlIds.HISTORY_STAT_ALLOCATION,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_DEPOSITS_BY_ASSET,
+                        statistics?.depositsWithdrawals?.deposits?.let {
+                            reportQuantities(it.quantitiesByAsset, it.complete, it.excludedCount, "asset")
+                        } ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_DEPOSITS,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_WITHDRAWALS_BY_ASSET,
+                        statistics?.depositsWithdrawals?.withdrawals?.let {
+                            reportQuantities(it.quantitiesByAsset, it.complete, it.excludedCount, "asset")
+                        } ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_WITHDRAWALS,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_REWARDS_BY_ASSET,
+                        statistics?.rewards?.let {
+                            reportQuantities(it.quantitiesByAsset, it.complete, it.excludedCount, "asset")
+                        } ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
+                        HtmlIds.HISTORY_STAT_REWARDS,
+                    )
+                    reportRow(
+                        ViewText.HISTORY_LEDGER_CLASSIFICATION_NOTICE,
+                        statistics?.depositsWithdrawals?.notice ?: ViewText.HISTORY_LEDGER_CLASSIFICATION_NOTICE,
+                        HtmlIds.HISTORY_STAT_LEDGER_NOTICE,
+                    )
+                }
             }
         }
     }
 
+    private fun DL.reportRow(label: String, value: String, valueId: String) {
+        dt { +label }
+        dd {
+            id = valueId
+            +value
+        }
+    }
+
+    private fun reportUsd(value: BigDecimal?, complete: Boolean): String = if (!complete || value == null) {
+        ViewText.HISTORY_REPORT_UNAVAILABLE
+    } else if (value.signum() < 0) {
+        "-${Formatter.formatSignedUsd(value.abs())}"
+    } else {
+        Formatter.formatSignedUsd(value)
+    }
+
+    private fun latestValueDetails(statistics: HistoryPeriodStatistics?): String {
+        val latest = statistics?.latestObservedValue ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val time = latest.observedAt?.let(timeFormatter::format) ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        return if (latest.outsideSelectedPeriod) "$time · ${ViewText.HISTORY_REPORT_OUTSIDE_RANGE}" else time
+    }
+
+    private fun changeEndpoints(statistics: HistoryPeriodStatistics?): String {
+        val change = statistics?.observedValueChange ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        if (!change.complete) return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val first = change.firstValueUsd ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val firstAt = change.firstObservedAt?.let(timeFormatter::format) ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val last = change.lastValueUsd ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val lastAt = change.lastObservedAt?.let(timeFormatter::format) ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        return "${Formatter.formatSignedUsd(first)} at $firstAt to ${Formatter.formatSignedUsd(last)} at $lastAt"
+    }
+
+    private fun reportCount(count: Long?, complete: Boolean, reason: String?): String {
+        val countText = count?.let(Formatter::formatCount) ?: return reason ?: ViewText.HISTORY_REPORT_UNAVAILABLE
+        return if (complete) countText else "$countText · ${reason ?: ViewText.HISTORY_REPORT_INCOMPLETE}"
+    }
+
+    private fun reportQuantities(
+        quantities: Map<String, BigDecimal>,
+        complete: Boolean,
+        excludedCount: Int,
+        unitLabel: String,
+    ): String {
+        if (!complete && quantities.isEmpty()) return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val amounts = if (quantities.isEmpty()) {
+            "0"
+        } else {
+            quantities.entries.joinToString("; ") { (unit, amount) ->
+                "${Formatter.formatQuantity(amount)} $unit"
+            }
+        }
+        val status = if (complete) ViewText.HISTORY_REPORT_COMPLETE else ViewText.HISTORY_REPORT_INCOMPLETE
+        val excluded = if (excludedCount == 0) "" else "; $excludedCount excluded $unitLabel amounts"
+        return "$amounts · $status$excluded"
+    }
+
+    private fun allocationDeviationDetails(statistics: HistoryPeriodStatistics?): String {
+        val allocation = statistics?.allocationDeviation ?: return ViewText.HISTORY_REPORT_UNAVAILABLE
+        val deviations = allocation.targetsUsed.map { (symbol, target) ->
+            val deviation = allocation.deviationsBySymbol[symbol]
+            if (deviation == null) {
+                "$symbol: ${ViewText.HISTORY_REPORT_UNAVAILABLE} (${Formatter.formatPercent(target)}% target)"
+            } else {
+                val signed = if (deviation.signum() > 0) "+" else ""
+                "$symbol: $signed${Formatter.formatPercent(deviation)} pp (${Formatter.formatPercent(target)}% target)"
+            }
+        }
+        if (deviations.isEmpty()) return allocation.incompleteReason ?: ViewText.HISTORY_REPORT_UNAVAILABLE
+        val observedAt = allocation.observedAt?.let(timeFormatter::format).orEmpty()
+        val status = if (allocation.complete) ViewText.HISTORY_REPORT_COMPLETE else ViewText.HISTORY_REPORT_INCOMPLETE
+        return listOf(deviations.joinToString("; "), observedAt, status).filter(String::isNotEmpty).joinToString(" · ")
+    }
+
     private fun DIV.renderValueChart(data: HistoryPageData) {
         val observations = data.observations.sortedBy { it.observedAt }
+        val recordedChart = data.portfolioChart?.takeIf {
+            it.scopeSelection == HistoryApiScopeSelection.ACCOUNT_RECORDED
+        }
         val hasCompleteValue = observations.any {
             it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null
         }
@@ -395,22 +1050,74 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 }
                 chartControls()
             }
+            renderStatsGrid(data)
+            if (recordedChart != null) {
+                p(CssClass.History.ChartCaption) {
+                    +ViewText.HISTORY_SCOPE_SUMMARY
+                    +" ${recordedChart.scope.symbols.joinToString(" / ")}"
+                }
+                if (recordedChart.boundaries.isNotEmpty()) {
+                    p(CssClass.History.ChartCaption) { +ViewText.HISTORY_SCOPE_TRANSITIONS }
+                }
+                if (recordedChart.boundaries.any { it.kind == HistoryApiBoundaryKind.OVERLAPPING_SCOPES }) {
+                    p(CssClass.Utility.TextDanger) { +ViewText.HISTORY_SCOPE_CONFLICT }
+                }
+            }
             if (observations.isNotEmpty() && !hasCompleteValue) {
                 p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
             }
+            val recordedSeries = recordedChart?.series?.map { series ->
+                series.legendLabel to series.points.mapNotNull { point ->
+                    point.v?.takeIf { point.complete }?.let {
+                        HistorySeriesPoint(Instant.ofEpochMilli(point.t), it)
+                    }
+                }
+            }?.filter { it.second.isNotEmpty() }.orEmpty()
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                if (observations.isEmpty()) {
+                if (recordedChart != null) {
+                    attributes[HtmlAttrs.DATA_HISTORY_SCOPE_SELECTION] = recordedChart.scopeSelection.name
+                    recordedChart.fullRange.fromIso?.let { attributes[HtmlAttrs.DATA_FULL_FROM] = it }
+                    recordedChart.fullRange.toIso?.let { attributes[HtmlAttrs.DATA_FULL_TO] = it }
+                    recordedChart.series.forEach { series ->
+                        div {
+                            attributes["hidden"] = "hidden"
+                            attributes[HtmlAttrs.DATA_HISTORY_SOURCE_KEY] = series.key
+                            attributes[HtmlAttrs.DATA_HISTORY_SOURCE_LABEL] = series.label
+                        }
+                    }
+                    val series = recordedSeries
+                    if (series.isEmpty()) {
+                        p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+                    } else {
+                        val times = recordedChart.series.flatMap { it.points }.map { Instant.ofEpochMilli(it.t) } +
+                            listOfNotNull(recordedChart.fullRange.fromIso, recordedChart.fullRange.toIso)
+                                .map(Instant::parse)
+                        unsafe { +multiSeriesSvg(series, zeroLine = false, sampleTimes = times) }
+                    }
+                } else if (observations.isEmpty()) {
                     p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+                } else {
+                    unsafe { +valuePointSvg(observations) }
                 }
-                if (observations.isNotEmpty()) unsafe { +valuePointSvg(observations) }
+            }
+            if (recordedSeries.size > 1) renderSeriesLegend(recordedSeries)
+            div {
+                attributes["class"] = HistoryRangeCss.BANNER
+                id = HistoryRangeIds.NEW_DATA_BANNER
+                attributes["hidden"] = "hidden"
+                p { +HistoryRangeText.NEW_DATA_RETURN }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    id = HistoryRangeIds.NEW_DATA_BUTTON
+                    +HistoryRangeText.NEW_DATA_ACTION
+                }
             }
             if (hasCompleteValue && observations.any { it.status != HistoryObservationStatus.COMPLETE }) {
                 p(CssClass.History.SyncText) { +ViewText.HISTORY_VALUE_PARTIAL }
             }
             renderChartScrubber(HtmlIds.HISTORY_VALUE_CHART)
             p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
-            p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
+            renderPeriodDetails(data)
         }
     }
 
@@ -418,16 +1125,50 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         div(CssClass.History.ChartControls) {
             attributes[HtmlAttrs.DATA_HISTORY_CONTROLS] = "true"
             attributes["hidden"] = "hidden"
-            if (!pointsOnly) {
-                chartButton(HtmlAttrs.DATA_HISTORY_VIEW, HistoryChartActions.VIEW_LINE, ViewText.HISTORY_CHART_LINE)
-                chartButton(HtmlAttrs.DATA_HISTORY_VIEW, HistoryChartActions.VIEW_POINTS, ViewText.HISTORY_CHART_POINTS)
+            details(CssClass.History.ToolsMenu.value) {
+                summary { +ViewText.HISTORY_CHART_TOOLS }
+                div {
+                    if (!pointsOnly) {
+                        chartButton(
+                            HtmlAttrs.DATA_HISTORY_VIEW,
+                            HistoryChartActions.VIEW_LINE,
+                            ViewText.HISTORY_CHART_LINE,
+                        )
+                        chartButton(
+                            HtmlAttrs.DATA_HISTORY_VIEW,
+                            HistoryChartActions.VIEW_POINTS,
+                            ViewText.HISTORY_CHART_POINTS,
+                        )
+                    }
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_ZOOM,
+                        HistoryChartActions.ZOOM_IN,
+                        ViewText.HISTORY_CHART_ZOOM_IN,
+                    )
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_ZOOM,
+                        HistoryChartActions.ZOOM_OUT,
+                        ViewText.HISTORY_CHART_ZOOM_OUT,
+                    )
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_PAN,
+                        HistoryChartActions.PAN_EARLIER,
+                        ViewText.HISTORY_CHART_EARLIER,
+                    )
+                    chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_LATER, ViewText.HISTORY_CHART_LATER)
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_ZOOM,
+                        HistoryChartActions.ZOOM_RESET,
+                        ViewText.HISTORY_CHART_RESET,
+                    )
+                    chartButton(
+                        HtmlAttrs.DATA_HISTORY_EXPAND,
+                        HistoryChartActions.EXPAND,
+                        ViewText.HISTORY_CHART_EXPAND,
+                    )
+                    p(CssClass.History.ChartCaption) { +ViewText.HISTORY_CHART_HELP }
+                }
             }
-            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_IN, ViewText.HISTORY_CHART_ZOOM_IN)
-            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_OUT, ViewText.HISTORY_CHART_ZOOM_OUT)
-            chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_EARLIER, ViewText.HISTORY_CHART_EARLIER)
-            chartButton(HtmlAttrs.DATA_HISTORY_PAN, HistoryChartActions.PAN_LATER, ViewText.HISTORY_CHART_LATER)
-            chartButton(HtmlAttrs.DATA_HISTORY_ZOOM, HistoryChartActions.ZOOM_RESET, ViewText.HISTORY_CHART_RESET)
-            chartButton(HtmlAttrs.DATA_HISTORY_EXPAND, HistoryChartActions.EXPAND, ViewText.HISTORY_CHART_EXPAND)
         }
     }
 
@@ -450,9 +1191,14 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             }
         }
         div(CssClass.Layout.GlassPanel) {
+            id = HistoryRangeIds.CHECKPOINTS_SECTION
+            analysisPanel(HistoryAnalysis.CHECKPOINTS)
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
-                    +"${ViewText.HISTORY_CHECKPOINT_TITLE}${asset?.let { " ($it)" }.orEmpty()}"
+                    +(
+                        ViewText.HISTORY_CHECKPOINT_TITLE +
+                            asset?.let { " (${Asset.normalizeLedgerAsset(it)})" }.orEmpty()
+                        )
                 }
                 chartControls(pointsOnly = true)
             }
@@ -476,6 +1222,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         renderSeriesChart(
             sectionId = HtmlIds.HISTORY_HOLDINGS_SECTION,
             chartId = HtmlIds.HISTORY_HOLDINGS_CHART,
+            analysis = HistoryAnalysis.HOLDINGS,
             title = ViewText.HISTORY_ASSET_HOLDINGS,
             series = assetValueSeries(data.observations),
             sampleTimes = data.observations.map { it.observedAt },
@@ -488,6 +1235,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         renderSeriesChart(
             sectionId = HtmlIds.HISTORY_ALLOCATION_SECTION,
             chartId = HtmlIds.HISTORY_ALLOCATION_CHART,
+            analysis = HistoryAnalysis.ALLOCATION,
             title = ViewText.HISTORY_ALLOCATION_DRIFT,
             series = allocationDeviationSeries(
                 data.observations,
@@ -502,37 +1250,99 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     }
 
     private fun DIV.renderCashFlowChart(data: HistoryPageData) {
-        renderSeriesChart(
+        renderNativeQuantityChart(
             sectionId = HtmlIds.HISTORY_CASH_FLOW_SECTION,
             chartId = HtmlIds.HISTORY_CASH_FLOW_CHART,
+            analysis = HistoryAnalysis.CASH_FLOW,
             title = ViewText.HISTORY_NET_CASH_FLOW,
-            series = listOf(Asset.USD to cumulativeFundingFlow(data.fundingLedgers, data.observations)),
+            series = data.fundingSeries,
             caption = ViewText.HISTORY_CASH_FLOW_CAPTION,
-            emptyText = ViewText.HISTORY_NO_DATA,
+            emptyText = reportSeriesEmptyText(data.accountAvailable),
         )
     }
 
     private fun DIV.renderRewardsChart(data: HistoryPageData) {
-        val (points, total) = cumulativeRewardValue(data.rewardLedgers, data.observations)
-        renderSeriesChart(
+        renderNativeQuantityChart(
             sectionId = HtmlIds.HISTORY_REWARDS_SECTION,
             chartId = HtmlIds.HISTORY_REWARDS_CHART,
+            analysis = HistoryAnalysis.REWARDS,
             title = ViewText.HISTORY_STAKING_REWARDS,
-            series = listOf(Asset.USD to points),
+            series = data.rewardSeries,
             caption = ViewText.HISTORY_REWARDS_CAPTION,
-            emptyText = ViewText.HISTORY_NO_DATA,
-            headerStat = {
-                span(CssClass.History.MutedSmallText) {
-                    id = HtmlIds.HISTORY_REWARDS_TOTAL
-                    +"${ViewText.HISTORY_TOTAL_REWARDS}: ${Formatter.formatSignedUsd(total)}"
-                }
-            },
+            emptyText = reportSeriesEmptyText(data.accountAvailable),
         )
     }
+
+    /** Marks one secondary analysis panel; only the selected analysis is visible at a time. */
+    private fun DIV.analysisPanel(analysis: String) {
+        attributes[HtmlAttrs.DATA_HISTORY_ANALYSIS_PANEL] = analysis
+        if (analysis != HistoryAnalysis.HOLDINGS) attributes["hidden"] = "hidden"
+    }
+
+    private fun DIV.renderNativeQuantityChart(
+        sectionId: String,
+        chartId: String,
+        analysis: String,
+        title: String,
+        series: List<NativeQuantitySeries>,
+        caption: String,
+        emptyText: String,
+    ) {
+        div(CssClass.Layout.GlassPanel) {
+            id = sectionId
+            analysisPanel(analysis)
+            div(CssClass.History.ChartHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) { +title }
+            }
+            if (series.size > 1) {
+                label {
+                    +ViewText.HISTORY_SERIES_ASSET_LABEL
+                    select {
+                        attributes[HtmlAttrs.DATA_HISTORY_SERIES_SELECT] = chartId
+                        series.forEachIndexed { index, item ->
+                            option {
+                                value = item.asset
+                                selected = index == 0
+                                +Asset.normalizeLedgerAsset(item.asset)
+                            }
+                        }
+                    }
+                }
+            }
+            div(CssClass.History.ChartContainer) {
+                id = chartId
+                if (series.isEmpty()) {
+                    p(CssClass.History.MutedSmallText) { +emptyText }
+                } else {
+                    series.forEachIndexed { index, item ->
+                        div {
+                            attributes[HtmlAttrs.DATA_HISTORY_SERIES_ASSET] = item.asset
+                            if (index > 0) attributes["hidden"] = "hidden"
+                            val points = item.points.map { HistorySeriesPoint(it.observedAt, it.cumulativeQuantity) }
+                            val displayAsset = Asset.normalizeLedgerAsset(item.asset)
+                            unsafe {
+                                +multiSeriesSvg(
+                                    series = listOf(displayAsset to points),
+                                    zeroLine = false,
+                                    sampleTimes = emptyList(),
+                                    formatValue = { "${Formatter.formatQuantity(it)} $displayAsset" },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            p(CssClass.History.ChartCaption) { +caption }
+        }
+    }
+
+    private fun reportSeriesEmptyText(accountAvailable: Boolean): String =
+        if (accountAvailable) ViewText.HISTORY_REPORT_EMPTY else ViewText.HISTORY_REPORT_UNAVAILABLE
 
     private fun DIV.renderSeriesChart(
         sectionId: String,
         chartId: String,
+        analysis: String,
         title: String,
         series: List<Pair<String, List<HistorySeriesPoint>>>,
         caption: String,
@@ -544,6 +1354,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     ) {
         div(CssClass.Layout.GlassPanel) {
             id = sectionId
+            analysisPanel(analysis)
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) { +title }
                 headerStat?.invoke(this)
@@ -592,12 +1403,18 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     private fun DIV.renderTrades(data: HistoryPageData) {
         div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
             id = HtmlIds.HISTORY_TRADES_SECTION
+            attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_PANEL] = HistoryRangeQuery.ACTIVITY_TRADES
+            attributes["hidden"] = "hidden"
             div(CssClass.History.TradeLogHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
                     +ViewText.HISTORY_TRADE_LOG
                 }
+                exportButton("trades", Routes.API_HISTORY_EXPORT_TRADES)
                 data.trades.total?.let { total ->
-                    span(CssClass.Badge.Info) { +total.toString() }
+                    span(CssClass.Badge.Info) {
+                        attributes["data-history-total"] = "trades"
+                        +total.toString()
+                    }
                 }
             }
             div(CssClass.Table.Wrapper) {
@@ -618,12 +1435,45 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     tbody {
                         id = HtmlIds.HISTORY_TRADES_BODY
                         if (data.trades.items.isEmpty()) emptyRow(TRADE_COLUMNS)
-                        data.trades.items.forEach { t ->
+                        data.trades.items.take(HistoryRangeProps.RECORD_PAGE_SIZE).forEach { t ->
                             tr(CssClass.Table.Hoverable) {
                                 td(CssClass.Table.MonoCol) {
-                                    (t.time?.let(timeFormatter::format) ?: t.rawTime?.takeIf { it.isNotBlank() })
-                                        ?.let { title = it }
-                                    +(t.time?.let(Formatter::formatCompactTradeTime) ?: t.rawTime.orEmpty())
+                                    val timestamp = recordTimestamp(t.time, t.rawTime)
+                                    if (timestamp != ViewText.EM_DASH) title = timestamp
+                                    details {
+                                        listOfNotNull(t.tradeId, t.orderTxid, t.postTxid)
+                                            .firstOrNull { it.isNotBlank() }
+                                            ?.let { attributes[HtmlAttrs.DATA_HISTORY_DETAIL_KEY] = "trade:$it" }
+                                        summary { +timestamp }
+                                        dl {
+                                            detail(HistoryRangeText.DETAILS_TIMESTAMP, timestamp)
+                                            detail(
+                                                HistoryRangeText.DETAILS_UNITS,
+                                                originalValue(t.volume, t.baseAsset),
+                                            )
+                                            detail(
+                                                HistoryRangeText.DETAILS_PRICE,
+                                                originalValue(t.price, t.quoteCurrency),
+                                            )
+                                            detail(
+                                                HistoryRangeText.DETAILS_COST,
+                                                originalValue(t.cost, t.quoteCurrency),
+                                            )
+                                            detail(
+                                                HistoryRangeText.DETAILS_FEE,
+                                                originalValue(t.fee, t.feeCurrency ?: t.quoteCurrency),
+                                            )
+                                            detail(HistoryRangeText.DETAILS_STATUS, recordStatus(t.isValidRecord))
+                                            detail(HistoryRangeText.DETAILS_EXCHANGE_TRADE_ID, t.tradeId)
+                                            detail(HistoryRangeText.DETAILS_EXCHANGE_ORDER_ID, t.orderTxid)
+                                            detail(HistoryRangeText.DETAILS_POST_ID, t.postTxid)
+                                            detail(
+                                                HistoryRangeText.DETAILS_LEDGER_ID,
+                                                t.ledgerIds.joinToString().ifEmpty { ViewText.EM_DASH },
+                                            )
+                                            detail(HistoryRangeText.DETAILS_BOT_LINK, HistoryRangeText.UNKNOWN_LINKAGE)
+                                        }
+                                    }
                                 }
                                 td(CssClass.Table.SymbolCol) {
                                     +Formatter.formatPair(t.baseAsset, t.quoteCurrency, t.pair)
@@ -661,19 +1511,25 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     }
                 }
             }
-            pagination(data, data.trades, isTrades = true)
+            pagination(data, visiblePage(data.trades), isTrades = true)
         }
     }
 
     private fun DIV.renderLedgers(data: HistoryPageData) {
         div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
             id = HtmlIds.HISTORY_LEDGERS_SECTION
+            attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_PANEL] = HistoryRangeQuery.ACTIVITY_TRANSACTIONS
+            attributes["hidden"] = "hidden"
             div(CssClass.History.TradeLogHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
                     +ViewText.HISTORY_TRANSACTION_LOG
                 }
+                exportButton("ledgers", Routes.API_HISTORY_EXPORT_LEDGERS)
                 data.ledgers.total?.let { total ->
-                    span(CssClass.Badge.Info) { +total.toString() }
+                    span(CssClass.Badge.Info) {
+                        attributes["data-history-total"] = "ledgers"
+                        +total.toString()
+                    }
                 }
             }
             div(CssClass.Table.Wrapper) {
@@ -693,12 +1549,36 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     tbody {
                         id = HtmlIds.HISTORY_LEDGERS_BODY
                         if (data.ledgers.items.isEmpty()) emptyRow(LEDGER_COLUMNS)
-                        data.ledgers.items.forEach { l ->
+                        data.ledgers.items.take(HistoryRangeProps.RECORD_PAGE_SIZE).forEach { l ->
                             tr(CssClass.Table.Hoverable) {
                                 td(CssClass.Table.MonoCol) {
-                                    (l.time?.let(timeFormatter::format) ?: l.rawTime?.takeIf { it.isNotBlank() })
-                                        ?.let { title = it }
-                                    +(l.time?.let(Formatter::formatCompactTradeTime) ?: l.rawTime.orEmpty())
+                                    val timestamp = recordTimestamp(l.time, l.rawTime)
+                                    if (timestamp != ViewText.EM_DASH) title = timestamp
+                                    details {
+                                        listOfNotNull(l.ledgerId, l.refid)
+                                            .firstOrNull { it.isNotBlank() }
+                                            ?.let { attributes[HtmlAttrs.DATA_HISTORY_DETAIL_KEY] = "ledger:$it" }
+                                        summary { +timestamp }
+                                        dl {
+                                            detail(HistoryRangeText.DETAILS_TIMESTAMP, timestamp)
+                                            detail(
+                                                HistoryRangeText.DETAILS_UNITS,
+                                                originalValue(l.amount, l.asset),
+                                            )
+                                            detail(
+                                                HistoryRangeText.DETAILS_FEE,
+                                                originalValue(l.fee, l.asset),
+                                            )
+                                            detail(
+                                                HistoryRangeText.DETAILS_BALANCE,
+                                                originalValue(l.balance, l.asset),
+                                            )
+                                            detail(HistoryRangeText.DETAILS_STATUS, recordStatus(l.isValidRecord))
+                                            detail(HistoryRangeText.DETAILS_LEDGER_ID, l.ledgerId)
+                                            detail(HistoryRangeText.DETAILS_REFERENCE_ID, l.refid)
+                                            detail(HistoryRangeText.DETAILS_BOT_LINK, HistoryRangeText.UNKNOWN_LINKAGE)
+                                        }
+                                    }
                                 }
                                 td {
                                     val type = l.type.orEmpty().replaceFirstChar { c -> c.uppercase() }
@@ -731,15 +1611,48 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     }
                 }
             }
-            pagination(data, data.ledgers, isTrades = false)
+            pagination(data, visiblePage(data.ledgers), isTrades = false)
         }
     }
 
-    private fun kotlinx.html.TBODY.emptyRow(columns: Int) {
+    private fun <T> visiblePage(page: HistoryPage<T>): HistoryPage<T> {
+        val visibleItems = page.items.take(HistoryRangeProps.RECORD_PAGE_SIZE)
+        return page.copy(
+            items = visibleItems,
+            limit = HistoryRangeProps.RECORD_PAGE_SIZE,
+            hasMore = page.hasMore || page.items.size > visibleItems.size,
+        )
+    }
+
+    private fun recordTimestamp(time: Instant?, rawTime: String?): String =
+        time?.let(timeFormatter::format) ?: rawTime?.takeIf(String::isNotBlank) ?: ViewText.EM_DASH
+
+    private fun originalValue(amount: String?, currency: String?): String =
+        "${amount?.takeIf(String::isNotBlank) ?: ViewText.EM_DASH} " +
+            (currency?.takeIf(String::isNotBlank) ?: ViewText.HISTORY_UNKNOWN_CURRENCY)
+
+    private fun recordStatus(valid: Boolean): String =
+        if (valid) HistoryRangeText.RECORD_VALID else HistoryRangeText.RECORD_INCOMPLETE
+
+    private fun DL.detail(label: String, value: String?) {
+        dt { +label }
+        dd { +(value?.takeIf(String::isNotBlank) ?: ViewText.EM_DASH) }
+    }
+
+    private fun TBODY.emptyRow(columns: Int) {
         tr {
             td(CssClass.History.EmptyTableCell) {
                 colSpan = columns.toString()
                 +ViewText.HISTORY_EVENTS_EMPTY
+            }
+        }
+    }
+
+    private fun TBODY.emptyActivityRow() {
+        tr {
+            td(CssClass.History.EmptyTableCell) {
+                colSpan = "5"
+                +HistoryRangeText.ACTIVITY_EMPTY
             }
         }
     }
@@ -749,12 +1662,23 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             val offset = page.offset
             val previous = (offset - page.limit).coerceAtLeast(0)
             val next = offset + page.limit
+            val tableName = if (isTrades) "trades" else "ledgers"
+            val activity = if (isTrades) {
+                HistoryRangeQuery.ACTIVITY_TRADES
+            } else {
+                HistoryRangeQuery.ACTIVITY_TRANSACTIONS
+            }
+            attributes["data-history-pagination"] = tableName
+            attributes["data-history-offset"] = offset.toString()
+            attributes["data-history-limit"] = page.limit.toString()
             if (offset > 0) {
                 a(
                     href = pageUrl(
                         data,
                         tradesOffset = if (isTrades) previous else null,
                         ledgersOffset = if (isTrades) null else previous,
+                        tab = HistoryRangeQuery.TAB_ACTIVITY,
+                        activity = activity,
                     ) + "#" + if (isTrades) HtmlIds.HISTORY_TRADES_SECTION else HtmlIds.HISTORY_LEDGERS_SECTION,
                     classes = CssClass.History.PaginationBtn.value,
                 ) {
@@ -763,6 +1687,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 }
             }
             span(CssClass.History.MutedSmallText) {
+                attributes["data-history-page-range"] = tableName
                 val shown = if (page.items.isEmpty()) "0–0" else "${offset + 1}–${offset + page.items.size}"
                 +"$shown${page.total?.let { " of $it" }.orEmpty()}"
             }
@@ -772,6 +1697,8 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                         data,
                         tradesOffset = if (isTrades) next else null,
                         ledgersOffset = if (isTrades) null else next,
+                        tab = HistoryRangeQuery.TAB_ACTIVITY,
+                        activity = activity,
                     ) + "#" + if (isTrades) HtmlIds.HISTORY_TRADES_SECTION else HtmlIds.HISTORY_LEDGERS_SECTION,
                     classes = CssClass.History.PaginationBtn.value,
                 ) {
@@ -787,11 +1714,15 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         range: String = data.range,
         tradesOffset: Int? = null,
         ledgersOffset: Int? = null,
+        tab: String? = null,
+        activity: String? = null,
     ): String {
         var url = Routes.HISTORY.withQuery("range", range)
         data.filters.assetKey?.let { url = url.withQuery("asset", it) }
         data.filters.pair?.let { url = url.withQuery("pair", it) }
         data.filters.type?.let { url = url.withQuery("type", it) }
+        tab?.let { url = url.withQuery(HistoryRangeQuery.PARAM_TAB, it) }
+        activity?.let { url = url.withQuery(HistoryRangeQuery.PARAM_ACTIVITY, it) }
         // A pagination link changes only its own table's offset and preserves the other.
         val trades = tradesOffset ?: data.tradesOffset
         val ledgers = ledgersOffset ?: data.ledgersOffset
@@ -1063,7 +1994,14 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     )
 
     private companion object {
-        val RANGES = listOf("24h" to "24h", "7d" to "7d", "30d" to "30d", "90d" to "90d", "all" to "All")
+        val RANGES = listOf(
+            "24h" to "24h",
+            "7d" to "7d",
+            "30d" to "30d",
+            "90d" to "90d",
+            "1y" to "1y",
+            "all" to "All",
+        )
         const val TRADE_COLUMNS = 7
         const val LEDGER_COLUMNS = 6
         const val SVG_WIDTH = 960
@@ -1072,68 +2010,6 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         const val SVG_LABEL_GUTTER = 120
         const val SVG_PLOT_RIGHT = SVG_WIDTH - SVG_PAD
     }
-}
-
-private enum class HistoryStatCardDefinition(
-    val title: String,
-    val iconSvg: String,
-    val valueId: String,
-    val formatValue: (HistoryPageData) -> String,
-) {
-    ALL_TIME_HIGH(
-        ViewText.HISTORY_ALL_TIME_HIGH,
-        Icons.WALLET,
-        HtmlIds.STAT_ALL_TIME_HIGH,
-        { data ->
-            Formatter.formatUsdOrDash(
-                data.observations.mapNotNull { it.totalUsd }.maxOrNull(),
-                PrecisionConstants.SCALE_USD,
-                PrecisionConstants.SCALE_USD,
-            )
-        },
-    ),
-    TOTAL_TRADES(
-        ViewText.HISTORY_TOTAL_TRADES,
-        Icons.CHART,
-        HtmlIds.STAT_TOTAL_TRADES,
-        { data -> Formatter.formatCount(data.tradeSummary.totalTrades) },
-    ),
-    TOTAL_VOLUME(
-        ViewText.HISTORY_TOTAL_VOLUME,
-        Icons.WALLET,
-        HtmlIds.STAT_TOTAL_VOLUME,
-        { data ->
-            Formatter.formatUsdOrDash(
-                data.tradeSummary.totalVolumeUsd,
-                PrecisionConstants.SCALE_USD,
-                PrecisionConstants.SCALE_USD,
-            )
-        },
-    ),
-    TOTAL_FEES(
-        ViewText.HISTORY_TOTAL_FEES,
-        Icons.DOLLAR_CIRCLE,
-        HtmlIds.STAT_TOTAL_FEES,
-        { data ->
-            Formatter.formatUsdOrDash(
-                data.tradeSummary.totalFeesPaid,
-                PrecisionConstants.SCALE_USD,
-                PrecisionConstants.SCALE_USD,
-            )
-        },
-    ),
-    AVG_FEE_RATE(
-        ViewText.HISTORY_AVG_FEE_RATE,
-        Icons.DOLLAR_CIRCLE,
-        HtmlIds.STAT_AVG_FEE_RATE,
-        { data ->
-            if (data.tradeSummary.totalVolumeUsd.signum() == 0) {
-                ViewText.EM_DASH
-            } else {
-                "${Formatter.formatPercent(data.tradeSummary.avgFeeRatePercent)}%"
-            }
-        },
-    ),
 }
 
 internal data class HistorySeriesPoint(val time: Instant, val value: BigDecimal)
@@ -1156,87 +2032,13 @@ internal fun allocationDeviationSeries(
     targets: Map<String, BigDecimal>,
 ): List<Pair<String, List<HistorySeriesPoint>>> {
     val ordered = observations.sortedBy { it.observedAt }
-    val symbols = (targets.keys + ordered.flatMap { observation -> observation.assets.map { it.symbol } }).toSortedSet()
-    return symbols.map { symbol ->
-        val target = targets[symbol] ?: BigDecimal.ZERO
+    // Only configured targets have a reference to deviate from, so only they are charted.
+    return targets.keys.toSortedSet().map { symbol ->
+        val target = targets.getValue(symbol)
         symbol to ordered.mapNotNull { observation ->
-            if (observation.status != HistoryObservationStatus.COMPLETE) return@mapNotNull null
-            val total = observation.totalUsd ?: return@mapNotNull null
-            if (total.signum() <= 0) return@mapNotNull null
-            val value = observation.assets.firstOrNull { it.symbol == symbol }?.valueUsd ?: BigDecimal.ZERO
-            val actualShare = value
-                .multiply(BigDecimal(PrecisionConstants.HUNDRED_INT))
-                .divide(total, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
-            HistorySeriesPoint(observation.observedAt, actualShare.subtract(target))
-        }
-    }
-}
-
-internal fun cumulativeFundingFlow(
-    ledgers: List<HistoryLedger>,
-    observations: List<HistoryObservation>,
-): List<HistorySeriesPoint> {
-    val prices = observedUsdPrices(observations)
-    return cumulativeLedgerValue(ledgers) { ledger, time ->
-        val type = ledger.type?.lowercase()
-        if (type != KrakenApiConstants.LEDGER_TYPE_DEPOSIT && type != KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL) {
-            return@cumulativeLedgerValue null
-        }
-        val amount = ledger.amount?.toBigDecimalOrNull() ?: return@cumulativeLedgerValue null
-        observedUsdValue(prices, ledger.asset, time, amount)
-    }
-}
-
-internal fun cumulativeRewardValue(
-    ledgers: List<HistoryLedger>,
-    observations: List<HistoryObservation>,
-): Pair<List<HistorySeriesPoint>, BigDecimal> {
-    val prices = observedUsdPrices(observations)
-    val points = cumulativeLedgerValue(ledgers) { ledger, time ->
-        val amount = ledger.amount?.toBigDecimalOrNull() ?: return@cumulativeLedgerValue null
-        observedUsdValue(prices, ledger.asset, time, amount)
-    }
-    return points to (points.lastOrNull()?.value ?: BigDecimal.ZERO)
-}
-
-private fun cumulativeLedgerValue(
-    ledgers: List<HistoryLedger>,
-    signedUsdValue: (HistoryLedger, Instant) -> BigDecimal?,
-): List<HistorySeriesPoint> {
-    var running = BigDecimal.ZERO
-    return ledgers
-        .sortedWith(compareBy({ it.time ?: Instant.EPOCH }, { it.ledgerId }))
-        .mapNotNull { ledger ->
-            val time = ledger.time ?: return@mapNotNull null
-            val value = signedUsdValue(ledger, time) ?: return@mapNotNull null
-            running = running.add(value)
-            HistorySeriesPoint(time, running)
-        }
-}
-
-private fun observedUsdPrices(observations: List<HistoryObservation>): Map<String, List<Pair<Instant, BigDecimal>>> =
-    observations
-        .flatMap { observation ->
-            observation.assets.mapNotNull { asset ->
-                asset.priceUsd?.let { price -> asset.symbol to (observation.observedAt to price) }
+            allocationDeviationPercent(observation, symbol, target)?.let { deviation ->
+                HistorySeriesPoint(observation.observedAt, deviation)
             }
         }
-        .groupBy({ it.first }, { it.second })
-        .mapValues { (_, samples) -> samples.sortedBy { it.first } }
-
-/** USD ledger legs count at par; other assets need the nearest observed cycle price. */
-private fun observedUsdValue(
-    prices: Map<String, List<Pair<Instant, BigDecimal>>>,
-    asset: String?,
-    time: Instant,
-    amount: BigDecimal,
-): BigDecimal? {
-    val symbol = asset?.let(Asset::normalizeLedgerAsset).orEmpty()
-    if (symbol.isEmpty()) return null
-    if (symbol == Asset.USD) return amount
-    val price = prices[symbol]
-        ?.minByOrNull { sample -> abs(sample.first.epochSecond - time.epochSecond) }
-        ?.second
-        ?: return null
-    return amount.multiply(price)
+    }
 }

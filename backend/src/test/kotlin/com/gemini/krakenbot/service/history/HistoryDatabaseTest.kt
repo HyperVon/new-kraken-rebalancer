@@ -3,11 +3,21 @@ package com.gemini.krakenbot.service.history
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
+import java.sql.Statement
+import java.util.Properties
 
 class HistoryDatabaseTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -26,7 +36,7 @@ class HistoryDatabaseTest : StringSpec() {
                     conn.createStatement().use { stmt ->
                         stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
                             rs.next() shouldBe true
-                            rs.getInt(1) shouldBe 2
+                            rs.getInt(1) shouldBe 4
                         }
                     }
                 }
@@ -56,6 +66,27 @@ class HistoryDatabaseTest : StringSpec() {
                 val db = HistoryDatabase(dbPath)
                 shouldThrow<IllegalStateException> {
                     db.connect()
+                }
+            }
+        }
+
+        "connect closes the connection when the schema marker query fails" {
+            withTempDirectory { dir ->
+                val dbPath = Files.createFile(dir.resolve("marker-query-fails.db"))
+                val database = HistoryDatabase(dbPath)
+                val connection = mockk<Connection>(relaxed = true)
+                val statement = mockk<Statement>(relaxed = true)
+                mockkStatic(DriverManager::class)
+                try {
+                    every { DriverManager.getConnection(any<String>(), any<Properties>()) } returns connection
+                    every { connection.createStatement() } returns statement
+                    every { statement.executeQuery(any<String>()) } throws SQLException("schema marker unavailable")
+
+                    shouldThrow<SQLException> { database.connect() }
+
+                    verify(exactly = 1) { connection.close() }
+                } finally {
+                    unmockkStatic(DriverManager::class)
                 }
             }
         }
@@ -130,6 +161,182 @@ class HistoryDatabaseTest : StringSpec() {
                 database.hasAccountEvidence() shouldBe true
             }
         }
+
+        "upgrades a reviewed v2 database in place, preserving records and seeding only proven horizons" {
+            withTempDirectory { dir ->
+                val dbPath = dir.resolve("history.db")
+                seedV2Records(dbPath)
+
+                val db = HistoryDatabase(dbPath)
+                db.initializeFreshSchema()
+
+                db.connect().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getInt(1) shouldBe 4
+                        }
+                        stmt.executeQuery("SELECT COUNT(*) FROM history_trades").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getInt(1) shouldBe 1
+                        }
+                        stmt.executeQuery("SELECT outcome FROM history_cycle_activity").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe null
+                        }
+                    }
+                    conn.prepareStatement(
+                        "SELECT purpose, state, completed_through_sec FROM history_sync_jobs " +
+                            "WHERE account_identity_digest = ? AND feed = 'TRADES'",
+                    ).use { statement ->
+                        statement.setString(1, ACCOUNT_DIGEST)
+                        statement.executeQuery().use { rs ->
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe "RECENT"
+                            rs.getString(2) shouldBe "COMPLETE"
+                            // The horizon is the latest completed window of the feed.
+                            rs.getLong(3) shouldBe 1_700_001_500L
+                            rs.next() shouldBe false
+                        }
+                    }
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery("SELECT revision FROM history_data_revision WHERE id = 1").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getLong(1) shouldBe 1
+                        }
+                    }
+                    conn.prepareStatement(
+                        "SELECT feed, start_sec, end_sec, updated_at_ns FROM history_sync_coverage " +
+                            "WHERE account_identity_digest = ? ORDER BY start_sec",
+                    ).use { statement ->
+                        statement.setString(1, ACCOUNT_DIGEST)
+                        statement.executeQuery().use { rs ->
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe "TRADES"
+                            rs.getLong(2) shouldBe 0L
+                            rs.getLong(3) shouldBe 1_700_000_000L
+                            val migratedAtNs = rs.getLong(4)
+                            migratedAtNs shouldBeGreaterThan 0L
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe "TRADES"
+                            rs.getLong(2) shouldBe 1_700_001_000L
+                            rs.getLong(3) shouldBe 1_700_001_500L
+                            // Both seeded intervals carry the migration's own timestamp.
+                            rs.getLong(4) shouldBe migratedAtNs
+                            rs.next() shouldBe false
+                        }
+                    }
+                }
+                db.verifyInitialized()
+                db.hasAccountEvidence() shouldBe true
+                db.close()
+            }
+        }
+
+        "repeated open of a migrated database is idempotent" {
+            withTempDirectory { dir ->
+                val dbPath = dir.resolve("history.db")
+                seedV2Records(dbPath)
+                HistoryDatabase(dbPath).use { db -> db.initializeFreshSchema() }
+                HistoryDatabase(dbPath).use { db ->
+                    db.connect().use { connection -> connection.createStatement().use { it.execute("SELECT 1") } }
+                }
+                HistoryDatabase(dbPath).use { db ->
+                    db.connect().use { conn ->
+                        conn.createStatement().use { stmt ->
+                            stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
+                                rs.next() shouldBe true
+                                rs.getInt(1) shouldBe 4
+                            }
+                            stmt.executeQuery("SELECT COUNT(*) FROM history_sync_jobs").use { rs ->
+                                rs.next() shouldBe true
+                                rs.getInt(1) shouldBe 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        "failed upgrade rolls back and leaves the reviewed schema recoverable" {
+            withTempDirectory { dir ->
+                val dbPath = dir.resolve("history.db")
+                seedV2Records(dbPath)
+                DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { conn ->
+                    conn.createStatement().use { stmt ->
+                        // Conflicts with the v3 CREATE so the upgrade fails mid-transaction.
+                        stmt.execute("CREATE TABLE history_sync_jobs(x INTEGER)")
+                    }
+                }
+
+                val db = HistoryDatabase(dbPath)
+                shouldThrow<IllegalStateException> { db.initializeFreshSchema() }
+
+                DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getInt(1) shouldBe 2
+                        }
+                        stmt.executeQuery("SELECT COUNT(*) FROM history_trades").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getInt(1) shouldBe 1
+                        }
+                        stmt.executeQuery("SELECT COUNT(*) FROM history_cycle_activity").use { rs ->
+                            rs.next() shouldBe true
+                            rs.getInt(1) shouldBe 1
+                        }
+                    }
+                }
+                shouldThrow<IllegalStateException> { db.connect() }
+                db.close()
+            }
+        }
+    }
+
+    private fun seedV2Records(dbPath: Path) {
+        openV2HistoryDatabase(dbPath).use { conn ->
+            conn.prepareStatement(
+                "INSERT INTO history_trades(account_identity_digest, trade_id, ledger_ids, " +
+                    "has_valid_time, has_valid_price, has_valid_cost, has_valid_fee, has_valid_volume, " +
+                    "is_valid_record, payload_hash) VALUES (?, 'trade-1', '[]', 1, 1, 1, 1, 1, 1, 'h')",
+            ).use { statement ->
+                statement.setString(1, ACCOUNT_DIGEST)
+                statement.executeUpdate()
+            }
+            conn.prepareStatement(
+                "INSERT INTO history_cycle_activity(source_key, cycle_id, source_mode, account_identity_digest, " +
+                    "managed_scope_fingerprint, managed_scope_symbols, occurred_at_ns, dry_run, actions, " +
+                    "payload_hash) VALUES ('source', 'cycle-1', 'ACCOUNT', ?, 'fp', '[]', 1, 1, '[]', 'h')",
+            ).use { statement ->
+                statement.setString(1, ACCOUNT_DIGEST)
+                statement.executeUpdate()
+            }
+            conn.prepareStatement(
+                "INSERT INTO history_sync_windows(scan_id, account_identity_digest, feed, start_sec, end_sec, " +
+                    "state, started_at_ns, completed_at_ns) " +
+                    "VALUES ('scan-complete', ?, 'TRADES', 0, 1700000000, 'COMPLETE', 1, 2)",
+            ).use { statement ->
+                statement.setString(1, ACCOUNT_DIGEST)
+                statement.executeUpdate()
+            }
+            conn.prepareStatement(
+                "INSERT INTO history_sync_windows(scan_id, account_identity_digest, feed, start_sec, end_sec, " +
+                    "state, started_at_ns, completed_at_ns) " +
+                    "VALUES ('scan-complete-later', ?, 'TRADES', 1700001000, 1700001500, 'COMPLETE', 1, 2)",
+            ).use { statement ->
+                statement.setString(1, ACCOUNT_DIGEST)
+                statement.executeUpdate()
+            }
+            conn.prepareStatement(
+                "INSERT INTO history_sync_windows(scan_id, account_identity_digest, feed, start_sec, end_sec, " +
+                    "state, started_at_ns, completed_at_ns) " +
+                    "VALUES ('scan-open', ?, 'LEDGERS', 0, 1700000500, 'PAUSED', 3, NULL)",
+            ).use { statement ->
+                statement.setString(1, ACCOUNT_DIGEST)
+                statement.executeUpdate()
+            }
+        }
     }
 
     private fun withTempDirectory(block: suspend (Path) -> Unit) = runTest {
@@ -139,5 +346,9 @@ class HistoryDatabaseTest : StringSpec() {
         } finally {
             directory.toFile().deleteRecursively()
         }
+    }
+
+    private companion object {
+        const val ACCOUNT_DIGEST = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 }

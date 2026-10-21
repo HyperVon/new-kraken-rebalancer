@@ -10,11 +10,113 @@ import io.kotest.matchers.string.shouldContain
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
+import kotlin.js.js
 
 class SettingsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "settings dirty state confirms navigation only while values differ from baseline" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val input = form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement
+            val status = form.querySelector("#settings-save-status") as HTMLElement
+            initSettings()
+            val originalAddEventListener = window.asDynamic().addEventListener
+            val originalRemoveEventListener = window.asDynamic().removeEventListener
+            val addedListeners = mutableListOf<String>()
+            val removedListeners = mutableListOf<String>()
+            val listeners = mutableMapOf<String, dynamic>()
+            window.asDynamic().addEventListener = { type: String, listener: dynamic ->
+                addedListeners.add(type)
+                listeners[type] = listener
+            }
+            window.asDynamic().removeEventListener = { type: String, _: dynamic ->
+                removedListeners.add(type)
+                listeners.remove(type)
+            }
+
+            try {
+                initSettings()
+                status.classList.contains("hidden").shouldBeTrue()
+                dispatchSettingsInput(input, "61")
+                status.textContent shouldBe "Unsaved changes"
+                status.classList.contains("hidden").shouldBeFalse()
+                addedListeners.contains("beforeunload").shouldBeTrue()
+                val beforeUnloadEvent: dynamic = js("new Event('beforeunload', { cancelable: true })")
+                val beforeUnloadHandler = checkNotNull(listeners["beforeunload"])
+                beforeUnloadHandler(beforeUnloadEvent)
+                (beforeUnloadEvent.defaultPrevented as Boolean).shouldBeTrue()
+
+                dispatchSettingsInput(input, "60")
+                status.textContent shouldBe ""
+                status.classList.contains("hidden").shouldBeTrue()
+                removedListeners.contains("beforeunload").shouldBeTrue()
+                listeners.containsKey("beforeunload").shouldBeFalse()
+            } finally {
+                window.asDynamic().addEventListener = originalAddEventListener
+                window.asDynamic().removeEventListener = originalRemoveEventListener
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "settings save response preserves the form and reports publication state and saved time" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val input = form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement
+            val status = form.querySelector("#settings-save-status") as HTMLElement
+
+            try {
+                registerSettingsGlobals()
+                initSettings()
+                dispatchSettingsInput(input, "61")
+
+                val persistenceFailure = dispatchSettingsResponse(
+                    status = 500,
+                    response = "{\"error\":\"persistence failed\"}",
+                )
+                (persistenceFailure.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "61"
+                status.textContent shouldBe "Unsaved changes"
+
+                dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "62")
+                val inFlightEdit = dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:40:00Z\"}",
+                )
+                (inFlightEdit.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "62"
+                status.textContent shouldBe "Unsaved changes"
+                status.classList.contains("hidden").shouldBeFalse()
+
+                dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "63")
+                dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
+                val previewEdit = dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:41:00Z\"}",
+                )
+                (previewEdit.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "63"
+                status.textContent shouldBe "Unsaved changes"
+
+                dispatchSettingsBeforeRequest("/settings", form)
+                val deferredSave = dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":true,\"savedAt\":\"2026-10-19T14:42:00Z\"}",
+                )
+                (deferredSave.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "63"
+                status.textContent shouldBe "Saved — applies after current cycle"
+                status.getAttribute("datetime") shouldBe "2026-10-19T14:42:00Z"
+            } finally {
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
         "toFixed formats decimal places" {
             val num1 = 12.3456
             num1.toFixed(2) shouldBe "12.35"
@@ -376,4 +478,51 @@ class SettingsTest : StringSpec() {
             }
         }
     }
+}
+
+private fun settingsStateForm(): HTMLFormElement {
+    val form = document.createElement("form") as HTMLFormElement
+    form.id = "settings-form"
+    form.setAttribute("data-settings-baseline", "16:loopDelaySeconds2:60")
+    form.innerHTML = """
+        <input name="loopDelaySeconds" value="60">
+        <span id="total-allocated-display"></span>
+        <button id="save-button"></button>
+        <time id="settings-save-status" class="hidden"></time>
+    """.trimIndent()
+    return form
+}
+
+private fun dispatchSettingsInput(input: HTMLInputElement, value: String) {
+    input.value = value
+    val event = document.createEvent("Event")
+    event.initEvent(type = "input", bubbles = true, cancelable = true)
+    input.dispatchEvent(event)
+}
+
+private fun dispatchSettingsBeforeRequest(path: String, target: Element) {
+    val requestConfig = js("({})")
+    requestConfig.path = path
+    requestConfig.verb = "post"
+    val detail = js("({})")
+    detail.requestConfig = requestConfig
+    val event = document.createEvent("CustomEvent")
+    event.asDynamic().initCustomEvent("htmx:beforeRequest", true, true, detail)
+    target.dispatchEvent(event)
+}
+
+private fun dispatchSettingsResponse(status: Int, response: String): dynamic {
+    val xhr = js("({})")
+    xhr.status = status
+    xhr.responseText = response
+    xhr.getResponseHeader = { name: String ->
+        if (name == "Content-Type") "application/json; charset=UTF-8" else null
+    }
+    val detail = js("({})")
+    detail.xhr = xhr
+    detail.shouldSwap = true
+    val event = document.createEvent("CustomEvent")
+    event.asDynamic().initCustomEvent("htmx:beforeSwap", true, true, detail)
+    document.dispatchEvent(event)
+    return detail
 }

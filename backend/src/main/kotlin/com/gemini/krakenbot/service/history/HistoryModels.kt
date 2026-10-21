@@ -119,12 +119,61 @@ data class HistoryObservation(
     }
 }
 
+/**
+ * Structured cycle outcome for the activity feed. Legacy rows recorded before outcomes
+ * existed carry null and display as [HistoryCycleOutcome.RECORDED]; a historical fill or
+ * submission status is never invented to fill the display format.
+ */
+enum class HistoryCycleOutcome { NO_TRADE, DRY_RUN_PLAN, ORDERS_ATTEMPTED, PROBLEM, RECORDED }
+
 data class HistoryCycleActivity(
     val cycleId: String,
     val sourceScope: HistorySourceScope,
     val occurredAt: Instant,
     val dryRun: Boolean,
     val actions: List<String>,
+    val outcome: HistoryCycleOutcome? = null,
+)
+
+/** Cursor for continuing a descending time/id history query. */
+data class HistorySortCursor(val time: Instant?, val id: String)
+
+/** Activity query in descending occurrence/cycle-id order with optional offset or keyset paging. */
+data class HistoryActivityQuery(
+    val sourceScope: HistorySourceScope,
+    val from: Instant? = null,
+    val until: Instant? = null,
+    val limit: Int = HISTORY_PAGE_LIMIT,
+    val offset: Int = 0,
+    val sortCursor: HistorySortCursor? = null,
+) {
+    init {
+        require(from == null || until == null || from <= until) { "History range start must not follow its end." }
+        require(limit in 1..HISTORY_MAX_PAGE_LIMIT)
+        require(offset >= 0)
+    }
+}
+
+/** One stored asset-set scope with its recorded value coverage for the scope selector. */
+data class HistoryRecordedScope(
+    val sourceKey: String,
+    val mode: HistorySourceMode,
+    val managedScopeFingerprint: String,
+    val managedScopeSymbols: List<String>,
+    val accountIdentityDigest: String?,
+    val simulationSessionId: String?,
+    val firstObservedAt: Instant?,
+    val lastObservedAt: Instant?,
+    val observationCount: Long,
+)
+
+/** Honest value-record coverage for one scope; trades/ledgers coverage is reported separately. */
+data class HistoryValuesCoverage(
+    val sourceKey: String,
+    val firstRecordedAt: Instant?,
+    val lastRecordedAt: Instant?,
+    val completeCount: Long,
+    val incompleteCount: Long,
 )
 
 data class HistoryRangeQuery(
@@ -154,6 +203,7 @@ data class HistoryEventQuery(
     val type: String? = null,
     val limit: Int = HISTORY_PAGE_LIMIT,
     val offset: Int = 0,
+    val sortCursor: HistorySortCursor? = null,
 ) {
     init {
         require(from == null || until == null || from <= until) { "History range start must not follow its end." }
@@ -176,19 +226,6 @@ data class HistoryPage<out T>(
     val limit: Int,
     val offset: Int,
     val hasMore: Boolean,
-)
-
-/**
- * Range-wide trade aggregates for the History stat cards. Costs and fees are summed
- * exactly as the trade table presents them (Kraken quote-denominated amounts).
- * Rows whose stored cost/fee strings do not parse as decimals still count in
- * [totalTrades] (they appear in the table) but are excluded from the sums.
- */
-data class HistoryTradeSummary(
-    val totalTrades: Long = 0L,
-    val totalVolumeUsd: BigDecimal = BigDecimal.ZERO,
-    val totalFeesPaid: BigDecimal = BigDecimal.ZERO,
-    val avgFeeRatePercent: BigDecimal = BigDecimal.ZERO,
 )
 
 data class HistoryTrade(
@@ -303,7 +340,78 @@ data class HistoryDailyValue(
 
 enum class HistoryFeed { TRADES, LEDGERS }
 
+/** Canonical sync-stop reasons shared by the synchronizer, coordinator, and status presenter. */
+object HistorySyncErrors {
+    const val ACCOUNT_SCOPE_CHANGED = "History sync stopped because authenticated account or credentials changed."
+    const val API_KEY_RESTRICTIONS_UNAVAILABLE =
+        "History sync stopped because Kraken API-key time restrictions could not be verified."
+    const val API_KEY_WINDOW_NO_OVERLAP =
+        "History sync window does not overlap this Kraken API key's allowed query dates."
+    const val API_KEY_WINDOW_PARTIAL =
+        "This Kraken API key's allowed query dates cover only part of the remaining history."
+    const val API_KEY_RESTRICTIONS_CHANGED =
+        "History sync stopped because Kraken API-key query restrictions changed."
+    const val PAGE_RESTARTED = "History page was retried from the start of its bounded time window."
+    const val PAGE_FAILED = "History page could not be validated after one bounded restart."
+}
+
 enum class HistorySyncState { NOT_STARTED, RUNNING, COMPLETE, PAUSED, FAILED }
+
+/**
+ * The authenticated account could not be established for a scan. This is an account-level
+ * condition: every feed is unavailable until the account can be verified again.
+ */
+class HistoryAccountUnavailableException(message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
+
+/** Job identity: recent refresh, older backfill, and the daily late-record repair stay independent. */
+enum class HistorySyncPurpose { RECENT, BACKFILL, REPAIR }
+
+enum class HistorySyncJobState { PENDING, RUNNING, COMPLETE, FAILED, BLOCKED }
+
+/**
+ * The authenticated account and the query bounds its API key permits. History before the permitted
+ * start cannot be imported with this key and is reported as coverage metadata, not as a failure.
+ */
+data class VerifiedHistoryAccount(val digest: String, val queryFromSec: Long?, val queryToSec: Long?)
+
+/**
+ * Durable coordinator job state. The committed [cursor] and frozen window survive a recent
+ * scan and a process restart; [completedThroughSec] advances only after every page in the
+ * permitted part of the frozen window commits. A key-restricted backfill can complete below
+ * [windowEndSec]; widening that restriction reopens the missing range.
+ */
+data class HistorySyncJob(
+    val accountIdentityDigest: String,
+    val feed: HistoryFeed,
+    val purpose: HistorySyncPurpose,
+    val state: HistorySyncJobState,
+    val windowStartSec: Long?,
+    val windowEndSec: Long?,
+    val cursor: String?,
+    val completedThroughSec: Long?,
+    val lastError: String?,
+    val nextRetryAt: Instant?,
+    val lastSuccessAt: Instant?,
+    val updatedAt: Instant,
+)
+
+/** Account/feed view of recent coverage and older import progress for Data status. */
+data class HistorySyncProgressSummary(
+    val accountIdentityDigest: String,
+    val feed: HistoryFeed,
+    val recentWindowStartSec: Long?,
+    val recentCompletedThroughSec: Long?,
+    val recentLastSuccessAt: Instant?,
+    val backfillState: HistorySyncJobState,
+    val backfillCompletedThroughSec: Long?,
+    val backfillCursor: String?,
+    val repairLastRunAt: Instant?,
+    val lastError: String?,
+    val nextRetryAt: Instant?,
+    /** Intervals this feed has verifiably scanned; the union stays stable across rolling refreshes. */
+    val coveredWindows: List<HistorySyncCoverageWindow> = emptyList(),
+)
 
 data class HistorySyncStatus(
     val accountIdentityDigest: String,
@@ -328,6 +436,7 @@ data class HistoryPageRequest(
     val endSec: Long,
     val requestedCursor: String?,
     val committedAt: Instant,
+    val purpose: HistorySyncPurpose = HistorySyncPurpose.RECENT,
 )
 
 data class HistorySyncWindow(
@@ -337,11 +446,19 @@ data class HistorySyncWindow(
     val startSec: Long,
     val endSec: Long,
     val cursor: String? = null,
+    val purpose: HistorySyncPurpose = HistorySyncPurpose.RECENT,
 )
 
 const val HISTORY_MAX_SYNC_PAGES = 5_000
 
 data class HistoryLedgerCoverageWindow(val startSec: Long, val endSec: Long) {
+    init {
+        require(startSec <= endSec)
+    }
+}
+
+/** One verified interval of a scanned feed; the union of these is the durable coverage. */
+data class HistorySyncCoverageWindow(val startSec: Long, val endSec: Long) {
     init {
         require(startSec <= endSec)
     }

@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.DirectValueEvidence
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -20,7 +21,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -273,6 +276,196 @@ class HistoryObservationRecorderTest : StringSpec() {
                     advanceUntilIdle()
                     recorder.captureIssue() shouldBe "History account identity is unavailable or changed."
                     coVerify(exactly = 0) { store.appendCycle(any(), any()) }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "captureFailedCycle persists an activity-only problem without fabricating values" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.let {
+                it.copy(settings = it.settings.copy(simulation = true))
+            }
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureFailedCycle(
+                        cycleId = "failed-cycle-1",
+                        config = config,
+                        reason = "Order execution failed before settlement.",
+                        actions = listOf("SELL BTC"),
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify(exactly = 1) {
+                        store.appendCycle(
+                            null,
+                            match {
+                                it.cycleId == "failed-cycle-1" &&
+                                    it.outcome == HistoryCycleOutcome.PROBLEM &&
+                                    it.actions == listOf("SELL BTC") &&
+                                    it.dryRun
+                            },
+                        )
+                    }
+                    coVerify(exactly = 0) { store.appendObservation(any()) }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "captureFailedCycle uses default actions and reports a failed save" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.let {
+                it.copy(settings = it.settings.copy(simulation = true))
+            }
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureFailedCycle(
+                        cycleId = "failed-cycle-2",
+                        config = config,
+                        reason = "Balances could not be read.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify(exactly = 1) {
+                        store.appendCycle(
+                            null,
+                            match { it.actions == emptyList<String>() && it.outcome == HistoryCycleOutcome.PROBLEM },
+                        )
+                    }
+
+                    coEvery { store.appendCycle(any(), any()) } throws IllegalStateException("store unavailable")
+                    recorder.captureFailedCycle(
+                        cycleId = "failed-cycle-3",
+                        config = config,
+                        reason = "Storage failed.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+                    recorder.captureIssue() shouldBe "History cycle sample could not be saved."
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "captureFailedCycle records an account-mode problem after credential verification" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "failed-cycle-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "FAILED_CYCLE_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureFailedCycle(
+                        cycleId = "failed-account-cycle",
+                        config = config,
+                        reason = "Sell settlement aborted the cycle.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify(exactly = 1) {
+                        store.appendCycle(
+                            null,
+                            match {
+                                it.outcome == HistoryCycleOutcome.PROBLEM &&
+                                    it.sourceScope.mode == HistorySourceMode.ACCOUNT
+                            },
+                        )
+                    }
+                    coVerify { dataDirectoryIdentity.bindOrVerify(any()) }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "an account identity that vanishes before persistence is never fabricated" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            coEvery { krakenService.getFundingEvidenceScope() } returns "vanishing-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns null
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+
+            runTest {
+                val snapshot = PortfolioSnapshot(
+                    timestamp = now,
+                    totalValueUSD = BigDecimal("100"),
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                recorder.start(this)
+                try {
+                    recorder.captureFinalCycle(
+                        cycleId = "vanishing-account-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now),
+                        prices = ObservedPrices(emptyMap()),
+                        snapshot = snapshot,
+                        sampleSelection = HistorySampleSelection.FINAL,
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify(exactly = 0) { store.appendCycle(any(), any()) }
+                    recorder.captureIssue() shouldBe "History account identity is unavailable or changed."
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "cycle outcomes round-trip through the persisted activity record" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.let {
+                it.copy(settings = it.settings.copy(simulation = true))
+            }
+            val now = Instant.now()
+            val snapshot = PortfolioSnapshot(
+                timestamp = now,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = emptyMap(),
+                actions = listOf("HOLD"),
+                effectiveUsdTargetPercent = BigDecimal("60.00"),
+            )
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureFinalCycle(
+                        cycleId = "outcome-cycle-1",
+                        config = config,
+                        balances = ObservedBalances(balances = emptyMap(), observedAt = now),
+                        prices = ObservedPrices(prices = emptyMap()),
+                        snapshot = snapshot,
+                        sampleSelection = HistorySampleSelection.FINAL,
+                        dryRun = true,
+                        outcome = HistoryCycleOutcome.ORDERS_ATTEMPTED,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify(exactly = 1) {
+                        store.appendCycle(
+                            withArg { it shouldNotBe null },
+                            match { it.outcome == HistoryCycleOutcome.ORDERS_ATTEMPTED },
+                        )
+                    }
                 } finally {
                     recorder.stop()
                 }
@@ -626,6 +819,56 @@ class HistoryObservationRecorderTest : StringSpec() {
                     }
                 } finally {
                     recorder.stop()
+                }
+            }
+        }
+
+        "currentSourceScope propagates cancellation instead of reporting an unavailable scope" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            coEvery { krakenService.withStableBackend<Any?>(any()) } throws
+                CancellationException("execution session cancelled")
+
+            runTest {
+                shouldThrow<CancellationException> { recorder.currentSourceScope(config) }
+            }
+        }
+
+        "an identity lookup that stalls past its timeout skips the sample instead of hanging" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val stallRecorder = HistoryObservationRecorder(
+                store = store,
+                krakenService = krakenService,
+                configService = configService,
+                dataDirectoryIdentity = dataDirectoryIdentity,
+                identityLookupTimeoutMs = 50,
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "stalled-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } coAnswers { awaitCancellation() }
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                val block = firstArg<suspend (KrakenService) -> Any?>()
+                block(krakenService)
+            }
+
+            runTest {
+                stallRecorder.start(this)
+                try {
+                    val queued = stallRecorder.captureFailedCycle(
+                        cycleId = "stalled-cycle-1",
+                        config = config,
+                        reason = "Rebalance cycle failed: CycleFailure",
+                        dryRun = true,
+                    )
+                    queued shouldBe true
+                    advanceUntilIdle()
+
+                    stallRecorder.captureIssue() shouldBe "History account identity is unavailable or changed."
+                    coVerify(exactly = 0) { store.appendCycle(any(), any()) }
+                } finally {
+                    stallRecorder.stop()
                 }
             }
         }

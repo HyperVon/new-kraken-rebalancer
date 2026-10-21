@@ -17,8 +17,6 @@ interface HistoryService {
 
     suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade>
 
-    suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary
-
     suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger>
 
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>
@@ -52,6 +50,12 @@ interface HistoryService {
     ): HistoryObservation?
 
     suspend fun queryCycleActivities(sourceScope: HistorySourceScope, limit: Int = 6): List<HistoryCycleActivity>
+
+    /** Range-aware activity page; the returned total counts every matching row, not one page. */
+    suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity>
+
+    /** Durable per-feed coverage of the stored History for one verified account. */
+    suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary>
 
     suspend fun getSyncStatus(sourceScope: HistorySourceScope): List<HistorySyncStatus>
 
@@ -87,9 +91,6 @@ class HistoryServiceImpl(private val store: HistoryStore) : HistoryService {
         store.queryAssetValues(query)
 
     override suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade> = store.queryTrades(query)
-
-    override suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary =
-        store.queryTradeSummary(query)
 
     override suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger> = store.queryLedgers(query)
 
@@ -132,6 +133,12 @@ class HistoryServiceImpl(private val store: HistoryStore) : HistoryService {
         sourceScope: HistorySourceScope,
         limit: Int,
     ): List<HistoryCycleActivity> = store.queryCycleActivities(sourceScope, limit)
+
+    override suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity> =
+        store.queryActivityPage(query)
+
+    override suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary> =
+        store.syncProgress(accountIdentityDigest)
 
     override suspend fun getSyncStatus(sourceScope: HistorySourceScope): List<HistorySyncStatus> =
         sourceScope.accountIdentityDigest?.let { store.syncStatus(it) }.orEmpty()

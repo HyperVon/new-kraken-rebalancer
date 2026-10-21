@@ -9,7 +9,6 @@ import com.gemini.krakenbot.domain.QualityAllocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
@@ -17,17 +16,28 @@ import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HISTORY_PAGE_LIMIT
+import com.gemini.krakenbot.service.history.HistoryApiExportQuery
+import com.gemini.krakenbot.service.history.HistoryApiPresenter
+import com.gemini.krakenbot.service.history.HistoryApiRangeParams
+import com.gemini.krakenbot.service.history.HistoryApiRepairParams
+import com.gemini.krakenbot.service.history.HistoryApiRequestException
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
+import com.gemini.krakenbot.service.history.HistoryCsvExporter
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryPage
+import com.gemini.krakenbot.service.history.HistoryRangePreset
+import com.gemini.krakenbot.service.history.HistoryRangeSelection
+import com.gemini.krakenbot.service.history.HistoryRanges
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncPurpose
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.HistoryPageData
@@ -44,7 +54,6 @@ import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.modePlate
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.symbolColorMap
 import io.ktor.http.ContentType
@@ -56,6 +65,7 @@ import io.ktor.server.http.content.staticResources
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.RoutingContext
@@ -65,38 +75,40 @@ import io.ktor.server.routing.route
 import io.ktor.server.sse.ServerSSESession
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
+import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.withContext
 import kotlinx.html.body
 import kotlinx.html.div
-import kotlinx.html.h2
 import kotlinx.html.id
-import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import kotlinx.html.unsafe
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
-import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
-private const val DEFAULT_HISTORY_RANGE = "30d"
-private val HISTORY_RANGE_WINDOWS: Map<String, Duration?> = mapOf(
-    "24h" to Duration.ofHours(24),
-    "7d" to Duration.ofDays(7),
-    "30d" to Duration.ofDays(30),
-    "90d" to Duration.ofDays(90),
-    "all" to null,
-)
+internal fun historyRangeSelection(preset: String?, start: String?, end: String?): HistoryRangeSelection? {
+    val parsed = HistoryRangePreset.fromKey(preset) ?: return null
+    if (parsed != HistoryRangePreset.CUSTOM) return HistoryRangeSelection.rolling(parsed)
+    val customStart = start?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+    val customEnd = end?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+    return runCatching { HistoryRangeSelection.custom(customStart, customEnd) }.getOrNull()
+}
 private const val HX_REQUEST_HEADER = "HX-Request"
 private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
 private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
 private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
 private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
 private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
+private val CSV_CONTENT_TYPE = ContentType.parse("text/csv; charset=utf-8")
 class DashboardController(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
@@ -107,6 +119,9 @@ class DashboardController(
     private val historyService: HistoryService? = null,
     private val historyObservationRecorder: HistoryObservationRecorder? = null,
     private val historySynchronizer: HistorySynchronizer? = null,
+    private val historyApi: HistoryApiPresenter? = null,
+    private val historyReportingService: HistoryReportingService? = null,
+    private val historyCsvExporter: HistoryCsvExporter? = null,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -179,6 +194,93 @@ class DashboardController(
             get(Routes.API_HISTORY_SYNC_STATUS) {
                 val scope = historyObservationRecorder?.currentSourceScope(configService.getConfig())
                 respondJson(historyService?.let { scope?.let { s -> it.getSyncStatus(s) } }.orEmpty())
+            }
+
+            get(Routes.API_HISTORY_CHARTS) {
+                handleGetHistoryCharts()
+            }
+
+            get(Routes.API_HISTORY_SUMMARY) {
+                handleGetHistorySummary()
+            }
+
+            get(Routes.API_HISTORY_SCOPES) {
+                handleGetHistoryScopes()
+            }
+
+            get(Routes.API_HISTORY_ACTIVITIES) {
+                handleGetHistoryActivities()
+            }
+
+            get(Routes.API_HISTORY_EXPORT_TRADES) {
+                val params = call.request.queryParameters
+                streamHistoryCsv(
+                    filename = "trades",
+                    requiresAccount = true,
+                    resolveQuery = { api, scope ->
+                        api.eventExportQuery(
+                            params = call.historyApiRangeParams(),
+                            currentScope = scope,
+                            scopeId = params["scope"],
+                            modeParam = params["mode"],
+                            assetKey = params["asset"],
+                            pair = params["pair"],
+                            type = params["type"],
+                        )
+                    },
+                    writeCsv = { exporter, export, writeChunk ->
+                        exporter.exportTrades(export.query, export.zone, writeChunk)
+                    },
+                )
+            }
+
+            get(Routes.API_HISTORY_EXPORT_LEDGERS) {
+                val params = call.request.queryParameters
+                streamHistoryCsv(
+                    filename = "ledgers",
+                    requiresAccount = true,
+                    resolveQuery = { api, scope ->
+                        api.eventExportQuery(
+                            params = call.historyApiRangeParams(),
+                            currentScope = scope,
+                            scopeId = params["scope"],
+                            modeParam = params["mode"],
+                            assetKey = params["asset"],
+                            pair = params["pair"],
+                            type = params["type"],
+                        )
+                    },
+                    writeCsv = { exporter, export, writeChunk ->
+                        exporter.exportLedgers(export.query, export.zone, writeChunk)
+                    },
+                )
+            }
+
+            get(Routes.API_HISTORY_EXPORT_ACTIVITY) {
+                val params = call.request.queryParameters
+                streamHistoryCsv(
+                    filename = "activity",
+                    requiresAccount = false,
+                    resolveQuery = { api, scope ->
+                        api.activityExportQuery(
+                            params = call.historyApiRangeParams(),
+                            currentScope = scope,
+                            scopeId = params["scope"],
+                            modeParam = params["mode"],
+                        )
+                    },
+                    writeCsv = { exporter, export, writeChunk ->
+                        exporter.exportActivity(export.query, export.zone, writeChunk)
+                    },
+                )
+            }
+
+            get(Routes.API_HISTORY_DATA_STATUS) {
+                handleGetHistoryDataStatus()
+            }
+
+            post(Routes.API_HISTORY_REPAIR) {
+                handlePostHistoryRepair()
             }
 
             post(Routes.API_HISTORY_SYNC_START) {
@@ -267,8 +369,13 @@ class DashboardController(
             return
         }
 
-        call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
-        call.respond(HttpStatusCode.OK)
+        val configPublicationPending = configService.isConfigPublicationPending()
+        respondJson(
+            mapOf(
+                "configPublicationPending" to configPublicationPending,
+                "savedAt" to Instant.now().toString(),
+            ),
+        )
     }
 
     /**
@@ -645,16 +752,13 @@ class DashboardController(
         val allocations = config.allocations
 
         if (latest == null) {
-            val noSnapshotHtml =
-                createHTML(prettyPrint = false).div(CssClass.Loading.SpinnerContainer.value) {
-                    modePlate(config.settings, outOfBand = true)
-                    h2(CssClass.Dashboard.WaitingTitle.value) {
-                        +ViewText.WAITING_FIRST_CYCLE
-                    }
-                    p(CssClass.Dashboard.WaitingText.value) {
-                        +ViewText.REBALANCER_RUNNING
-                    }
-                }
+            val noSnapshotHtml = createHTML(prettyPrint = false).div {
+                dashboardView.renderDashboardWaitingFragment(
+                    settings = config.settings,
+                    recentActivities = dashboardState.recentActivities,
+                    activitySourceId = dashboardState.activitySourceId,
+                )
+            }
             call.respondText(noSnapshotHtml, ContentType.Text.Html)
             return
         }
@@ -672,6 +776,8 @@ class DashboardController(
                     qualityScores = config.settings.qualityScores
                         .mapValues { BigDecimal.valueOf(it.value) },
                     recentSnapshots = dashboardState.recentSnapshots,
+                    recentActivities = dashboardState.recentActivities,
+                    activitySourceId = dashboardState.activitySourceId,
                 )
             }
         call.respondText(html, ContentType.Text.Html)
@@ -693,14 +799,56 @@ class DashboardController(
 
     private suspend fun RoutingContext.buildHistoryPageData(config: AppConfig): HistoryPageData {
         val params = call.request.queryParameters
-        val range = params["range"]?.takeIf { it in HISTORY_RANGE_WINDOWS } ?: DEFAULT_HISTORY_RANGE
+        val requestedPreset = params["preset"] ?: params["range"]
+        val zone = params["tz"]?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+        val resolvedRange = (
+            historyRangeSelection(requestedPreset, params["start"], params["end"])
+                ?: HistoryRangeSelection.DEFAULT
+            )
+            .let { HistoryRanges.resolve(it, Instant.now(), zone) }
+        val range = resolvedRange.selection.preset.key
         val tradesOffset = params["tradesOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val ledgersOffset = params["ledgersOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val scope = historyObservationRecorder?.currentSourceScope(config)
         val digest = scope?.accountIdentityDigest?.takeIf { it.isNotBlank() }
-        val from = HISTORY_RANGE_WINDOWS.getValue(range)?.let { Instant.now().minus(it) }
+        val from = resolvedRange.from
+        val portfolioChart = historyApi?.let { api ->
+            scope?.let { sourceScope ->
+                try {
+                    api.charts(
+                        params = call.historyApiRangeParams().copy(preset = range),
+                        currentScope = sourceScope,
+                        scopeId = params["scope"],
+                        selectionParam = "portfolio",
+                        maxPoints = null,
+                        targetAllocations = config.allocations,
+                    )
+                } catch (_: HistoryApiRequestException) {
+                    null
+                }
+            }
+        }
+        val statistics = historyApi?.let { api ->
+            scope?.let { sourceScope ->
+                if (range == HistoryRangePreset.CUSTOM.key) {
+                    null
+                } else {
+                    try {
+                        api.summary(
+                            params = call.historyApiRangeParams().copy(preset = range),
+                            currentScope = sourceScope,
+                            scopeId = params["scope"],
+                            targetAllocations = config.allocations,
+                        ).statistics
+                    } catch (_: HistoryApiRequestException) {
+                        null
+                    }
+                }
+            }
+        }
         val filters = HistoryEventQuery(
             from = from,
+            until = resolvedRange.until,
             accountIdentityDigest = digest,
             assetKey = params["asset"]?.trim()?.takeIf(String::isNotEmpty),
             pair = params["pair"]?.trim()?.takeIf(String::isNotEmpty),
@@ -710,14 +858,20 @@ class DashboardController(
         fun empty(offset: Int = 0) = HistoryPage<Nothing>(emptyList(), 0L, HISTORY_PAGE_LIMIT, offset, false)
         if (service == null || digest == null) {
             val observations = if (service != null && scope != null) {
-                service.queryChartObservations(sourceScope = scope, from = from)
+                service.queryChartObservations(
+                    sourceScope = scope,
+                    from = from,
+                    until = resolvedRange.until,
+                )
             } else {
                 emptyList()
             }
             return HistoryPageData(
                 range, filters, tradesOffset, ledgersOffset, observations,
                 empty(), empty(tradesOffset), empty(ledgersOffset), emptyList(), accountAvailable = false,
+                statistics = statistics,
                 allocations = config.allocations,
+                portfolioChart = portfolioChart,
             )
         }
         val chartLedgerQuery = filters.copy(pair = null, type = null, limit = HISTORY_MAX_PAGE_LIMIT)
@@ -730,13 +884,18 @@ class DashboardController(
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
             KrakenApiConstants.LEDGER_TYPE_EARN,
             KrakenApiConstants.LEDGER_TYPE_REWARD,
+            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
         ).flatMap { type -> service.queryAllLedgers(chartLedgerQuery.copy(type = type)) }
         return HistoryPageData(
             range = range,
             filters = filters,
             tradesOffset = tradesOffset,
             ledgersOffset = ledgersOffset,
-            observations = service.queryChartObservations(sourceScope = scope, from = from),
+            observations = service.queryChartObservations(
+                sourceScope = scope,
+                from = from,
+                until = resolvedRange.until,
+            ),
             checkpoints = if (filters.assetKey == null) {
                 empty()
             } else {
@@ -747,10 +906,11 @@ class DashboardController(
             syncStatuses = service.getSyncStatus(scope),
             accountAvailable = true,
             filterOptions = service.queryFilterOptions(filters),
-            tradeSummary = service.queryTradeSummary(filters),
-            fundingLedgers = fundingLedgers,
-            rewardLedgers = rewardLedgers,
+            fundingSeries = historyReportingService?.fundingQuantitySeries(fundingLedgers).orEmpty(),
+            rewardSeries = historyReportingService?.rewardQuantitySeries(rewardLedgers).orEmpty(),
+            statistics = statistics,
             allocations = config.allocations,
+            portfolioChart = portfolioChart,
         )
     }
 
@@ -817,6 +977,166 @@ class DashboardController(
         )
     }
 
+    private fun ApplicationCall.historyApiRangeParams(): HistoryApiRangeParams {
+        val params = request.queryParameters
+        return HistoryApiRangeParams(
+            preset = params["preset"],
+            start = params["start"],
+            end = params["end"],
+            from = params["from"],
+            to = params["to"],
+            tz = params["tz"],
+            baselineFrom = params["baselineFrom"],
+        )
+    }
+
+    private suspend fun RoutingContext.withHistoryApi(
+        block: suspend (HistoryApiPresenter, HistorySourceScope) -> Any,
+    ) {
+        val api = historyApi
+        val scope = historyObservationRecorder?.currentSourceScope(configService.getConfig())
+        if (api == null || scope == null) {
+            respondJson(mapOf("error" to ViewText.HISTORY_ACCOUNT_UNAVAILABLE), HttpStatusCode.ServiceUnavailable)
+            return
+        }
+        try {
+            respondJson(block(api, scope))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: HistoryApiRequestException) {
+            respondJson(mapOf("error" to (error.message ?: "")), HttpStatusCode.BadRequest)
+        }
+    }
+
+    private suspend fun <T> RoutingContext.streamHistoryCsv(
+        filename: String,
+        requiresAccount: Boolean,
+        resolveQuery: suspend (HistoryApiPresenter, HistorySourceScope) -> HistoryApiExportQuery<T>,
+        writeCsv: suspend (
+            HistoryCsvExporter,
+            HistoryApiExportQuery<T>,
+            suspend (String) -> Unit,
+        ) -> Unit,
+    ) {
+        val config = configService.getConfig()
+        val scope = historyObservationRecorder?.currentSourceScope(config)
+        val api = historyApi
+        val exporter = historyCsvExporter
+        val accountAvailable = scope?.let {
+            it.mode == HistorySourceMode.ACCOUNT && !it.accountIdentityDigest.isNullOrBlank()
+        } == true
+        if (api == null || exporter == null || scope == null ||
+            (requiresAccount && (!accountAvailable || historyService == null))
+        ) {
+            respondJson(mapOf("error" to ViewText.HISTORY_ACCOUNT_UNAVAILABLE), HttpStatusCode.ServiceUnavailable)
+            return
+        }
+
+        val exportQuery = try {
+            resolveQuery(api, scope)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: HistoryApiRequestException) {
+            respondJson(mapOf("error" to (error.message ?: "")), HttpStatusCode.BadRequest)
+            return
+        }
+
+        call.response.header("Content-Disposition", "attachment; filename=\"history-$filename.csv\"")
+        call.respondBytesWriter(CSV_CONTENT_TYPE, HttpStatusCode.OK) {
+            writeCsv(exporter, exportQuery) { chunk -> writeStringUtf8(chunk) }
+        }
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryCharts() {
+        withHistoryApi { api, scope ->
+            val query = call.request.queryParameters
+            api.charts(
+                params = call.historyApiRangeParams(),
+                currentScope = scope,
+                selectionParam = query["selection"],
+                scopeId = query["scope"],
+                maxPoints = query["maxPoints"]?.toIntOrNull(),
+                targetAllocations = configService.getConfig().allocations,
+            )
+        }
+    }
+
+    private suspend fun RoutingContext.handleGetHistorySummary() {
+        withHistoryApi { api, scope ->
+            api.summary(
+                params = call.historyApiRangeParams(),
+                currentScope = scope,
+                scopeId = call.request.queryParameters["scope"],
+                targetAllocations = configService.getConfig().allocations,
+            )
+        }
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryScopes() {
+        withHistoryApi { api, scope -> api.scopes(scope) }
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryActivities() {
+        withHistoryApi { api, scope ->
+            val query = call.request.queryParameters
+            api.activities(
+                params = call.historyApiRangeParams(),
+                currentScope = scope,
+                scopeId = query["scope"],
+                modeParam = query["mode"],
+                cursor = query["cursor"],
+                limit = query["limit"]?.toIntOrNull(),
+            )
+        }
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryDataStatus() {
+        withHistoryApi { api, scope -> api.dataStatus(call.historyApiRangeParams(), scope) }
+    }
+
+    private suspend fun RoutingContext.handlePostHistoryRepair() {
+        val params = requireCsrfParams() ?: return
+        val config = configService.getConfig()
+        val api = historyApi
+        val scope = historyObservationRecorder?.currentSourceScope(config)
+            ?.takeIf { it.mode == HistorySourceMode.ACCOUNT && !it.accountIdentityDigest.isNullOrBlank() }
+        val synchronizer = historySynchronizer
+        if (api == null || scope == null || synchronizer == null || config.settings.simulation) {
+            respondJson(mapOf("error" to ViewText.HISTORY_SYNC_UNAVAILABLE), HttpStatusCode.ServiceUnavailable)
+            return
+        }
+        fun field(name: String): String? = params[name] ?: call.request.queryParameters[name]
+        val window = try {
+            api.resolveRepairWindow(
+                HistoryApiRepairParams(
+                    date = field("date"),
+                    start = field("start"),
+                    end = field("end"),
+                    tz = field("tz"),
+                ),
+            )
+        } catch (error: HistoryApiRequestException) {
+            respondJson(mapOf("error" to (error.message ?: "")), HttpStatusCode.BadRequest)
+            return
+        }
+        HistoryFeed.entries.forEach { feed ->
+            synchronizer.startSync(
+                feed = feed,
+                startSec = window.start.epochSecond,
+                endSec = window.end.epochSecond,
+                purpose = HistorySyncPurpose.REPAIR,
+            )
+        }
+        respondJson(
+            mapOf(
+                "accepted" to true,
+                "startIso" to window.start.toString(),
+                "endIso" to window.end.toString(),
+                "feeds" to HistoryFeed.entries.map(HistoryFeed::name),
+            ),
+        )
+    }
+
     private suspend fun startHistorySync(
         synchronizer: HistorySynchronizer,
         service: HistoryService,
@@ -845,8 +1165,11 @@ class DashboardController(
 
     private suspend fun ServerSSESession.handleSseStream() {
         try {
-            currentPortfolioState.snapshot.filterNotNull().collect { snapshot ->
-                sendSnapshot(snapshot)
+            merge(
+                currentPortfolioState.snapshot.filterNotNull().map { objectMapper.writeValueAsString(it) },
+                currentPortfolioState.activityUpdates.filterNotNull().map { it.cycleId },
+            ).collect { data ->
+                send(ServerSentEvent(data = data))
             }
         } catch (e: CancellationException) {
             throw e
@@ -854,11 +1177,6 @@ class DashboardController(
             // Keep non-cancellation failures local to this client session so other collectors continue.
             log.debug("SSE client stream session terminated: {}", e.message)
         }
-    }
-
-    private suspend fun ServerSSESession.sendSnapshot(snapshot: PortfolioSnapshot) {
-        val json = objectMapper.writeValueAsString(snapshot)
-        send(ServerSentEvent(data = json))
     }
 
     private suspend fun RoutingContext.handlePostPause() {
@@ -875,9 +1193,11 @@ class DashboardController(
         respondJson(mapOf("paused" to false))
     }
 
-    private suspend fun RoutingContext.requireCsrf(): Boolean {
+    private suspend fun RoutingContext.requireCsrf(): Boolean = requireCsrfParams() != null
+
+    private suspend fun RoutingContext.requireCsrfParams(): Parameters? {
         val params = call.receiveParameters()
-        if (CsrfProtection.isValid(call, params)) return true
+        if (CsrfProtection.isValid(call, params)) return params
         if (
             call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true) &&
             CsrfProtection.hasExplicitSameOrigin(call)
@@ -888,10 +1208,10 @@ class DashboardController(
             // The request is rejected. The browser updates its hidden token and explains that the
             // operator must retry, including when an expired cookie and an old form token differ.
             call.respond(HttpStatusCode.Forbidden)
-            return false
+            return null
         }
         call.respond(HttpStatusCode.Forbidden)
-        return false
+        return null
     }
 
     private suspend fun RoutingContext.handleGetHealth() {

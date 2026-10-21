@@ -20,6 +20,9 @@ interface ConfigService {
      */
     suspend fun updateConfig(newConfig: AppConfig)
 
+    /** True while an active execution session defers runtime publication of the latest saved config. */
+    suspend fun isConfigPublicationPending(): Boolean
+
     fun watchConfigChanges(): Flow<Settings>
 }
 

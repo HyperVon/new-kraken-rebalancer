@@ -120,6 +120,7 @@ class HistoryObservationRecorder(
         additionalIncompleteReasons: List<String> = emptyList(),
         actions: List<String> = emptyList(),
         dryRun: Boolean,
+        outcome: HistoryCycleOutcome? = null,
     ): Boolean = queueCycleCapture(
         cycleId = cycleId,
         config = config,
@@ -131,6 +132,7 @@ class HistoryObservationRecorder(
         additionalIncompleteReasons = additionalIncompleteReasons,
         actions = actions,
         dryRun = dryRun,
+        outcome = outcome,
     )
 
     /** Queues direct evidence and cycle activity when valuation fails before a snapshot exists. */
@@ -142,6 +144,7 @@ class HistoryObservationRecorder(
         reason: String,
         actions: List<String> = emptyList(),
         dryRun: Boolean,
+        outcome: HistoryCycleOutcome? = HistoryCycleOutcome.PROBLEM,
     ): Boolean {
         val observedAt = maxOf(
             balances.directCapture?.responseEndedAt ?: balances.observedAt,
@@ -158,20 +161,46 @@ class HistoryObservationRecorder(
             additionalIncompleteReasons = listOf(reason),
             actions = actions,
             dryRun = dryRun,
+            outcome = outcome,
         )
     }
+
+    /**
+     * Records a cycle that failed before any valuation sample existed, so the activity feed
+     * retains failed cycles as well as complete ones.
+     */
+    suspend fun captureFailedCycle(
+        cycleId: String,
+        config: AppConfig,
+        reason: String,
+        actions: List<String> = emptyList(),
+        dryRun: Boolean,
+    ): Boolean = queueCycleCapture(
+        cycleId = cycleId,
+        config = config,
+        balances = null,
+        prices = null,
+        snapshot = null,
+        observedAt = nowProvider(),
+        sampleSelection = HistorySampleSelection.PRE_TRADE,
+        additionalIncompleteReasons = listOf(reason),
+        actions = actions,
+        dryRun = dryRun,
+        outcome = HistoryCycleOutcome.PROBLEM,
+    )
 
     private suspend fun queueCycleCapture(
         cycleId: String,
         config: AppConfig,
-        balances: ObservedBalances,
-        prices: ObservedPrices,
+        balances: ObservedBalances?,
+        prices: ObservedPrices?,
         snapshot: PortfolioSnapshot?,
         observedAt: Instant,
         sampleSelection: HistorySampleSelection,
         additionalIncompleteReasons: List<String>,
         actions: List<String>,
         dryRun: Boolean,
+        outcome: HistoryCycleOutcome?,
     ): Boolean {
         val credentialScope = if (config.settings.simulation) {
             null
@@ -195,6 +224,7 @@ class HistoryObservationRecorder(
                 additionalIncompleteReasons = additionalIncompleteReasons,
                 actions = actions,
                 dryRun = dryRun,
+                outcome = outcome,
                 credentialScope = credentialScope,
             ),
         )
@@ -234,37 +264,45 @@ class HistoryObservationRecorder(
                 } ?: return
                 candidateScope
             }
-            val observation = if (pending.config.settings.simulation) {
-                pending.snapshot?.let { HistoryObservationValuator.buildSimulation(pending.cycleId, scope, it) }
-                    ?: HistoryObservationValuator.buildIncompleteSimulation(
-                        pending.cycleId,
-                        scope,
-                        pending.observedAt,
-                        pending.additionalIncompleteReasons.joinToString(" ")
-                            .ifBlank { "The rebalance cycle could not produce a valuation." },
-                    )
-            } else {
-                val balanceCapture = pending.balances.directCapture
-                val tickerCapture = pending.prices.directCapture
-                val missingReason = buildList {
-                    if (balanceCapture == null) add("Direct balance evidence is unavailable.")
-                    if (tickerCapture == null) add("Direct ticker evidence is unavailable.")
+            val balances = pending.balances
+            val prices = pending.prices
+            val observation = when {
+                balances == null || prices == null -> null
+
+                pending.config.settings.simulation -> {
+                    pending.snapshot?.let { HistoryObservationValuator.buildSimulation(pending.cycleId, scope, it) }
+                        ?: HistoryObservationValuator.buildIncompleteSimulation(
+                            pending.cycleId,
+                            scope,
+                            pending.observedAt,
+                            pending.additionalIncompleteReasons.joinToString(" ")
+                                .ifBlank { "The rebalance cycle could not produce a valuation." },
+                        )
                 }
-                HistoryObservationValuator.buildDirect(
-                    observationId = pending.cycleId,
-                    cycleId = pending.cycleId,
-                    sourceScope = scope,
-                    balances = balanceCapture ?: unavailableBalanceCapture(pending.balances.observedAt),
-                    prices = tickerCapture ?: unavailableTickerCapture(pending.prices.observedAt),
-                    sampleSelection = pending.sampleSelection,
-                    additionalIncompleteReasons = pending.additionalIncompleteReasons + missingReason +
-                        if (pending.snapshot == null) {
-                            listOf("The rebalance cycle could not produce a valuation.")
-                        } else {
-                            emptyList()
-                        },
-                    now = nowProvider(),
-                )
+
+                else -> {
+                    val balanceCapture = balances.directCapture
+                    val tickerCapture = prices.directCapture
+                    val missingReason = buildList {
+                        if (balanceCapture == null) add("Direct balance evidence is unavailable.")
+                        if (tickerCapture == null) add("Direct ticker evidence is unavailable.")
+                    }
+                    HistoryObservationValuator.buildDirect(
+                        observationId = pending.cycleId,
+                        cycleId = pending.cycleId,
+                        sourceScope = scope,
+                        balances = balanceCapture ?: unavailableBalanceCapture(balances.observedAt),
+                        prices = tickerCapture ?: unavailableTickerCapture(prices.observedAt),
+                        sampleSelection = pending.sampleSelection,
+                        additionalIncompleteReasons = pending.additionalIncompleteReasons + missingReason +
+                            if (pending.snapshot == null) {
+                                listOf("The rebalance cycle could not produce a valuation.")
+                            } else {
+                                emptyList()
+                            },
+                        now = nowProvider(),
+                    )
+                }
             }
             val activity = HistoryCycleActivity(
                 cycleId = pending.cycleId,
@@ -272,6 +310,7 @@ class HistoryObservationRecorder(
                 occurredAt = pending.snapshot?.timestamp ?: pending.observedAt,
                 dryRun = pending.dryRun,
                 actions = pending.actions,
+                outcome = pending.outcome,
             )
             store.appendCycle(observation, activity)
             if (scope.mode == HistorySourceMode.ACCOUNT) {
@@ -330,14 +369,15 @@ class HistoryObservationRecorder(
     private data class PendingCycle(
         val cycleId: String,
         val config: AppConfig,
-        val balances: ObservedBalances,
-        val prices: ObservedPrices,
+        val balances: ObservedBalances?,
+        val prices: ObservedPrices?,
         val snapshot: PortfolioSnapshot?,
         val observedAt: Instant,
         val sampleSelection: HistorySampleSelection,
         val additionalIncompleteReasons: List<String>,
         val actions: List<String>,
         val dryRun: Boolean,
+        val outcome: HistoryCycleOutcome?,
         val credentialScope: String?,
     )
 

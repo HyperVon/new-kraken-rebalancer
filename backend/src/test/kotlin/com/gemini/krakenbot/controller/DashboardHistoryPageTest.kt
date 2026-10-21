@@ -9,6 +9,8 @@ import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
 import com.gemini.krakenbot.service.history.HistoryPage
+import com.gemini.krakenbot.service.history.HistoryRangePreset
+import com.gemini.krakenbot.service.history.HistoryRangeSelection
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistorySyncState
@@ -28,7 +30,9 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.verify
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 
 class DashboardHistoryPageTest : DashboardControllerTestBase() {
     private val validHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -40,6 +44,56 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
     )
 
     init {
+        "history range selection resolves rolling, one-year, custom, and invalid presets" {
+            historyRangeSelection(null, null, null) shouldBe null
+            historyRangeSelection("bogus", null, null) shouldBe null
+            historyRangeSelection("1y", null, null) shouldBe
+                HistoryRangeSelection.rolling(HistoryRangePreset.ONE_YEAR)
+            historyRangeSelection("custom", "2026-01-01", "2026-01-03") shouldBe
+                HistoryRangeSelection.custom(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 3))
+            historyRangeSelection("custom", null, "2026-01-03") shouldBe null
+            historyRangeSelection("custom", "2026-01-01", null) shouldBe null
+            historyRangeSelection("custom", "2026-01-03", "2026-01-01") shouldBe null
+            historyRangeSelection("custom", "bogus", "2026-01-03") shouldBe null
+            historyRangeSelection("custom", "2026-01-01", "bogus") shouldBe null
+        }
+
+        "GET /history resolves custom and one-year ranges with explicit and invalid timezones" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns historyScope
+            coEvery { historyService.queryValues(any()) } returns HistoryPage(emptyList(), 0L, 50, 0, false)
+            val queries = mutableListOf<HistoryEventQuery>()
+            coEvery { historyService.queryTrades(capture(queries)) } returns
+                HistoryPage(emptyList(), 0L, 50, 0, false)
+            coEvery { historyService.queryLedgers(any()) } returns HistoryPage(emptyList(), 0L, 50, 0, false)
+            coEvery { historyService.queryBalanceCheckpoints(any()) } returns HistoryPage(emptyList(), 0L, 50, 0, false)
+            coEvery { historyService.getSyncStatus(any()) } returns emptyList()
+
+            testApplication {
+                application { configureTestEnv() }
+
+                client.get("/history?range=1y&tz=UTC").status shouldBe HttpStatusCode.OK
+                client.get("/history?range=custom&start=2026-01-01&end=2026-01-03&tz=UTC")
+                    .status shouldBe HttpStatusCode.OK
+                client.get("/history?range=custom&start=2026-01-03&end=2026-01-01&tz=Not/AZone")
+                    .status shouldBe HttpStatusCode.OK
+            }
+
+            val custom = queries.first {
+                it.from == Instant.parse("2026-01-01T00:00:00Z")
+            }
+            custom.until shouldBe Instant.parse("2026-01-04T00:00:00Z")
+            val fallback = queries.last()
+            val fallbackFrom = requireNotNull(fallback.from)
+            val fallbackUntil = requireNotNull(fallback.until)
+            (Duration.between(fallbackFrom, fallbackUntil).toDays().toInt() in 29..31) shouldBe true
+            queries.any { query ->
+                val from = query.from
+                val until = query.until
+                from != null && until != null && (Duration.between(from, until).toDays().toInt() in 364..366)
+            } shouldBe true
+        }
+
         "GET /history renders complete history page when account is bound" {
             val config = TestFixtures.DEFAULT_TEST_CONFIG
             every { configService.getConfig() } returns config

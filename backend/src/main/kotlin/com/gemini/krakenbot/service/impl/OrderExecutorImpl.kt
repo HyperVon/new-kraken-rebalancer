@@ -14,6 +14,8 @@ import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.OrderAttemptTracker
+import com.gemini.krakenbot.service.OrderExecutionOutcome
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.util.ActionLogFormatter
@@ -57,7 +59,8 @@ class OrderExecutorImpl(
         actionLog: MutableList<String>,
         cycleId: String,
         availableBalances: RawBalances?,
-    ) {
+        attempts: OrderAttemptTracker,
+    ): OrderExecutionOutcome {
         val executionJournal = if (!settings.dryRun && !settings.simulation) {
             val journal = orderIntentService
                 ?: throw IllegalStateException("Live order submission requires the execution journal.")
@@ -65,7 +68,7 @@ class OrderExecutorImpl(
             if (journal.hasUnresolvedIntents()) {
                 log.error("Refusing live orders while an unresolved submission intent exists")
                 actionLog.add(ViewText.ERROR_LIVE_ORDERS_BLOCKED)
-                return
+                return OrderExecutionOutcome()
             }
             journal
         } else {
@@ -81,6 +84,7 @@ class OrderExecutorImpl(
                 prices = prices,
                 settings = settings,
                 actionLog = actionLog,
+                attempts = attempts,
             )
             val openingUsd = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
             var projectedCash = openingUsd
@@ -177,6 +181,10 @@ class OrderExecutorImpl(
                 if (shouldAbortAfterFailure(result)) return@withStableBackend
             }
         }
+        return OrderExecutionOutcome(
+            liveSubmissionAttempted = attempts.liveSubmissionAttempted,
+            exchangeOrderAttempted = attempts.exchangeOrderAttempted,
+        )
     }
 
     private suspend fun executeSingleOrder(
@@ -256,6 +264,7 @@ class OrderExecutorImpl(
         } else {
             null
         }
+        context.attempts.record(isLiveSubmission)
         val result = try {
             context.backend.executeOrder(
                 pair = pair,

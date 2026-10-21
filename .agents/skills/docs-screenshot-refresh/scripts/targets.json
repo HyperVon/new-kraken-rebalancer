@@ -89,10 +89,11 @@
       "path": "/history",
       "await_text": [
         "Portfolio Value Over Time",
-        "Trade History",
-        "Transactions & Ledgers",
-        "Kraken account identity is not verified yet; imported history appears after the first successful authentication."
+        "Activity",
+        "Data status",
+        "Latest observed value"
       ],
+      "await_charts": 1,
       "viewport": {
         "height": 1200
       },

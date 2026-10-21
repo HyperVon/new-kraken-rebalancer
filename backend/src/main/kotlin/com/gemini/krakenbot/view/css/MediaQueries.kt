@@ -77,7 +77,7 @@ object MediaQueries {
                 gridTemplateColumns = GridTemplateColumns("1.6fr 1fr")
             }
             ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
+                gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
             }
             ".${CssClass.Form.Grid2Col}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
@@ -99,7 +99,7 @@ object MediaQueries {
                 gridTemplateColumns = GridTemplateColumns("1fr")
             }
             ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(5, 1fr)")
+                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
                 gap = 0.625.rem
             }
             ".${CssClass.History.StatsGrid} ${CssClass.StatusCard.Default.querySelector}" {
@@ -312,6 +312,30 @@ object MediaQueries {
                 ".${CssClass.Layout.DetailGrid} table td:nth-child($column)" {
                     display = Display.none
                 }
+            }
+
+            "${CssClass.Activity.CycleHeader.querySelector}" {
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
+                alignItems = Align.start
+                columnGap = 0.5.rem
+                rowGap = 0.25.rem
+            }
+            "${CssClass.Activity.CycleHeader.querySelector} > span:first-child" {
+                put("grid-column", "1 / -1")
+                put("overflow-wrap", "anywhere")
+            }
+            "${CssClass.Activity.CycleHeader.querySelector} > span:nth-child(2)" {
+                put("grid-column", "1")
+                put("grid-row", "2")
+                put("margin-left", "0")
+                put("white-space", "nowrap")
+            }
+            "${CssClass.Activity.CycleHeader.querySelector} > span:nth-child(3)" {
+                put("grid-column", "2")
+                put("grid-row", "2")
+                put("text-align", "right")
+                put("white-space", "nowrap")
             }
 
             // HIST-MOBILE-1: turn each dense trade row into a contained detail card.

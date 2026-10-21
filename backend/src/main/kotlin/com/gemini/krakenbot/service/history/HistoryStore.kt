@@ -35,8 +35,6 @@ interface HistoryStore {
 
     suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade>
 
-    suspend fun queryTradeSummary(query: HistoryEventQuery): HistoryTradeSummary
-
     suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger>
 
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>
@@ -46,6 +44,32 @@ interface HistoryStore {
     suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus
 
     suspend fun syncStatus(accountIdentityDigest: String): List<HistorySyncStatus>
+
+    /** Monotonic revision advanced by committed observations, cycle activities, and imported records. */
+    suspend fun currentDataRevision(): Long
+
+    /** Durable per-account/feed/purpose coordinator job state, including frozen windows and cursors. */
+    suspend fun loadSyncJobs(accountIdentityDigest: String): List<HistorySyncJob>
+
+    suspend fun upsertSyncJob(job: HistorySyncJob)
+
+    /** Account/feed recent coverage and older import progress for Data status. */
+    suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary>
+
+    /** Durable union of the intervals a feed has successfully scanned. */
+    suspend fun querySyncCoverageWindows(
+        accountIdentityDigest: String,
+        feed: HistoryFeed,
+    ): List<HistorySyncCoverageWindow>
+
+    /** Stable paged activity read for the recent-activity table. */
+    suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity>
+
+    /** Stored asset-set scopes with recorded value dates for the scope selector. */
+    suspend fun listRecordedScopes(accountIdentityDigest: String): List<HistoryRecordedScope>
+
+    /** Honest value-record coverage for one scope; exchange feeds are reported separately. */
+    suspend fun valuesCoverage(sourceScope: HistorySourceScope): HistoryValuesCoverage
 
     suspend fun commitTradePage(
         request: HistoryPageRequest,

@@ -15,6 +15,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.SettingsState
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.button
@@ -39,6 +40,7 @@ import kotlinx.html.form
 import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.script
+import kotlinx.html.time
 import kotlinx.html.unsafe
 
 /** Raw, display-only form values used when a rejected request needs to recover the open form. */
@@ -122,6 +124,8 @@ class SettingsFormComponent {
     ) {
         parent.div(CssClass.Layout.Container) {
             form {
+                id = SettingsState.FORM_ID
+                attributes[SettingsState.BASELINE_ATTRIBUTE] = settingsBaseline(config)
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
                 attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
                 attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
@@ -147,6 +151,10 @@ class SettingsFormComponent {
                     }
                 }
 
+                time(CssClass.Utility.Hidden.value) {
+                    id = SettingsState.SAVE_STATUS_ID
+                }
+
                 if (errorMessage != null) {
                     div(CssClass.Utility.ErrorBanner) {
                         +errorMessage
@@ -163,6 +171,27 @@ class SettingsFormComponent {
                 }
             }
         }
+    }
+
+    private fun settingsBaseline(config: AppConfig): String = buildString {
+        fun appendField(name: String, value: String) {
+            append(name.length).append(':').append(name)
+            append(value.length).append(':').append(value)
+        }
+
+        appendField(FormFields.LOOP_DELAY_SECONDS, config.settings.loopDelaySeconds.toString())
+        appendField(FormFields.DEVIATION_TRIGGER_PERCENT, config.settings.deviationTriggerPercent.toString())
+        appendField(FormFields.MINIMUM_ORDER_SIZE_USD, config.settings.minimumOrderSizeUSD.toString())
+        appendField(FormFields.SIMULATION, config.settings.simulation.toString())
+        appendField(FormFields.DRY_RUN, config.settings.dryRun.toString())
+        config.allocations.forEach { allocation ->
+            appendField(FormFields.SYMBOLS, allocation.symbol.value)
+            appendField(FormFields.COLORS, allocation.color ?: ChartProps.SOLID_FALLBACK)
+            appendField(FormFields.SCORES, config.settings.qualityScores[allocation.symbol.value]?.toString().orEmpty())
+            appendField(FormFields.TARGETS, allocation.targetPercent.toString())
+        }
+        appendField(FormFields.SCORE_EMPHASIS, QualityAllocation.DEFAULT_EMPHASIS.toString())
+        appendField(FormFields.SCORE_SLEEVE_PERCENT, "")
     }
 
     private fun DIV.renderGlobalParametersSection(config: AppConfig, formValues: SettingsFormValues?) {

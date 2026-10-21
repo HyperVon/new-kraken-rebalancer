@@ -1,0 +1,7 @@
+SettingsState:
+  FORM_ID: "settings-form"
+  SAVE_STATUS_ID: "settings-save-status"
+  BASELINE_ATTRIBUTE: "data-settings-baseline"
+  UNSAVED_CHANGES: "Unsaved changes"
+  SAVED_AND_ACTIVE: "Saved and active"
+  SAVED_APPLIES_AFTER_CURRENT_CYCLE: "Saved — applies after current cycle"

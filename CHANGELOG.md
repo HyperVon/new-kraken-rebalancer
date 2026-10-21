@@ -6,6 +6,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.1] - 2026-10-21
+
+### Fixed
+
+- **Allocation drift definition**: the server-rendered chart, the refreshed chart
+  API and the summary statistic now report the same deviation in percentage
+  points, so one sample never changes meaning between them.
+- **Cumulative funding curve**: the funding chart measures a running total that
+  starts at the selected period's baseline and drops when capital is withdrawn,
+  instead of showing single events that restart on every zoom.
+- **Recorded scope episodes**: chronological scope changes now break the line
+  between episodes and keep both scopes' totals; only scopes observed at the
+  same instant are withheld as incompatible.
+- **Durable History coverage**: successfully scanned intervals accumulate in a
+  durable per-feed coverage union, so a rolling refresh no longer makes an
+  already covered period look unsynchronized.
+- **Long repair scans**: the daily late-record repair yields between pages to a
+  pending recent refresh and resumes from its committed cursor.
+- **Key-restricted History**: the backfill window stays frozen at the earliest
+  second the API key permits, reopens when the key widens, and no longer
+  replays the same permitted range endlessly. Upper date restrictions retain
+  the intended end separately from imported coverage, so widening or removing
+  that restriction imports the missing interval, including for previously
+  truncated completed jobs.
+- **Interrupted recent scans**: a failed recent scan resumes from its committed
+  cursor inside its frozen window.
+- **Ledger asset names**: refreshed ledger rows show the canonical asset name
+  and settle their fee in the same asset as the server-rendered row, and a
+  record without a fee shows no fee at all.
+- **Bot-activity details**: an expanded activity detail survives the automatic
+  activity reload.
+
+## [6.20.0] - 2026-10-19
+
+### Added
+
+- **Automatic account History sync**: verified accounts receive periodic recent
+  refreshes, a nonblocking post-order refresh, resumable backfill, and a bounded
+  daily repair scan with per-feed progress and actionable failure states.
+- **History activity and exports**: separate bot-activity, trades, transactions,
+  and data-status views with independent paging, date repair, and CSV exports.
+- **Range-aware History reporting**: selected-period value endpoints and extrema,
+  separate exchange-fill and bot-cycle counts, currency-grouped trade totals,
+  and native-asset funding and rewards.
+
+### Changed
+
+- **History presentation**: prioritize the portfolio value and compact summary,
+  combine navigation and date controls, and disclose chart tools and one optional
+  analysis instead of presenting stacked toolbars. Keep coverage, recorded-source
+  provenance and saved-view management on Data status.
+- **Recorded account scopes**: present every recorded scope automatically as a
+  separate value series, with asset-set changes and overlapping scope lifespans
+  marked as gaps rather than summed into one line. Superseded by 6.20.1, which
+  keeps the totals of scopes that follow each other and only withholds scopes
+  observed at the same instant.
+- **Dashboard activity**: retain recent cycle outcomes, including failures, with
+  older-page navigation bounded to the latest 120 records.
+- **History charts and coverage**: show stored observation and representative
+  plotted-point counts separately, and make native-asset funding/reward charts
+  selectable by asset.
+- **Settings saves**: stay on Settings and report whether saved values are
+  active immediately or pending the current execution cycle.
+
+### Fixed
+
+- Keep the History value axis on the full selected period instead of the rounded
+  bounds Chart.js derives from the plotted points, and name each recorded scope
+  series by its assets in the chart legend.
+- Keep API-key-restricted History windows retryable instead of marking them
+  complete, preserving the frozen backfill range and resuming interrupted recent
+  scans from their committed cursor; gate deposit/withdrawal completeness on
+  ledger coverage and withhold invalid checkpoint quantities.
+- Replace the misleading History All-Time High and mixed-currency aggregates
+  with selected-range values and per-currency amounts; missing evidence remains
+  unavailable or incomplete instead of becoming zero.
+- Remove nearest-cycle-price conversion from funding and reward reporting.
+- Harden History exports against control-prefixed spreadsheet formulas, preserve
+  quote-currency fee units and the History view's timezone fallback, and use
+  stable sort cursors across export pages.
+
 ## [6.19.0] - 2026-10-17
 
 ### Added

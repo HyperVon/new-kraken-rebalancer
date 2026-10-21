@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
@@ -91,6 +92,8 @@ class DashboardView(
         csrfToken: String? = null,
         qualityScores: Map<String, BigDecimal> = emptyMap(),
         recentSnapshots: List<PortfolioSnapshot> = listOf(latest),
+        recentActivities: List<CurrentCycleActivity> = emptyList(),
+        activitySourceId: String = "",
     ) {
         fragmentComponent.render(
             settings,
@@ -100,6 +103,17 @@ class DashboardView(
             csrfToken,
             qualityScores,
             recentSnapshots,
+            recentActivities,
+            activitySourceId,
         )
+    }
+
+    context(div: DIV)
+    fun renderDashboardWaitingFragment(
+        settings: Settings,
+        recentActivities: List<CurrentCycleActivity>,
+        activitySourceId: String,
+    ) {
+        fragmentComponent.renderWaiting(settings, recentActivities, activitySourceId)
     }
 }

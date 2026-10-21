@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.HistoryRangeKeys
+import com.gemini.krakenbot.view.util.HistoryRangeQuery
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
@@ -13,6 +15,7 @@ import kotlin.js.json
 
 private const val HISTORY_VIEWS_STORAGE_KEY = "kraken-history-views-v1"
 private const val PRESET_OPTION_PREFIX = "preset:"
+private val HISTORY_RANGE_KEYS = setOf("24h", "7d", "30d", "90d", "1y", "all", "custom")
 
 internal data class SavedHistoryView(val name: String, val query: String)
 
@@ -22,21 +25,86 @@ internal data class HistoryViewPreset(val name: String, val query: String, val a
 internal data class HistoryViewStore(val views: List<SavedHistoryView>, val defaultOption: String?)
 
 internal fun historyViewPresets(): List<HistoryViewPreset> = listOf(
-    HistoryViewPreset(ViewText.HISTORY_VIEW_OVERVIEW, "range=30d", HtmlIds.HISTORY_PORTFOLIO_SECTION),
-    HistoryViewPreset(ViewText.HISTORY_VIEW_DAY_TOTAL, "range=24h", HtmlIds.HISTORY_PORTFOLIO_SECTION),
-    HistoryViewPreset(ViewText.HISTORY_VIEW_WEEK_ALLOCATION, "range=7d", HtmlIds.HISTORY_ALLOCATION_SECTION),
-    HistoryViewPreset(ViewText.HISTORY_VIEW_MONTH_NET_CASH_FLOW, "range=30d", HtmlIds.HISTORY_CASH_FLOW_SECTION),
+    HistoryViewPreset(
+        ViewText.HISTORY_VIEW_OVERVIEW,
+        "${HistoryRangeQuery.PARAM_RANGE}=${HistoryRangeKeys.PRESET_30D}&" +
+            "${HistoryRangeQuery.PARAM_TAB}=${HistoryRangeQuery.TAB_PORTFOLIO}",
+        HtmlIds.HISTORY_PORTFOLIO_SECTION,
+    ),
+    HistoryViewPreset(
+        ViewText.HISTORY_VIEW_DAY_TOTAL,
+        "${HistoryRangeQuery.PARAM_RANGE}=${HistoryRangeKeys.PRESET_24H}&" +
+            "${HistoryRangeQuery.PARAM_TAB}=${HistoryRangeQuery.TAB_PORTFOLIO}",
+        HtmlIds.HISTORY_PORTFOLIO_SECTION,
+    ),
+    HistoryViewPreset(
+        ViewText.HISTORY_VIEW_WEEK_ALLOCATION,
+        "${HistoryRangeQuery.PARAM_RANGE}=${HistoryRangeKeys.PRESET_7D}&" +
+            "${HistoryRangeQuery.PARAM_TAB}=${HistoryRangeQuery.TAB_PORTFOLIO}",
+        HtmlIds.HISTORY_ALLOCATION_SECTION,
+    ),
+    HistoryViewPreset(
+        ViewText.HISTORY_VIEW_MONTH_NET_CASH_FLOW,
+        "${HistoryRangeQuery.PARAM_RANGE}=${HistoryRangeKeys.PRESET_30D}&" +
+            "${HistoryRangeQuery.PARAM_TAB}=${HistoryRangeQuery.TAB_PORTFOLIO}",
+        HtmlIds.HISTORY_CASH_FLOW_SECTION,
+    ),
 )
 
 /** Only History's display filters are persisted; pagination and destinations never enter a saved view. */
 internal fun historyViewQuery(query: String): String {
     val source: dynamic = js("new URLSearchParams(query)")
     val target: dynamic = js("new URLSearchParams()")
-    listOf("range", "asset", "pair", "type").forEach { key ->
+    listOf(
+        HistoryRangeQuery.PARAM_RANGE,
+        HistoryRangeQuery.PARAM_START,
+        HistoryRangeQuery.PARAM_END,
+        HistoryRangeQuery.PARAM_TZ,
+        HistoryRangeQuery.PARAM_SCOPE,
+        HistoryRangeQuery.PARAM_ASSET,
+        HistoryRangeQuery.PARAM_PAIR,
+        HistoryRangeQuery.PARAM_TYPE,
+        HistoryRangeQuery.PARAM_TAB,
+        HistoryRangeQuery.PARAM_ACTIVITY,
+    ).forEach { key ->
         val value = source.get(key) as? String
-        if (!value.isNullOrBlank()) target.set(key, value)
+        val validTab = key != HistoryRangeQuery.PARAM_TAB || value in setOf(
+            HistoryRangeQuery.TAB_PORTFOLIO,
+            HistoryRangeQuery.TAB_ACTIVITY,
+            HistoryRangeQuery.TAB_DATA_STATUS,
+        )
+        val validActivity = key != HistoryRangeQuery.PARAM_ACTIVITY || value in setOf(
+            HistoryRangeQuery.ACTIVITY_BOT,
+            HistoryRangeQuery.ACTIVITY_TRADES,
+            HistoryRangeQuery.ACTIVITY_TRANSACTIONS,
+        )
+        if (!value.isNullOrBlank() && validTab && validActivity) target.set(key, value)
     }
     return target.toString()
+}
+
+internal fun historyDefaultRange(raw: String?): String? = historyDefaultRange(parseHistoryViewStore(raw))
+
+private fun historyDefaultRange(store: HistoryViewStore): String? {
+    val option = store.defaultOption ?: return null
+    val query = if (option.startsWith(PRESET_OPTION_PREFIX)) {
+        historyViewPresets().firstOrNull { it.name == option.removePrefix(PRESET_OPTION_PREFIX) }?.query
+    } else {
+        store.views.firstOrNull { it.name == option }?.query
+    } ?: return null
+    return urlParam(query, "range")?.takeIf { it in HISTORY_RANGE_KEYS }
+}
+
+internal fun historyRangeForQuery(query: String, savedDefaultRange: String?): String {
+    val explicitRange = urlParam(query, "range")
+    if (explicitRange != null) return explicitRange.takeIf { it in HISTORY_RANGE_KEYS } ?: "30d"
+    if (query.removePrefix("?").isNotEmpty()) return "30d"
+    return savedDefaultRange?.takeIf { it in HISTORY_RANGE_KEYS } ?: "30d"
+}
+
+private fun urlParam(query: String, key: String): String? {
+    val params: dynamic = js("new URLSearchParams(query)")
+    return params.get(key) as? String
 }
 
 internal fun parseHistoryViewStore(raw: String?): HistoryViewStore {
@@ -187,4 +255,8 @@ internal fun initHistoryViews(
         render()
     })
     root.hidden = false
+    initHistoryRangeControls(
+        currentQuery = currentQuery(),
+        savedDefaultRange = historyDefaultRange(store),
+    )
 }
