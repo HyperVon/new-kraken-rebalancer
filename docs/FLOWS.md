@@ -231,8 +231,13 @@ window by 24 hours so late exchange records can be picked up. A qualifying live
 order submission requests a nonblocking recent refresh after five seconds;
 conflated requests do not cancel a scan already in progress. A frozen, durable
 backfill continues from its committed per-feed cursor, yielding between pages
-when recent work arrives and resuming after restart. A seven-day repair window
-is rechecked daily. Transient failures use a jittered 1, 2, 5, then 15 minute
+when recent work arrives and resuming after restart. The backfill window is
+frozen at the earliest second the account's API key permits and reopens when the
+key later permits older history. A seven-day repair window
+is rechecked daily; the repair keeps its own frozen window and cursor and yields
+between pages to a pending recent refresh. Every successfully scanned interval is
+merged into a durable per-feed coverage union, so a rolling refresh keeps the
+periods it already covered. Transient failures use a jittered 1, 2, 5, then 15 minute
 retry schedule until the operation succeeds; account-scope changes and API-key
 restriction changes block that sync until an operator selects **Retry**. Simulation scopes do not
 fetch Kraken trades or ledgers.

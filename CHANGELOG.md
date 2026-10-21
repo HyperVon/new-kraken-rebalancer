@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.1] - 2026-10-21
+
+### Fixed
+
+- **Allocation drift definition**: the server-rendered chart, the refreshed chart
+  API and the summary statistic now report the same deviation in percentage
+  points, so one sample never changes meaning between them.
+- **Cumulative funding curve**: the funding chart measures a running total that
+  starts at the selected period's baseline and drops when capital is withdrawn,
+  instead of showing single events that restart on every zoom.
+- **Recorded scope episodes**: chronological scope changes now break the line
+  between episodes and keep both scopes' totals; only scopes observed at the
+  same instant are withheld as incompatible.
+- **Durable History coverage**: successfully scanned intervals accumulate in a
+  durable per-feed coverage union, so a rolling refresh no longer makes an
+  already covered period look unsynchronized.
+- **Long repair scans**: the daily late-record repair yields between pages to a
+  pending recent refresh and resumes from its committed cursor.
+- **Key-restricted History**: the backfill window stays frozen at the earliest
+  second the API key permits, reopens when the key widens, and no longer
+  replays the same permitted range endlessly.
+- **Interrupted recent scans**: a failed recent scan resumes from its committed
+  cursor inside its frozen window.
+- **Ledger asset names**: refreshed ledger rows show the canonical asset name
+  and settle their fee in the same asset as the server-rendered row.
+- **Bot-activity details**: an expanded activity detail survives the automatic
+  activity reload.
+
 ## [6.20.0] - 2026-10-19
 
 ### Added

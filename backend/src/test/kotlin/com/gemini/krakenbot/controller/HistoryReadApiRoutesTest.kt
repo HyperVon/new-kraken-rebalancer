@@ -13,6 +13,7 @@ import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistoryRecordedScope
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncCoverageWindow
 import com.gemini.krakenbot.service.history.HistorySyncJob
 import com.gemini.krakenbot.service.history.HistorySyncJobState
 import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
@@ -204,13 +205,27 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     "ledgersLastIso",
                     "incomplete",
                     "gapCount",
+                    "apiKeyHistoryFromIso",
                 )
                 json["fullRange"].keys() shouldBe
-                    setOf("fromIso", "toIso", "pointCount", "totalObservations", "representative")
+                    setOf("fromIso", "toIso", "pointCount", "totalObservations", "representative", "baselineFromIso")
                 json["series"][0].keys() shouldBe
                     setOf("key", "label", "legendLabel", "unit", "points", "provenance")
                 json["series"][0]["points"][0].keys() shouldBe setOf("t", "tIso", "v", "complete")
                 (json["generationMs"].asLong() >= 0) shouldBe true
+            }
+        }
+
+        "a key restricted history reports the earliest second the account can import" {
+            stubReads()
+            every { historySyncCoordinator.apiKeyHistoryFrom() } returns Instant.parse("2024-01-01T00:00:00Z")
+
+            testApplication {
+                application { configureTestEnv() }
+                val response = client.get(Routes.API_HISTORY_CHARTS)
+                response.status shouldBe HttpStatusCode.OK
+                val json = body(response.bodyAsText())
+                json["coverage"]["apiKeyHistoryFromIso"].asText() shouldBe "2024-01-01T00:00:00Z"
             }
         }
 
@@ -618,6 +633,9 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     repairLastRunAt = Instant.parse("2026-03-09T00:00:00Z"),
                     lastError = null,
                     nextRetryAt = Instant.parse("2026-03-10T13:05:00Z"),
+                    coveredWindows = listOf(
+                        HistorySyncCoverageWindow(startSec = 1_700_000_000L, endSec = 1_700_003_600L),
+                    ),
                 ),
             )
             every { historySyncCoordinator.blockedReason() } returns "operator-blocked"
@@ -657,6 +675,8 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 json["progress"][0]["backfillCursor"].asText() shouldBe "c0"
                 json["progress"][0]["repairLastRunAtIso"].asText() shouldBe "2026-03-09T00:00:00Z"
                 json["progress"][0]["nextRetryAtIso"].asText() shouldBe "2026-03-10T13:05:00Z"
+                json["progress"][0]["coveredFromIso"].asText() shouldBe "2023-11-14T22:13:20Z"
+                json["progress"][0]["coveredToIso"].asText() shouldBe "2023-11-14T23:13:20Z"
             }
         }
 

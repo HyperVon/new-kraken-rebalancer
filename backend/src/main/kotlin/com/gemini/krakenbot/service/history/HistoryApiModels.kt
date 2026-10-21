@@ -33,6 +33,11 @@ data class HistoryApiRangeParams(
     val from: String? = null,
     val to: String? = null,
     val tz: String? = null,
+    /**
+     * Start of the selected period a cumulative series is measured from. A zoomed viewport keeps
+     * the selected period's baseline, so a cumulative curve does not restart inside the zoom.
+     */
+    val baselineFrom: String? = null,
 )
 
 /** One captured-now range resolution: the selected interval plus the effective (viewport) interval. */
@@ -44,6 +49,7 @@ data class HistoryApiWindow(
     val from: Instant?,
     val until: Instant,
     val now: Instant,
+    val baselineFrom: Instant?,
 )
 
 data class HistoryApiExportQuery<T>(val query: T, val zone: ZoneId)
@@ -76,6 +82,8 @@ data class HistoryApiCoverage(
     val ledgersLastIso: String?,
     val incomplete: Boolean,
     val gapCount: Int,
+    /** Earliest second the account's API key permits; earlier exchange history is unreachable. */
+    val apiKeyHistoryFromIso: String? = null,
 )
 
 data class HistoryApiPoint(
@@ -120,6 +128,8 @@ data class HistoryApiFullRange(
     val pointCount: Int,
     val totalObservations: Long,
     val representative: Boolean,
+    /** Start of the selected period a cumulative series is measured from. */
+    val baselineFromIso: String? = null,
 )
 
 data class HistoryApiChartsResponse(
@@ -185,6 +195,9 @@ data class HistoryApiSyncProgress(
     val repairLastRunAtIso: String?,
     val lastError: String?,
     val nextRetryAtIso: String?,
+    /** Verified scanned coverage of this feed; the union stays stable across rolling refreshes. */
+    val coveredFromIso: String? = null,
+    val coveredToIso: String? = null,
 )
 
 data class HistoryApiDataStatusResponse(

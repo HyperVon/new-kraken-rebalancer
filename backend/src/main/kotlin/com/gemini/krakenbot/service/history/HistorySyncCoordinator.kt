@@ -87,6 +87,10 @@ class HistorySyncCoordinator(
     @Volatile
     private var blockedReason: String? = null
 
+    /** Earliest second the last verified API key permits; earlier history is unreachable. */
+    @Volatile
+    private var accountHistoryFromSec: Long? = null
+
     fun start(scope: CoroutineScope = applicationScope) {
         synchronized(this) {
             if (worker?.isActive == true) return
@@ -149,6 +153,12 @@ class HistorySyncCoordinator(
 
     fun blockedReason(): String? = blockedReason
 
+    /**
+     * Earliest second the account's API key permits, when the key restricts the query range.
+     * History before it cannot be imported and is reported as coverage metadata.
+     */
+    fun apiKeyHistoryFrom(): Instant? = accountHistoryFromSec?.let { Instant.ofEpochSecond(it) }
+
     /** Account-level transient failure that no durable job can carry (the identity is unknown). */
     fun lastFailure(): String? = failures[ACCOUNT_KEY]?.message
 
@@ -165,14 +175,16 @@ class HistorySyncCoordinator(
         val now = nowProvider()
         val automatic = trigger == Trigger.Periodic || trigger == Trigger.Recent
         if (automatic && failureBlocks(ACCOUNT_KEY, now)) return
-        val digest = synchronizer.accountIdentityDigest()
-        if (digest == null) {
+        val account = synchronizer.verifiedAccount()
+        if (account == null) {
             registerFailure(ACCOUNT_KEY, "History sync could not verify the authenticated account.")
             return
         }
+        val digest = account.digest
         clearFailure(ACCOUNT_KEY)
+        accountHistoryFromSec = account.queryFromSec
 
-        ensureBackfillWindow(digest, store.loadSyncJobs(digest), now)
+        ensureBackfillWindow(digest, store.loadSyncJobs(digest), now, account.permittedStartSec())
         refreshPending.set(false)
 
         val feeds = when (trigger) {
@@ -188,31 +200,56 @@ class HistorySyncCoordinator(
         runRepairIfDue(digest, now)
     }
 
+    /** Earliest second the current API key permits; earlier history is unreachable with this key. */
+    private fun VerifiedHistoryAccount.permittedStartSec(): Long = queryFromSec ?: 0L
+
     /** True while the authenticated account itself is unavailable; every feed is affected. */
     private fun accountFailed(): Boolean = failures.containsKey(ACCOUNT_KEY)
 
     /**
-     * Freezes the backfill window from the permitted beginning (epoch zero if unbounded)
-     * through the first recent scan's start. An existing job keeps its frozen window and
-     * committed cursor; it is never restarted to service a recent refresh.
+     * Freezes the backfill window from the permitted beginning through the first recent scan's
+     * start. An existing job keeps its frozen window and committed cursor; it is never restarted to
+     * service a recent refresh. When the API key later permits older history, the frozen window is
+     * widened so the newly permitted range is imported.
      */
-    private suspend fun ensureBackfillWindow(digest: String, jobs: List<HistorySyncJob>, now: Instant) {
+    private suspend fun ensureBackfillWindow(
+        digest: String,
+        jobs: List<HistorySyncJob>,
+        now: Instant,
+        permittedStartSec: Long,
+    ) {
         HistoryFeed.entries.forEach { feed ->
-            val exists = jobs.any { it.feed == feed && it.purpose == HistorySyncPurpose.BACKFILL }
-            if (!exists) {
+            val existing = jobs.firstOrNull { it.feed == feed && it.purpose == HistorySyncPurpose.BACKFILL }
+            if (existing == null) {
                 store.upsertSyncJob(
                     HistorySyncJob(
                         accountIdentityDigest = digest,
                         feed = feed,
                         purpose = HistorySyncPurpose.BACKFILL,
                         state = HistorySyncJobState.PENDING,
-                        windowStartSec = 0L,
+                        windowStartSec = permittedStartSec,
                         windowEndSec = recentScanStartForFeed(jobs, feed, now),
                         cursor = null,
                         completedThroughSec = null,
                         lastError = null,
                         nextRetryAt = null,
                         lastSuccessAt = null,
+                        updatedAt = now,
+                    ),
+                )
+            } else if (
+                existing.state == HistorySyncJobState.COMPLETE &&
+                existing.windowStartSec != null && permittedStartSec < existing.windowStartSec
+            ) {
+                // The key now permits older history: reopen the frozen window for that range.
+                store.upsertSyncJob(
+                    existing.copy(
+                        state = HistorySyncJobState.PENDING,
+                        windowStartSec = permittedStartSec,
+                        cursor = null,
+                        completedThroughSec = null,
+                        lastError = null,
+                        nextRetryAt = null,
                         updatedAt = now,
                     ),
                 )
@@ -225,10 +262,10 @@ class HistorySyncCoordinator(
      * [completedThrough − 24h, now]. The synchronizer clamps both to the API-key window.
      */
     private fun recentScanStartForFeed(jobs: List<HistorySyncJob>, feed: HistoryFeed, now: Instant): Long {
-        val horizon = jobs.firstOrNull {
-            it.feed == feed && it.purpose == HistorySyncPurpose.RECENT
-        }?.completedThroughSec
+        val job = jobs.firstOrNull { it.feed == feed && it.purpose == HistorySyncPurpose.RECENT }
+        val horizon = job?.completedThroughSec
         val nominalStart = horizon?.let { it - RECENT_OVERLAP_SECONDS }
+            ?: job?.windowStartSec
             ?: (now.epochSecond - RECENT_FIRST_WINDOW_SECONDS)
         return nominalStart.coerceAtMost(now.epochSecond)
     }
@@ -241,7 +278,12 @@ class HistorySyncCoordinator(
             val start = recentScanStartForFeed(jobs, feed, now)
             val partial = jobs.firstOrNull {
                 it.feed == feed && it.purpose == HistorySyncPurpose.RECENT
-            }?.takeIf { it.state == HistorySyncJobState.RUNNING && it.cursor != null }
+            }?.takeIf { job ->
+                // A retryable failure keeps its committed cursor and frozen bounds, so the next
+                // attempt continues that window instead of opening a newer one and leaving a gap.
+                (job.state == HistorySyncJobState.RUNNING || job.state == HistorySyncJobState.FAILED) &&
+                    job.cursor != null && job.windowStartSec != null && job.windowEndSec != null
+            }
             val result = runCatching {
                 if (partial != null && partial.windowStartSec != null && partial.windowEndSec != null) {
                     synchronizer.syncWindow(
@@ -297,6 +339,11 @@ class HistorySyncCoordinator(
         }
     }
 
+    /**
+     * The daily late-record repair. It runs below recent work, keeps a frozen window and cursor so
+     * an interrupted repair resumes where it stopped, and yields after every page so an urgent or
+     * periodic refresh is not blocked by a long repair.
+     */
     private suspend fun runRepairIfDue(digest: String, now: Instant) {
         for (feed in HistoryFeed.entries) {
             val key = FailureKey(feed, HistorySyncPurpose.REPAIR)
@@ -304,12 +351,46 @@ class HistorySyncCoordinator(
             val job = store.loadSyncJobs(digest).firstOrNull {
                 it.feed == feed && it.purpose == HistorySyncPurpose.REPAIR
             }
+            val resumable = job?.takeIf {
+                it.state != HistorySyncJobState.COMPLETE && it.cursor != null &&
+                    it.windowStartSec != null && it.windowEndSec != null
+            }
             val lastRun = job?.lastSuccessAt
-            if (lastRun != null && Duration.between(lastRun, now) < REPAIR_INTERVAL) continue
-            val end = now.epochSecond
-            val start = end - REPAIR_WINDOW_SECONDS
+            if (resumable == null && lastRun != null && Duration.between(lastRun, now) < REPAIR_INTERVAL) continue
+            val start = resumable?.windowStartSec ?: (now.epochSecond - REPAIR_WINDOW_SECONDS)
+            val end = resumable?.windowEndSec ?: now.epochSecond
+            store.upsertSyncJob(
+                (
+                    job ?: HistorySyncJob(
+                        accountIdentityDigest = digest,
+                        feed = feed,
+                        purpose = HistorySyncPurpose.REPAIR,
+                        state = HistorySyncJobState.PENDING,
+                        windowStartSec = null,
+                        windowEndSec = null,
+                        cursor = null,
+                        completedThroughSec = null,
+                        lastError = null,
+                        nextRetryAt = null,
+                        lastSuccessAt = null,
+                        updatedAt = now,
+                    )
+                    ).copy(
+                    state = HistorySyncJobState.RUNNING,
+                    windowStartSec = start,
+                    windowEndSec = end,
+                    updatedAt = now,
+                ),
+            )
             val result = runCatching {
-                synchronizer.syncWindow(feed, start, end, HistorySyncPurpose.REPAIR)
+                synchronizer.syncWindow(
+                    feed = feed,
+                    startSec = start,
+                    endSec = end,
+                    purpose = HistorySyncPurpose.REPAIR,
+                    resumeCursor = resumable?.cursor,
+                    betweenPages = { refreshPending.get() },
+                )
             }
             val failure = result.exceptionOrNull()
             if (failure != null) {
@@ -334,8 +415,8 @@ class HistorySyncCoordinator(
                     null
                 }
                 if (job?.state == HistorySyncJobState.RUNNING) {
-                    // The scan only covered the API-key-clamped part of the frozen window; keep the
-                    // backfill retryable so a broader key can still import the missing history.
+                    // The scan stopped before the end of the frozen window, so the permitted range
+                    // is still incomplete and the job stays retryable.
                     registerFailure(
                         key = FailureKey(feed, purpose),
                         message = HistorySyncErrors.API_KEY_WINDOW_PARTIAL,

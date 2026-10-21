@@ -140,6 +140,12 @@ internal fun requestViewportDetail(chartId: String, fromMs: Double, toMs: Double
 
 internal val historyChartSessions = mutableMapOf<String, HistoryChartSession>()
 
+/**
+ * Start of the selected period a chart's cumulative series is measured from. A zoomed viewport
+ * keeps this baseline, so the running total does not restart inside the zoom.
+ */
+internal val historyChartBaselines = mutableMapOf<String, String>()
+
 internal val historyLegendHidden = mutableMapOf<String, MutableSet<String>>()
 
 internal class HistoryChartSession(

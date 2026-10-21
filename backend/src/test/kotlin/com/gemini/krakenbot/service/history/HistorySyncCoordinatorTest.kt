@@ -208,7 +208,7 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
-        "a clamped backfill keeps its frozen window and retries after the key widens" {
+        "a clamped backfill keeps its frozen window and reopens it after the key widens" {
             withFixture { fixture ->
                 val restrictedFrom = fixture.clock.now.epochSecond - 2L * 86_400
                 var restricted = true
@@ -225,10 +225,8 @@ class HistorySyncCoordinatorTest : StringSpec() {
                 fixture.coordinator.runCoalescedPass()
 
                 val clamped = fixture.backfillJob()
-                clamped.windowStartSec shouldBe 0
-                clamped.state shouldBe HistorySyncJobState.FAILED
-                clamped.completedThroughSec shouldBe null
-                clamped.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_PARTIAL
+                clamped.windowStartSec shouldBe restrictedFrom
+                clamped.state shouldBe HistorySyncJobState.COMPLETE
 
                 restricted = false
                 fixture.clock.advance(Duration.ofMinutes(1))
@@ -332,6 +330,89 @@ class HistorySyncCoordinatorTest : StringSpec() {
 
                 trades.calls.count { it.startSec == fixture.recentStartSec && it.cursor == "C1" } shouldBe 1
                 fixture.recentJob().state shouldBe HistorySyncJobState.COMPLETE
+            }
+        }
+
+        "a repair scan yields to a pending recent refresh and keeps its cursor" {
+            withFixture { fixture ->
+                val repairStart = fixture.clock.now.epochSecond - HistorySyncCoordinator.REPAIR_WINDOW_SECONDS
+                val trades = fixture.tradesScript()
+                trades.onPage(repairStart, null, "R1", nextCursor = "RC1")
+                trades.beforeSupply = { startSec, _ ->
+                    if (startSec == repairStart) fixture.coordinator.requestRecentRefresh()
+                }
+
+                fixture.coordinator.runCoalescedPass()
+
+                val repair = fixture.store.loadSyncJobs(fixture.digest)
+                    .single { it.purpose == HistorySyncPurpose.REPAIR && it.feed == HistoryFeed.TRADES }
+                repair.state shouldBe HistorySyncJobState.RUNNING
+                repair.cursor shouldBe "RC1"
+                trades.calls.count { it.startSec == repairStart } shouldBe 1
+            }
+        }
+
+        "a repair scan resumes from its committed cursor and frozen window" {
+            withFixture { fixture ->
+                val now = fixture.clock.now
+                val repairStart = now.epochSecond - 3_600L
+                fixture.store.upsertSyncJob(
+                    HistorySyncJob(
+                        accountIdentityDigest = fixture.digest,
+                        feed = HistoryFeed.TRADES,
+                        purpose = HistorySyncPurpose.REPAIR,
+                        state = HistorySyncJobState.RUNNING,
+                        windowStartSec = repairStart,
+                        windowEndSec = now.epochSecond,
+                        cursor = "RC1",
+                        completedThroughSec = null,
+                        lastError = null,
+                        nextRetryAt = null,
+                        lastSuccessAt = null,
+                        updatedAt = now,
+                    ),
+                )
+                val trades = fixture.tradesScript()
+                trades.onPage(repairStart, "RC1", "R2", nextCursor = null)
+
+                fixture.coordinator.runCoalescedPass()
+
+                trades.calls.count { it.startSec == repairStart && it.cursor == "RC1" } shouldBe 1
+                val repair = fixture.store.loadSyncJobs(fixture.digest)
+                    .single { it.purpose == HistorySyncPurpose.REPAIR && it.feed == HistoryFeed.TRADES }
+                repair.state shouldBe HistorySyncJobState.COMPLETE
+                repair.windowStartSec shouldBe repairStart
+            }
+        }
+
+        "a failed recent scan resumes from its committed cursor and frozen window" {
+            withFixture { fixture ->
+                val now = fixture.clock.now
+                fixture.store.upsertSyncJob(
+                    HistorySyncJob(
+                        accountIdentityDigest = fixture.digest,
+                        feed = HistoryFeed.TRADES,
+                        purpose = HistorySyncPurpose.RECENT,
+                        state = HistorySyncJobState.FAILED,
+                        windowStartSec = fixture.recentStartSec,
+                        windowEndSec = now.epochSecond,
+                        cursor = "C1",
+                        completedThroughSec = null,
+                        lastError = HistorySyncErrors.PAGE_FAILED,
+                        nextRetryAt = null,
+                        lastSuccessAt = null,
+                        updatedAt = now,
+                    ),
+                )
+                val trades = fixture.tradesScript()
+                trades.onPage(fixture.recentStartSec, "C1", "T2", nextCursor = null)
+
+                fixture.coordinator.runCoalescedPass()
+
+                trades.calls.count { it.startSec == fixture.recentStartSec && it.cursor == "C1" } shouldBe 1
+                val job = fixture.recentJob()
+                job.state shouldBe HistorySyncJobState.COMPLETE
+                job.windowStartSec shouldBe fixture.recentStartSec
             }
         }
 
@@ -803,7 +884,11 @@ class HistorySyncCoordinatorTest : StringSpec() {
         /** A coordinator whose exchange calls fail with the given error, for the failure paths. */
         fun coordinatorWithFailingSynchronizer(error: Throwable): HistorySyncCoordinator {
             val failing = mockk<HistorySynchronizer>()
-            coEvery { failing.accountIdentityDigest() } returns digest
+            coEvery { failing.verifiedAccount() } returns VerifiedHistoryAccount(
+                digest = digest,
+                queryFromSec = null,
+                queryToSec = null,
+            )
             coEvery {
                 failing.syncWindow(any(), any(), any(), any())
             } throws error

@@ -370,6 +370,12 @@ enum class HistorySyncPurpose { RECENT, BACKFILL, REPAIR }
 enum class HistorySyncJobState { PENDING, RUNNING, COMPLETE, FAILED, BLOCKED }
 
 /**
+ * The authenticated account and the query bounds its API key permits. History before the permitted
+ * start cannot be imported with this key and is reported as coverage metadata, not as a failure.
+ */
+data class VerifiedHistoryAccount(val digest: String, val queryFromSec: Long?, val queryToSec: Long?)
+
+/**
  * Durable coordinator job state. The committed [cursor] and frozen window survive a recent
  * scan and a process restart; [completedThroughSec] advances only after every page in the
  * frozen window commits.
@@ -402,6 +408,8 @@ data class HistorySyncProgressSummary(
     val repairLastRunAt: Instant?,
     val lastError: String?,
     val nextRetryAt: Instant?,
+    /** Intervals this feed has verifiably scanned; the union stays stable across rolling refreshes. */
+    val coveredWindows: List<HistorySyncCoverageWindow> = emptyList(),
 )
 
 data class HistorySyncStatus(
@@ -443,6 +451,13 @@ data class HistorySyncWindow(
 const val HISTORY_MAX_SYNC_PAGES = 5_000
 
 data class HistoryLedgerCoverageWindow(val startSec: Long, val endSec: Long) {
+    init {
+        require(startSec <= endSec)
+    }
+}
+
+/** One verified interval of a scanned feed; the union of these is the durable coverage. */
+data class HistorySyncCoverageWindow(val startSec: Long, val endSec: Long) {
     init {
         require(startSec <= endSec)
     }

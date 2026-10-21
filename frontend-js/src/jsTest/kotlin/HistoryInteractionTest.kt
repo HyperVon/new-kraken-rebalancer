@@ -282,6 +282,105 @@ class HistoryInteractionTest :
             refreshed?.hasAttribute("open") shouldBe true
             root.remove()
         }
+        "a ledger row shows the canonical asset name and keeps the raw identifier in the details" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <table><tbody id="${HtmlIds.HISTORY_LEDGERS_BODY}"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            val response = json(
+                "items" to arrayOf(
+                    json(
+                        "ledgerId" to "L-1",
+                        "time" to "2026-03-01T10:00:00Z",
+                        "type" to "deposit",
+                        "asset" to "ZUSD",
+                        "amount" to "100.00",
+                        "fee" to "0.50",
+                        "isValidRecord" to true,
+                    ),
+                ),
+            )
+            updateHistoryTable("ledgers", response, "?range=7d", 50)
+
+            val row = document.querySelector("#${HtmlIds.HISTORY_LEDGERS_BODY} tr") as HTMLElement
+            val cells = row.querySelectorAll("td")
+            (cells.item(2) as HTMLElement).textContent shouldBe "USD"
+            row.innerHTML.contains("ZUSD") shouldBe true
+            root.remove()
+        }
+
+        "an expanded activity detail survives the automatic activity reload" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <div>
+                    <a href="/history?range=7d" data-history-range="7d">7d</a>
+                </div>
+                <div id="history-range-custom-panel" hidden>
+                    <input id="history-range-custom-start" type="date">
+                    <input id="history-range-custom-end" type="date">
+                    <span id="history-range-custom-tz"></span>
+                    <button id="history-range-custom-apply">Apply</button>
+                    <p id="history-range-custom-error" hidden></p>
+                </div>
+                <select id="history-scope-select"></select>
+                <div id="history-tab-nav">
+                    <a href="/history?range=7d&tab=activity" data-history-tab="activity">Activity</a>
+                </div>
+                <table><tbody id="${HistoryRangeIds.ACTIVITY_BODY}"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+
+            val activityResponse = json(
+                "items" to arrayOf(
+                    json(
+                        "occurredAt" to "2026-03-01T10:00:00Z",
+                        "outcome" to "Rebalanced",
+                        "mode" to "DRY RUN",
+                        "cycleId" to "cycle-1",
+                        "actions" to arrayOf("Sold BTC"),
+                    ),
+                ),
+            )
+            val pending = mutableListOf<(dynamic) -> Unit>()
+            val panelRequest: (String, (dynamic) -> Unit, () -> Unit) -> (() -> Unit) = { _, success, _ ->
+                pending += success
+                { }
+            }
+            val fetch: (String, (dynamic) -> Unit, () -> Unit) -> Unit = { _, _, _ -> }
+
+            try {
+                initHistoryRangeControls(
+                    currentQuery = "?range=7d&tab=activity&activity=bot",
+                    fetchJson = fetch,
+                    panelRequest = panelRequest,
+                    timezone = { "UTC" },
+                )
+                pending.size shouldBe 1
+                pending.removeAt(0)(activityResponse)
+
+                val details = document.querySelector(
+                    "#${HistoryRangeIds.ACTIVITY_BODY} details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]",
+                ) as HTMLElement?
+                details?.setAttribute("open", "")
+
+                // Reloading the activity panel replaces the body with a loading row first.
+                root.querySelector("[data-history-tab='activity']")!!
+                    .dispatchEvent(Event("click"))
+                pending.size shouldBe 1
+                pending.removeAt(0)(activityResponse)
+
+                val refreshed = document.querySelector(
+                    "#${HistoryRangeIds.ACTIVITY_BODY} details[${HtmlAttrs.DATA_HISTORY_DETAIL_KEY}]",
+                ) as HTMLElement?
+                refreshed?.getAttribute(HtmlAttrs.DATA_HISTORY_DETAIL_KEY) shouldBe "activity:cycle-1"
+                refreshed?.hasAttribute("open") shouldBe true
+            } finally {
+                root.remove()
+            }
+        }
+
         "an empty chart and an unknown analysis have no series and no panel" {
             val container: HTMLElement = document.createElement("div") as HTMLElement
             historyNativeSeries(container) shouldBe emptyList()

@@ -56,6 +56,12 @@ interface HistoryStore {
     /** Account/feed recent coverage and older import progress for Data status. */
     suspend fun syncProgress(accountIdentityDigest: String): List<HistorySyncProgressSummary>
 
+    /** Durable union of the intervals a feed has successfully scanned. */
+    suspend fun querySyncCoverageWindows(
+        accountIdentityDigest: String,
+        feed: HistoryFeed,
+    ): List<HistorySyncCoverageWindow>
+
     /** Stable paged activity read for the recent-activity table. */
     suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity>
 

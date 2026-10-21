@@ -54,7 +54,7 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
             }
         }
 
-        "overlapping scope lifespans withhold both totals and break interpolation even with sparse samples" {
+        "chronological scope episodes keep both totals and break the line between episodes" {
             withPresenter { store, api ->
                 store.appendObservation(sample(current, 3600, "100.00"))
                 store.appendObservation(sample(current, 600, "200.00"))
@@ -63,15 +63,22 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
 
                 val response = charts(api, maxPoints = 2)
 
-                response.boundaries.single().kind shouldBe HistoryApiBoundaryKind.OVERLAPPING_SCOPES
-                response.boundaries.single().fromIso shouldBe "2026-03-10T11:20:00Z"
-                response.boundaries.single().toIso shouldBe "2026-03-10T11:30:00Z"
-                val conflicted = response.series.single { it.key == earlier.sourceKey }
-                conflicted.points.all { it.v == null && !it.complete } shouldBe true
-                val surviving = response.series.single { it.key == current.sourceKey }
-                surviving.points.map { it.complete } shouldContainExactly listOf(true, false, false, true)
-                surviving.points.first().v!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
-                surviving.points.last().v!!.shouldBeEqualComparingTo(BigDecimal("200.00"))
+                response.boundaries.map { it.kind } shouldContainExactly listOf(
+                    HistoryApiBoundaryKind.ASSET_SET_CHANGE,
+                    HistoryApiBoundaryKind.ASSET_SET_CHANGE,
+                )
+                response.boundaries.map { it.fromIso } shouldContainExactly listOf(
+                    "2026-03-10T11:00:00Z",
+                    "2026-03-10T11:30:00Z",
+                )
+                val earlierSeries = response.series.single { it.key == earlier.sourceKey }
+                earlierSeries.points.map { it.complete } shouldContainExactly listOf(true, true)
+                earlierSeries.points.first().v!!.shouldBeEqualComparingTo(BigDecimal("300.00"))
+                earlierSeries.points.last().v!!.shouldBeEqualComparingTo(BigDecimal("400.00"))
+                val currentSeries = response.series.single { it.key == current.sourceKey }
+                currentSeries.points.map { it.complete } shouldContainExactly listOf(true, false, true)
+                currentSeries.points.first().v!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
+                currentSeries.points.last().v!!.shouldBeEqualComparingTo(BigDecimal("200.00"))
                 response.fullRange.totalObservations shouldBe 4L
                 response.coverage.incomplete shouldBe true
 
@@ -79,13 +86,33 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
                     api,
                     params = HistoryApiRangeParams(
                         preset = "all",
-                        from = "2026-03-10T11:25:00Z",
-                        to = "2026-03-10T11:26:00Z",
+                        from = "2026-03-10T10:50:00Z",
+                        to = "2026-03-10T11:25:00Z",
                     ),
                 )
-                zoomed.boundaries.single().fromIso shouldBe "2026-03-10T11:25:00Z"
-                zoomed.boundaries.single().toIso shouldBe "2026-03-10T11:25:59.999999999Z"
-                zoomed.series.flatMap { it.points }.all { it.v == null } shouldBe true
+                zoomed.boundaries.single().kind shouldBe HistoryApiBoundaryKind.ASSET_SET_CHANGE
+                zoomed.boundaries.single().fromIso shouldBe "2026-03-10T11:00:00Z"
+                zoomed.boundaries.single().toIso shouldBe "2026-03-10T11:20:00Z"
+                zoomed.series.single { it.key == earlier.sourceKey }.points.single()
+                    .v!!.shouldBeEqualComparingTo(BigDecimal("300.00"))
+            }
+        }
+
+        "two scopes observed at the same instant withhold both totals" {
+            withPresenter { store, api ->
+                store.appendObservation(sample(current, 1800, "100.00"))
+                store.appendObservation(sample(earlier, 1800, "300.00"))
+
+                val response = charts(api)
+
+                response.boundaries.single().kind shouldBe HistoryApiBoundaryKind.OVERLAPPING_SCOPES
+                response.boundaries.single().fromIso shouldBe "2026-03-10T11:30:00Z"
+                response.series.forEach { series ->
+                    series.points.forEach { point ->
+                        point.v.shouldBeNull()
+                        point.complete shouldBe false
+                    }
+                }
             }
         }
 

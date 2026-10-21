@@ -122,7 +122,7 @@ ViewText:
   HISTORY_CHART_TOOLS: "Chart tools"
   HISTORY_ANALYSIS: "Analysis"
   HISTORY_SCOPE_SUMMARY: "Summary for the current recorded asset set:"
-  HISTORY_SCOPE_CONFLICT: "Overlapping asset-set records: conflicting portfolio values are withheld."
+  HISTORY_SCOPE_CONFLICT: "Two asset-set records at the same time: conflicting portfolio values are withheld."
   HISTORY_SCOPE_TRANSITIONS: "Asset-set changes and unobserved intervals are shown as separate series, not a continuous portfolio."
   HISTORY_NAME_VIEW: "Name this History view"
   HISTORY_CHART_EARLIER: "Earlier"

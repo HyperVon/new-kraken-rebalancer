@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.service.reporting.HistoryReportingService
+import com.gemini.krakenbot.view.component.allocationDeviationSeries
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -22,6 +23,8 @@ class HistoryApiPresenterTest : StringSpec() {
 
     private val accountDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     private val fingerprint = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    private val oldFingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    private val newFingerprint = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
     private val fixedNow = Instant.parse("2026-03-10T12:00:00Z")
     private val accountScope = HistorySourceScope(
         mode = HistorySourceMode.ACCOUNT,
@@ -395,7 +398,7 @@ class HistoryApiPresenterTest : StringSpec() {
                 assets = listOf(asset("BTC", valueUsd = null)),
             )
 
-            val point = allocationSeries(listOf(nullTotal)).single().points.single()
+            val point = allocationSeries(listOf(nullTotal), emptyMap()).single().points.single()
 
             point.v.shouldBeNull()
             point.complete shouldBe false
@@ -409,36 +412,83 @@ class HistoryApiPresenterTest : StringSpec() {
                 assets = listOf(asset("BTC", valueUsd = "0")),
             )
 
-            val point = allocationSeries(listOf(zeroTotal)).single().points.single()
+            val point = allocationSeries(listOf(zeroTotal), emptyMap()).single().points.single()
 
             point.v.shouldBeNull()
             point.complete shouldBe false
         }
 
-        "recorded scope boundaries skip undated scopes and clip overlaps to the selected window" {
-            val scopes = listOf(
-                HistoryApiScope(
-                    id = "ACCOUNT:old",
-                    symbols = listOf("BTC", "USD"),
-                    earliestIso = "2026-03-01T00:00:00Z",
-                    latestIso = "2026-03-05T00:00:00Z",
-                    current = false,
+        "allocation deviation is the observed share minus the configured target in percentage points" {
+            val onTarget = observation(
+                id = "on-target",
+                time = fixedNow,
+                totalUsd = "100.00",
+                assets = listOf(asset("BTC", valueUsd = "40.00"), asset("ETH", valueUsd = "60.00")),
+            )
+
+            val series = allocationSeries(listOf(onTarget), mapOf("BTC" to BigDecimal("40"), "ETH" to BigDecimal("60")))
+
+            series.map { it.key } shouldContainExactly listOf("BTC", "ETH")
+            series.forEach { entry -> entry.unit shouldBe "percent" }
+            series.forEach { entry -> entry.points.single().v!!.shouldBeEqualComparingTo(BigDecimal("0")) }
+            series.forEach { entry -> entry.points.single().complete shouldBe true }
+        }
+
+        "allocation deviation is negative when a holding is below its target" {
+            val underTarget = observation(
+                id = "under-target",
+                time = fixedNow,
+                totalUsd = "100.00",
+                assets = listOf(asset("BTC", valueUsd = "30.00"), asset("ETH", valueUsd = "70.00")),
+            )
+
+            val series = allocationSeries(
+                listOf(underTarget),
+                mapOf(
+                    "BTC" to BigDecimal("40"),
+                    "ETH" to BigDecimal("60"),
                 ),
-                HistoryApiScope(
-                    id = "ACCOUNT:new",
-                    symbols = listOf("BTC", "ETH", "USD"),
-                    earliestIso = "2026-03-03T00:00:00Z",
-                    latestIso = "2026-03-09T00:00:00Z",
-                    current = true,
-                ),
-                HistoryApiScope(
-                    id = "ACCOUNT:future",
-                    symbols = listOf("USD"),
-                    earliestIso = "2026-03-08T00:00:00Z",
-                    latestIso = "2026-03-09T00:00:00Z",
-                    current = false,
-                ),
-                HistoryApiScope("ACCOUNT:empty", listOf("USD"), earliestIso = null, latestIso = null, current = false),
+            )
+
+            series.first { it.key == "BTC" }.points.single().v!!.shouldBeEqualComparingTo(BigDecimal("-10"))
+            series.first { it.key == "ETH" }.points.single().v!!.shouldBeEqualComparingTo(BigDecimal("10"))
+        }
+
+        "the chart api and the server rendered chart report the same deviation for one sample" {
+            val sample = observation(
+                id = "parity",
+                time = fixedNow,
+                totalUsd = "100.00",
+                assets = listOf(asset("BTC", valueUsd = "45.00"), asset("ETH", valueUsd = "55.00")),
+            )
+            val targets = mapOf("BTC" to BigDecimal("40"), "ETH" to BigDecimal("60"))
+
+            val api = allocationSeries(listOf(sample), targets)
+            val rendered = allocationDeviationSeries(listOf(sample), targets)
+
+            api.map { it.key } shouldContainExactly rendered.map { it.first }
+            api.forEach { entry ->
+                val renderedPoints = rendered.first { it.first == entry.key }.second
+                entry.points.map { it.v } shouldContainExactly renderedPoints.map { it.value }
+            }
+        }
+
+        "recorded scope boundaries separate chronological episodes instead of comparing spans" {
+            val oldScopeSource = accountScope.copy(managedScopeFingerprint = oldFingerprint)
+            val newScopeSource = accountScope.copy(managedScopeFingerprint = newFingerprint)
+            val oldScope = HistoryApiScope(
+                id = oldScopeSource.sourceKey,
+                symbols = listOf("BTC", "USD"),
+                earliestIso = "2026-03-01T00:00:00Z",
+                latestIso = "2026-03-05T00:00:00Z",
+                current = false,
+            )
+            val newScope = HistoryApiScope(
+                id = newScopeSource.sourceKey,
+                symbols = listOf("BTC", "ETH", "USD"),
+                earliestIso = "2026-03-03T00:00:00Z",
+                latestIso = "2026-03-09T00:00:00Z",
+                current = true,
             )
             val window = HistoryApiWindow(
                 preset = "7d",
@@ -448,24 +498,73 @@ class HistoryApiPresenterTest : StringSpec() {
                 from = Instant.parse("2026-03-02T00:00:00Z"),
                 until = Instant.parse("2026-03-08T00:00:00Z"),
                 now = fixedNow,
+                baselineFrom = Instant.parse("2026-03-02T00:00:00Z"),
+            )
+            val observations = mapOf(
+                oldScope.id to listOf(
+                    observation("old-1", Instant.parse("2026-03-03T00:00:00Z"), "150.00", scope = oldScopeSource),
+                ),
+                newScope.id to listOf(
+                    observation("new-1", Instant.parse("2026-03-04T00:00:00Z"), "200.00", scope = newScopeSource),
+                ),
             )
 
-            val boundaries = recordedScopeBoundaries(scopes, window)
+            val episodes = recordedEpisodes(observations)
+            val conflicts = recordedConflictInstants(observations)
+            val boundaries = recordedScopeBoundaries(episodes, conflicts, window)
 
-            boundaries.single().kind shouldBe HistoryApiBoundaryKind.OVERLAPPING_SCOPES
+            boundaries.single().kind shouldBe HistoryApiBoundaryKind.ASSET_SET_CHANGE
             boundaries.single().fromIso shouldBe "2026-03-03T00:00:00Z"
-            boundaries.single().toIso shouldBe "2026-03-05T00:00:00Z"
-            boundaries.single().scopeIds shouldContainExactly listOf("ACCOUNT:old", "ACCOUNT:new")
-            val conflict = observation("old-conflict", Instant.parse("2026-03-04T00:00:00Z"), "150.00")
-            val series = recordedPortfolioSeries(scopes[0], listOf(conflict), boundaries)
-            series.points.size shouldBe 3
-            series.points.forEach { point ->
-                point.v.shouldBeNull()
-                point.complete shouldBe false
-            }
+            boundaries.single().toIso shouldBe "2026-03-04T00:00:00Z"
+            conflicts shouldBe emptySet()
+            val series = recordedPortfolioSeries(oldScope, episodes, conflicts)
+            series.points.single().v!!.shouldBeEqualComparingTo(BigDecimal("150.00"))
         }
 
-        "ledger chart selection excludes deposits from non-deposit ledger families" {
+        "a recorded scope observed at the same instant as another scope withholds both totals" {
+            val shared = Instant.parse("2026-03-04T00:00:00Z")
+            val oldScopeSource = accountScope.copy(managedScopeFingerprint = oldFingerprint)
+            val newScopeSource = accountScope.copy(managedScopeFingerprint = newFingerprint)
+            val oldScope = HistoryApiScope(
+                id = oldScopeSource.sourceKey,
+                symbols = listOf("BTC", "USD"),
+                earliestIso = "2026-03-03T00:00:00Z",
+                latestIso = "2026-03-05T00:00:00Z",
+                current = false,
+            )
+            val newScope = HistoryApiScope(
+                id = newScopeSource.sourceKey,
+                symbols = listOf("BTC", "ETH", "USD"),
+                earliestIso = "2026-03-03T00:00:00Z",
+                latestIso = "2026-03-05T00:00:00Z",
+                current = true,
+            )
+            val observations = mapOf(
+                oldScope.id to listOf(observation("old-1", shared, "150.00", scope = oldScopeSource)),
+                newScope.id to listOf(observation("new-1", shared, "200.00", scope = newScopeSource)),
+            )
+
+            val episodes = recordedEpisodes(observations)
+            val conflicts = recordedConflictInstants(observations)
+            val window = HistoryApiWindow(
+                preset = "7d",
+                zone = ZoneOffset.UTC,
+                selectedFrom = Instant.parse("2026-03-02T00:00:00Z"),
+                selectedUntil = Instant.parse("2026-03-08T00:00:00Z"),
+                from = Instant.parse("2026-03-02T00:00:00Z"),
+                until = Instant.parse("2026-03-08T00:00:00Z"),
+                now = fixedNow,
+                baselineFrom = Instant.parse("2026-03-02T00:00:00Z"),
+            )
+            val boundaries = recordedScopeBoundaries(episodes, conflicts, window)
+
+            conflicts shouldBe setOf(shared)
+            boundaries.single().kind shouldBe HistoryApiBoundaryKind.OVERLAPPING_SCOPES
+            recordedPortfolioSeries(oldScope, episodes, conflicts).points.single().v.shouldBeNull()
+            recordedPortfolioSeries(newScope, episodes, conflicts).points.single().v.shouldBeNull()
+        }
+
+        "ledger chart selection keeps funding events and excludes staking rows" {
             val rows = listOf(
                 ledger("deposit", type = " Deposit ", asset = "ZUSD", amount = "100.00"),
                 ledger("withdrawal", type = "withdrawal", asset = "ZEUR", amount = "10.00"),
@@ -476,8 +575,72 @@ class HistoryApiPresenterTest : StringSpec() {
 
             val response = charts(params = HistoryApiRangeParams(preset = "all"), selection = "deposits")
 
-            response.series.map { series -> series.key } shouldContainExactly listOf("ZUSD")
-            response.series.single().points.single().v!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
+            response.series.map { series -> series.key } shouldContainExactly listOf("ZUSD", "ZEUR")
+            response.series.first().points.single().v!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
+            response.series.last().points.single().v!!.shouldBeEqualComparingTo(BigDecimal("-10.00"))
+        }
+
+        "a withdrawal reduces the cumulative funding balance of its asset" {
+            val rows = listOf(
+                ledger(
+                    "deposit",
+                    type = "deposit",
+                    asset = "ZUSD",
+                    amount = "100.00",
+                    time = fixedNow.minusSeconds(120),
+                ),
+                ledger(
+                    "withdrawal",
+                    type = "withdrawal",
+                    asset = "ZUSD",
+                    amount = "40.00",
+                    time = fixedNow.minusSeconds(60),
+                ),
+            )
+            coEvery { historyService.queryLedgers(match { query -> query.limit == HISTORY_MAX_PAGE_LIMIT }) } returns
+                page(rows, rows.size.toLong(), HISTORY_MAX_PAGE_LIMIT)
+
+            val response = charts(params = HistoryApiRangeParams(preset = "all"), selection = "deposits")
+
+            val points = response.series.single().points
+            points.map { it.v } shouldContainExactly listOf(
+                BigDecimal("100.00"),
+                BigDecimal("60.00"),
+            )
+        }
+
+        "a zoomed period measures its cumulative ledger from the requested baseline" {
+            val rows = listOf(ledger("deposit", type = "deposit", asset = "ZUSD", amount = "100.00"))
+            coEvery { historyService.queryLedgers(match { query -> query.limit == HISTORY_MAX_PAGE_LIMIT }) } returns
+                page(rows, rows.size.toLong(), HISTORY_MAX_PAGE_LIMIT)
+
+            charts(
+                params = HistoryApiRangeParams(
+                    preset = "all",
+                    baselineFrom = "2026-03-01T00:00:00Z",
+                ),
+                selection = "deposits",
+            )
+
+            coVerify {
+                historyService.queryLedgers(
+                    match { query ->
+                        query.from == Instant.parse("2026-03-01T00:00:00Z") &&
+                            query.limit == HISTORY_MAX_PAGE_LIMIT
+                    },
+                )
+            }
+        }
+
+        "a ledger series labels its asset canonically and keeps the raw key" {
+            val rows = listOf(ledger("deposit", type = "deposit", asset = "ZUSD", amount = "100.00"))
+            coEvery { historyService.queryLedgers(match { query -> query.limit == HISTORY_MAX_PAGE_LIMIT }) } returns
+                page(rows, rows.size.toLong(), HISTORY_MAX_PAGE_LIMIT)
+
+            val response = charts(params = HistoryApiRangeParams(preset = "all"), selection = "deposits")
+
+            response.series.single().key shouldBe "ZUSD"
+            response.series.single().label shouldBe "USD"
         }
 
         "non-observation chart selections do not compare points with portfolio observations" {
@@ -494,11 +657,10 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "empty continuation pages terminate ledger and checkpoint chart scans" {
-            var ledgerPageCalls = 0
+            val ledgerCalls = mutableListOf<String?>()
             coEvery { historyService.queryLedgers(match { query -> query.limit == HISTORY_MAX_PAGE_LIMIT }) } coAnswers
                 {
-                    ledgerPageCalls += 1
-                    check(ledgerPageCalls == 1) { "Presenter retried an empty ledger page." }
+                    ledgerCalls += firstArg<HistoryEventQuery>().type
                     page(emptyList(), total = null, limit = HISTORY_MAX_PAGE_LIMIT, hasMore = true)
                 }
             var checkpointPageCalls = 0
@@ -513,7 +675,8 @@ class HistoryApiPresenterTest : StringSpec() {
 
             deposits.series shouldBe emptyList()
             checkpoints.series shouldBe emptyList()
-            ledgerPageCalls shouldBe 1
+            ledgerCalls.distinct() shouldContainExactly ledgerCalls
+            ledgerCalls.size shouldBe ledgerCalls.distinct().size
             checkpointPageCalls shouldBe 1
         }
 
@@ -524,7 +687,7 @@ class HistoryApiPresenterTest : StringSpec() {
                 ledger("no-asset", type = "deposit", asset = null, amount = "1"),
             )
 
-            val series = ledgerQuantitySeries(rows)
+            val series = ledgerQuantitySeries(rows, ::fundingAmountOf)
 
             series.map { it.key } shouldContainExactly listOf("XXBT")
             series.single().points.size shouldBe 1
@@ -717,10 +880,11 @@ class HistoryApiPresenterTest : StringSpec() {
         time: Instant,
         totalUsd: String?,
         assets: List<HistoryAssetValue> = listOf(asset("BTC", valueUsd = totalUsd)),
+        scope: HistorySourceScope = accountScope,
     ) = HistoryObservation(
         observationId = id,
         cycleId = "cycle-$id",
-        sourceScope = accountScope,
+        sourceScope = scope,
         observedAt = time,
         balanceRequestStartedAt = time.minusMillis(50),
         balanceResponseEndedAt = time,

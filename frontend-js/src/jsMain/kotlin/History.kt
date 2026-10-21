@@ -533,6 +533,7 @@ internal fun historyApiQuery(
     chart: Boolean,
     pinnedRange: dynamic = null,
     selection: String = HistoryChartSelections.PORTFOLIO,
+    baselineFrom: String? = null,
 ): String {
     val params: dynamic = js("new URLSearchParams()")
     params.set(HistoryRangeQuery.PARAM_PRESET, state.preset)
@@ -545,6 +546,7 @@ internal fun historyApiQuery(
     if (chart) {
         params.set(HistoryRangeQuery.PARAM_SELECTION, selection)
         params.set(HistoryRangeQuery.PARAM_MAX_POINTS, "2000")
+        baselineFrom?.takeIf(String::isNotBlank)?.let { params.set(HistoryRangeQuery.PARAM_BASELINE_FROM, it) }
     }
     if (state.preset != "custom" && pinnedRange != null && pinnedRange != undefined) {
         val from = pinnedRange.fromIso as? String
@@ -1209,6 +1211,7 @@ private fun historyAppendLedgerRow(body: Element, item: dynamic) {
     timeCell.setAttribute("class", CssClass.Table.MonoCol.value)
     time?.let { timeCell.setAttribute("title", it) }
     val asset = historyRecordValue(item, "asset")
+    val displayAsset = Asset.normalizeLedgerAsset(asset)
     historyAppendDetails(
         timeCell,
         timeText,
@@ -1230,10 +1233,12 @@ private fun historyAppendLedgerRow(body: Element, item: dynamic) {
     val showSubtype = subtype.isNotBlank() && !subtype.equals("tradespot", ignoreCase = true) &&
         !subtype.equals(type, ignoreCase = true)
     historyRecordCell(row, if (showSubtype) "$type ($subtype)" else type)
-    historyRecordCell(row, historyRecordValue(item, "asset"), CssClass.Table.SymbolCol.value)
+    historyRecordCell(row, displayAsset, CssClass.Table.SymbolCol.value)
     historyRecordCell(row, historyRecordValue(item, "amount"), CssClass.Table.MonoCol.value)
     val fee = historyRecordValue(item, "fee")
-    val feeCurrency = historyRecordValue(item, "feeCurrency")
+    // Kraken settles a ledger fee in the ledger's own asset, so the refreshed row shows the same
+    // canonical asset name as the server-rendered row.
+    val feeCurrency = historyRecordValue(item, "feeCurrency").ifBlank { displayAsset }
     historyRecordCell(
         row,
         listOf(fee, feeCurrency).filter(String::isNotBlank).joinToString(" "),
@@ -1276,10 +1281,10 @@ private fun historyAppendActivityRow(body: Element, item: dynamic) {
     body.appendChild(row)
 }
 
-internal fun updateHistoryActivities(response: dynamic, query: String) {
+internal fun updateHistoryActivities(response: dynamic, query: String, expanded: Set<String> = emptySet()) {
     val body = document.getElementById(HistoryRangeIds.ACTIVITY_BODY) ?: return
     val items = historyArrayItems(response?.items).take(HistoryRangeProps.RECORD_PAGE_SIZE)
-    val expanded = historyExpandedDetailKeys(body)
+    val restored = expanded.ifEmpty { historyExpandedDetailKeys(body) }
     body.innerHTML = ""
     if (items.isEmpty()) {
         val row = document.createElement("tr")
@@ -1292,7 +1297,7 @@ internal fun updateHistoryActivities(response: dynamic, query: String) {
     } else {
         items.forEach { historyAppendActivityRow(body, it) }
     }
-    historyRestoreExpandedDetails(body, expanded)
+    historyRestoreExpandedDetails(body, restored)
     val stack = historyActivityCursorStack(query)
     val first = stack.size * HistoryRangeProps.RECORD_PAGE_SIZE + 1
     document.getElementById(HistoryRangeIds.ACTIVITY_RANGE)?.textContent =
@@ -1444,6 +1449,15 @@ internal fun historyChartSelectionFor(chartId: String): String = when (chartId) 
     else -> HistoryChartSelections.PORTFOLIO
 }
 
+/**
+ * Baseline a chart's cumulative series is measured from. The server-rendered period start is used
+ * until the chart has answered once, so the first refresh keeps the same running total.
+ */
+internal fun historyChartBaseline(chartId: String): String? = historyChartBaselines[chartId]
+    ?: document.getElementById(HtmlIds.HISTORY_VALUE_CHART)
+        ?.getAttribute(HtmlAttrs.DATA_FULL_FROM)
+        ?.takeIf(String::isNotBlank)
+
 /** Debounce window for the zoomed-interval request, so a drag gesture issues one query. */
 private const val HISTORY_VIEWPORT_DETAIL_DEBOUNCE_MS = 250
 
@@ -1476,6 +1490,9 @@ internal fun applyHistoryChartSeries(
     val container = document.getElementById(chartId) ?: return false
     container.asDynamic().historySeriesResponse = response
     val allSeries = historyKeyedApiSeries(response)
+    historyStatusString(response.fullRange, "baselineFromIso")
+        ?.takeIf(String::isNotBlank)
+        ?.let { historyChartBaselines[chartId] = it }
     var selector = document.querySelector("[${HtmlAttrs.DATA_HISTORY_SERIES_SELECT}='$chartId']") as? HTMLSelectElement
     val native = chartId in setOf(
         HtmlIds.HISTORY_CASH_FLOW_CHART,
@@ -2161,13 +2178,18 @@ internal fun initHistoryRangeControls(
         if (!historyActivityRefreshKeepsPage(query)) activityNeedsFirstPageNotice = false
         (document.getElementById(HistoryRangeIds.ACTIVITY_PREVIOUS) as? HTMLElement)?.hidden = true
         (document.getElementById(HistoryRangeIds.ACTIVITY_NEXT) as? HTMLElement)?.hidden = true
+        // The loading row replaces the body, so the open details are captured before it is shown
+        // and restored once the new rows are in place.
+        val expanded = document.getElementById(HistoryRangeIds.ACTIVITY_BODY)
+            ?.let { historyExpandedDetailKeys(it) }
+            .orEmpty()
         setActivityMessage(HistoryRangeText.ACTIVITY_LOADING)
         requestPanel(
             historyActivityApiUrl(query),
             { response ->
                 if (query == activeQuery) {
                     latestActivityNextCursor = historyStatusString(response, "nextCursor")
-                    updateHistoryActivities(response, query)
+                    updateHistoryActivities(response, query, expanded)
                     setHistoryNewRecordsNotice(activityNeedsFirstPageNotice)
                 }
             },
@@ -2233,7 +2255,13 @@ internal fun initHistoryRangeControls(
             } else {
                 null
             }
-            val chartQuery = historyApiQuery(state, chart = true, pinnedRange = pinnedRange, selection = selection)
+            val chartQuery = historyApiQuery(
+                state = state,
+                chart = true,
+                pinnedRange = pinnedRange,
+                selection = selection,
+                baselineFrom = historyChartBaseline(chartId),
+            )
             val success: (dynamic) -> Unit = { response ->
                 if (queryVersion == activeQueryVersion && chartRequestVersions[chartId] == version) {
                     applyHistoryChartSeries(chartId, response, preserveViewport)
@@ -2259,7 +2287,14 @@ internal fun initHistoryRangeControls(
             chartRequestVersions[chartId] = chartVersion
             val fromIso = Date(fromMs).toISOString()
             val toIso = Date(toMs).toISOString()
-            val detailParams = historyParams(historyApiQuery(state, chart = true, selection = selection))
+            val detailParams = historyParams(
+                historyApiQuery(
+                    state = state,
+                    chart = true,
+                    selection = selection,
+                    baselineFrom = historyChartBaseline(chartId),
+                ),
+            )
             detailParams.set(HistoryRangeQuery.PARAM_FROM, fromIso)
             detailParams.set(HistoryRangeQuery.PARAM_TO, toIso)
             val detailQuery = detailParams.toString()

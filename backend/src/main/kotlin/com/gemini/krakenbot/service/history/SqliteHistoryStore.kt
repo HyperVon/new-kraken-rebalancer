@@ -480,10 +480,45 @@ class SqliteHistoryStore(
                         repairLastRunAt = repair?.lastSuccessAt,
                         lastError = feedJobs.mapNotNull { it.lastError }.lastOrNull(),
                         nextRetryAt = feedJobs.mapNotNull { it.nextRetryAt }.minOrNull(),
+                        coveredWindows = readCoverageWindows(connection, accountIdentityDigest, feed),
                     )
                 }
             }
         }
+
+    override suspend fun querySyncCoverageWindows(
+        accountIdentityDigest: String,
+        feed: HistoryFeed,
+    ): List<HistorySyncCoverageWindow> = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        database.connect().use { connection ->
+            readCoverageWindows(connection, accountIdentityDigest, feed)
+        }
+    }
+
+    private fun readCoverageWindows(
+        connection: Connection,
+        accountIdentityDigest: String,
+        feed: HistoryFeed,
+    ): List<HistorySyncCoverageWindow> = connection.prepareStatement(
+        "SELECT start_sec, end_sec FROM history_sync_coverage WHERE account_identity_digest = ? AND feed = ? " +
+            "ORDER BY start_sec, end_sec",
+    ).use { statement ->
+        statement.setString(1, accountIdentityDigest)
+        statement.setString(2, feed.name)
+        statement.executeQuery().use { resultSet ->
+            buildList {
+                while (resultSet.next()) {
+                    add(
+                        HistorySyncCoverageWindow(
+                            startSec = resultSet.getLong("start_sec"),
+                            endSec = resultSet.getLong("end_sec"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
 
     override suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity> =
         withContext(Dispatchers.IO) {
@@ -1404,6 +1439,18 @@ class SqliteHistoryStore(
             statement.setString(5, request.feed.name)
             check(statement.executeUpdate() == 1) { "History sync window disappeared before page commit." }
         }
+        if (state == HistorySyncState.COMPLETE) {
+            // A finished window is verified coverage; the union with earlier windows is kept durable
+            // so a rolling refresh never makes an already covered period look unsynchronized.
+            mergeCoverageSegment(
+                connection = connection,
+                accountIdentityDigest = request.accountIdentityDigest,
+                feed = request.feed,
+                startSec = request.startSec,
+                endSec = request.endSec,
+                updatedAtNs = request.committedAt.toEpochNanos(),
+            )
+        }
         persistJobProgress(
             connection = connection,
             accountIdentityDigest = request.accountIdentityDigest,
@@ -1935,18 +1982,21 @@ class SqliteHistoryStore(
                 }
             }
         }
-        // A backfill keeps its frozen window across API-key clamping; it only completes when the
-        // whole frozen window was fetchable, so a later unrestricted key can resume older history.
+        // A backfill keeps its frozen window across API-key clamping. A scan that started later than
+        // the frozen window imported the permitted part of it, so the job completes for that range
+        // instead of replaying an already imported range; a wider key reopens the window.
         val backfill = purpose == HistorySyncPurpose.BACKFILL
-        val effectiveStart = if (backfill) existing?.first ?: windowStartSec else windowStartSec
-        val effectiveEnd = if (backfill) existing?.second ?: windowEndSec else windowEndSec
-        val coversFrozen = !backfill || (
-            windowStartSec != null && windowEndSec != null &&
-                effectiveStart != null && effectiveEnd != null &&
-                windowStartSec <= effectiveStart && windowEndSec >= effectiveEnd
-            )
-        val effectiveState =
-            if (state == HistorySyncJobState.COMPLETE && !coversFrozen) HistorySyncJobState.RUNNING else state
+        val frozenStart = if (backfill) existing?.first ?: windowStartSec else windowStartSec
+        val frozenEnd = if (backfill) existing?.second ?: windowEndSec else windowEndSec
+        val coversFrozenStart = windowStartSec == null || frozenStart == null || windowStartSec <= frozenStart
+        val coversFrozenEnd = windowEndSec == null || frozenEnd == null || windowEndSec >= frozenEnd
+        val effectiveStart = if (backfill && !coversFrozenStart) windowStartSec else frozenStart
+        val effectiveEnd = if (backfill && !coversFrozenEnd) windowEndSec else frozenEnd
+        val effectiveState = if (state == HistorySyncJobState.COMPLETE && !coversFrozenEnd) {
+            HistorySyncJobState.RUNNING
+        } else {
+            state
+        }
         val effectiveCompleted = when {
             !backfill -> completedThroughSec
             effectiveState != HistorySyncJobState.COMPLETE -> existing?.third
@@ -1980,6 +2030,58 @@ class SqliteHistoryStore(
             statement.setString(9, lastError)
             setInstant(statement, 10, lastSuccessAt)
             statement.setLong(11, updatedAt.toEpochNanos())
+            statement.executeUpdate()
+        }
+    }
+
+    /**
+     * Merges one verified interval into the durable coverage of a feed. Overlapping and adjacent
+     * intervals collapse into one segment, so the stored union stays small and gap free.
+     */
+    private fun mergeCoverageSegment(
+        connection: Connection,
+        accountIdentityDigest: String,
+        feed: HistoryFeed,
+        startSec: Long,
+        endSec: Long,
+        updatedAtNs: Long,
+    ) {
+        val overlapping = mutableListOf<LongRange>()
+        connection.prepareStatement(
+            "SELECT start_sec, end_sec FROM history_sync_coverage WHERE account_identity_digest = ? " +
+                "AND feed = ? AND end_sec >= ? AND start_sec <= ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed.name)
+            statement.setLong(3, startSec - 1)
+            statement.setLong(4, endSec + 1)
+            statement.executeQuery().use { resultSet ->
+                while (resultSet.next()) {
+                    overlapping += resultSet.getLong("start_sec")..resultSet.getLong("end_sec")
+                }
+            }
+        }
+        val mergedStart = minOf(startSec, overlapping.minOfOrNull { it.first } ?: startSec)
+        val mergedEnd = maxOf(endSec, overlapping.maxOfOrNull { it.last } ?: endSec)
+        connection.prepareStatement(
+            "DELETE FROM history_sync_coverage WHERE account_identity_digest = ? AND feed = ? " +
+                "AND end_sec >= ? AND start_sec <= ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed.name)
+            statement.setLong(3, mergedStart - 1)
+            statement.setLong(4, mergedEnd + 1)
+            statement.executeUpdate()
+        }
+        connection.prepareStatement(
+            "INSERT INTO history_sync_coverage(account_identity_digest, feed, start_sec, end_sec, updated_at_ns) " +
+                "VALUES (?, ?, ?, ?, ?)",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed.name)
+            statement.setLong(3, mergedStart)
+            statement.setLong(4, mergedEnd)
+            statement.setLong(5, updatedAtNs)
             statement.executeUpdate()
         }
     }

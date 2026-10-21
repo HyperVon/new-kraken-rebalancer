@@ -14,7 +14,6 @@ import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceScope
-import com.gemini.krakenbot.service.history.HistorySyncJobState
 import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
 import com.gemini.krakenbot.service.history.HistoryTrade
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -194,10 +193,7 @@ class HistoryReportingService(
 
     suspend fun allocationDeviation(period: HistoryReportingPeriod, targets: List<Allocation>): AllocationDeviation {
         val label = ViewText.HISTORY_ALLOCATION_DEVIATION
-        val targetsUsed = LinkedHashMap<String, BigDecimal>()
-        for (allocation in targets) {
-            targetsUsed[allocation.symbol.value] = BigDecimal.valueOf(allocation.targetPercent)
-        }
+        val targetsUsed = targetPercentsBySymbol(targets)
         if (targetsUsed.isEmpty()) {
             return AllocationDeviation(label, targetsUsed, emptyMap(), null, false, ViewText.HISTORY_REPORT_UNAVAILABLE)
         }
@@ -377,7 +373,8 @@ class HistoryReportingService(
 
     /**
      * A feed covers the requested interval only when its durable progress proves the interval was
-     * scanned. The recent scan covers the last day; the older backfill covers everything before it.
+     * scanned. The coverage is the union of every successfully scanned window, so a rolling refresh
+     * never makes an already covered period look unsynchronized.
      */
     private fun coversPeriod(progress: HistorySyncProgressSummary?, period: HistoryReportingPeriod): Boolean {
         if (progress == null) return false
@@ -391,13 +388,7 @@ class HistoryReportingService(
 
     /** Merged intervals of the requested feed that durable progress proves were scanned. */
     private fun coveredSegments(progress: HistorySyncProgressSummary): List<LongRange> {
-        val raw = mutableListOf<LongRange>()
-        if (progress.backfillState == HistorySyncJobState.COMPLETE) {
-            progress.backfillCompletedThroughSec?.let { raw += 0L..it }
-        }
-        val recentFrom = progress.recentWindowStartSec
-        val recentThrough = progress.recentCompletedThroughSec
-        if (recentFrom != null && recentThrough != null) raw += recentFrom..recentThrough
+        val raw = progress.coveredWindows.map { window -> window.startSec..window.endSec }
         if (raw.isEmpty()) return emptyList()
         val merged = mutableListOf<LongRange>()
         for (segment in raw.sortedBy { it.first }) {

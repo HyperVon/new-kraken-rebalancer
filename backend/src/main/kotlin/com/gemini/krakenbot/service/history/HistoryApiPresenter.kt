@@ -1,9 +1,12 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.reporting.HistoryReportingPeriod
 import com.gemini.krakenbot.service.reporting.HistoryReportingService
+import com.gemini.krakenbot.service.reporting.targetPercentsBySymbol
 import com.gemini.krakenbot.view.util.ViewText
+import java.math.BigDecimal
 import java.time.DateTimeException
 import java.time.Instant
 import java.time.LocalDate
@@ -17,6 +20,22 @@ const val HISTORY_API_DEFAULT_ACTIVITY_LIMIT = 50
 private const val DEFAULT_PRESET_KEY = "30d"
 private const val EPOCH_SECONDS_PATTERN = "-?\\d{1,18}"
 private const val CURSOR_SEPARATOR = "\n"
+
+/** Ledger families that carry owner capital in and out of the account. */
+private val FUNDING_LEDGER_TYPES = listOf(
+    KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+    KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+)
+
+/** Ledger families that can pay a reward; the row filter still decides which rows count. */
+private val REWARD_LEDGER_TYPES = listOf(
+    KrakenApiConstants.LEDGER_TYPE_STAKING,
+    KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+    KrakenApiConstants.LEDGER_TYPE_EARN,
+    KrakenApiConstants.LEDGER_TYPE_REWARD,
+    KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+)
+
 private val OBSERVATION_CHART_SELECTIONS = setOf(
     HistoryChartSelection.PORTFOLIO,
     HistoryChartSelection.HOLDINGS,
@@ -39,6 +58,7 @@ class HistoryApiPresenter(
         selectionParam: String?,
         scopeId: String?,
         maxPoints: Int?,
+        targetAllocations: List<Allocation> = emptyList(),
     ): HistoryApiChartsResponse {
         val startedNanos = System.nanoTime()
         val window = resolveWindow(params, nowProvider())
@@ -55,7 +75,7 @@ class HistoryApiPresenter(
         val intervalTotal = historyService.queryValues(
             HistoryRangeQuery(from = window.from, until = window.until, sourceScope = scope, limit = 1),
         ).total ?: observations.size.toLong()
-        val series = buildSeries(selection, scope, window, observations, pointCap)
+        val series = buildSeries(selection, scope, window, observations, pointCap, targetAllocations)
         val pointCount = series.maxOfOrNull { it.points.size } ?: 0
         return HistoryApiChartsResponse(
             range = window.rangeDto(),
@@ -69,6 +89,7 @@ class HistoryApiPresenter(
                 totalObservations = intervalTotal,
                 representative = selection in OBSERVATION_CHART_SELECTIONS &&
                     observations.size.toLong() < intervalTotal,
+                baselineFromIso = window.baselineFrom?.toString(),
             ),
             generationMs = elapsedMs(startedNanos),
             scopeSelection = if (scopeId.isNullOrBlank()) {
@@ -110,9 +131,11 @@ class HistoryApiPresenter(
                 HistoryRangeQuery(from = window.from, until = window.until, sourceScope = scope, limit = 1),
             ).total ?: observations.getValue(scope.sourceKey).size.toLong()
         }
-        val boundaries = recordedScopeBoundaries(scopeDtos, window)
+        val episodes = recordedEpisodes(observations)
+        val conflicts = recordedConflictInstants(observations)
+        val boundaries = recordedScopeBoundaries(episodes, conflicts, window)
         val series = scopeDtos.map { scope ->
-            recordedPortfolioSeries(scope, observations.getValue(scope.id), boundaries)
+            recordedPortfolioSeries(scope, episodes, conflicts)
         }
         val incompleteCount = coverages.values.sumOf { it.incompleteCount }
         val firstRecordedAt = coverages.values.mapNotNull { it.firstRecordedAt }.minOrNull()
@@ -325,7 +348,22 @@ class HistoryApiPresenter(
             from = from,
             until = until,
             now = now,
+            baselineFrom = resolveBaselineFrom(params, resolved.from, until),
         )
+    }
+
+    /**
+     * Cumulative series are measured from the start of the selected period. A viewport request may
+     * pin that baseline explicitly, so zooming keeps the selected period's running total instead
+     * of restarting the accumulation inside the zoom.
+     */
+    private fun resolveBaselineFrom(params: HistoryApiRangeParams, selectedFrom: Instant?, until: Instant): Instant? {
+        val requested = params.baselineFrom?.trim()?.takeIf(String::isNotEmpty)
+            ?.let { parseInstant(it, UTC_ZONE) }
+        val baseline = requested ?: selectedFrom
+        if (baseline == null) return null
+        if (!baseline.isBefore(until)) return selectedFrom
+        return baseline
     }
 
     private fun resolveWindowAtCutoff(params: HistoryApiRangeParams): HistoryApiWindow {
@@ -392,6 +430,7 @@ class HistoryApiPresenter(
             ledgersLastIso = ledgers.second?.toString(),
             incomplete = gapCount > 0 || values.firstRecordedAt == null,
             gapCount = gapCount,
+            apiKeyHistoryFromIso = syncCoordinator.apiKeyHistoryFrom()?.toString(),
         )
     }
 
@@ -425,26 +464,44 @@ class HistoryApiPresenter(
         window: HistoryApiWindow,
         observations: List<HistoryObservation>,
         maxPoints: Int,
+        targetAllocations: List<Allocation>,
     ): List<HistoryApiSeries> = when (selection) {
         HistoryChartSelection.PORTFOLIO -> portfolioSeries(observations)
+
         HistoryChartSelection.HOLDINGS -> holdingsSeries(observations)
-        HistoryChartSelection.ALLOCATION -> allocationSeries(observations)
-        HistoryChartSelection.DEPOSITS -> ledgerSeries(scope, window, maxPoints, rewardsOnly = false)
-        HistoryChartSelection.REWARDS -> ledgerSeries(scope, window, maxPoints, rewardsOnly = true)
+
+        HistoryChartSelection.ALLOCATION -> allocationSeries(
+            observations,
+            targetPercentsBySymbol(targetAllocations),
+        )
+
+        HistoryChartSelection.DEPOSITS -> ledgerSeries(scope, window, rewardsOnly = false)
+
+        HistoryChartSelection.REWARDS -> ledgerSeries(scope, window, rewardsOnly = true)
+
         HistoryChartSelection.CHECKPOINTS -> checkpointSeries(scope, window, maxPoints)
     }
 
+    /**
+     * Cumulative native quantities for one analysis. The whole selected period is read so the
+     * running total starts at the selected period's baseline, and withdrawals carry a negative
+     * amount so net funding falls when capital leaves the account.
+     */
     private suspend fun ledgerSeries(
         scope: HistorySourceScope,
         window: HistoryApiWindow,
-        maxPoints: Int,
         rewardsOnly: Boolean,
     ): List<HistoryApiSeries> {
         val digest = scope.accountIdentityDigest ?: return emptyList()
-        val rows = fetchLedgerRows(digest, window, maxPoints) { row ->
-            if (rewardsOnly) row.isRewardRow() else row.isDepositRow()
-        }
-        return ledgerQuantitySeries(rows)
+        val types = if (rewardsOnly) REWARD_LEDGER_TYPES else FUNDING_LEDGER_TYPES
+        val rows = fetchLedgerRows(digest, window, types)
+        val relevant = if (rewardsOnly) rows.filter { it.isRewardRow() } else rows.filter { it.isFundingRow() }
+        return ledgerQuantitySeries(
+            rows = relevant,
+            signedAmountOf = if (rewardsOnly) ::rewardAmountOf else ::fundingAmountOf,
+            from = window.from,
+            until = window.until,
+        )
     }
 
     private suspend fun checkpointSeries(
@@ -457,29 +514,36 @@ class HistoryApiPresenter(
         return checkpointQuantitySeries(rows)
     }
 
+    /**
+     * Every ledger row of the requested types inside the selected period. The whole period is read
+     * because a cumulative curve needs every event, not only the newest page.
+     */
     private suspend fun fetchLedgerRows(
         digest: String,
         window: HistoryApiWindow,
-        maxPoints: Int,
-        include: (HistoryLedger) -> Boolean,
+        types: List<String>,
     ): List<HistoryLedger> {
-        val rows = mutableListOf<HistoryLedger>()
-        var offset = 0
-        while (rows.size < maxPoints) {
-            val page = historyService.queryLedgers(
-                HistoryEventQuery(
-                    from = window.from,
-                    until = window.until,
-                    accountIdentityDigest = digest,
-                    limit = HISTORY_MAX_PAGE_LIMIT,
-                    offset = offset,
-                ),
-            )
-            rows += page.items.filter(include)
-            if (!page.hasMore || page.items.isEmpty()) break
-            offset += page.items.size
+        val rows = linkedMapOf<String, HistoryLedger>()
+        val from = window.baselineFrom ?: window.from
+        types.forEach { type ->
+            var offset = 0
+            while (true) {
+                val page = historyService.queryLedgers(
+                    HistoryEventQuery(
+                        from = from,
+                        until = window.until,
+                        accountIdentityDigest = digest,
+                        type = type,
+                        limit = HISTORY_MAX_PAGE_LIMIT,
+                        offset = offset,
+                    ),
+                )
+                page.items.forEach { row -> rows.putIfAbsent(row.ledgerId, row) }
+                if (!page.hasMore || page.items.isEmpty()) break
+                offset += page.items.size
+            }
         }
-        return rows.take(maxPoints)
+        return rows.values.toList()
     }
 
     private suspend fun fetchCheckpointRows(
@@ -568,6 +632,8 @@ class HistoryApiPresenter(
         repairLastRunAtIso = progress.repairLastRunAt?.toString(),
         lastError = progress.lastError,
         nextRetryAtIso = progress.nextRetryAt?.toString(),
+        coveredFromIso = progress.coveredWindows.minOfOrNull { it.startSec }?.let(::instantFromSec),
+        coveredToIso = progress.coveredWindows.maxOfOrNull { it.endSec }?.let(::instantFromSec),
     )
 }
 
@@ -631,6 +697,8 @@ private fun parseInstant(raw: String, zone: ZoneId, inclusiveDate: Boolean = fal
 }
 
 private val DATE_ONLY_PATTERN = Regex("\\d{4}-\\d{2}-\\d{2}")
+
+private val UTC_ZONE: ZoneId = ZoneId.of("UTC")
 
 private fun maxOfNullable(first: Instant?, second: Instant?): Instant? = when {
     first == null -> second

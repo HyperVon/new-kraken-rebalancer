@@ -149,6 +149,86 @@ class HistoryChartRefreshTest : StringSpec() {
             }
         }
 
+        "a refreshed chart keeps measuring its cumulative series from the reported baseline" {
+            val wrapper: HTMLElement = document.createElement("div") as HTMLElement
+            val ids = listOf("history-cash-flow-chart")
+            wrapper.innerHTML = """
+                <a data-history-range="30d"></a><a data-history-range="7d" href="/history?range=7d"></a>
+                <div id="history-range-custom-panel"></div><input id="history-range-custom-start">
+                <input id="history-range-custom-end"><span id="history-range-custom-tz"></span>
+                <p id="history-range-custom-error"></p><button id="history-range-custom-apply"></button>
+                <select id="history-scope-select"></select><div id="history-refresh-status"></div>
+            """.trimIndent() + ids.joinToString("") {
+                "<div id='$it'></div>"
+            }
+            document.body!!.appendChild(wrapper)
+            val sessions = ids.associateWith { chartRefreshSession(document.getElementById(it) as HTMLElement, it) }
+            val oldSetInterval = window.asDynamic().setInterval
+            val oldClearInterval = window.asDynamic().clearInterval
+            var tick: (() -> Unit)? = null
+            window.asDynamic().setInterval = { callback: () -> Unit, _: Int ->
+                tick = callback
+                1
+            }
+            window.asDynamic().clearInterval = { _: dynamic -> Unit }
+            val statuses = mutableListOf<(dynamic) -> Unit>()
+            val initial = mutableListOf<Pair<String, (dynamic) -> Unit>>()
+            val updates = mutableListOf<Pair<String, (dynamic) -> Unit>>()
+            try {
+                initHistoryRangeControls(
+                    currentQuery = "?range=30d",
+                    fetchJson = { url, success, _ -> initial += url to success },
+                    timezone = { "UTC" },
+                    pushState = {},
+                    navigate = {},
+                    statusRequest = { _, success, _ ->
+                        statuses += success;
+                        {}
+                    },
+                    panelRequest = { url, success, _ ->
+                        updates += url to success;
+                        {}
+                    },
+                )
+                val chartRequest = initial.first {
+                    it.first.startsWith("/api/history/charts?") && chartRefreshSelection(it.first) == "DEPOSITS"
+                }
+                chartRequest.second(
+                    json(
+                        "series" to arrayOf(chartRefreshSeries("ZUSD", "USD", 100.0)),
+                        "range" to
+                            json(
+                                "preset" to "30d",
+                                "fromIso" to "2026-03-01T00:00:00Z",
+                                "toIso" to "2026-03-30T00:00:00Z",
+                            ),
+                        "fullRange" to json(
+                            "fromIso" to "2026-03-01T00:00:00Z",
+                            "toIso" to "2026-03-30T00:00:00Z",
+                            "pointCount" to 1,
+                            "baselineFromIso" to "2026-03-01T00:00:00Z",
+                        ),
+                    ),
+                )
+
+                val runTick = tick ?: error("the refresh ticker was not registered")
+                statuses[0](json("dataRevision" to 1))
+                runTick()
+                statuses[1](json("dataRevision" to 2))
+
+                val refreshed = updates.first {
+                    it.first.startsWith("/api/history/charts?") && chartRefreshSelection(it.first) == "DEPOSITS"
+                }.first
+                refreshed.contains("baselineFrom=2026-03-01T00%3A00%3A00Z") shouldBe true
+            } finally {
+                disposeHistoryAutoRefresh()
+                wrapper.remove()
+                disposeDetachedHistoryCharts()
+                window.asDynamic().setInterval = oldSetInterval
+                window.asDynamic().clearInterval = oldClearInterval
+            }
+        }
+
         "automatic portfolio scopes remain separate with null conflicts and latest bounds advance only unpinned" {
             val root = chartRefreshRoot("history-value-chart")
             val session = chartRefreshSession(root, root.id)

@@ -21,6 +21,7 @@ import com.gemini.krakenbot.service.history.HistorySyncStatus
 import com.gemini.krakenbot.service.history.HistoryTrade
 import com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics
 import com.gemini.krakenbot.service.reporting.NativeQuantitySeries
+import com.gemini.krakenbot.service.reporting.allocationDeviationPercent
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CdnIntegrity
@@ -2035,14 +2036,9 @@ internal fun allocationDeviationSeries(
     return symbols.map { symbol ->
         val target = targets[symbol] ?: BigDecimal.ZERO
         symbol to ordered.mapNotNull { observation ->
-            if (observation.status != HistoryObservationStatus.COMPLETE) return@mapNotNull null
-            val total = observation.totalUsd ?: return@mapNotNull null
-            if (total.signum() <= 0) return@mapNotNull null
-            val value = observation.assets.firstOrNull { it.symbol == symbol }?.valueUsd ?: BigDecimal.ZERO
-            val actualShare = value
-                .multiply(BigDecimal(PrecisionConstants.HUNDRED_INT))
-                .divide(total, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
-            HistorySeriesPoint(observation.observedAt, actualShare.subtract(target))
+            allocationDeviationPercent(observation, symbol, target)?.let { deviation ->
+                HistorySeriesPoint(observation.observedAt, deviation)
+            }
         }
     }
 }

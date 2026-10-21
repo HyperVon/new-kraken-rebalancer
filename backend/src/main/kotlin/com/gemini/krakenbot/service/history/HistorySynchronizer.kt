@@ -258,8 +258,20 @@ class HistorySynchronizer(
     }
 
     /** Digest of the currently authenticated, bound account, or null when verification fails. */
-    suspend fun accountIdentityDigest(): String? = try {
-        configService.withExecutionSession { authenticatedAccount().digest }
+    suspend fun accountIdentityDigest(): String? = verifiedAccount()?.digest
+
+    /**
+     * The authenticated account and the query bounds its API key permits. The bounds decide which
+     * history the key can reach at all, so a restricted key must not be asked for older records.
+     */
+    suspend fun verifiedAccount(): VerifiedHistoryAccount? = try {
+        configService.withExecutionSession { authenticatedAccount() }.let { identity ->
+            VerifiedHistoryAccount(
+                digest = identity.digest,
+                queryFromSec = identity.queryFromSec,
+                queryToSec = identity.queryToSec,
+            )
+        }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {

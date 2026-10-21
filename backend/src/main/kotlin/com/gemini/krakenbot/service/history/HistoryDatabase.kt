@@ -15,6 +15,12 @@ import java.util.UUID
 class HistoryDatabase private constructor(private val jdbcUrl: String, private val filePath: Path?) : AutoCloseable {
     constructor(databasePath: Path) : this("jdbc:sqlite:${databasePath.toAbsolutePath()}", databasePath)
 
+    /** One upgrade step per supported source version; applied in order until the current version. */
+    private val migrations = mapOf<Int, (Connection) -> Unit>(
+        2 to ::migrateV2ToV3,
+        3 to ::migrateV3ToV4,
+    )
+
     private val inMemoryKeepalive: Connection? = if (filePath == null) openRawConnection() else null
 
     /** Called only by the explicit data-initialization command or in-memory tests. */
@@ -82,33 +88,32 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
 
     /**
      * Brings the open connection to [HISTORY_SCHEMA_VERSION] in its current transaction.
-     * Older supported versions upgrade in place; newer or unknown versions fail closed.
+     * Older supported versions upgrade in place, one step at a time; newer or unknown versions
+     * fail closed.
      */
     private fun ensureCurrentSchema(connection: Connection) {
-        val version = connection.createStatement().use { statement ->
-            statement.executeQuery(
-                "SELECT schema_version FROM history_schema_meta WHERE id = 1",
-            ).use { resultSet ->
-                check(resultSet.next()) { "History schema marker is incomplete." }
-                resultSet.getInt(1)
-            }
+        var version = readSchemaVersion(connection)
+        while (version < HISTORY_SCHEMA_VERSION) {
+            migrateSchema(connection, version)
+            version += 1
         }
-        when (version) {
-            HISTORY_SCHEMA_VERSION -> return
+        if (version > HISTORY_SCHEMA_VERSION) {
+            throw IllegalStateException(
+                "History database has a newer schema version $version; expected $HISTORY_SCHEMA_VERSION.",
+            )
+        }
+    }
 
-            HISTORY_SCHEMA_VERSION - 1 -> migrateSchema(connection, version)
-
-            else -> {
-                val direction = if (version > HISTORY_SCHEMA_VERSION) "newer" else "unsupported"
-                throw IllegalStateException(
-                    "History database has a $direction schema version $version; expected $HISTORY_SCHEMA_VERSION.",
-                )
-            }
+    private fun readSchemaVersion(connection: Connection): Int = connection.createStatement().use { statement ->
+        statement.executeQuery(
+            "SELECT schema_version FROM history_schema_meta WHERE id = 1",
+        ).use { resultSet ->
+            check(resultSet.next()) { "History schema marker is incomplete." }
+            resultSet.getInt(1)
         }
     }
 
     private fun migrateSchema(connection: Connection, fromVersion: Int) {
-        val migrations = mapOf<Int, (Connection) -> Unit>(2 to ::migrateV2ToV3)
         val migration = migrations[fromVersion]
             ?: throw IllegalStateException("No History schema migration is available from version $fromVersion.")
         try {
@@ -119,8 +124,95 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         connection.prepareStatement(
             "UPDATE history_schema_meta SET schema_version = ? WHERE id = 1",
         ).use { statement ->
-            statement.setInt(1, HISTORY_SCHEMA_VERSION)
+            statement.setInt(1, fromVersion + 1)
             check(statement.executeUpdate() == 1) { "History schema marker could not be updated." }
+        }
+    }
+
+    /**
+     * Version 3 to 4: durable verified coverage. The union of the scan windows the old schema
+     * already proved is carried over, so an upgraded database keeps the coverage it had earned.
+     */
+    private fun migrateV3ToV4(connection: Connection) {
+        connection.createStatement().use { statement ->
+            statement.executeUpdate(
+                "CREATE TABLE history_sync_coverage(" +
+                    "account_identity_digest TEXT NOT NULL, " +
+                    "feed TEXT NOT NULL CHECK(feed IN ('TRADES', 'LEDGERS')), " +
+                    "start_sec INTEGER NOT NULL, " +
+                    "end_sec INTEGER NOT NULL, " +
+                    "updated_at_ns INTEGER NOT NULL, " +
+                    "PRIMARY KEY(account_identity_digest, feed, start_sec))",
+            )
+        }
+        val windows = mutableListOf<Triple<String, String, LongRange>>()
+        connection.prepareStatement(
+            "SELECT account_identity_digest, feed, start_sec, end_sec FROM history_sync_windows " +
+                "WHERE state = 'COMPLETE'",
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                while (resultSet.next()) {
+                    windows += Triple(
+                        resultSet.getString("account_identity_digest"),
+                        resultSet.getString("feed"),
+                        resultSet.getLong("start_sec")..resultSet.getLong("end_sec"),
+                    )
+                }
+            }
+        }
+        windows.groupBy { it.first to it.second }.forEach { (key, group) ->
+            group.map { it.third }.forEach { range ->
+                mergeCoverageSegment(connection, key.first, key.second, range.first, range.last, 0L)
+            }
+        }
+    }
+
+    /** Merges one verified interval into the durable coverage of a feed. */
+    private fun mergeCoverageSegment(
+        connection: Connection,
+        accountIdentityDigest: String,
+        feed: String,
+        startSec: Long,
+        endSec: Long,
+        updatedAtNs: Long,
+    ) {
+        val overlapping = mutableListOf<LongRange>()
+        connection.prepareStatement(
+            "SELECT start_sec, end_sec FROM history_sync_coverage WHERE account_identity_digest = ? " +
+                "AND feed = ? AND end_sec >= ? AND start_sec <= ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed)
+            statement.setLong(3, startSec - 1)
+            statement.setLong(4, endSec + 1)
+            statement.executeQuery().use { resultSet ->
+                while (resultSet.next()) {
+                    overlapping += resultSet.getLong("start_sec")..resultSet.getLong("end_sec")
+                }
+            }
+        }
+        val mergedStart = minOf(startSec, overlapping.minOfOrNull { it.first } ?: startSec)
+        val mergedEnd = maxOf(endSec, overlapping.maxOfOrNull { it.last } ?: endSec)
+        connection.prepareStatement(
+            "DELETE FROM history_sync_coverage WHERE account_identity_digest = ? AND feed = ? " +
+                "AND end_sec >= ? AND start_sec <= ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed)
+            statement.setLong(3, mergedStart - 1)
+            statement.setLong(4, mergedEnd + 1)
+            statement.executeUpdate()
+        }
+        connection.prepareStatement(
+            "INSERT INTO history_sync_coverage(account_identity_digest, feed, start_sec, end_sec, updated_at_ns) " +
+                "VALUES (?, ?, ?, ?, ?)",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, feed)
+            statement.setLong(3, mergedStart)
+            statement.setLong(4, mergedEnd)
+            statement.setLong(5, updatedAtNs)
+            statement.executeUpdate()
         }
     }
 
@@ -564,6 +656,18 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
                 """.trimIndent(),
             )
             statement.execute("INSERT INTO history_data_revision(id, revision) VALUES (1, 1)")
+            statement.execute(
+                """
+                CREATE TABLE history_sync_coverage (
+                    account_identity_digest TEXT NOT NULL,
+                    feed TEXT NOT NULL CHECK(feed IN ('TRADES', 'LEDGERS')),
+                    start_sec INTEGER NOT NULL,
+                    end_sec INTEGER NOT NULL,
+                    updated_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY(account_identity_digest, feed, start_sec)
+                )
+                """.trimIndent(),
+            )
         }
         connection.prepareStatement(
             "INSERT INTO history_schema_meta(id, schema_version, initialized_at_ns) VALUES (1, ?, ?)",
@@ -575,7 +679,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
     }
 
     companion object {
-        private const val HISTORY_SCHEMA_VERSION = 3
+        private const val HISTORY_SCHEMA_VERSION = 4
         private val REQUIRED_TABLES = setOf(
             "history_schema_meta",
             "history_observations",
@@ -588,6 +692,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             "history_sync_windows",
             "history_sync_seen_cursors",
             "history_sync_jobs",
+            "history_sync_coverage",
             "history_data_revision",
             "history_daily_prices",
             "history_daily_values",
@@ -603,6 +708,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             "history_sync_windows",
             "history_sync_seen_cursors",
             "history_sync_jobs",
+            "history_sync_coverage",
             "history_daily_prices",
             "history_daily_values",
             "history_daily_assets",

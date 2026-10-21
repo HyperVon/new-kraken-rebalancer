@@ -362,9 +362,11 @@ profit or investment-return calculation.
 
 When the account has more than one recorded scope, the value chart presents every
 recorded scope as its own series, with the current scope marked **(current)**, and
-never sums them. An asset-set change or an overlapping scope lifespan is drawn as
-a gap, and values inside an overlap are withheld because two records of different
-asset sets are not one total. The axis always spans the full selected period, so a
+never sums them. Scopes are read chronologically: when the recorded scope
+changes, the line breaks between the two episodes and both scopes keep their own
+totals. Only two scopes observed at the very same instant are withheld as
+incompatible, because those two records cannot both be one total. The axis always
+spans the full selected period, so a
 period with only a few observations still reads against the range you selected. The
 recorded sources, their symbols, and their recording windows are listed on **Data
 status**.
@@ -384,7 +386,10 @@ the selected period and includes deposits, withdrawals, and market moves.
 **Range high** and **Range low** are calculated only from complete observations
 inside that period. Exchange-fill counts and bot-cycle counts are separate;
 trade volume and fees are grouped by their reported currency. Deposits,
-withdrawals, and rewards are shown in native asset units. The rewards chart lets
+withdrawals, and rewards are shown in native asset units. The funding chart is a
+running total that starts at the selected period's baseline: a deposit raises it
+and a withdrawal lowers it, and zooming keeps the baseline of the period you
+selected. The rewards chart lets
 you select an asset and never values old ledger events using a nearby cycle
 price. Missing or invalid amounts are marked unavailable or incomplete rather
 than presented as zero.

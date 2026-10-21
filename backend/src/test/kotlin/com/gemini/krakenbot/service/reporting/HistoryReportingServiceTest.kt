@@ -15,6 +15,7 @@ import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.history.HistorySyncCoverageWindow
 import com.gemini.krakenbot.service.history.HistorySyncJobState
 import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
 import com.gemini.krakenbot.service.history.HistoryTrade
@@ -80,6 +81,12 @@ class HistoryReportingServiceTest : StringSpec() {
             coEvery { historyService.syncProgress(any()) } returns listOf(
                 coveredProgress(HistoryFeed.TRADES).copy(
                     recentCompletedThroughSec = Instant.parse("2026-05-02T00:00:00Z").epochSecond,
+                    coveredWindows = listOf(
+                        HistorySyncCoverageWindow(
+                            startSec = Instant.parse("2026-05-01T00:00:00Z").epochSecond,
+                            endSec = Instant.parse("2026-05-02T00:00:00Z").epochSecond,
+                        ),
+                    ),
                 ),
             )
 
@@ -87,6 +94,21 @@ class HistoryReportingServiceTest : StringSpec() {
 
             stats.complete shouldBe false
             stats.incompleteReason shouldBe "Not synchronized for this period"
+        }
+
+        "durable coverage keeps a period synchronized after the recent horizon moved on" {
+            coEvery { historyService.queryTrades(any()) } returns page(emptyList())
+            coEvery { historyService.syncProgress(any()) } returns listOf(
+                coveredProgress(HistoryFeed.TRADES).copy(
+                    recentWindowStartSec = Instant.parse("2026-05-20T00:00:00Z").epochSecond,
+                    recentCompletedThroughSec = Instant.parse("2026-06-01T00:00:00Z").epochSecond,
+                ),
+            )
+
+            val stats = reporting.tradeStatistics(period)
+
+            stats.complete shouldBe true
+            stats.incompleteReason shouldBe null
         }
 
         "uncovered ledger aggregates are not an authoritative zero" {
@@ -710,5 +732,11 @@ class HistoryReportingServiceTest : StringSpec() {
         repairLastRunAt = null,
         lastError = null,
         nextRetryAt = null,
+        coveredWindows = listOf(
+            HistorySyncCoverageWindow(
+                startSec = Instant.parse("2026-05-01T00:00:00Z").epochSecond,
+                endSec = Instant.parse("2026-06-01T00:00:00Z").epochSecond,
+            ),
+        ),
     )
 }

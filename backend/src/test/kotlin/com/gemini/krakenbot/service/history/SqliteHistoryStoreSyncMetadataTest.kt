@@ -181,6 +181,43 @@ class SqliteHistoryStoreSyncMetadataTest : StringSpec() {
             }
         }
 
+        "successive completed scans accumulate durable coverage instead of replacing it" {
+            withStore { store, _ ->
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                listOf(0L to 1_000L, 1_000L to 2_000L, 2_000L to 3_000L).forEachIndexed { index, window ->
+                    store.beginSyncWindow(
+                        HistorySyncWindow(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.TRADES,
+                            scanId = "scan-$index",
+                            startSec = window.first,
+                            endSec = window.second,
+                            cursor = null,
+                            purpose = HistorySyncPurpose.RECENT,
+                        ),
+                    )
+                    store.commitTradePage(
+                        request = HistoryPageRequest(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.TRADES,
+                            scanId = "scan-$index",
+                            startSec = window.first,
+                            endSec = window.second,
+                            requestedCursor = null,
+                            committedAt = now.plusSeconds(index.toLong()),
+                        ),
+                        page = emptyTradePage(window.first, window.second, null, nextCursor = null),
+                    ).state shouldBe HistorySyncState.COMPLETE
+                }
+
+                store.querySyncCoverageWindows(accountDigest, HistoryFeed.TRADES) shouldBe listOf(
+                    HistorySyncCoverageWindow(startSec = 0L, endSec = 3_000L),
+                )
+                val progress = store.syncProgress(accountDigest).single { it.feed == HistoryFeed.TRADES }
+                progress.coveredWindows shouldBe listOf(HistorySyncCoverageWindow(startSec = 0L, endSec = 3_000L))
+            }
+        }
+
         "activity pages order newest first with stable pagination and round-trip outcomes" {
             withStore { store, _ ->
                 val base = Instant.ofEpochSecond(1_700_000_000)

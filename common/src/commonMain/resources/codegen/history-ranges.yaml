@@ -28,6 +28,7 @@ HistoryRangeQuery:
   PARAM_FROM: "from"
   PARAM_UNTIL: "until"
   PARAM_TO: "to"
+  PARAM_BASELINE_FROM: "baselineFrom"
   PARAM_TZ: "tz"
   PARAM_SCOPE: "scope"
   PARAM_SELECTION: "selection"

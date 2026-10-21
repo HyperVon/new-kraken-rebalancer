@@ -821,6 +821,7 @@ class DashboardController(
                         scopeId = params["scope"],
                         selectionParam = "portfolio",
                         maxPoints = null,
+                        targetAllocations = config.allocations,
                     )
                 } catch (_: HistoryApiRequestException) {
                     null
@@ -985,6 +986,7 @@ class DashboardController(
             from = params["from"],
             to = params["to"],
             tz = params["tz"],
+            baselineFrom = params["baselineFrom"],
         )
     }
 
@@ -1054,6 +1056,7 @@ class DashboardController(
                 selectionParam = query["selection"],
                 scopeId = query["scope"],
                 maxPoints = query["maxPoints"]?.toIntOrNull(),
+                targetAllocations = configService.getConfig().allocations,
             )
         }
     }
