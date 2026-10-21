@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.browserfixture
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HistoryActivityQuery
 import com.gemini.krakenbot.service.history.HistoryCycleOutcome
@@ -9,9 +11,20 @@ import com.gemini.krakenbot.service.history.HistorySourceMode
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.install
+import io.ktor.server.routing.routing
+import io.ktor.server.sse.SSE
+import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.nio.file.Files
 import java.time.Duration
 import java.time.Instant
@@ -21,6 +34,75 @@ class BrowserFixtureSeedTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "History page and 24-hour requests read successfully while a writer remains active" {
+            val fixture = BrowserFixtureEnvironment.create(CoroutineScope(SupervisorJob() + Dispatchers.Default))
+            try {
+                val revision = fixture.historyStore.currentDataRevision()
+                testApplication {
+                    application {
+                        install(SSE)
+                        configureSerialization()
+                        routing { fixture.controller.registerRoutes(this) }
+                    }
+                    startApplication()
+                    fixture.historyDatabase.connect().use { writer ->
+                        writer.autoCommit = false
+                        try {
+                            writer.createStatement().use {
+                                it.executeUpdate(
+                                    "UPDATE history_data_revision SET revision = revision + 1 WHERE id = 1",
+                                )
+                            }
+                            for (url in listOf("/history", "/history?range=24h")) {
+                                val response = client.get(url)
+                                response.status shouldBe HttpStatusCode.OK
+                                response.bodyAsText().contains("History") shouldBe true
+                            }
+                            coroutineScope {
+                                listOf("charts", "summary", "trades", "ledgers", "activities").map { endpoint ->
+                                    async {
+                                        val eventPage = endpoint == "trades" || endpoint == "ledgers"
+                                        val until = fixture.fixtureNow.plusSeconds(1)
+                                        val from = until.minusSeconds(24 * 60 * 60)
+                                        val response = client.get("/api/history/$endpoint") {
+                                            if (eventPage) {
+                                                parameter("from", from.toString())
+                                                parameter("until", until.toString())
+                                            } else {
+                                                parameter("preset", "24h")
+                                            }
+                                        }
+                                        response.status shouldBe HttpStatusCode.OK
+                                        val json = jacksonObjectMapper().readTree(response.bodyAsText())
+                                        if (eventPage) {
+                                            (json["items"].size() > 0) shouldBe true
+                                            json["items"].forEach { item ->
+                                                val time = Instant.parse(item["time"].asText())
+                                                (time >= from && time < until) shouldBe true
+                                            }
+                                        } else {
+                                            json["range"]["preset"].asText() shouldBe "24h"
+                                        }
+                                    }
+                                }.awaitAll()
+                            }
+                            fixture.historyStore.currentDataRevision() shouldBe revision
+                            writer.commit()
+                        } catch (error: Throwable) {
+                            writer.rollback()
+                            throw error
+                        }
+                    }
+                }
+                fixture.historyStore.currentDataRevision() shouldBe revision + 1
+                val query = HistoryEventQuery(accountIdentityDigest = fixture.accountScope.accountIdentityDigest)
+                fixture.historyStore.queryTrades(query).total shouldBe BROWSER_FIXTURE_EVENT_COUNT.toLong()
+                fixture.historyStore.queryLedgers(query).total shouldBe BROWSER_FIXTURE_EVENT_COUNT.toLong()
+            } finally {
+                fixture.close()
+            }
+        }
+
         "seeded account history covers 100 days, range edges, scopes, and event tables" {
             val fixture = BrowserFixtureEnvironment.create(CoroutineScope(SupervisorJob() + Dispatchers.Default))
             val tempDirectory = fixture.tempDirectory

@@ -42,6 +42,12 @@ credentials or stores.
 
 ## Product behavior to keep covered
 
+- The real History page, 24-hour page, and concurrent chart, summary, trade,
+  ledger, and bot-activity API requests succeed while a file-backed SQLite
+  writer holds an uncommitted update. The browser-fixture integration test
+  verifies committed-value visibility, subsequent writer commit, and preserved
+  event counts. Paginated reads retain a deferred snapshot; write transactions
+  still reserve the writer before reading.
 - Opening a current History database for reading does not reserve the writer
   lock. The database regression holds an uncommitted write, reads the last
   committed value through another database instance, then verifies the writer

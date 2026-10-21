@@ -267,8 +267,8 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         }
     }
 
-    // Reserve the writer before any transactional reads; deferred lock upgrades can fail
-    // immediately with SQLITE_BUSY when the trade, ledger, and cycle writers overlap.
+    // Reserve the writer before transactional writes; deferred lock upgrades can fail immediately
+    // when writers overlap. Read-only pagination explicitly uses a deferred snapshot instead.
     private fun openRawConnection(): Connection = DriverManager.getConnection(
         jdbcUrl,
         SQLiteConfig().apply { setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE) }.toProperties(),
