@@ -8,6 +8,8 @@ import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.sqlite.SQLiteConfig
+import org.sqlite.SQLiteConnection
 import java.math.BigDecimal
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -196,12 +198,12 @@ class SqliteHistoryStore(
 
     override suspend fun queryTrades(query: HistoryEventQuery): HistoryPage<HistoryTrade> =
         withContext(Dispatchers.IO) {
-            database.connect().use { connection -> connection.inTransaction { queryTrades(connection, query) } }
+            database.connect().use { connection -> connection.inReadTransaction { queryTrades(connection, query) } }
         }
 
     override suspend fun queryLedgers(query: HistoryEventQuery): HistoryPage<HistoryLedger> =
         withContext(Dispatchers.IO) {
-            database.connect().use { connection -> connection.inTransaction { queryLedgers(connection, query) } }
+            database.connect().use { connection -> connection.inReadTransaction { queryLedgers(connection, query) } }
         }
 
     override suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint> =
@@ -523,7 +525,7 @@ class SqliteHistoryStore(
     override suspend fun queryActivityPage(query: HistoryActivityQuery): HistoryPage<HistoryCycleActivity> =
         withContext(Dispatchers.IO) {
             database.connect().use { connection ->
-                connection.inTransaction {
+                connection.inReadTransaction {
                     val conditions = mutableListOf("source_key = ?")
                     val values = mutableListOf<Any?>(query.sourceScope.sourceKey)
                     query.from?.let {
@@ -2036,6 +2038,18 @@ class SqliteHistoryStore(
     )
 
     private fun <T> Connection.inTransaction(block: () -> T): T = transaction(block)
+
+    private fun <T> Connection.inReadTransaction(block: () -> T): T {
+        val config = unwrap(SQLiteConnection::class.java).connectionConfig
+        val originalMode = config.transactionMode
+        // Keep counts and page rows in one snapshot without reserving the writer lock.
+        config.transactionMode = SQLiteConfig.TransactionMode.DEFERRED
+        return try {
+            transaction(block)
+        } finally {
+            config.transactionMode = originalMode
+        }
+    }
 
     private fun <T> Connection.transaction(block: () -> T): T {
         val originalAutoCommit = autoCommit
