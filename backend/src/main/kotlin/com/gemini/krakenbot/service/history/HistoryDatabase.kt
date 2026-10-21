@@ -74,10 +74,14 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             throw IllegalStateException("History database is not initialized.")
         }
         try {
-            connection.autoCommit = false
-            ensureCurrentSchema(connection)
-            connection.commit()
-            connection.autoCommit = true
+            // Ordinary readers must not reserve SQLite's writer just to check the schema.
+            // An actual upgrade still reserves it and rechecks the version inside the transaction.
+            if (readSchemaVersion(connection) != HISTORY_SCHEMA_VERSION) {
+                connection.autoCommit = false
+                ensureCurrentSchema(connection)
+                connection.commit()
+                connection.autoCommit = true
+            }
             return connection
         } catch (error: Exception) {
             runCatching { connection.rollback() }

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.2] - 2026-10-21
+
+### Fixed
+
+- **History reader locking**: opening an already current History database no
+  longer reserves SQLite's writer lock for a schema check. History reads can
+  proceed alongside an active writer; actual schema upgrades remain transactional.
+
 ## [6.20.1] - 2026-10-21
 
 ### Fixed
