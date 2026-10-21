@@ -78,6 +78,10 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("webpack", ">=5.109.2 <6.0.0")
         resolution("diff", ">=9.0.0 <10.0.0")
         resolution("fast-uri", ">=4.1.5 <5.0.0")
+        // Dependabot #171-#173 — Windows path checks and editor-flag handling; patched in 2.14.2.
+        resolution("launch-editor", ">=2.14.2 <3.0.0")
+        // Dependabot #169-#170 — cross-origin credential-header filtering; patched in 1.16.1.
+        resolution("follow-redirects", ">=1.16.1 <2.0.0")
         resolution("qs", ">=6.16.0 <7.0.0")
         // Dependabot #143 — Engine.IO protocol revision mismatch DoS
         resolution("engine.io", ">=6.6.10 <7.0.0")
