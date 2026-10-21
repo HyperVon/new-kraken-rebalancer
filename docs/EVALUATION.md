@@ -42,6 +42,10 @@ credentials or stores.
 
 ## Product behavior to keep covered
 
+- Opening a current History database for reading does not reserve the writer
+  lock. The database regression holds an uncommitted write, reads the last
+  committed value through another database instance, then verifies the writer
+  can commit. Existing schema-upgrade and rollback checks remain in force.
 - A key-restricted backfill completes the permitted range without repeated
   downloads, preserves its intended end across pages and restarts, and imports
   missing history when either key bound widens. Coordinator regressions cover

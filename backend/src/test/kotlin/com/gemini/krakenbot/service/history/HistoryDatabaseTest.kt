@@ -45,6 +45,48 @@ class HistoryDatabaseTest : StringSpec() {
             }
         }
 
+        "opening a current History database for reading does not reserve the writer" {
+            withTempDirectory { dir ->
+                val path = dir.resolve("history.db")
+                HistoryDatabase(path).use { database ->
+                    database.initializeFreshSchema()
+                    database.connect().use { writer ->
+                        writer.autoCommit = false
+                        try {
+                            writer.createStatement().use {
+                                it.executeUpdate("UPDATE history_data_revision SET revision = 2 WHERE id = 1")
+                            }
+                            HistoryDatabase(path).use { readerDatabase ->
+                                readerDatabase.connect().use { reader ->
+                                    reader.autoCommit shouldBe true
+                                    reader.createStatement().use { statement ->
+                                        statement.executeQuery(
+                                            "SELECT revision FROM history_data_revision",
+                                        ).use { rows ->
+                                            rows.next() shouldBe true
+                                            rows.getInt(1) shouldBe 1
+                                        }
+                                    }
+                                }
+                            }
+                            writer.commit()
+                        } catch (error: Throwable) {
+                            writer.rollback()
+                            throw error
+                        }
+                    }
+                    database.connect().use { connection ->
+                        connection.createStatement().use { statement ->
+                            statement.executeQuery("SELECT revision FROM history_data_revision").use { rows ->
+                                rows.next() shouldBe true
+                                rows.getInt(1) shouldBe 2
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         "connect fails if database file does not exist" {
             withTempDirectory { dir ->
                 val dbPath = dir.resolve("non-existent.db")
