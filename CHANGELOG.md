@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.4] - 2026-10-21
+
+### Security
+
+- Raise the Kotlin/JS build-tool floors for `launch-editor` to 2.14.2 and
+  `follow-redirects` to 1.16.1 to address their open Dependabot advisories.
+
 ## [6.20.3] - 2026-10-21
 
 ### Fixed
