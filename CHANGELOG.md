@@ -26,7 +26,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pending recent refresh and resumes from its committed cursor.
 - **Key-restricted History**: the backfill window stays frozen at the earliest
   second the API key permits, reopens when the key widens, and no longer
-  replays the same permitted range endlessly.
+  replays the same permitted range endlessly. Upper date restrictions retain
+  the intended end separately from imported coverage, so widening or removing
+  that restriction imports the missing interval, including for previously
+  truncated completed jobs.
 - **Interrupted recent scans**: a failed recent scan resumes from its committed
   cursor inside its frozen window.
 - **Ledger asset names**: refreshed ledger rows show the canonical asset name

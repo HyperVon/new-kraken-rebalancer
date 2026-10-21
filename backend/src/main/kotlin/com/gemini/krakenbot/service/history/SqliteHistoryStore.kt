@@ -1964,7 +1964,7 @@ class SqliteHistoryStore(
         updatedAt: Instant,
     ) {
         val existing = connection.prepareStatement(
-            "SELECT window_start_sec, window_end_sec, completed_through_sec FROM history_sync_jobs " +
+            "SELECT window_start_sec, window_end_sec FROM history_sync_jobs " +
                 "WHERE account_identity_digest = ? AND feed = ? AND purpose = ?",
         ).use { statement ->
             statement.setString(1, accountIdentityDigest)
@@ -1974,34 +1974,20 @@ class SqliteHistoryStore(
                 if (!resultSet.next()) {
                     null
                 } else {
-                    Triple(
+                    Pair(
                         resultSet.getNullableLong("window_start_sec"),
                         resultSet.getNullableLong("window_end_sec"),
-                        resultSet.getNullableLong("completed_through_sec"),
                     )
                 }
             }
         }
-        // A backfill keeps its frozen window across API-key clamping. A scan that started later than
-        // the frozen window imported the permitted part of it, so the job completes for that range
-        // instead of replaying an already imported range; a wider key reopens the window.
+        // Keep the intended end separate from the successfully scanned end. A key-clamped scan
+        // completes its permitted range; the coordinator reopens it if the key later widens.
         val backfill = purpose == HistorySyncPurpose.BACKFILL
         val frozenStart = if (backfill) existing?.first ?: windowStartSec else windowStartSec
         val frozenEnd = if (backfill) existing?.second ?: windowEndSec else windowEndSec
         val coversFrozenStart = windowStartSec == null || frozenStart == null || windowStartSec <= frozenStart
-        val coversFrozenEnd = windowEndSec == null || frozenEnd == null || windowEndSec >= frozenEnd
         val effectiveStart = if (backfill && !coversFrozenStart) windowStartSec else frozenStart
-        val effectiveEnd = if (backfill && !coversFrozenEnd) windowEndSec else frozenEnd
-        val effectiveState = if (state == HistorySyncJobState.COMPLETE && !coversFrozenEnd) {
-            HistorySyncJobState.RUNNING
-        } else {
-            state
-        }
-        val effectiveCompleted = when {
-            !backfill -> completedThroughSec
-            effectiveState != HistorySyncJobState.COMPLETE -> existing?.third
-            else -> effectiveEnd
-        }
         connection.prepareStatement(
             "INSERT INTO history_sync_jobs(" +
                 "account_identity_digest, feed, purpose, state, window_start_sec, window_end_sec, cursor, " +
@@ -2022,11 +2008,11 @@ class SqliteHistoryStore(
             statement.setString(1, accountIdentityDigest)
             statement.setString(2, feed.name)
             statement.setString(3, purpose.name)
-            statement.setString(4, effectiveState.name)
+            statement.setString(4, state.name)
             statement.setNullableLong(5, effectiveStart)
-            statement.setNullableLong(6, effectiveEnd)
+            statement.setNullableLong(6, frozenEnd)
             statement.setString(7, cursor)
-            statement.setNullableLong(8, effectiveCompleted)
+            statement.setNullableLong(8, completedThroughSec)
             statement.setString(9, lastError)
             setInstant(statement, 10, lastSuccessAt)
             statement.setLong(11, updatedAt.toEpochNanos())

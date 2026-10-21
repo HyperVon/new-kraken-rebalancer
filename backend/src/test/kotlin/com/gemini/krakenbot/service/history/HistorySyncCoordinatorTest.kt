@@ -238,9 +238,76 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
-        "a backfill window the key truncates at its end stays retryable" {
+        for (legacyWindow in listOf(false, true)) {
+            "widening an upper key restriction imports missing history (legacy window: $legacyWindow)" {
+                withFixture { fixture ->
+                    val restrictedTo = fixture.clock.now.epochSecond - 30L * 86_400
+                    var upperBound: Long? = restrictedTo
+                    fixture.kraken.authenticatedAccountInfoFactory = { identity ->
+                        AuthenticatedAccountInfo(
+                            identity = identity,
+                            queryFromSec = null,
+                            queryToSec = upperBound,
+                            queryBoundsVerified = true,
+                        )
+                    }
+                    val oldTrade = tradeEntry("old").copy(time = Instant.ofEpochSecond(restrictedTo - 1))
+                    val missingTrade = tradeEntry("missing").copy(time = Instant.ofEpochSecond(restrictedTo + 86_400))
+                    val calls = mutableListOf<LongRange>()
+                    fixture.kraken.tradePageSupplier = { start, end, cursor, _ ->
+                        val range = checkNotNull(start)..checkNotNull(end)
+                        calls += range
+                        val entries = listOf(oldTrade, missingTrade).filter { it.time!!.epochSecond in range }
+                        ExchangeHistoryPage(
+                            entries = entries,
+                            startSec = start,
+                            endSec = end,
+                            requestedCursor = cursor,
+                            nextCursor = null,
+                            count = entries.size.toLong(),
+                            rawSize = entries.size,
+                            valid = true,
+                        )
+                    }
+
+                    fixture.coordinator.runCoalescedPass()
+
+                    val backfill = fixture.backfillJob()
+                    backfill.state shouldBe HistorySyncJobState.COMPLETE
+                    backfill.windowEndSec shouldBe fixture.backfillEndSec
+                    backfill.completedThroughSec shouldBe restrictedTo
+                    backfill.lastError shouldBe null
+                    backfill.nextRetryAt shouldBe null
+                    fixture.tradeCount() shouldBe 1
+                    val restrictedCalls = calls.size
+                    fixture.clock.advance(Duration.ofMinutes(2))
+                    fixture.restartCoordinator().runCoalescedPass()
+                    calls.size shouldBe restrictedCalls
+
+                    if (legacyWindow) {
+                        fixture.store.upsertSyncJob(backfill.copy(windowEndSec = restrictedTo))
+                    }
+                    upperBound = null
+                    fixture.restartCoordinator().runCoalescedPass()
+
+                    fixture.tradeCount() shouldBe 2
+                    val bridgeEnd = fixture.clock.now.epochSecond - HistorySyncCoordinator.RECENT_FIRST_WINDOW_SECONDS
+                    fixture.backfillJob().completedThroughSec shouldBe bridgeEnd
+                    fixture.backfillJob().state shouldBe HistorySyncJobState.COMPLETE
+                    fixture.store.querySyncCoverageWindows(fixture.digest, HistoryFeed.TRADES).any {
+                        it.startSec <= 0L && it.endSec >= fixture.backfillEndSec
+                    } shouldBe true
+                    val backfillCalls = calls.count { it.first == 0L }
+                    fixture.clock.advance(Duration.ofMinutes(2))
+                    fixture.restartCoordinator().runCoalescedPass()
+                    calls.count { it.first == 0L } shouldBe backfillCalls
+                }
+            }
+        }
+
+        "a multipage upper-restricted backfill retains its intended end for both feeds" {
             withFixture { fixture ->
-                val restrictedTo = fixture.clock.now.epochSecond - 2L * 86_400
+                val restrictedTo = fixture.clock.now.epochSecond - 30L * 86_400
                 fixture.kraken.authenticatedAccountInfoFactory = { identity ->
                     AuthenticatedAccountInfo(
                         identity = identity,
@@ -249,19 +316,28 @@ class HistorySyncCoordinatorTest : StringSpec() {
                         queryBoundsVerified = true,
                     )
                 }
-                fixture.tradesScript()
+                val trades = fixture.tradesScript()
+                trades.onPage(0L, null, "T1", nextCursor = "C1")
+                trades.onPage(0L, "C1", "T2", nextCursor = null)
+                val ledgers = fixture.ledgersScript()
+                ledgers.onPage(0L, null, "L1", nextCursor = "C1")
+                ledgers.onPage(0L, "C1", "L2", nextCursor = null)
 
                 fixture.coordinator.runCoalescedPass()
 
-                val backfill = fixture.backfillJob()
-                backfill.state shouldBe HistorySyncJobState.FAILED
-                // The scan only reached the key's permitted end, so the window never completed.
-                backfill.windowEndSec shouldBe restrictedTo
-                backfill.completedThroughSec shouldBe null
-                backfill.lastError shouldBe HistorySyncErrors.API_KEY_WINDOW_PARTIAL
-                // A failed window keeps a retry time and is not blocked, so it runs again.
-                backfill.nextRetryAt shouldNotBe null
-                backfill.state shouldNotBe HistorySyncJobState.BLOCKED
+                HistoryFeed.entries.forEach { feed ->
+                    val job = fixture.backfillJob(feed)
+                    job.state shouldBe HistorySyncJobState.COMPLETE
+                    job.windowEndSec shouldBe fixture.backfillEndSec
+                    job.completedThroughSec shouldBe restrictedTo
+                    job.cursor shouldBe null
+                }
+                fixture.tradeCount() shouldBe 2
+                fixture.ledgerCount() shouldBe 2
+                fixture.clock.advance(Duration.ofMinutes(2))
+                fixture.restartCoordinator().runCoalescedPass()
+                trades.calls.size shouldBe 2
+                ledgers.calls.size shouldBe 2
             }
         }
 

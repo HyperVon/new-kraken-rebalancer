@@ -42,6 +42,10 @@ credentials or stores.
 
 ## Product behavior to keep covered
 
+- A key-restricted backfill completes the permitted range without repeated
+  downloads, preserves its intended end across pages and restarts, and imports
+  missing history when either key bound widens. Coordinator regressions cover
+  upper-bound removal and recovery of previously truncated completed jobs.
 - A cycle keeps the configured USD percentage fixed and recalculates its dollar
   target from the current portfolio total. Retired ATH/drawdown fields do not
   change the plan.

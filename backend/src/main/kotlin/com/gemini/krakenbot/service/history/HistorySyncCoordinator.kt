@@ -184,7 +184,7 @@ class HistorySyncCoordinator(
         clearFailure(ACCOUNT_KEY)
         accountHistoryFromSec = account.queryFromSec
 
-        ensureBackfillWindow(digest, store.loadSyncJobs(digest), now, account.permittedStartSec())
+        ensureBackfillWindow(digest, store.loadSyncJobs(digest), now, account)
         refreshPending.set(false)
 
         val feeds = when (trigger) {
@@ -209,15 +209,16 @@ class HistorySyncCoordinator(
     /**
      * Freezes the backfill window from the permitted beginning through the first recent scan's
      * start. An existing job keeps its frozen window and committed cursor; it is never restarted to
-     * service a recent refresh. When the API key later permits older history, the frozen window is
-     * widened so the newly permitted range is imported.
+     * service a recent refresh. Widened key bounds reopen the newly permitted range without
+     * replaying an unchanged, successfully imported permitted window.
      */
     private suspend fun ensureBackfillWindow(
         digest: String,
         jobs: List<HistorySyncJob>,
         now: Instant,
-        permittedStartSec: Long,
+        account: VerifiedHistoryAccount,
     ) {
+        val permittedStartSec = account.permittedStartSec()
         HistoryFeed.entries.forEach { feed ->
             val existing = jobs.firstOrNull { it.feed == feed && it.purpose == HistorySyncPurpose.BACKFILL }
             if (existing == null) {
@@ -237,15 +238,26 @@ class HistorySyncCoordinator(
                         updatedAt = now,
                     ),
                 )
-            } else if (
-                existing.state == HistorySyncJobState.COMPLETE &&
-                existing.windowStartSec != null && permittedStartSec < existing.windowStartSec
-            ) {
-                // The key now permits older history: reopen the frozen window for that range.
+            } else if (existing.state == HistorySyncJobState.COMPLETE) {
+                val frozenEnd = existing.windowEndSec ?: return@forEach
+                val bridgeEnd = recentScanStartForFeed(jobs, feed, now)
+                    .coerceAtMost(account.queryToSec ?: Long.MAX_VALUE)
+                // Older builds shortened the frozen end to queryTo. Recover that lost interval,
+                // but do not reopen ordinary rolling scans whose bridge is already covered.
+                val uncoveredBridge = bridgeEnd > frozenEnd &&
+                    store.querySyncCoverageWindows(digest, feed).none {
+                        it.startSec <= frozenEnd && it.endSec >= bridgeEnd
+                    }
+                val intendedEnd = if (uncoveredBridge) bridgeEnd else frozenEnd
+                val permittedEnd = minOf(intendedEnd, account.queryToSec ?: intendedEnd)
+                val widerStart = existing.windowStartSec != null && permittedStartSec < existing.windowStartSec
+                val widerEnd = permittedEnd > (existing.completedThroughSec ?: frozenEnd)
+                if (!widerStart && !widerEnd) return@forEach
                 store.upsertSyncJob(
                     existing.copy(
                         state = HistorySyncJobState.PENDING,
                         windowStartSec = permittedStartSec,
+                        windowEndSec = intendedEnd,
                         cursor = null,
                         completedThroughSec = null,
                         lastError = null,
@@ -409,25 +421,8 @@ class HistorySyncCoordinator(
     ) {
         when {
             status.state == HistorySyncState.COMPLETE -> {
-                val job = if (purpose == HistorySyncPurpose.BACKFILL) {
-                    store.loadSyncJobs(digest).firstOrNull { it.feed == feed && it.purpose == purpose }
-                } else {
-                    null
-                }
-                if (job?.state == HistorySyncJobState.RUNNING) {
-                    // The scan stopped before the end of the frozen window, so the permitted range
-                    // is still incomplete and the job stays retryable.
-                    registerFailure(
-                        key = FailureKey(feed, purpose),
-                        message = HistorySyncErrors.API_KEY_WINDOW_PARTIAL,
-                        digest = digest,
-                        feed = feed,
-                        purpose = purpose,
-                    )
-                } else {
-                    clearFailure(FailureKey(feed, purpose))
-                    clearJobFailure(digest, feed, purpose)
-                }
+                clearFailure(FailureKey(feed, purpose))
+                clearJobFailure(digest, feed, purpose)
             }
 
             status.lastError == HistorySyncErrors.ACCOUNT_SCOPE_CHANGED ||

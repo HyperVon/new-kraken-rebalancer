@@ -232,8 +232,11 @@ order submission requests a nonblocking recent refresh after five seconds;
 conflated requests do not cancel a scan already in progress. A frozen, durable
 backfill continues from its committed per-feed cursor, yielding between pages
 when recent work arrives and resuming after restart. The backfill window is
-frozen at the earliest second the account's API key permits and reopens when the
-key later permits older history. A seven-day repair window
+frozen at the earliest second the account's API key permits. Its intended end
+is retained separately from the last successfully scanned second: completing
+a key-restricted range does not repeatedly download it, and widening either
+key bound reopens the newly permitted history. Previously truncated completed
+backfills bridge any uncovered interval to the recent scan window. A seven-day repair window
 is rechecked daily; the repair keeps its own frozen window and cursor and yields
 between pages to a pending recent refresh. Every successfully scanned interval is
 merged into a durable per-feed coverage union, so a rolling refresh keeps the

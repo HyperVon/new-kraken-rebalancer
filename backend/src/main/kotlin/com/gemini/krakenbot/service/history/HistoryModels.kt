@@ -378,7 +378,8 @@ data class VerifiedHistoryAccount(val digest: String, val queryFromSec: Long?, v
 /**
  * Durable coordinator job state. The committed [cursor] and frozen window survive a recent
  * scan and a process restart; [completedThroughSec] advances only after every page in the
- * frozen window commits.
+ * permitted part of the frozen window commits. A key-restricted backfill can complete below
+ * [windowEndSec]; widening that restriction reopens the missing range.
  */
 data class HistorySyncJob(
     val accountIdentityDigest: String,
