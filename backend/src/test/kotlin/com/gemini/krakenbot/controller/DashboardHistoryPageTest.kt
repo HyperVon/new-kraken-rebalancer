@@ -83,10 +83,14 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
                 it.from == Instant.parse("2026-01-01T00:00:00Z")
             }
             custom.until shouldBe Instant.parse("2026-01-04T00:00:00Z")
+            val fallback = queries.last()
+            val fallbackFrom = requireNotNull(fallback.from)
+            val fallbackUntil = requireNotNull(fallback.until)
+            (Duration.between(fallbackFrom, fallbackUntil).toDays().toInt() in 29..31) shouldBe true
             queries.any { query ->
                 val from = query.from
                 val until = query.until
-                from != null && until != null && Duration.between(from, until).toDays() in 364..366
+                from != null && until != null && (Duration.between(from, until).toDays().toInt() in 364..366)
             } shouldBe true
         }
 

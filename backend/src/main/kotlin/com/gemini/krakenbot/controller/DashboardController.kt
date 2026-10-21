@@ -95,8 +95,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-private const val DEFAULT_HISTORY_RANGE = "30d"
-
 internal fun historyRangeSelection(preset: String?, start: String?, end: String?): HistoryRangeSelection? {
     val parsed = HistoryRangePreset.fromKey(preset) ?: return null
     if (parsed != HistoryRangePreset.CUSTOM) return HistoryRangeSelection.rolling(parsed)
@@ -803,14 +801,17 @@ class DashboardController(
         val params = call.request.queryParameters
         val requestedPreset = params["preset"] ?: params["range"]
         val zone = params["tz"]?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
-        val resolvedRange = historyRangeSelection(requestedPreset, params["start"], params["end"])
-            ?.let { HistoryRanges.resolve(it, Instant.now(), zone) }
-        val range = resolvedRange?.selection?.preset?.key ?: DEFAULT_HISTORY_RANGE
+        val resolvedRange = (
+            historyRangeSelection(requestedPreset, params["start"], params["end"])
+                ?: HistoryRangeSelection.DEFAULT
+            )
+            .let { HistoryRanges.resolve(it, Instant.now(), zone) }
+        val range = resolvedRange.selection.preset.key
         val tradesOffset = params["tradesOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val ledgersOffset = params["ledgersOffset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val scope = historyObservationRecorder?.currentSourceScope(config)
         val digest = scope?.accountIdentityDigest?.takeIf { it.isNotBlank() }
-        val from = resolvedRange?.from
+        val from = resolvedRange.from
         val portfolioChart = historyApi?.let { api ->
             scope?.let { sourceScope ->
                 try {
@@ -846,7 +847,7 @@ class DashboardController(
         }
         val filters = HistoryEventQuery(
             from = from,
-            until = resolvedRange?.until,
+            until = resolvedRange.until,
             accountIdentityDigest = digest,
             assetKey = params["asset"]?.trim()?.takeIf(String::isNotEmpty),
             pair = params["pair"]?.trim()?.takeIf(String::isNotEmpty),
@@ -859,7 +860,7 @@ class DashboardController(
                 service.queryChartObservations(
                     sourceScope = scope,
                     from = from,
-                    until = resolvedRange?.until,
+                    until = resolvedRange.until,
                 )
             } else {
                 emptyList()
@@ -892,7 +893,7 @@ class DashboardController(
             observations = service.queryChartObservations(
                 sourceScope = scope,
                 from = from,
-                until = resolvedRange?.until,
+                until = resolvedRange.until,
             ),
             checkpoints = if (filters.assetKey == null) {
                 empty()
