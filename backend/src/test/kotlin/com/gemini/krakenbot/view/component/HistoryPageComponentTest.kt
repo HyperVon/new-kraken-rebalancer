@@ -190,6 +190,7 @@ class HistoryPageComponentTest : StringSpec() {
             )
             complete shouldContain "History ready through 2026-10-20 · checking for new activity automatically."
             complete shouldContain "2026-10-21 11:45:00"
+            complete shouldNotContain "Retry failed work"
 
             val waiting = render(
                 samplePageData(emptyList()).copy(
@@ -560,6 +561,7 @@ class HistoryPageComponentTest : StringSpec() {
             val verifiedHtml = render(emptyData.copy(accountAvailable = true))
             verifiedHtml shouldContain "Preparing account history — importing older transactions."
             verifiedHtml shouldContain "id=\"history-sync-button\""
+            verifiedHtml shouldContain "Start account history"
         }
 
         "renders sync banner with all sync states" {

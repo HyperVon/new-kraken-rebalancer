@@ -289,7 +289,7 @@ internal object BrowserFixtureHistorySeed {
 
     private suspend fun seedTrades(store: HistoryStore, scope: HistorySourceScope, now: Instant) {
         val digest = checkNotNull(scope.accountIdentityDigest)
-        val startSec = now.minusSeconds(100 * SECONDS_PER_DAY).epochSecond
+        val startSec = now.minusSeconds(400 * SECONDS_PER_DAY).epochSecond
         val endSec = now.epochSecond + 1
         val boundary = now.minusSeconds(30 * SECONDS_PER_DAY)
         val timedTradeIds = buildList {
@@ -345,7 +345,7 @@ internal object BrowserFixtureHistorySeed {
                 endSec = endSec,
                 requestedCursor = null,
                 committedAt = now,
-                purpose = HistorySyncPurpose.RECENT,
+                purpose = HistorySyncPurpose.BACKFILL,
             ),
             page = ExchangeHistoryPage(
                 entries = entries,
@@ -362,7 +362,7 @@ internal object BrowserFixtureHistorySeed {
 
     private suspend fun seedLedgers(store: HistoryStore, scope: HistorySourceScope, now: Instant) {
         val digest = checkNotNull(scope.accountIdentityDigest)
-        val startSec = now.minusSeconds(100 * SECONDS_PER_DAY).epochSecond
+        val startSec = now.minusSeconds(400 * SECONDS_PER_DAY).epochSecond
         val endSec = now.epochSecond + 1
         val boundary = now.minusSeconds(30 * SECONDS_PER_DAY)
         val timedLedgerIds = buildList {
@@ -420,7 +420,7 @@ internal object BrowserFixtureHistorySeed {
                 endSec = endSec,
                 requestedCursor = null,
                 committedAt = now,
-                purpose = HistorySyncPurpose.RECENT,
+                purpose = HistorySyncPurpose.BACKFILL,
             ),
             page = ExchangeHistoryPage(
                 entries = entries,

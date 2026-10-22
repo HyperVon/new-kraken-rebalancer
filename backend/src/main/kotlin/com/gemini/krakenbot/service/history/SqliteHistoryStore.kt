@@ -1110,6 +1110,25 @@ class SqliteHistoryStore(
         }
     }
 
+    override suspend fun countIncompleteDailyValues(accountIdentityDigest: String, sourceAssetScope: String): Long =
+        withContext(Dispatchers.IO) {
+            requireDigest(accountIdentityDigest)
+            database.connect().use { connection ->
+                connection.prepareStatement(
+                    "SELECT COUNT(*) FROM history_daily_values " +
+                        "WHERE account_identity_digest = ? AND source_asset_scope = ? AND status <> ?",
+                ).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.setString(2, sourceAssetScope)
+                    statement.setString(3, HistoryDailyValueStatus.COMPLETE.name)
+                    statement.executeQuery().use { resultSet ->
+                        resultSet.next()
+                        resultSet.getLong(1)
+                    }
+                }
+            }
+        }
+
     override suspend fun queryDailyAssetValues(
         accountIdentityDigest: String,
         sourceAssetScope: String,

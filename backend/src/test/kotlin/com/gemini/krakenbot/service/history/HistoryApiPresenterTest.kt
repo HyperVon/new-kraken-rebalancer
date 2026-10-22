@@ -963,6 +963,37 @@ class HistoryApiPresenterTest : StringSpec() {
             status.coverage.incomplete shouldBe false
         }
 
+        "data status counts durable incomplete daily rows when no valuation job exists" {
+            val day = LocalDate.parse("2026-03-09")
+            val incompleteValue = dailyValue(day, "0").copy(
+                totalUsd = null,
+                status = HistoryDailyValueStatus.NO_PRICE,
+            )
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } coAnswers {
+                val limit = arg<Int>(4)
+                val offset = arg<Int>(5)
+                val items = listOf(incompleteValue).drop(offset).take(limit)
+                page(
+                    items,
+                    total = 1L,
+                    limit = limit,
+                    offset = offset,
+                    hasMore = offset + items.size < 1,
+                )
+            }
+            coEvery {
+                historyStore.countIncompleteDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+            } returns 1L
+
+            val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
+
+            status.valuation shouldBe null
+            status.coverage.incomplete shouldBe true
+            status.coverage.gapCount shouldBe 1
+        }
+
         "import readiness checks gaps only inside the frozen valuation target" {
             val targetStart = LocalDate.parse("2025-10-21")
             val targetEnd = LocalDate.parse("2026-10-20")

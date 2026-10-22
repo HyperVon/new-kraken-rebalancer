@@ -10,6 +10,7 @@ import com.gemini.krakenbot.service.history.HistoryDailyValueStatus
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistorySourceMode
+import com.gemini.krakenbot.service.history.HistorySyncJobState
 import com.gemini.krakenbot.service.history.HistoryValuationJobState
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -107,7 +108,7 @@ class BrowserFixtureSeedTest : StringSpec() {
             }
         }
 
-        "seeded account history covers 100 days, range edges, scopes, and event tables" {
+        "seeded account history covers 400 daily values, complete import coverage, and 100 days of events" {
             val fixture = BrowserFixtureEnvironment.create(CoroutineScope(SupervisorJob() + Dispatchers.Default))
             val tempDirectory = fixture.tempDirectory
             try {
@@ -131,6 +132,14 @@ class BrowserFixtureSeedTest : StringSpec() {
                 val fixtureJob = fixture.historyStore.loadValuationJob(digest, HISTORY_ACCOUNT_DAILY_SCOPE)
                 fixtureJob?.state shouldBe HistoryValuationJobState.COMPLETE
                 fixtureJob?.targetDays shouldBe 365
+                val importProgress = fixture.historyStore.syncProgress(digest)
+                importProgress.size shouldBe 2
+                importProgress.all { it.backfillState == HistorySyncJobState.COMPLETE } shouldBe true
+                val importStartSec = fixture.fixtureNow.minusSeconds(400 * 24 * 60 * 60L).epochSecond
+                val importEndSec = fixture.fixtureNow.epochSecond + 1
+                importProgress.all { progress ->
+                    progress.coveredWindows.any { it.startSec <= importStartSec && it.endSec >= importEndSec }
+                } shouldBe true
                 val firstDayAssets = fixture.historyStore.queryDailyAssetValues(
                     digest,
                     HISTORY_ACCOUNT_DAILY_SCOPE,

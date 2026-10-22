@@ -29,7 +29,7 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
                                     value.dayLabel.toString(),
                                     value.totalUsd?.toPlainString(),
                                     value.status.name,
-                                    value.generationId,
+                                    value.generationId.asCsvText(),
                                     value.sourceRevision.toString(),
                                     value.assets.filter {
                                         it.status != HistoryDailyValueStatus.COMPLETE &&
@@ -39,7 +39,7 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
                                             "${Asset.normalizeLedgerAsset(
                                                 asset.rawAssetKey,
                                             )}: ${asset.reason ?: asset.status.name}"
-                                        },
+                                        }.asCsvText(),
                                 ),
                             ),
                         )
@@ -90,10 +90,53 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
             until = dayEnd.plusSeconds(1),
             limit = EXPORT_PAGE_SIZE,
         )
-        val includedAssets = page.items.filterNot { asset ->
-            asset.rawAssetClass.equals("equity", ignoreCase = true)
+        var offset = 0
+        var rowsWritten = 0L
+        var currentPage = page
+        while (true) {
+            check(currentPage.items.size <= EXPORT_PAGE_SIZE) { "History CSV query exceeded the export page size." }
+            check(currentPage.items.isNotEmpty() || !currentPage.hasMore) {
+                "History CSV query returned an empty page with more rows."
+            }
+            val includedAssets = currentPage.items.filterNot { asset ->
+                asset.rawAssetClass.equals("equity", ignoreCase = true)
+            }
+            if (includedAssets.isNotEmpty()) {
+                writeChunk(
+                    buildString {
+                        includedAssets.forEach { asset ->
+                            append(
+                                csvRow(
+                                    listOf(
+                                        query.day.toString(),
+                                        total.totalUsd?.toPlainString(),
+                                        total.status.name,
+                                        Asset.normalizeLedgerAsset(asset.rawAssetKey).asCsvText(),
+                                        asset.quantity?.toPlainString(),
+                                        asset.priceUsd?.toPlainString(),
+                                        asset.valueUsd?.toPlainString(),
+                                        asset.status.name,
+                                        asset.reason.asCsvText(),
+                                    ),
+                                ),
+                            )
+                        }
+                    },
+                )
+                rowsWritten += includedAssets.size
+            }
+            if (!currentPage.hasMore) break
+            offset += currentPage.items.size
+            currentPage = historyStore.queryDailyAssetValues(
+                accountIdentityDigest = query.accountIdentityDigest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                from = dayEnd,
+                until = dayEnd.plusSeconds(1),
+                limit = EXPORT_PAGE_SIZE,
+                offset = offset,
+            )
         }
-        if (includedAssets.isEmpty()) {
+        if (rowsWritten == 0L) {
             writeChunk(
                 csvRow(
                     listOf(
@@ -111,28 +154,7 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
             )
             return 1
         }
-        writeChunk(
-            buildString {
-                includedAssets.forEach { asset ->
-                    append(
-                        csvRow(
-                            listOf(
-                                query.day.toString(),
-                                total.totalUsd?.toPlainString(),
-                                total.status.name,
-                                Asset.normalizeLedgerAsset(asset.rawAssetKey),
-                                asset.quantity?.toPlainString(),
-                                asset.priceUsd?.toPlainString(),
-                                asset.valueUsd?.toPlainString(),
-                                asset.status.name,
-                                asset.reason,
-                            ),
-                        ),
-                    )
-                }
-            },
-        )
-        return includedAssets.size.toLong()
+        return rowsWritten
     }
 
     suspend fun exportTrades(query: HistoryEventQuery, zone: ZoneId, writeChunk: suspend (String) -> Unit): Long =

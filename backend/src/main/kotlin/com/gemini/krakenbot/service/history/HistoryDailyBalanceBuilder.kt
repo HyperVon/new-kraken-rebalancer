@@ -116,6 +116,19 @@ class HistoryDailyBalanceBuilder {
                 ReplayState(null, null, null, HistoryDailyBalanceStatus.NO_OPENING_ANCHOR, NO_ANCHOR_REASON)
             }
         }
+        val untimed = visible[null]?.firstOrNull()
+        if (untimed != null) {
+            // Without a timestamp, an absolute balance cannot be ordered against any later
+            // checkpoint. Keep this asset blocked for every requested boundary until its source
+            // evidence is corrected; a later timestamp is not proof that the untimed row preceded it.
+            return ReplayState(
+                null,
+                untimed.ledgerId,
+                null,
+                HistoryDailyBalanceStatus.INVALID_CHECKPOINT,
+                "A ledger checkpoint has no valid timestamp.",
+            )
+        }
 
         var quantity: BigDecimal? = null
         var lastLedgerId: String? = null

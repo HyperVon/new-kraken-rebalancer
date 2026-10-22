@@ -125,9 +125,9 @@ A daily total exists only when all included holdings have known quantities and e
 
 Official references to verify during implementation:
 
-- https://docs.kraken.com/api-reference/account-data/get-ledgers-info
-- https://docs.kraken.com/api-reference/market-data/get-ohlc-data
-- https://support.kraken.com/in/articles/360000912103-how-to-retrieve-your-account-s-trading-history
+- [Kraken ledger information](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
+- [Kraken OHLC data](https://docs.kraken.com/api-reference/market-data/get-ohlc-data)
+- [Kraken trading-history support article](https://support.kraken.com/in/articles/360000912103-how-to-retrieve-your-account-s-trading-history)
 
 ## 6. Components, interfaces and implementation order
 

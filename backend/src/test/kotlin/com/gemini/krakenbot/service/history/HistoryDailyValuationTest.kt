@@ -189,6 +189,35 @@ class HistoryDailyValuationTest : StringSpec() {
             untimed.reason shouldBe "A ledger checkpoint has no valid timestamp."
         }
 
+        "does not let a later timed balance checkpoint repair an untimed ledger event" {
+            val missingTime = HistoryBalanceCheckpoint(
+                accountIdentityDigest = accountDigest,
+                ledgerId = "no-time",
+                observedAt = null,
+                rawAssetClass = "currency",
+                rawAssetKey = "ZUSD",
+                rawAmount = "1",
+                rawFee = "0",
+                rawBalance = "1",
+                quantity = BigDecimal.ONE,
+                status = HistoryBalanceStatus.VALID,
+            )
+            val laterTimedCheckpoint = checkpoint(
+                "later-absolute-balance",
+                "2026-03-31T18:00:00Z",
+                "5",
+                "0",
+                "5",
+                "5",
+            )
+
+            val balance = build(listOf(missingTime, laterTimedCheckpoint), coverage(dayEnd)).single()
+
+            balance.quantity shouldBe null
+            balance.status shouldBe HistoryDailyBalanceStatus.INVALID_CHECKPOINT
+            balance.reason shouldBe "A ledger checkpoint has no valid timestamp."
+        }
+
         "daily totals are exact only when every nonzero asset has a same-day price" {
             val balances = listOf(
                 dailyBalance("ZUSD", BigDecimal("10")),

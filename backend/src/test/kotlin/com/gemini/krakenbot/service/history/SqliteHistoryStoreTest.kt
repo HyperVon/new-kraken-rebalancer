@@ -501,6 +501,20 @@ class SqliteHistoryStoreTest : StringSpec() {
                 )
                 values.total shouldBe 1L
                 values.items.single().totalUsd shouldBe BigDecimal("75000.00")
+                store.countIncompleteDailyValues(accountDigest, "BTC+USD") shouldBe 0L
+
+                store.saveDailyValues(
+                    listOf(
+                        dailyValue.copy(
+                            dayEnd = dayEnd.plusSeconds(86_400),
+                            totalUsd = null,
+                            status = HistoryDailyValueStatus.NO_PRICE,
+                            assets = emptyList(),
+                            dayLabel = dailyValue.dayLabel.plusDays(1),
+                        ),
+                    ),
+                )
+                store.countIncompleteDailyValues(accountDigest, "BTC+USD") shouldBe 1L
 
                 val dailyAssets = store.queryDailyAssetValues(
                     accountIdentityDigest = accountDigest,

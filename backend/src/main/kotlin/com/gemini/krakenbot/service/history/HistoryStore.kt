@@ -149,6 +149,8 @@ interface HistoryStore {
         offset: Int = 0,
     ): HistoryPage<HistoryDailyValue>
 
+    suspend fun countIncompleteDailyValues(accountIdentityDigest: String, sourceAssetScope: String): Long
+
     suspend fun queryDailyAssetValues(
         accountIdentityDigest: String,
         sourceAssetScope: String,

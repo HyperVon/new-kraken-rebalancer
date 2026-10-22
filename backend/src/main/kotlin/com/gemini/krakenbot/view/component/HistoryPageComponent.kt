@@ -509,12 +509,16 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     }
                 }
             }
-            if (data.accountAvailable) {
+            val hasFailedWork = importState == "Needs attention" ||
+                valuation?.state == "NEEDS_ATTENTION" ||
+                data.syncStatuses.any { it.state == HistorySyncState.FAILED }
+            val historyNotStarted = importState == "Import status not yet recorded"
+            if (data.accountAvailable && (hasFailedWork || historyNotStarted)) {
                 form(action = Routes.API_HISTORY_SYNC_START, method = FormMethod.post) {
                     input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) { value = csrfToken.orEmpty() }
                     button(type = ButtonType.submit, classes = CssClass.Button.Secondary.value) {
                         id = HtmlIds.HISTORY_SYNC_BUTTON
-                        +"Retry failed work"
+                        +if (hasFailedWork) "Retry failed work" else "Start account history"
                     }
                 }
             }

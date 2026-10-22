@@ -558,6 +558,13 @@ class HistoryApiPresenter(
         val availableDays = digest?.let {
             historyStore.queryDailyValues(it, HISTORY_ACCOUNT_DAILY_SCOPE, limit = 1).total
         }
+        val storedValueGaps = if (digest != null && valuation == null) {
+            historyStore.countIncompleteDailyValues(digest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+        } else {
+            0
+        }
         val lastDailyValue = if (digest != null && availableDays != null && availableDays > 0) {
             historyStore.queryDailyValues(
                 digest,
@@ -573,8 +580,9 @@ class HistoryApiPresenter(
                 valuesFirstIso = firstDailyValue?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
                 valuesLastIso = lastDailyValue?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
                 incomplete =
-                valuation?.blockedValueDays?.let { it > 0 } ?: (availableDays == null || availableDays == 0L),
-                gapCount = valuation?.blockedValueDays ?: 0,
+                valuation?.blockedValueDays?.let { it > 0 }
+                    ?: (availableDays == null || availableDays == 0L || storedValueGaps > 0),
+                gapCount = valuation?.blockedValueDays ?: storedValueGaps,
             )
         } else {
             buildCoverage(currentScope)
