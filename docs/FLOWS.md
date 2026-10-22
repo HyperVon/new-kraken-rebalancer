@@ -82,9 +82,10 @@ The account identity digest binds the active data directory's History and
 execution stores to one verified Kraken account. The application uses explicit
 fresh-schema initialization and normal startup refuses to recreate missing
 stores. It does not read or migrate the former reporting or Actual databases.
-The History value series contains direct cycle observations; synchronized
-trades, ledgers, and ledger balances are displayed as exchange evidence rather
-than used to reconstruct an earlier portfolio value.
+Account History uses imported ledger checkpoints and verified coverage to
+reconstruct historical daily balances and USD values. Direct cycle observations
+remain a separate technical series; they are not mixed into those account
+totals.
 
 ## Configuration changes
 
@@ -276,6 +277,19 @@ total and the API exposes per-asset reasons. All equity-class shares are
 excluded from portfolio balances, while all USD ledger changes, including
 stock settlements and dividends, remain cash. Derivatives and unidentifiable wallets are outside
 this reporting scope.
+
+Only Kraken's explicit `EQuery:Unknown asset pair` error marks a requested pair
+unavailable and enables alternate-market lookup. Network, rate-limit, and
+malformed-response errors retain retry/error handling. Every fallback leg must
+have a completed candle for the same UTC day. Cached USD prices away from par
+are repaired to exactly one.
+
+Daily chart, holdings, data-status, and CSV-export paths read the selected daily
+value headers, their asset rows, and related valuation status inside one bounded
+deferred SQLite read transaction. The result is limited to 20,000 daily rows;
+larger selections fail explicitly. CSV serialization starts after the
+transaction closes. Browser holdings requests are keyed by date and account
+scope, and only the latest still-current request may update the table.
 
 Data status keeps import, balance establishment, price/value calculation, and
 routine refresh separate. Progress and valuation jobs are durable. A generation

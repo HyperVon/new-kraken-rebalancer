@@ -7,22 +7,17 @@ import java.time.format.DateTimeFormatter
 
 class HistoryCsvExporter(private val historyService: HistoryService, private val historyStore: HistoryStore) {
     suspend fun exportDailyValues(query: HistoryDailyValueExportRange, writeChunk: suspend (String) -> Unit): Long {
+        val values = historyStore.queryDailyValueSnapshot(
+            accountIdentityDigest = query.accountIdentityDigest,
+            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+            from = query.from,
+            until = query.until,
+        ).values
         writeChunk(csvRow(DAILY_VALUE_HEADERS))
-        var offset = 0
-        var rowsWritten = 0L
-        while (true) {
-            val page = historyStore.queryDailyValues(
-                accountIdentityDigest = query.accountIdentityDigest,
-                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-                from = query.from,
-                until = query.until,
-                limit = EXPORT_PAGE_SIZE,
-                offset = offset,
-            )
-            if (page.items.isEmpty()) return rowsWritten
+        values.chunked(EXPORT_PAGE_SIZE).forEach { chunk ->
             writeChunk(
                 buildString {
-                    page.items.forEach { value ->
+                    chunk.forEach { value ->
                         append(
                             csvRow(
                                 listOf(
@@ -46,25 +41,22 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
                     }
                 },
             )
-            rowsWritten += page.items.size
-            if (!page.hasMore) return rowsWritten
-            offset += page.items.size
         }
+        return values.size.toLong()
     }
 
     suspend fun exportDailyHoldings(
         query: HistoryDailyHoldingsExportQuery,
         writeChunk: suspend (String) -> Unit,
     ): Long {
-        writeChunk(csvRow(DAILY_HOLDING_HEADERS))
         val dayEnd = query.day.plusDays(1).atStartOfDay(ZoneId.of("UTC")).toInstant()
-        val total = historyStore.queryDailyValues(
+        val total = historyStore.queryDailyValueSnapshot(
             accountIdentityDigest = query.accountIdentityDigest,
             sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
             from = dayEnd,
             until = dayEnd.plusSeconds(1),
-            limit = 1,
-        ).items.firstOrNull()
+        ).values.firstOrNull()
+        writeChunk(csvRow(DAILY_HOLDING_HEADERS))
         if (total == null) {
             writeChunk(
                 csvRow(
@@ -83,58 +75,33 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
             )
             return 1
         }
-        val page = historyStore.queryDailyAssetValues(
-            accountIdentityDigest = query.accountIdentityDigest,
-            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-            from = dayEnd,
-            until = dayEnd.plusSeconds(1),
-            limit = EXPORT_PAGE_SIZE,
-        )
-        var offset = 0
         var rowsWritten = 0L
-        var currentPage = page
-        while (true) {
-            check(currentPage.items.size <= EXPORT_PAGE_SIZE) { "History CSV query exceeded the export page size." }
-            check(currentPage.items.isNotEmpty() || !currentPage.hasMore) {
-                "History CSV query returned an empty page with more rows."
-            }
-            val includedAssets = currentPage.items.filterNot { asset ->
-                asset.rawAssetClass.equals("equity", ignoreCase = true)
-            }
-            if (includedAssets.isNotEmpty()) {
-                writeChunk(
-                    buildString {
-                        includedAssets.forEach { asset ->
-                            append(
-                                csvRow(
-                                    listOf(
-                                        query.day.toString(),
-                                        total.totalUsd?.toPlainString(),
-                                        total.status.name,
-                                        Asset.normalizeLedgerAsset(asset.rawAssetKey).asCsvText(),
-                                        asset.quantity?.toPlainString(),
-                                        asset.priceUsd?.toPlainString(),
-                                        asset.valueUsd?.toPlainString(),
-                                        asset.status.name,
-                                        asset.reason.asCsvText(),
-                                    ),
+        val includedAssets = total.assets.filterNot { asset ->
+            asset.rawAssetClass.equals("equity", ignoreCase = true)
+        }
+        if (includedAssets.isNotEmpty()) {
+            writeChunk(
+                buildString {
+                    includedAssets.forEach { asset ->
+                        append(
+                            csvRow(
+                                listOf(
+                                    query.day.toString(),
+                                    total.totalUsd?.toPlainString(),
+                                    total.status.name,
+                                    Asset.normalizeLedgerAsset(asset.rawAssetKey).asCsvText(),
+                                    asset.quantity?.toPlainString(),
+                                    asset.priceUsd?.toPlainString(),
+                                    asset.valueUsd?.toPlainString(),
+                                    asset.status.name,
+                                    asset.reason.asCsvText(),
                                 ),
-                            )
-                        }
-                    },
-                )
-                rowsWritten += includedAssets.size
-            }
-            if (!currentPage.hasMore) break
-            offset += currentPage.items.size
-            currentPage = historyStore.queryDailyAssetValues(
-                accountIdentityDigest = query.accountIdentityDigest,
-                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-                from = dayEnd,
-                until = dayEnd.plusSeconds(1),
-                limit = EXPORT_PAGE_SIZE,
-                offset = offset,
+                            ),
+                        )
+                    }
+                },
             )
+            rowsWritten += includedAssets.size
         }
         if (rowsWritten == 0L) {
             writeChunk(

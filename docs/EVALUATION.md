@@ -14,7 +14,8 @@ identifies coverage areas; it is not a record of a particular test run.
 | Direct cycle observations, incomplete evidence, and value classification | [`HistoryObservationRecorderTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryObservationRecorderTest.kt), [`HistoryObservationValuatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryObservationValuatorTest.kt), [`HistoryModelsTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryModelsTest.kt) |
 | Automatic/urgent History sync, durable backfill, account scope, cursor recovery, and storage | [`HistorySyncCoordinatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistorySyncCoordinatorTest.kt), [`HistorySynchronizerTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistorySynchronizerTest.kt), [`HistoryServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryServiceTest.kt), [`SqliteHistoryStoreTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/SqliteHistoryStoreTest.kt), [`SqliteHistoryStoreSyncMetadataTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/SqliteHistoryStoreSyncMetadataTest.kt), [`HistoryStoreCodecTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryStoreCodecTest.kt), [`HistoryDatabaseTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryDatabaseTest.kt) |
 | Range-aware History metrics, native-asset series, API dates/scopes, and export accuracy | [`HistoryReportingServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/reporting/HistoryReportingServiceTest.kt), [`HistoryApiPresenterTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryApiPresenterTest.kt), [`HistoryApiSeriesBuilderTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryApiSeriesBuilderTest.kt), [`HistoryRecordedAccountChartsTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryRecordedAccountChartsTest.kt), [`HistoryCsvExporterTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryCsvExporterTest.kt), [`HistoryReadApiRoutesTest`](../backend/src/test/kotlin/com/gemini/krakenbot/controller/HistoryReadApiRoutesTest.kt), [`HistoryPageComponentTest`](../backend/src/test/kotlin/com/gemini/krakenbot/view/component/HistoryPageComponentTest.kt) |
-| Daily account valuation, fee-aware balance replay, candle pricing, atomic publication, equity exclusion, and v4 migration | [`HistoryDailyValuationTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryDailyValuationTest.kt), [`HistoryArchiveAcceptanceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryArchiveAcceptanceTest.kt), [`SqliteHistoryStoreTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/SqliteHistoryStoreTest.kt), [`HistoryApiPresenterTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryApiPresenterTest.kt) |
+| Daily account valuation, fee-aware balance replay, candle fallback, USD-at-par validation, atomic publication, equity exclusion, and v4 migration | [`HistoryDailyValuationTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryDailyValuationTest.kt), [`HistoryValuationCoordinatorTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryValuationCoordinatorTest.kt), [`HistoryArchiveAcceptanceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryArchiveAcceptanceTest.kt), [`SqliteHistoryStoreTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/SqliteHistoryStoreTest.kt), [`HistoryApiPresenterTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/history/HistoryApiPresenterTest.kt), [`KrakenServiceTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/KrakenServiceTest.kt) |
+| Configured-asset metadata fails closed before live price analysis; no ticker-name equity guesses | [`PortfolioAnalyzerImplTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/PortfolioAnalyzerImplTest.kt) |
 | History client refresh, selected-range state, chart gestures, and named views | [`HistoryRefreshTest`](../frontend-js/src/jsTest/kotlin/HistoryRefreshTest.kt), [`HistoryRangeTest`](../frontend-js/src/jsTest/kotlin/HistoryRangeTest.kt), [`HistoryZoomTest`](../frontend-js/src/jsTest/kotlin/HistoryZoomTest.kt), [`HistoryChartRefreshTest`](../frontend-js/src/jsTest/kotlin/HistoryChartRefreshTest.kt), [`HistoryInteractionTest`](../frontend-js/src/jsTest/kotlin/HistoryInteractionTest.kt), [`HistoryViewsTest`](../frontend-js/src/jsTest/kotlin/HistoryViewsTest.kt) |
 | Kraken history parsing and order-specific sell fill confirmation | [`KrakenParsersTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/KrakenParsersTest.kt), [`KrakenTradeHistoryTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/KrakenTradeHistoryTest.kt), [`OrderExecutorFillSettlementTest`](../backend/src/test/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorFillSettlementTest.kt) |
 | Fresh data-directory lifecycle and account binding | [`DataDirectoryConfigTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/DataDirectoryConfigTest.kt), [`DataDirectoryIdentityTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/DataDirectoryIdentityTest.kt), [`ExecutionDatabaseLifecycleTest`](../backend/src/test/kotlin/com/gemini/krakenbot/config/ExecutionDatabaseLifecycleTest.kt) |
@@ -51,8 +52,10 @@ credentials or stores.
   ledger, and bot-activity API requests succeed while a file-backed SQLite
   writer holds an uncommitted update. The browser-fixture integration test
   verifies committed-value visibility, subsequent writer commit, and preserved
-  event counts. Paginated reads retain a deferred snapshot; write transactions
-  still reserve the writer before reading.
+  event counts. Paginated event reads retain a deferred snapshot; daily-value
+  APIs and exports materialize one bounded snapshot containing totals, holdings,
+  and valuation status. Write transactions still reserve the writer before
+  reading.
 - Opening a current History database for reading does not reserve the writer
   lock. The database regression holds an uncommitted write, reads the last
   committed value through another database instance, then verifies the writer
@@ -89,5 +92,18 @@ credentials or stores.
   balance evidence as dated gaps. The private archive runner is opt-in through
   `HISTORY_RESTORATION_COPY_DB` and `HISTORY_RESTORATION_PUBLIC_PRICE_FIXTURE`;
   it accepts only disposable database files under `/tmp`.
+- Price resolver tests distinguish an explicit unknown-pair response from
+  network and rate-limit failures, verify same-day conversion provenance, and
+  retain incomplete candle evidence as a gap. The coordinator repairs cached
+  USD away from par and verifies the repaired cache after reopening SQLite.
+- Balance replay tests keep future unsupported evidence from blocking earlier
+  dates, retain untimed evidence as a global blocker, and recover only after a
+  later valid anchor.
+- Holdings-client tests resolve out-of-order success and failure callbacks by
+  the latest selected date and scope; delegated click handling remains
+  idempotent after repeated HTMX swaps.
+- Trading analyzer tests require explicit `currency` metadata for configured
+  non-USD assets and stop before ticker requests when classification is missing,
+  unknown, or non-currency.
 - Saving Settings retains active controls and removes retired drawdown,
   deployment, inception, and comparison-start keys from the saved JSON.

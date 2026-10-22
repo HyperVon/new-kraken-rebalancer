@@ -16,13 +16,30 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.Locale
+
+internal enum class DailyValueSnapshotReadPoint {
+    AFTER_COUNT,
+    AFTER_HEADERS,
+    AFTER_STATUS_SUMMARY,
+}
+
+private data class DailyValueStatusCounts(
+    val availableDays: Long,
+    val firstDayLabel: LocalDate?,
+    val lastDayLabel: LocalDate?,
+    val incompleteDays: Long,
+)
 
 class SqliteHistoryStore(
     private val database: HistoryDatabase,
     private val nowProvider: () -> Instant = Instant::now,
     private val maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,
 ) : HistoryStore {
+    internal var dailyValueSnapshotReadHookForTest: ((DailyValueSnapshotReadPoint, String) -> Unit)? = null
+
     init {
         require(maxPagesPerScan > 0)
     }
@@ -1106,7 +1123,163 @@ class SqliteHistoryStore(
     ): HistoryPage<HistoryDailyValue> = withContext(Dispatchers.IO) {
         validateDailyQuery(accountIdentityDigest, from, until, limit, offset)
         database.connect().use { connection ->
-            queryDailyValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            connection.inReadTransaction {
+                queryDailyValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            }
+        }
+    }
+
+    override suspend fun queryDailyValueSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant?,
+        until: Instant?,
+    ): HistoryDailyValueSnapshot = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        require(from == null || until == null || from <= until)
+        database.connect().use { connection ->
+            connection.inReadTransaction {
+                val filter = dailyFilter(accountIdentityDigest, sourceAssetScope, from, until)
+                val count = countRows(connection, "history_daily_values", filter)
+                dailyValueSnapshotReadHookForTest?.invoke(
+                    DailyValueSnapshotReadPoint.AFTER_COUNT,
+                    accountIdentityDigest,
+                )
+                check(count <= HISTORY_MAX_DAILY_SNAPSHOT_ROWS) {
+                    "The selected daily account-value range is too large to read as one consistent snapshot."
+                }
+                val limit = count.toInt().coerceAtLeast(1)
+                val page = queryDailyValues(
+                    connection,
+                    accountIdentityDigest,
+                    sourceAssetScope,
+                    from,
+                    until,
+                    limit,
+                    0,
+                    afterHeaders = {
+                        dailyValueSnapshotReadHookForTest?.invoke(
+                            DailyValueSnapshotReadPoint.AFTER_HEADERS,
+                            accountIdentityDigest,
+                        )
+                    },
+                )
+                check(!page.hasMore && page.items.size.toLong() == count) {
+                    "The daily account-value snapshot did not return its complete row set."
+                }
+                HistoryDailyValueSnapshot(
+                    values = page.items,
+                    valuationJob = loadValuationJob(connection, accountIdentityDigest, sourceAssetScope),
+                )
+            }
+        }
+    }
+
+    override suspend fun queryDailyValueStatusSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+    ): HistoryDailyValueStatusSnapshot = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        database.connect().use { connection ->
+            connection.inReadTransaction {
+                val summary = connection.prepareStatement(
+                    "SELECT COUNT(*), MIN(day_label), MAX(day_label), " +
+                        "SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END) " +
+                        "FROM history_daily_values WHERE account_identity_digest = ? AND source_asset_scope = ?",
+                ).use { statement ->
+                    statement.setString(1, HistoryDailyValueStatus.COMPLETE.name)
+                    statement.setString(2, accountIdentityDigest)
+                    statement.setString(3, sourceAssetScope)
+                    statement.executeQuery().use { resultSet ->
+                        check(resultSet.next())
+                        DailyValueStatusCounts(
+                            availableDays = resultSet.getLong(1),
+                            firstDayLabel = resultSet.getString(2)?.let(LocalDate::parse),
+                            lastDayLabel = resultSet.getString(3)?.let(LocalDate::parse),
+                            incompleteDays = resultSet.getLong(4),
+                        )
+                    }
+                }
+                dailyValueSnapshotReadHookForTest?.invoke(
+                    DailyValueSnapshotReadPoint.AFTER_STATUS_SUMMARY,
+                    accountIdentityDigest,
+                )
+                val job = loadValuationJob(connection, accountIdentityDigest, sourceAssetScope)
+                HistoryDailyValueStatusSnapshot(
+                    firstDayLabel = summary.firstDayLabel,
+                    lastDayLabel = summary.lastDayLabel,
+                    availableDays = summary.availableDays,
+                    incompleteDays = summary.incompleteDays,
+                    valuationJob = job,
+                    blockedReasons = job?.let {
+                        queryDailyValueStatusReasons(connection, accountIdentityDigest, sourceAssetScope, it)
+                    }.orEmpty(),
+                )
+            }
+        }
+    }
+
+    private fun queryDailyValueStatusReasons(
+        connection: Connection,
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        job: HistoryValuationJob,
+    ): List<HistoryDailyValueStatusReason> {
+        val startDayEnd = job.targetStartDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+        val endExclusive = job.targetEndDay.plusDays(2).atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+        return connection.prepareStatement(
+            "WITH blocked_days AS (" +
+                "SELECT d.account_identity_digest, d.source_asset_scope, d.day_end_sec, d.day_label, " +
+                "d.status AS value_status " +
+                "FROM history_daily_values d " +
+                "WHERE d.account_identity_digest = ? AND d.source_asset_scope = ? " +
+                "AND d.day_end_sec >= ? AND d.day_end_sec < ? " +
+                "AND (d.status <> ? OR EXISTS (" +
+                "SELECT 1 FROM history_daily_assets a " +
+                "WHERE a.account_identity_digest = d.account_identity_digest " +
+                "AND a.source_asset_scope = d.source_asset_scope " +
+                "AND a.day_end_sec = d.day_end_sec AND a.status <> ?" +
+                ")) " +
+                "ORDER BY d.day_end_sec LIMIT ?" +
+                ") " +
+                "SELECT b.day_label, b.value_status, a.raw_asset_key, a.status AS asset_status, " +
+                "a.reason AS asset_reason " +
+                "FROM blocked_days b LEFT JOIN history_daily_assets a " +
+                "ON a.account_identity_digest = b.account_identity_digest " +
+                "AND a.source_asset_scope = b.source_asset_scope AND a.day_end_sec = b.day_end_sec " +
+                "AND a.status <> ? " +
+                "ORDER BY b.day_end_sec, a.raw_asset_key LIMIT ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, sourceAssetScope)
+            statement.setLong(3, startDayEnd)
+            statement.setLong(4, endExclusive)
+            statement.setString(5, HistoryDailyValueStatus.COMPLETE.name)
+            statement.setString(6, HistoryDailyValueStatus.COMPLETE.name)
+            statement.setInt(7, HISTORY_DAILY_STATUS_REASON_DAY_LIMIT)
+            statement.setString(8, HistoryDailyValueStatus.COMPLETE.name)
+            statement.setInt(9, HISTORY_DAILY_STATUS_REASON_LIMIT)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        val rawAssetKey = resultSet.getString("raw_asset_key")
+                        val valueStatus = HistoryDailyValueStatus.valueOf(resultSet.getString("value_status"))
+                        add(
+                            HistoryDailyValueStatusReason(
+                                dayLabel = LocalDate.parse(resultSet.getString("day_label")),
+                                status = resultSet.getString("asset_status")
+                                    ?.let(HistoryDailyValueStatus::valueOf) ?: valueStatus,
+                                rawAssetKey = rawAssetKey,
+                                reason = if (rawAssetKey == null) {
+                                    null
+                                } else {
+                                    resultSet.getString("asset_reason")
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1139,7 +1312,9 @@ class SqliteHistoryStore(
     ): HistoryPage<HistoryDailyAssetValue> = withContext(Dispatchers.IO) {
         validateDailyQuery(accountIdentityDigest, from, until, limit, offset)
         database.connect().use { connection ->
-            queryDailyAssetValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            connection.inReadTransaction {
+                queryDailyAssetValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            }
         }
     }
 
@@ -2040,6 +2215,7 @@ class SqliteHistoryStore(
         until: Instant?,
         limit: Int,
         offset: Int,
+        afterHeaders: (() -> Unit)? = null,
     ): HistoryPage<HistoryDailyValue> {
         val filter = dailyFilter(accountIdentityDigest, sourceAssetScope, from, until)
         val total = countRows(connection, "history_daily_values", filter)
@@ -2053,6 +2229,7 @@ class SqliteHistoryStore(
                 buildList { while (resultSet.next()) add(resultSet.toDailyHeader()) }
             }
         }
+        afterHeaders?.invoke()
         val assetsByDay = readDailyAssets(connection, accountIdentityDigest, sourceAssetScope, headers)
         val values = headers.map { header -> header.copy(assets = assetsByDay[header.dayEnd.epochSecond].orEmpty()) }
         return HistoryPage(values, total, limit, offset, offset + values.size < total)
@@ -2769,6 +2946,8 @@ class SqliteHistoryStore(
 
     private companion object {
         const val MAX_CYCLE_ACTIVITY_LIMIT = 100
+        const val HISTORY_DAILY_STATUS_REASON_DAY_LIMIT = 50
+        const val HISTORY_DAILY_STATUS_REASON_LIMIT = 50
         val HEX_DIGEST = Regex("[0-9a-f]{64}")
     }
 }

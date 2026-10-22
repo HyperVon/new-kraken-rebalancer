@@ -12,6 +12,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
+import com.gemini.krakenbot.service.impl.KrakenPublicApiException
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PublicRateLimiter
 import com.gemini.krakenbot.test.TestConstants
@@ -453,9 +454,11 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val responseJson = "{\"error\":[\"EQuery:Unknown asset pair\"]}"
                 val service = createService(responseJson)
 
-                shouldThrow<RuntimeException> {
+                val error = shouldThrow<KrakenPublicApiException> {
                     service.getTickerPrices("INVALID")
                 }
+                error.errors shouldBe listOf("EQuery:Unknown asset pair")
+                error.endpoint.contains("/Ticker?pair=INVALID") shouldBe true
             }
         }
 

@@ -949,9 +949,8 @@ class HistoryApiPresenterTest : StringSpec() {
         "data status reports the first and last durable daily values" {
             val day = LocalDate.parse("2026-03-09")
             val value = dailyValue(day, "125.50")
-            coEvery {
-                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
-            } returns page(listOf(value), 1L)
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(listOf(value), null)
 
             val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
 
@@ -969,23 +968,8 @@ class HistoryApiPresenterTest : StringSpec() {
                 totalUsd = null,
                 status = HistoryDailyValueStatus.NO_PRICE,
             )
-            coEvery {
-                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
-            } coAnswers {
-                val limit = arg<Int>(4)
-                val offset = arg<Int>(5)
-                val items = listOf(incompleteValue).drop(offset).take(limit)
-                page(
-                    items,
-                    total = 1L,
-                    limit = limit,
-                    offset = offset,
-                    hasMore = offset + items.size < 1,
-                )
-            }
-            coEvery {
-                historyStore.countIncompleteDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
-            } returns 1L
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(listOf(incompleteValue), null)
 
             val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
 
@@ -1039,6 +1023,8 @@ class HistoryApiPresenterTest : StringSpec() {
                 coveredWindows = windows,
             )
             coEvery { historyStore.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns job
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(emptyList(), job)
             coEvery { historyStore.syncProgress(accountDigest) } returns listOf(
                 progress(
                     HistoryFeed.TRADES,
@@ -1088,21 +1074,8 @@ class HistoryApiPresenterTest : StringSpec() {
             coEvery {
                 historyStore.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
             } returns valuationJob(targetStart, targetEnd)
-            coEvery {
-                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
-            } coAnswers {
-                val limit = arg<Int>(4)
-                val offset = arg<Int>(5)
-                val items = dailyRows.drop(offset).take(limit)
-                page(
-                    items,
-                    total = dailyRows.size.toLong(),
-                    limit = limit,
-                    offset = offset,
-                    hasMore =
-                    offset + items.size < dailyRows.size,
-                )
-            }
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(dailyRows, valuationJob(targetStart, targetEnd))
 
             val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
 
@@ -1151,25 +1124,13 @@ class HistoryApiPresenterTest : StringSpec() {
                 valueUsd = BigDecimal("10"),
             )
             coEvery {
-                historyStore.queryDailyValues(
+                historyStore.queryDailyValueSnapshot(
                     accountDigest,
                     HISTORY_ACCOUNT_DAILY_SCOPE,
                     dayEnd,
                     dayEnd.plusSeconds(1),
-                    1,
-                    0,
                 )
-            } returns page(listOf(total), 1L)
-            coEvery {
-                historyStore.queryDailyAssetValues(
-                    accountDigest,
-                    HISTORY_ACCOUNT_DAILY_SCOPE,
-                    dayEnd,
-                    dayEnd.plusSeconds(1),
-                    HISTORY_MAX_PAGE_LIMIT,
-                    0,
-                )
-            } returns page(listOf(cash, equityShares), 2L, HISTORY_MAX_PAGE_LIMIT)
+            } returns HistoryDailyValueSnapshot(listOf(total.copy(assets = listOf(cash, equityShares))), null)
 
             val response = presenter.holdingsAtDate(accountScope, day.toString())
 
@@ -1183,15 +1144,13 @@ class HistoryApiPresenterTest : StringSpec() {
             val day = LocalDate.parse("2026-03-09")
             val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
             coEvery {
-                historyStore.queryDailyValues(
+                historyStore.queryDailyValueSnapshot(
                     accountDigest,
                     HISTORY_ACCOUNT_DAILY_SCOPE,
                     dayEnd,
                     dayEnd.plusSeconds(1),
-                    1,
-                    0,
                 )
-            } returns page(emptyList(), 0L)
+            } returns HistoryDailyValueSnapshot(emptyList(), null)
 
             val response = presenter.holdingsAtDate(accountScope, day.toString())
 
@@ -1341,16 +1300,17 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "representative chart points retain the stored observation count" {
-            val samples = (0..2).map { index ->
-                dailyValue(LocalDate.parse("2026-03-${(7 + index).toString().padStart(2, '0')}"), "10.00")
+            val firstDay = LocalDate.parse("2020-01-01")
+            val samples = (0 until 2403).map { index ->
+                dailyValue(firstDay.plusDays(index.toLong()), "10.00")
             }
             coEvery {
-                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
-            } returns page(samples, total = 2403L)
+                historyStore.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any())
+            } returns HistoryDailyValueSnapshot(samples, null)
 
             val response = charts(HistoryApiRangeParams(preset = "all"))
 
-            response.fullRange.pointCount shouldBe 3
+            (response.fullRange.pointCount < 2403) shouldBe true
             response.fullRange.totalObservations shouldBe 2403L
             response.fullRange.representative shouldBe true
         }
@@ -1440,6 +1400,38 @@ class HistoryApiPresenterTest : StringSpec() {
     }
 
     private fun stubEmptyReads() {
+        coEvery { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) } answers {
+            val limit = arg<Int>(4)
+            val offset = arg<Int>(5)
+            page(emptyList(), 0L, limit, offset)
+        }
+        coEvery { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) } coAnswers {
+            val digest = firstArg<String>()
+            val sourceAssetScope = secondArg<String>()
+            val from = thirdArg<Instant?>()
+            val until = arg<Instant?>(3)
+            val values = mutableListOf<HistoryDailyValue>()
+            var offset = 0
+            while (true) {
+                val result = historyStore.queryDailyValues(
+                    digest,
+                    sourceAssetScope,
+                    from,
+                    until,
+                    HISTORY_PAGE_LIMIT,
+                    offset,
+                )
+                values += result.items
+                if (!result.hasMore || result.items.isEmpty()) break
+                offset += result.items.size
+            }
+            HistoryDailyValueSnapshot(
+                values = values,
+                valuationJob = historyStore.loadValuationJob(digest, sourceAssetScope),
+            )
+        }
+        coEvery { historyStore.queryDailyValueStatusSnapshot(any(), any()) } returns
+            HistoryDailyValueStatusSnapshot(null, null, 0, 0, null, emptyList())
         coEvery { historyService.queryValues(any()) } returns page(emptyList(), 0L)
         coEvery { historyService.queryChartObservations(any(), any(), any(), any()) } returns emptyList()
         coEvery { historyService.queryTrades(any()) } returns page(emptyList(), 0L)
@@ -1528,6 +1520,37 @@ class HistoryApiPresenterTest : StringSpec() {
         calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
         sourceRevision = 1,
     )
+
+    private fun statusSnapshot(
+        values: List<HistoryDailyValue>,
+        job: HistoryValuationJob?,
+    ): HistoryDailyValueStatusSnapshot {
+        val targetValues = values.filter { value ->
+            job != null && value.dayLabel >= job.targetStartDay && value.dayLabel <= job.targetEndDay
+        }
+        val reasons = targetValues.asSequence()
+            .filter { it.status != HistoryDailyValueStatus.COMPLETE }
+            .flatMap { value ->
+                value.assets.asSequence()
+                    .filter { it.status != HistoryDailyValueStatus.COMPLETE }
+                    .map { asset ->
+                        HistoryDailyValueStatusReason(value.dayLabel, asset.status, asset.rawAssetKey, asset.reason)
+                    }
+                    .ifEmpty {
+                        sequenceOf(HistoryDailyValueStatusReason(value.dayLabel, value.status, null, null))
+                    }
+            }
+            .take(50)
+            .toList()
+        return HistoryDailyValueStatusSnapshot(
+            firstDayLabel = values.minOfOrNull { it.dayLabel },
+            lastDayLabel = values.maxOfOrNull { it.dayLabel },
+            availableDays = values.size.toLong(),
+            incompleteDays = values.count { it.status != HistoryDailyValueStatus.COMPLETE }.toLong(),
+            valuationJob = job,
+            blockedReasons = reasons,
+        )
+    }
 
     private fun valuationJob(start: LocalDate, end: LocalDate) = HistoryValuationJob(
         accountIdentityDigest = accountDigest,

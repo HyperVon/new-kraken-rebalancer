@@ -959,6 +959,7 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "Direct value samples stay unchanged; incomplete cycles break the line."
             html shouldContain "No values are inferred between samples."
             html shouldContain "Some cycles have incomplete values. Gaps remain visible in the chart."
+            html shouldContain "Incomplete sample; no portfolio value is plotted"
         }
 
         "renders trades, ledgers, and pagination buttons" {
@@ -1105,8 +1106,10 @@ class HistoryPageComponentTest : StringSpec() {
                 statistics = statistics,
             )
             val html = render(data)
-            html shouldContain "Latest observed value"
-            html shouldContain "Observed value change"
+            html shouldContain "Latest account value"
+            html shouldContain "Change in account value"
+            html shouldContain "Latest value details"
+            html.lowercase() shouldNotContain "observed"
             html shouldContain "Range high"
             html shouldContain "Range low"
             html shouldContain "\$1,234.56"

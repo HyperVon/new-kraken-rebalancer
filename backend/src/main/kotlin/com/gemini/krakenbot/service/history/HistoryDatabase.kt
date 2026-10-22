@@ -24,11 +24,16 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
     )
 
     private val inMemoryKeepalive: Connection? = if (filePath == null) openRawConnection() else null
+    private val journalModeLock = Any()
+
+    @Volatile
+    private var journalModeVerified = filePath == null
 
     /** Called only by the explicit data-initialization command or in-memory tests. */
     fun initializeFreshSchema() {
         filePath?.toAbsolutePath()?.parent?.let { Files.createDirectories(it) }
         connectRaw().use { connection ->
+            ensureWalMode(connection)
             connection.autoCommit = false
             try {
                 val tables = connection.createStatement().use { statement ->
@@ -76,6 +81,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             throw IllegalStateException("History database is not initialized.")
         }
         try {
+            ensureWalMode(connection)
             // Ordinary readers must not reserve SQLite's writer just to check the schema.
             // An actual upgrade still reserves it and rechecks the version inside the transaction.
             if (readSchemaVersion(connection) != HISTORY_SCHEMA_VERSION) {
@@ -370,6 +376,33 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         connection.createStatement().use { statement ->
             statement.execute("PRAGMA foreign_keys = ON")
             statement.execute("PRAGMA busy_timeout = 5000")
+        }
+    }
+
+    private fun ensureWalMode(connection: Connection) {
+        if (filePath == null || journalModeVerified) return
+        synchronized(journalModeLock) {
+            if (journalModeVerified) return
+            val currentMode = connection.createStatement().use { statement ->
+                statement.executeQuery("PRAGMA journal_mode").use { resultSet ->
+                    check(resultSet.next()) { "History database journal mode could not be read." }
+                    resultSet.getString(1)
+                }
+            }
+            val journalMode = if (currentMode.equals("wal", ignoreCase = true)) {
+                currentMode
+            } else {
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA journal_mode = WAL").use { resultSet ->
+                        check(resultSet.next()) { "History database journal mode could not be changed to WAL." }
+                        resultSet.getString(1)
+                    }
+                }
+            }
+            check(journalMode.equals("wal", ignoreCase = true)) {
+                "History database requires WAL mode for concurrent snapshot reads and writes; found '$journalMode'."
+            }
+            journalModeVerified = true
         }
     }
 

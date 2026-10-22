@@ -11,6 +11,8 @@ import com.gemini.krakenbot.service.history.HistoryBalanceStatus
 import com.gemini.krakenbot.service.history.HistoryDailyAssetValue
 import com.gemini.krakenbot.service.history.HistoryDailyValue
 import com.gemini.krakenbot.service.history.HistoryDailyValueStatus
+import com.gemini.krakenbot.service.history.HistoryDailyValueStatusReason
+import com.gemini.krakenbot.service.history.HistoryDailyValueStatusSnapshot
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
@@ -638,62 +640,48 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
             val targetStart = LocalDate.parse("2025-10-21")
             val targetEnd = LocalDate.parse("2026-10-20")
             val blockedDay = LocalDate.parse("2026-03-09")
-            coEvery { historyStore.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
-                HistoryValuationJob(
-                    accountIdentityDigest = accountDigest,
-                    sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-                    generationId = "daily-generation",
-                    state = HistoryValuationJobState.NEEDS_ATTENTION,
-                    stage = HistoryValuationStage.PRICE_AND_VALUE,
-                    targetStartDay = targetStart,
-                    targetEndDay = targetEnd,
-                    nextDay = blockedDay,
-                    targetDays = 365,
-                    balancesProcessed = 365,
-                    balancesValid = 365,
-                    balancesBlocked = 0,
-                    requiredPriceTasks = 12,
-                    completedPriceTasks = 11,
-                    completeValueDays = 364,
-                    blockedValueDays = 1,
-                    sourceRevision = 7,
-                    calculationPolicyVersion = "v1",
-                    lastProgressAt = fixedNow.minusSeconds(60),
-                    nextRetryAt = null,
-                    lastSuccessAt = null,
-                    lastError = "No completed XBT/USD candle for this date.",
-                    updatedAt = fixedNow,
-                )
-            val unavailableDay = HistoryDailyValue(
-                dayEnd = blockedDay.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
+            val valuationJob = HistoryValuationJob(
                 accountIdentityDigest = accountDigest,
                 sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-                totalUsd = null,
-                status = HistoryDailyValueStatus.NO_PRICE,
-                assets = listOf(
-                    HistoryDailyAssetValue(
-                        dayEnd = blockedDay.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
-                        accountIdentityDigest = accountDigest,
-                        rawAssetClass = "currency",
-                        rawAssetKey = "XXBT",
-                        quantity = BigDecimal.ONE,
-                        priceUsd = null,
-                        valueUsd = null,
-                        pricePair = "XXBTZUSD",
-                        priceCandleOpen = null,
-                        priceSource = null,
+                generationId = "daily-generation",
+                state = HistoryValuationJobState.NEEDS_ATTENTION,
+                stage = HistoryValuationStage.PRICE_AND_VALUE,
+                targetStartDay = targetStart,
+                targetEndDay = targetEnd,
+                nextDay = blockedDay,
+                targetDays = 365,
+                balancesProcessed = 365,
+                balancesValid = 365,
+                balancesBlocked = 0,
+                requiredPriceTasks = 12,
+                completedPriceTasks = 11,
+                completeValueDays = 364,
+                blockedValueDays = 1,
+                sourceRevision = 7,
+                calculationPolicyVersion = "v1",
+                lastProgressAt = fixedNow.minusSeconds(60),
+                nextRetryAt = null,
+                lastSuccessAt = null,
+                lastError = "No completed XBT/USD candle for this date.",
+                updatedAt = fixedNow,
+            )
+            coEvery {
+                historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+            } returns HistoryDailyValueStatusSnapshot(
+                firstDayLabel = blockedDay,
+                lastDayLabel = blockedDay,
+                availableDays = 1,
+                incompleteDays = 1,
+                valuationJob = valuationJob,
+                blockedReasons = listOf(
+                    HistoryDailyValueStatusReason(
+                        dayLabel = blockedDay,
                         status = HistoryDailyValueStatus.NO_PRICE,
+                        rawAssetKey = "XXBT",
                         reason = "No completed XBT/USD candle for this date.",
                     ),
                 ),
-                dayLabel = blockedDay,
-                generationId = "daily-generation",
-                calculationPolicyVersion = "v1",
-                sourceRevision = 7,
             )
-            coEvery {
-                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
-            } returns HistoryPage(listOf(unavailableDay), 1L, 365, 0, false)
             coEvery { historyStore.loadSyncJobs(any()) } returns listOf(
                 HistorySyncJob(
                     accountIdentityDigest = accountDigest,

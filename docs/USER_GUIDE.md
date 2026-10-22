@@ -116,7 +116,7 @@ value with a short trailing chart plus two tiles:
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
 The trend uses only in-memory snapshots from the current application run. It
-appears after the second completed cycle, shows the cycle count and observed
+appears after the second completed cycle, shows the cycle count and sample
 times, and resets when the application restarts. It does not read older
 database snapshots, which may predate the current account or include simulation
 data.
@@ -248,6 +248,14 @@ the two numeric fields stay labelled so a score is never mistaken for a target.
 The score-preview and Add Asset controls wrap below their fields when space is
 limited.
 
+Before a rebalance cycle analyzes a configured non-USD asset, Kraken metadata
+must explicitly classify it as `currency`. Missing or unknown metadata and
+non-currency classes, including tokenized assets, stop the cycle before price
+analysis. The application does not infer asset class from ticker names. This
+live eligibility check is separate from historical ledger reporting, which
+excludes share balances only when the imported ledger explicitly identifies
+them as equities.
+
 - Target percent is bounded to **0–100%** by the percent input itself.
 - **Quality score** is optional and runs **0–10**. It is a preference input, not
   a target: it never changes what you hold until you press **Calculate from
@@ -336,6 +344,8 @@ The **Account value (USD)** chart includes spot balances, USD cash, and identifi
 The chart reports the latest available value, the account-value change over the selected range, and the actual baseline date used. Deposits and withdrawals affect that change. A missing or zero baseline does not produce a percentage. Select a daily point, or choose a date under **Holdings at [date]**, to inspect that day's asset, quantity, historical USD price, value, and availability. The daily-total and selected-date holdings CSV exports preserve missing-data status.
 
 Drag to zoom, use **Reset zoom** to restore the selected period, and use the chart tooltips for exact daily values. The chart leaves a break at every incomplete date. Older ranges use daily marks and do not imply that all transaction history has a complete price series. **All** shows available account-value history; **Data status** reports the requested period and its actual value coverage.
+When you change the holdings date, the previous rows clear while the new date
+loads; only the response for the still-selected date and account scope is shown.
 
 **Data status** separates the four kinds of work:
 

@@ -149,6 +149,20 @@ interface HistoryStore {
         offset: Int = 0,
     ): HistoryPage<HistoryDailyValue>
 
+    /** Materializes one bounded date range, including each day's asset rows, from one SQLite snapshot. */
+    suspend fun queryDailyValueSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant? = null,
+        until: Instant? = null,
+    ): HistoryDailyValueSnapshot
+
+    /** Compact status summary from one read snapshot without materializing every daily asset row. */
+    suspend fun queryDailyValueStatusSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+    ): HistoryDailyValueStatusSnapshot
+
     suspend fun countIncompleteDailyValues(accountIdentityDigest: String, sourceAssetScope: String): Long
 
     suspend fun queryDailyAssetValues(

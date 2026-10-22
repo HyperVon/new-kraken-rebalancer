@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.impl.KrakenPublicApiException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -8,6 +9,7 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import java.math.BigDecimal
 import java.time.Instant
@@ -354,6 +356,121 @@ class HistoryDailyValuationTest : StringSpec() {
             empty.sourceLedgerId shouldBe null
         }
 
+        "future unsupported evidence does not invalidate independently established earlier days" {
+            val start = LocalDate.parse("2026-07-01")
+            val end = LocalDate.parse("2026-10-16")
+            val balances = buildAcross(
+                start,
+                end,
+                listOf(
+                    checkpoint("usd-anchor", "2026-06-30T12:00:00Z", "25", "0", "25", "25"),
+                    checkpoint(
+                        "future-tokenized",
+                        "2026-10-15T08:00:00Z",
+                        "1",
+                        "0",
+                        "1",
+                        "1",
+                        rawAssetClass = "tokenized_asset",
+                        rawAssetKey = "TOKENIZED_SHARE",
+                    ),
+                ),
+            ).associateBy { it.dayLabel }
+
+            balances.getValue(LocalDate.parse("2026-10-14")).status shouldBe HistoryDailyBalanceStatus.VALID
+            balances.getValue(LocalDate.parse("2026-10-15")).status shouldBe
+                HistoryDailyBalanceStatus.INVALID_CHECKPOINT
+            balances.getValue(LocalDate.parse("2026-10-16")).reason shouldBe
+                "Ledger history contains an unsupported wallet or asset class for account totals."
+        }
+
+        "unknown evidence before the period and untimed unknown evidence remain fail closed" {
+            val start = LocalDate.parse("2026-07-01")
+            val end = LocalDate.parse("2026-07-03")
+            val before = checkpoint(
+                "old-unsupported",
+                "2026-06-30T12:00:00Z",
+                "1",
+                "0",
+                "1",
+                "1",
+                rawAssetClass = "tokenized_asset",
+                rawAssetKey = "OLD_SHARE",
+            )
+            val untimed = checkpoint(
+                "untimed-unknown",
+                null,
+                "1",
+                "0",
+                "1",
+                "1",
+                rawAssetClass = "currency",
+                rawAssetKey = null,
+            )
+
+            val oldEvidence = buildAcross(
+                start,
+                end,
+                listOf(
+                    before,
+                    checkpoint(
+                        "usd-anchor",
+                        "2026-06-30T13:00:00Z",
+                        "25",
+                        "0",
+                        "25",
+                        "25",
+                    ),
+                ),
+            )
+            val untimedEvidence = buildAcross(
+                start,
+                end,
+                listOf(
+                    checkpoint(
+                        "usd-anchor",
+                        "2026-06-30T13:00:00Z",
+                        "25",
+                        "0",
+                        "25",
+                        "25",
+                    ),
+                    untimed,
+                ),
+            )
+
+            oldEvidence.map { it.status }.distinct() shouldBe listOf(HistoryDailyBalanceStatus.INVALID_CHECKPOINT)
+            untimedEvidence.map { it.status }.distinct() shouldBe listOf(HistoryDailyBalanceStatus.INVALID_CHECKPOINT)
+        }
+
+        "later absolute anchor restores a known stream after an invalid checkpoint" {
+            val start = LocalDate.parse("2026-07-01")
+            val end = LocalDate.parse("2026-07-05")
+            val balances = buildAcross(
+                start,
+                end,
+                listOf(
+                    checkpoint("usd-anchor", "2026-06-30T12:00:00Z", "25", "0", "25", "25"),
+                    checkpoint(
+                        "bad-row",
+                        "2026-07-02T12:00:00Z",
+                        "1",
+                        "0",
+                        "26",
+                        "26",
+                        status = HistoryBalanceStatus.INVALID,
+                    ),
+                    checkpoint("later-anchor", "2026-07-04T12:00:00Z", "30", "0", "30", "30"),
+                ),
+            ).associateBy { it.dayLabel }
+
+            balances.getValue(LocalDate.parse("2026-07-02")).status shouldBe
+                HistoryDailyBalanceStatus.INVALID_CHECKPOINT
+            balances.getValue(LocalDate.parse("2026-07-04")).status shouldBe HistoryDailyBalanceStatus.VALID
+            checkNotNull(balances.getValue(LocalDate.parse("2026-07-04")).quantity)
+                .shouldBeEqualComparingTo(BigDecimal("30"))
+        }
+
         "resolves only completed daily candles and leaves USD at par without a request" {
             val service = mockk<KrakenService>(relaxed = true)
             val now = Instant.parse("2026-04-02T12:00:00Z")
@@ -397,6 +514,65 @@ class HistoryDailyValuationTest : StringSpec() {
             price.closeUsd shouldBeEqualComparingTo BigDecimal("3000.00")
             price.legs.map { it.pair } shouldContainExactly listOf("ETHXBT", "XBTUSD")
             price.legs.map { it.quoteAsset } shouldContainExactly listOf("BTC", "USD")
+        }
+
+        "falls back to completed BTC pricing when Kraken explicitly rejects the direct USD market" {
+            val service = mockk<KrakenService>(relaxed = true)
+            val open = date.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+            val now = dayEnd.plusSeconds(60)
+            coEvery { service.getOHLC("ETHUSD", 1_440, any()) } throws unknownPair("ETHUSD")
+            coEvery { service.getOHLC("ETHXBT", 1_440, any()) } returns listOf(open to BigDecimal("0.05"))
+            coEvery { service.getOHLC("XBTUSD", 1_440, any()) } returns listOf(open to BigDecimal("60000"))
+            val resolver = HistoryDailyPriceResolver(service, nowProvider = { now })
+
+            val price = resolver.resolve(accountDigest, setOf(HistoryDailyPriceRequest("ETH", date))).single()
+
+            price.closeUsd shouldBeEqualComparingTo BigDecimal("3000.00")
+            price.pair shouldBe "ETHXBT × XBTUSD"
+            price.candleOpen shouldBe Instant.ofEpochSecond(open)
+            price.legs.map { it.pair } shouldContainExactly listOf("ETHXBT", "XBTUSD")
+            coVerify(exactly = 1) { service.getOHLC("ETHUSD", 1_440, any()) }
+        }
+
+        "falls back to completed EUR pricing when Kraken explicitly rejects the direct and BTC markets" {
+            val service = mockk<KrakenService>(relaxed = true)
+            val open = date.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+            val now = dayEnd.plusSeconds(60)
+            coEvery { service.getOHLC("ETHUSD", 1_440, any()) } throws unknownPair("ETHUSD")
+            coEvery { service.getOHLC("ETHXBT", 1_440, any()) } throws unknownPair("ETHXBT")
+            coEvery { service.getOHLC("ETHXXBT", 1_440, any()) } throws unknownPair("ETHXXBT")
+            coEvery { service.getOHLC("ETHZEUR", 1_440, any()) } returns listOf(open to BigDecimal("0.50"))
+            coEvery { service.getOHLC("EURUSD", 1_440, any()) } returns listOf(open to BigDecimal("1.20"))
+            val resolver = HistoryDailyPriceResolver(service, nowProvider = { now })
+
+            val price = resolver.resolve(accountDigest, setOf(HistoryDailyPriceRequest("ETH", date))).single()
+
+            price.closeUsd shouldBeEqualComparingTo BigDecimal("0.6000")
+            price.pair shouldBe "ETHZEUR × EURUSD"
+            price.legs.map { it.pair } shouldContainExactly listOf("ETHZEUR", "EURUSD")
+        }
+
+        "does not treat transient market failures or rate limits as evidence of an unsupported pair" {
+            val transient = mockk<KrakenService>(relaxed = true)
+            val networkFailure = java.io.IOException("network unavailable")
+            coEvery { transient.getOHLC("ETHUSD", 1_440, any()) } throws networkFailure
+            shouldThrow<java.io.IOException> {
+                HistoryDailyPriceResolver(transient, nowProvider = { dayEnd.plusSeconds(60) })
+                    .resolve(accountDigest, setOf(HistoryDailyPriceRequest("ETH", date)))
+            } shouldBe networkFailure
+            coVerify(exactly = 0) { transient.getOHLC("ETHXBT", 1_440, any()) }
+
+            val rateLimited = mockk<KrakenService>(relaxed = true)
+            coEvery { rateLimited.getOHLC("ETHUSD", 1_440, any()) } throws KrakenPublicApiException(
+                endpoint = "OHLC",
+                errors = listOf("EAPI:Rate limit exceeded"),
+                message = "Kraken Public API Error: [EAPI:Rate limit exceeded]",
+            )
+            shouldThrow<KrakenPublicApiException> {
+                HistoryDailyPriceResolver(rateLimited, nowProvider = { dayEnd.plusSeconds(60) })
+                    .resolve(accountDigest, setOf(HistoryDailyPriceRequest("ETH", date)))
+            }.errors shouldBe listOf("EAPI:Rate limit exceeded")
+            coVerify(exactly = 0) { rateLimited.getOHLC("ETHXBT", 1_440, any()) }
         }
 
         "uses completed EUR conversion legs when a BTC close cannot be converted on that day" {
@@ -467,9 +643,20 @@ class HistoryDailyValuationTest : StringSpec() {
             generationId = "generation-1",
         )
 
+    private fun buildAcross(startDay: LocalDate, endDay: LocalDate, checkpoints: List<HistoryBalanceCheckpoint>) =
+        builder.build(
+            accountIdentityDigest = accountDigest,
+            startDay = startDay,
+            endDay = endDay,
+            checkpoints = checkpoints,
+            coverage = coverage(endDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()),
+            sourceRevision = 1,
+            generationId = "generation-1",
+        )
+
     private fun checkpoint(
         id: String,
-        at: String,
+        at: String?,
         amount: String,
         fee: String,
         balance: String,
@@ -480,7 +667,7 @@ class HistoryDailyValuationTest : StringSpec() {
     ) = HistoryBalanceCheckpoint(
         accountIdentityDigest = accountDigest,
         ledgerId = id,
-        observedAt = Instant.parse(at),
+        observedAt = at?.let(Instant::parse),
         rawAssetClass = rawAssetClass,
         rawAssetKey = rawAssetKey,
         rawAmount = amount,
@@ -514,5 +701,10 @@ class HistoryDailyValuationTest : StringSpec() {
         candleOpen = date.atStartOfDay(ZoneOffset.UTC).toInstant(),
         candleEnd = dayEnd,
         closeUsd = price,
+    )
+    private fun unknownPair(pair: String) = KrakenPublicApiException(
+        endpoint = "/0/public/OHLC?pair=$pair",
+        errors = listOf("EQuery:Unknown asset pair"),
+        message = "Kraken Public API Error: [EQuery:Unknown asset pair]",
     )
 }

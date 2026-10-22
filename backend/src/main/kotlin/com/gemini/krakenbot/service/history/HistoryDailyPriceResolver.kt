@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.impl.KrakenPublicApiException
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -119,18 +120,25 @@ class HistoryDailyPriceResolver(
         return null
     }
 
-    private suspend fun fetchCompleted(pair: String, sinceSec: Long, now: Instant): Map<Long, BigDecimal> =
-        krakenService.getOHLC(pair = pair, interval = DAILY_INTERVAL_MINUTES, since = sinceSec)
-            .asSequence()
+    private suspend fun fetchCompleted(pair: String, sinceSec: Long, now: Instant): Map<Long, BigDecimal> {
+        val candles = try {
+            krakenService.getOHLC(pair = pair, interval = DAILY_INTERVAL_MINUTES, since = sinceSec)
+        } catch (error: KrakenPublicApiException) {
+            if (error.errors != UNKNOWN_ASSET_PAIR_ERRORS) throw error
+            return emptyMap()
+        }
+        return candles.asSequence()
             .filter { (open, close) ->
                 open >= 0L && Instant.ofEpochSecond(open).plusSeconds(SECONDS_PER_DAY) <= now && close.signum() > 0
             }
             .associate { it.first to it.second }
+    }
 
     private data class ResolvedPrice(val closeUsd: BigDecimal, val pair: String, val legs: List<HistoryDailyPriceLeg>)
 
     companion object {
         private const val DAILY_INTERVAL_MINUTES = 1_440
         private const val SECONDS_PER_DAY = 86_400L
+        private val UNKNOWN_ASSET_PAIR_ERRORS = listOf("EQuery:Unknown asset pair")
     }
 }

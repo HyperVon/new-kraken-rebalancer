@@ -12,6 +12,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.ConfiguredAssetTradingEligibility
 import com.gemini.krakenbot.service.DirectTickerCapture
 import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenService
@@ -60,6 +61,11 @@ class PortfolioAnalyzerImpl(
                 ),
             )
         }
+
+        ConfiguredAssetTradingEligibility.requireEligible(
+            configuredSymbols = nonUsd.map { it.symbol.value },
+            metadata = krakenService.getAssetMetadata(),
+        )
 
         val requests = nonUsd.map { (symbol, _) -> DirectTickerRequest(symbol.value, symbol.tradingPair) }
         val read = krakenService.readTickerPricesWithCapture(requests)

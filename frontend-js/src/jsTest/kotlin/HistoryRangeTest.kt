@@ -496,7 +496,7 @@ class HistoryRangeTest : StringSpec() {
                     "Portfolio values have been recorded since 2026-03-09. " +
                     "Older trades and transactions are available separately."
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 1 · Incomplete · Gaps: 2"
+                    "Account value points: 1 · Incomplete · Gaps: 2"
                 (root.querySelector("#history-scope-link") as HTMLElement).hidden shouldBe false
 
                 val svg = root.querySelector("#history-value-chart svg")!!
@@ -543,7 +543,7 @@ class HistoryRangeTest : StringSpec() {
                     "Portfolio values have been recorded since 2026-03-09. " +
                     "Older trades and transactions are available separately."
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 2 · Complete · Gaps: 0"
+                    "Account value points: 2 · Complete · Gaps: 0"
 
                 val svg = root.querySelector("#history-value-chart svg")!!
                 svg.getAttribute("data-full-from") shouldBe "2026-02-08T00:00:00Z"
@@ -600,7 +600,7 @@ class HistoryRangeTest : StringSpec() {
                 (root.querySelector("#history-coverage-trades") as HTMLElement).textContent shouldBe "No data recorded"
                 (root.querySelector("#history-coverage-ledgers") as HTMLElement).textContent shouldBe "No data recorded"
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 19 · Incomplete · Gaps: 1"
+                    "Account value points: 19 · Incomplete · Gaps: 1"
                 (root.querySelector("#history-scope-link") as HTMLElement).hidden shouldBe true
 
                 val svg = root.querySelector("#history-value-chart svg")!!
@@ -644,7 +644,7 @@ class HistoryRangeTest : StringSpec() {
                 initHistoryRangeControls(currentQuery = "?range=all", fetchJson = fetch, timezone = { "UTC" })
 
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 2403 · Plotted points: 3 · Incomplete · Gaps: 6"
+                    "Account value points: 2403 · Plotted points: 3 · Incomplete · Gaps: 6"
             } finally {
                 root.remove()
             }
@@ -682,7 +682,7 @@ class HistoryRangeTest : StringSpec() {
                     "All recorded data"
                 (root.querySelector("#history-coverage-values") as HTMLElement).textContent shouldBe "No data recorded"
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 0 · Complete · Gaps: 0"
+                    "Account value points: 0 · Complete · Gaps: 0"
                 (root.querySelector("#history-coverage-sparse") as HTMLElement).hidden shouldBe true
                 root.querySelector("#history-value-chart circle[data-value]") shouldBe null
                 root.querySelector("#history-value-chart svg")!!.textContent!!.contains(

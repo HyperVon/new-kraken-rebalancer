@@ -10,6 +10,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.browser.document
+import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.events.Event
@@ -77,6 +78,121 @@ class HistoryInteractionTest :
             historyChartSelectionFor(HtmlIds.HISTORY_ASSET_CHART) shouldBe HistoryChartSelections.CHECKPOINTS
         }
 
+        "only the latest holdings request can render data or an error" {
+            val pending = mutableListOf<Triple<String, (dynamic) -> Unit, () -> Unit>>()
+            val cancelled = mutableListOf<String>()
+            val rendered = mutableListOf<String>()
+            val errors = mutableListOf<String>()
+            var selected = "A"
+            val request = HistorySelectionRequest(
+                request = { url, success, failure ->
+                    pending.add(Triple(url, success, failure))
+                    val cancel: () -> Unit = { cancelled += url }
+                    cancel
+                },
+                currentSelection = { selected },
+                onSuccess = { response -> rendered += response.day as String },
+                onFailure = { errors += selected },
+            )
+
+            request.load("/holdings?date=A", "A")
+            selected = "B"
+            request.load("/holdings?date=B", "B")
+            pending[1].second(json("day" to "B"))
+            pending[0].third()
+
+            rendered shouldBe listOf("B")
+            errors shouldBe emptyList()
+            cancelled shouldBe listOf("/holdings?date=A")
+
+            selected = "A"
+            request.load("/holdings?date=A", "A")
+            selected = "B"
+            request.load("/holdings?date=B", "B")
+            pending[3].third()
+            pending[2].second(json("day" to "A"))
+
+            rendered shouldBe listOf("B")
+            errors shouldBe listOf("B")
+        }
+
+        "holdings response and failure labels use the latest selected date" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <input id="history-holdings-date">
+                <section id="history-account-holdings"><h2></h2></section>
+                <p id="history-holdings-total"></p>
+                <table><tbody id="history-holdings-rows"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+            val date = root.querySelector("#history-holdings-date") as org.w3c.dom.HTMLInputElement
+            val pending = mutableListOf<Triple<String, (dynamic) -> Unit, () -> Unit>>()
+            val request = newHistoryHoldingsSelectionRequest(
+                request = { url, success, failure ->
+                    pending.add(Triple(url, success, failure))
+                    val cancel: () -> Unit = {}
+                    cancel
+                },
+                currentDay = { date.value.takeIf(String::isNotBlank) },
+            )
+
+            fun select(day: String) {
+                date.value = day
+                request.load("/holdings?date=$day", "$day|${window.location.search}")
+            }
+
+            try {
+                select("A")
+                select("B")
+                pending[1].second(json("available" to true, "holdings" to emptyArray<Any>()))
+                pending[0].second(json("available" to true, "holdings" to emptyArray<Any>()))
+                root.querySelector("#history-account-holdings h2")?.textContent shouldBe "Holdings at B"
+
+                select("A")
+                select("B")
+                pending[3].third()
+                pending[2].third()
+                root.querySelector("#history-holdings-total")?.textContent shouldBe "Could not load holdings for B."
+            } finally {
+                root.remove()
+            }
+        }
+
+        "rapid holdings navigation and scope changes reject every obsolete callback" {
+            val pending = mutableListOf<Pair<(dynamic) -> Unit, () -> Unit>>()
+            val rendered = mutableListOf<String>()
+            val errors = mutableListOf<Unit>()
+            var selected = "A|account-1"
+            val request = HistorySelectionRequest(
+                request = { _, success, failure ->
+                    pending.add(success to failure)
+                    val cancel: () -> Unit = {}
+                    cancel
+                },
+                currentSelection = { selected },
+                onSuccess = { response -> rendered += response.day as String },
+                onFailure = { errors += Unit },
+            )
+
+            request.load("/holdings?date=A", "A|account-1")
+            selected = "B|account-1"
+            request.load("/holdings?date=B", "B|account-1")
+            selected = "C|account-1"
+            request.load("/holdings?date=C", "C|account-1")
+            pending[1].second()
+            pending[0].first(json("day" to "A"))
+            pending[2].first(json("day" to "C"))
+
+            selected = "C|account-1"
+            request.load("/holdings?date=C&scope=one", "C|account-1")
+            selected = "C|account-2"
+            pending[3].first(json("day" to "C-old-scope"))
+            pending[3].second()
+
+            rendered shouldBe listOf("C")
+            errors shouldBe emptyList()
+        }
+
         "the single analysis selector changes one panel and does not register duplicate listeners" {
             val root: HTMLElement = document.createElement("div") as HTMLElement
             root.innerHTML = """
@@ -111,7 +227,12 @@ class HistoryInteractionTest :
                         "label" to "Portfolio value",
                         "unit" to "USD",
                         "points" to arrayOf(
-                            json("t" to 1000.0, "v" to 10.0, "complete" to true),
+                            json(
+                                "t" to 1000.0,
+                                "v" to 10.0,
+                                "complete" to true,
+                                "dayLabel" to "2026-03-10",
+                            ),
                             json("t" to 2000.0, "v" to 20.0, "complete" to true),
                         ),
                     ),
@@ -129,6 +250,7 @@ class HistoryInteractionTest :
             series.size shouldBe 2
             series[0].first shouldBe "Portfolio value"
             series[0].second.size shouldBe 2
+            series[0].second.first().dayLabel shouldBe "2026-03-10"
             series[1].first shouldBe "BTC"
             series[1].second.single().value shouldBe 0.5
         }

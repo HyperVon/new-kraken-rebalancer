@@ -297,6 +297,15 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   share balances are excluded; all USD ledger changes, including stock-trade
   settlement and dividend credits, remain cash. These are historical closing-price estimates,
   not profit or investment-return calculations.
+- Daily charts, holdings, status, and CSV exports read values and their per-asset
+  details from one bounded SQLite snapshot, so a valuation publication cannot
+  mix generations. If Kraken explicitly rejects a direct market as unknown, the
+  resolver tries same-day BTC or EUR conversion evidence; network and rate-limit
+  errors retain their retry behavior. USD is always valued at exactly one.
+- Before rebalancing a configured non-USD asset, Kraken metadata must classify it
+  as `currency`. Missing, tokenized, or unknown classes stop the cycle before
+  price analysis; the system does not guess from ticker names. This protects the
+  order path without changing the historical ledger-based equity exclusion.
 - History statistics show the latest available account value and its change
   over the selected period, with deposits and withdrawals called out. Trade
   volume and fees stay grouped by currency; funding and rewards stay in native

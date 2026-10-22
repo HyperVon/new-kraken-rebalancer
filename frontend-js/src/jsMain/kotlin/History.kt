@@ -32,7 +32,7 @@ import org.w3c.dom.events.Event
 import kotlin.js.Date
 import kotlin.js.json
 
-internal data class HistoryChartPoint(val time: Double, val value: Double?)
+internal data class HistoryChartPoint(val time: Double, val value: Double?, val dayLabel: String? = null)
 
 internal data class HistoryRangeState(
     val preset: String,
@@ -58,6 +58,8 @@ internal var historyLatestDataHandler: (() -> Unit)? = null
 private var historyStatusPoller: HistoryDataStatusPoller? = null
 private var historyRefreshReinitializer: (() -> Unit)? = null
 private var historyAfterSwapListenerInstalled = false
+private var historyHoldingsRequest: HistorySelectionRequest? = null
+private var historyHoldingsClickListenerInstalled = false
 
 /** Read only direct server-rendered evidence; incomplete samples remain explicit null breaks. */
 internal fun historyChartPoints(container: Element): List<HistoryChartPoint> {
@@ -66,11 +68,12 @@ internal fun historyChartPoints(container: Element): List<HistoryChartPoint> {
         val marker = markers.item(index) as? Element ?: return@mapNotNull null
         val time = marker.getAttribute(HtmlAttrs.DATA_TIME)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: return@mapNotNull null
+        val dayLabel = marker.getAttribute("data-history-day")?.takeIf(String::isNotBlank)
         val value = marker.getAttribute(HtmlAttrs.DATA_VALUE)?.toDoubleOrNull()?.takeIf { it.isFinite() }
         if (marker.getAttribute(HtmlAttrs.DATA_GAP) == "true") {
-            HistoryChartPoint(time, null)
+            HistoryChartPoint(time, null, dayLabel)
         } else {
-            value?.let { HistoryChartPoint(time, it) }
+            value?.let { HistoryChartPoint(time, it, dayLabel) }
         }
     }.sortedBy { it.time }.distinctBy { it.time }
 }
@@ -83,6 +86,7 @@ internal fun historySeriesPoints(container: Element): List<Pair<String, List<His
         val marker = markers.item(index) as? Element ?: return@repeat
         val time = marker.getAttribute(HtmlAttrs.DATA_TIME)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: return@repeat
+        val dayLabel = marker.getAttribute("data-history-day")?.takeIf(String::isNotBlank)
         val value = if (marker.getAttribute(HtmlAttrs.DATA_GAP) == "true") {
             null
         } else {
@@ -90,7 +94,7 @@ internal fun historySeriesPoints(container: Element): List<Pair<String, List<His
                 ?: return@repeat
         }
         val series = marker.getAttribute(HtmlAttrs.DATA_SERIES) ?: ""
-        grouped.getOrPut(series) { mutableListOf() }.add(HistoryChartPoint(time, value))
+        grouped.getOrPut(series) { mutableListOf() }.add(HistoryChartPoint(time, value, dayLabel))
     }
     return grouped.map { (series, points) ->
         series to points.sortedBy { it.time }.distinctBy { it.time }
@@ -467,6 +471,7 @@ private fun updateHistoryExportLinks(query: String, range: dynamic) {
 }
 
 internal fun initHistoryDataActions() {
+    historyHoldingsRequest?.cancel()
     fun bindForm(formId: String, messageId: String?, successMessage: String?) {
         val target = document.getElementById(formId) ?: return
         val form = if (target is HTMLFormElement) {
@@ -534,40 +539,91 @@ internal fun initHistoryDataActions() {
         HistoryRangeText.REPAIR_ACCEPTED,
     )
 
-    fun updateAccountHoldings(day: String) {
-        if (day.isBlank()) return
-        val params: dynamic = js("new URLSearchParams()")
-        params.set("date", day)
-        fetchHistoryJson(
-            "${Routes.API_HISTORY_HOLDINGS}?$params",
-            onSuccess = { response ->
-                renderHistoryHoldings(response, day)
+    (document.getElementById("history-holdings-date") as? HTMLInputElement)?.let { input ->
+        if (input.asDynamic().historyHoldingsChangeInitialized != true) {
+            input.asDynamic().historyHoldingsChangeInitialized = true
+            input.addEventListener("change", { event: Event ->
+                val selectedInput = event.target as? HTMLInputElement ?: return@addEventListener
+                updateAccountHoldings(selectedInput.value)
                 updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
-            },
-            onFailure = {
-                document.getElementById("history-holdings-total")?.textContent = "Could not load holdings for $day."
-            },
-        )
+            })
+        }
     }
+    if (!historyHoldingsClickListenerInstalled) {
+        historyHoldingsClickListenerInstalled = true
+        document.addEventListener(HtmlEvents.CLICK, { event: Event ->
+            val target = event.target as? Element ?: return@addEventListener
+            val marker = target.asDynamic().closest("[data-history-day]") as? Element ?: return@addEventListener
+            selectHistoryHoldingsDay(marker.getAttribute("data-history-day") ?: return@addEventListener)
+        })
+    }
+}
 
-    (document.getElementById("history-holdings-date") as? HTMLInputElement)?.addEventListener(
-        "change",
-        { event: Event ->
-            val input = event.target as? HTMLInputElement ?: return@addEventListener
-            updateAccountHoldings(input.value)
-            updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
+private fun selectHistoryHoldingsDay(day: String) {
+    if (day.isBlank()) return
+    val input = document.getElementById("history-holdings-date") as? HTMLInputElement ?: return
+    input.value = day
+    updateAccountHoldings(day)
+    updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
+}
+
+/** The value chart canvas replaces its SVG samples after enhancement, so it must keep day selection. */
+private fun bindHistoryHoldingsChartSelection(session: HistoryChartSession) {
+    if (session.container.id != HtmlIds.HISTORY_VALUE_CHART) return
+    session.disposers.add(
+        listenDom(session.canvas, HtmlEvents.CLICK) { event ->
+            val getElements = session.chart?.getElementsAtEventForMode
+            if (getElements == null || getElements == undefined || jsTypeOf(getElements) != "function") {
+                return@listenDom
+            }
+            val matches = getElements.call(session.chart, event, "nearest", json("intersect" to true), true)
+            val count = (matches?.length as? Number)?.toInt() ?: 0
+            if (count == 0) return@listenDom
+            val match: dynamic = matches[0]
+            val datasetIndex = (match?.datasetIndex as? Number)?.toInt() ?: return@listenDom
+            val pointIndex = (match["index"] as? Number)?.toInt() ?: return@listenDom
+            val time = (session.chart.data.datasets[datasetIndex].data[pointIndex].x as? Number)?.toDouble()
+                ?: return@listenDom
+            session.dayLabels[time]?.let(::selectHistoryHoldingsDay)
         },
     )
-    document.addEventListener(HtmlEvents.CLICK, { event: Event ->
-        val target = event.target as? Element ?: return@addEventListener
-        val marker = target.asDynamic().closest("[data-history-day]") as? Element ?: return@addEventListener
-        val day = marker.getAttribute("data-history-day")?.takeIf(String::isNotBlank) ?: return@addEventListener
-        val input = document.getElementById("history-holdings-date") as? HTMLInputElement ?: return@addEventListener
-        input.value = day
-        updateAccountHoldings(day)
-        updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
-    })
 }
+
+private fun updateAccountHoldings(day: String) {
+    if (day.isBlank()) return
+    document.querySelector("#history-account-holdings h2")?.textContent = "Loading holdings for $day…"
+    document.getElementById("history-holdings-total")?.textContent = "Loading holdings…"
+    val rows = document.getElementById("history-holdings-rows")
+    while (rows?.firstChild != null) rows.removeChild(rows.firstChild!!)
+    val params: dynamic = js("new URLSearchParams()")
+    params.set("date", day)
+    val selection = historyHoldingsSelection(day)
+    val request = historyHoldingsRequest ?: newHistoryHoldingsSelectionRequest()
+    historyHoldingsRequest = request
+    request.load("${Routes.API_HISTORY_HOLDINGS}?$params", selection)
+}
+
+private fun historyHoldingsSelection(day: String): String = "$day|${window.location.search}"
+
+internal fun newHistoryHoldingsSelectionRequest(
+    request: (String, (dynamic) -> Unit, () -> Unit) -> (() -> Unit) = ::fetchHistoryRequest,
+    currentDay: () -> String? = {
+        (document.getElementById("history-holdings-date") as? HTMLInputElement)
+            ?.value?.takeIf(String::isNotBlank)
+    },
+): HistorySelectionRequest = HistorySelectionRequest(
+    request = request,
+    currentSelection = { currentDay()?.let(::historyHoldingsSelection) },
+    onSuccess = { response ->
+        currentDay()?.let { renderHistoryHoldings(response, it) }
+        updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
+    },
+    onFailure = {
+        currentDay()?.let { day ->
+            document.getElementById("history-holdings-total")?.textContent = "Could not load holdings for $day."
+        }
+    },
+)
 
 internal fun renderHistoryHoldings(response: dynamic, day: String) {
     document.querySelector("#history-account-holdings h2")?.textContent = "Holdings at $day"
@@ -722,6 +778,53 @@ private fun fetchHistoryRequest(url: String, onSuccess: (dynamic) -> Unit, onFai
         active = false
         if (controller != null) controller.abort()
     }
+}
+
+/** Keeps asynchronous date-selected evidence bound to the latest date and page scope. */
+internal class HistorySelectionRequest(
+    private val request: (String, (dynamic) -> Unit, () -> Unit) -> (() -> Unit),
+    private val currentSelection: () -> String?,
+    private val onSuccess: (dynamic) -> Unit,
+    private val onFailure: () -> Unit,
+) {
+    private var version = 0
+    private var cancelRequest: (() -> Unit)? = null
+
+    fun load(url: String, selection: String) {
+        val requestVersion = ++version
+        cancelRequest?.invoke()
+        cancelRequest = null
+        var completed = false
+        val cancel = request(
+            url,
+            { response ->
+                completed = true
+                if (!isCurrent(requestVersion, selection)) return@request
+                cancelRequest = null
+                onSuccess(response)
+            },
+            {
+                completed = true
+                if (!isCurrent(requestVersion, selection)) return@request
+                cancelRequest = null
+                onFailure()
+            },
+        )
+        if (!completed && isCurrent(requestVersion, selection)) {
+            cancelRequest = cancel
+        } else if (!isCurrent(requestVersion, selection)) {
+            cancel()
+        }
+    }
+
+    fun cancel() {
+        version++
+        cancelRequest?.invoke()
+        cancelRequest = null
+    }
+
+    private fun isCurrent(requestVersion: Int, selection: String): Boolean =
+        requestVersion == version && currentSelection() == selection
 }
 
 internal data class HistoryRefreshBadge(val label: String, val className: String)
@@ -1789,7 +1892,8 @@ private fun historyKeyedApiSeries(response: dynamic): List<HistoryApiChartSeries
             val point = rawPoints[pointIndex]
             val time = (point.t as? Number)?.toDouble() ?: historyIsoTime(point.tIso) ?: return@mapNotNull null
             val value = (point.v as? Number)?.toDouble()?.takeIf { point.complete == true && it.isFinite() }
-            HistoryChartPoint(time, value)
+            val dayLabel = (point.dayLabel as? String)?.takeIf(String::isNotBlank)
+            HistoryChartPoint(time, value, dayLabel)
         }.sortedBy { it.time }
         HistoryApiChartSeries(key, label, legendLabel, points)
     }
@@ -1922,6 +2026,9 @@ internal fun applyHistoryChartSeries(
         ?: allSeries.firstOrNull()?.key
     val series = if (native) allSeries.filter { it.key == selectedAsset } else allSeries
     val session = historyChartSessions[chartId]
+    session?.dayLabels = allSeries.flatMap { it.points }
+        .mapNotNull { point -> point.dayLabel?.let { point.time to it } }
+        .toMap()
     val points = allSeries.flatMap { it.points }.sortedBy { it.time }
     val incomingRange = historyChartRange(response, points)
     val range = if (session != null && (viewportDetail || (preserveViewport && session.viewport.isZoomed))) {
@@ -2099,15 +2206,17 @@ private fun historyPortfolioSvg(
         "<polyline class=\"${CssClass.History.Line.value}\" points=\"$linePoints\"/>"
     }
     val markers = points.mapIndexedNotNull { index, point ->
+        val dayAttribute = point.dayLabel?.let { " data-history-day=\"${historySvgEscape(it)}\"" }.orEmpty()
         if (point.value == null) {
             "<circle class=\"${CssClass.History.GapMarker.value}\" data-time=\"${point.time}\" data-gap=\"true\" " +
-                "data-series=\"${historySvgEscape(seriesKey)}\" cx=\"${x(point.time)}\" cy=\"$bottom\" r=\"3\"/>"
+                "data-series=\"${historySvgEscape(seriesKey)}\"$dayAttribute " +
+                "cx=\"${x(point.time)}\" cy=\"$bottom\" r=\"3\"/>"
         } else {
             val visible = index % visibleStep == 0 || index == points.lastIndex
             "<circle class=\"${CssClass.History.Point.value}\" data-time=\"${point.time}\" " +
                 "data-value=\"${point.value}\" data-series=\"${historySvgEscape(
                     seriesKey,
-                )}\" cx=\"${x(point.time)}\" " +
+                )}\"$dayAttribute cx=\"${x(point.time)}\" " +
                 "cy=\"${y(point.value)}\" r=\"${if (visible) 3 else 0}\"><title>" +
                 "${historySvgEscape(
                     historyDateLabel(point.time),
@@ -2203,7 +2312,7 @@ private fun updateHistoryCoverage(response: dynamic, chartResponse: dynamic, old
     val completeness = if (incomplete) ViewText.HISTORY_COVERAGE_INCOMPLETE else ViewText.HISTORY_COVERAGE_COMPLETE
     val plotted = if (representative) " · ${ViewText.HISTORY_COVERAGE_PLOTTED}: $pointCount" else ""
     document.getElementById("history-coverage-count")?.textContent =
-        "${ViewText.HISTORY_COVERAGE_RECORDED}: $totalObservations$plotted · $completeness · " +
+        "${ViewText.HISTORY_ACCOUNT_VALUE_POINTS}: $totalObservations$plotted · $completeness · " +
         "${ViewText.HISTORY_COVERAGE_GAPS}: $gapCount"
     val points = historyKeyedApiSeries(chartResponse).flatMap { it.points }.sortedBy { it.time }
     val first = points.firstOrNull()?.time
@@ -3332,11 +3441,13 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
             evidenceSignature = signature,
             fullRange = domRange ?: ChartRange(chartPoints.first().time, chartPoints.last().time),
         )
+        session.dayLabels = chartPoints.mapNotNull { point -> point.dayLabel?.let { point.time to it } }.toMap()
         historyChartSessions[id] = session
         syncHistoryFollowLatestButton(container, session.viewport.isZoomed)
         refreshedHistoryEvidenceSignatures.remove(id)
         bindLegendPersistence(chart, id)
         attachChartGestures(session)
+        bindHistoryHoldingsChartSelection(session)
         setupHistoryChartControls(session, chartPoints, single ?: true)
         val response = container.asDynamic().historySeriesResponse
         if (response != null && response != undefined) applyHistoryChartSeries(id, response, preserveViewport = false)

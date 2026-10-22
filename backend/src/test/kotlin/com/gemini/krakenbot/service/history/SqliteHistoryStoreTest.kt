@@ -762,6 +762,13 @@ class SqliteHistoryStoreTest : StringSpec() {
 
                 store.publishDailyValues(job, values)
 
+                val snapshot = store.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                snapshot.values.size shouldBe 2
+                snapshot.values.map { it.generationId }.distinct() shouldBe listOf(generation)
+                snapshot.values.flatMap { it.assets }.map { it.rawAssetKey }.distinct() shouldBe listOf("ZUSD")
+                snapshot.valuationJob?.generationId shouldBe generation
+                snapshot.valuationJob?.state shouldBe HistoryValuationJobState.COMPLETE
+
                 val published = store.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
                 published.total shouldBe 2L
                 published.items.map { it.generationId }.distinct() shouldBe listOf(generation)

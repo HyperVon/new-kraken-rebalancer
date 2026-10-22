@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
@@ -169,6 +170,8 @@ class FakeKrakenService : KrakenService {
                 "USDT",
                 "USDC",
                 "BABY",
+                TestFixtures.A,
+                TestFixtures.B,
             ).map { KrakenAssetMetadata(it, KrakenApiConstants.ASSET_CLASS_CURRENCY) } +
                 KrakenAssetMetadata("TOKENIZED_ASSET_1", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET)
     }

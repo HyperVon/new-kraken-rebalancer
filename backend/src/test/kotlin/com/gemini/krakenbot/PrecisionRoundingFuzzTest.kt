@@ -74,6 +74,19 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                                 )
                             }
 
+                            "/0/public/Assets" -> {
+                                val response = if (request.url.parameters["aclass"] == "currency") {
+                                    """{"error":[],"result":{"XXBT":{"aclass":"currency"}}}"""
+                                } else {
+                                    """{"error":[],"result":{}}"""
+                                }
+                                respond(
+                                    content = response,
+                                    status = HttpStatusCode.OK,
+                                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                                )
+                            }
+
                             "/0/public/Ticker" -> {
                                 respond(
                                     content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"68453.123456789\"]}}}",

@@ -10,6 +10,7 @@ import java.time.ZoneOffset
 const val HISTORY_PAGE_LIMIT = 500
 const val HISTORY_MAX_PAGE_LIMIT = 2_000
 const val HISTORY_MAX_CHART_POINTS = 2_000
+const val HISTORY_MAX_DAILY_SNAPSHOT_ROWS = 20_000
 const val HISTORY_WALLET_SCOPE = "KRAKEN_DEFAULT_WALLET"
 const val HISTORY_BALANCE_SOURCE = "KRAKEN_PRIVATE_BALANCE"
 const val HISTORY_PRICE_SOURCE = "KRAKEN_PUBLIC_TICKER_LAST_TRADE_C0"
@@ -369,6 +370,25 @@ data class HistoryDailyValue(
     val generationId: String = "legacy",
     val calculationPolicyVersion: String = "legacy",
     val sourceRevision: Long = 0,
+)
+
+/** Daily headers, asset rows, and durable valuation progress read from one committed SQLite view. */
+data class HistoryDailyValueSnapshot(val values: List<HistoryDailyValue>, val valuationJob: HistoryValuationJob?)
+
+data class HistoryDailyValueStatusReason(
+    val dayLabel: LocalDate,
+    val status: HistoryDailyValueStatus,
+    val rawAssetKey: String?,
+    val reason: String?,
+)
+
+data class HistoryDailyValueStatusSnapshot(
+    val firstDayLabel: LocalDate?,
+    val lastDayLabel: LocalDate?,
+    val availableDays: Long,
+    val incompleteDays: Long,
+    val valuationJob: HistoryValuationJob?,
+    val blockedReasons: List<HistoryDailyValueStatusReason>,
 )
 
 data class HistoryValuationJob(

@@ -42,6 +42,19 @@ for the configured non-USD assets. USD is valued at one dollar. A missing or
 zero non-USD ticker mark fails valuation and prevents order generation for that
 cycle.
 
+Before ticker analysis, each configured non-USD asset must have explicit Kraken
+asset metadata with class `currency`. Missing metadata, an unknown class, or a
+non-currency class stops the cycle before prices or orders are evaluated. The
+private balance response supplies asset amounts but does not attach the generic
+ledger `assetClass`; the public asset-info contract currently distinguishes
+`currency` and `tokenized_asset` (xStocks). The rebalancer therefore fails
+closed for tokenized or unclassified configured assets and does not infer an
+asset class from its ticker. See Kraken's [Get Account Balance](https://docs.kraken.com/api-reference/account-data/get-account-balance)
+and [Get Asset Info](https://docs.kraken.com/api-reference/market-data/get-asset-info)
+contracts. This active-trading eligibility check is separate from History's
+ledger evidence: History excludes rows explicitly classified as `equity`,
+retains USD cash changes, and never guesses equity from a symbol.
+
 For portfolio value `V` and asset `i`:
 
 ```text
@@ -213,6 +226,20 @@ unidentifiable wallet scopes are outside this release. The reported change in
 account value includes deposits and withdrawals and is not profit, performance,
 TWR, IRR, or Buy & Hold. These derived values are read-only reporting data and
 do not feed portfolio planning or order execution.
+
+An explicit Kraken `EQuery:Unknown asset pair` response marks only that market
+as unavailable and permits same-day BTC or EUR fallback. Rate-limit, network,
+and malformed-response failures retain their error and retry behavior; they are
+not treated as evidence that a market is absent. Every conversion leg must use
+the requested UTC day's completed candle. Cached USD prices are valid only at
+exactly 1 USD and are repaired to par when stale or off-par.
+
+Daily chart, holdings, status, and export reads materialize the selected values
+and their asset details in one deferred SQLite read transaction. The bounded
+snapshot is capped at 20,000 daily rows and fails explicitly above that limit.
+CSV chunks are emitted after the read transaction closes. A browser holdings
+response is applied only while its requested date and account/scope selection
+remain current.
 
 See the [History section in the User Guide](USER_GUIDE.md#history) for the
 operator-facing behavior and limitations.

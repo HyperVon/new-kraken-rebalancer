@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import java.nio.file.Files
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -541,11 +542,17 @@ class HistoryValuationCoordinatorTest : StringSpec() {
                     val candleOpen = balance.dayLabel.atStartOfDay(ZoneOffset.UTC).toInstant()
                     HistoryDailyPrice(
                         accountIdentityDigest = accountDigest,
-                        rawAssetKey = "USD",
+                        rawAssetKey = if (index == 0) "ZUSD" else "USD",
                         pair = "USD",
                         candleOpen = candleOpen,
-                        candleEnd = if (index == 1) candleOpen else balance.dayEnd,
-                        closeUsd = if (index == 0) BigDecimal.ZERO else BigDecimal.ONE,
+                        candleEnd = if (index == 4) candleOpen else balance.dayEnd,
+                        closeUsd = when (index) {
+                            0 -> BigDecimal.ZERO
+                            1 -> BigDecimal("0.99")
+                            2 -> BigDecimal("1.01")
+                            3 -> BigDecimal("-1")
+                            else -> BigDecimal.ONE
+                        },
                         source = "EXACT_USD_UNIT",
                     )
                 }
@@ -562,7 +569,10 @@ class HistoryValuationCoordinatorTest : StringSpec() {
                 coEvery { store.upsertValuationJob(any()) } just runs
                 coEvery { store.queryDailyBalances(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any()) } returns
                     balances
-                coEvery { store.queryDailyPrices(accountDigest, "USD", any(), any()) } returns prices
+                coEvery { store.queryDailyPrices(accountDigest, "ZUSD", any(), any()) } returns
+                    prices.filter { it.rawAssetKey == "ZUSD" }
+                coEvery { store.queryDailyPrices(accountDigest, "USD", any(), any()) } returns
+                    prices.filter { it.rawAssetKey == "USD" }
                 coEvery { store.saveDailyPrices(any()) } coAnswers { savedPrices = firstArg() }
                 coEvery { store.publishDailyValues(any(), any()) } coAnswers {
                     publishedJob = firstArg()
@@ -584,10 +594,127 @@ class HistoryValuationCoordinatorTest : StringSpec() {
                 publishedValues.size shouldBe 365
                 publishedValues.all { it.totalUsd == BigDecimal("100") } shouldBe true
                 publishedValues.all { it.status == HistoryDailyValueStatus.COMPLETE } shouldBe true
-                savedPrices.size shouldBe 2
+                savedPrices.size shouldBe 5
                 savedPrices.all { it.closeUsd == BigDecimal.ONE && it.candleEnd > it.candleOpen } shouldBe true
+                savedPrices.all { it.rawAssetKey == "USD" } shouldBe true
+                coVerify(exactly = 1) { store.queryDailyPrices(accountDigest, "ZUSD", any(), any()) }
                 coVerify(exactly = 1) { store.queryDailyPrices(accountDigest, "USD", any(), any()) }
                 coVerify(exactly = 0) { krakenService.getOHLC(any(), any(), any()) }
+            }
+        }
+
+        "repairs off-par cash cache durably and reuses exact unit prices after reopening SQLite" {
+            runTest {
+                val now = Instant.parse("2026-10-21T12:00:00Z")
+                val directory = Files.createTempDirectory("history-usd-cache-repair-")
+                val path = directory.resolve("history.db")
+                val account = VerifiedHistoryAccount(accountDigest, null, null)
+                val existing = valuationJob(now, HistoryValuationJobState.RUNNING).copy(
+                    generationId = "cash-generation",
+                    sourceRevision = 0,
+                    requiredPriceTasks = HistoryValuationCoordinator.TARGET_DAYS,
+                )
+                val balances = (0 until HistoryValuationCoordinator.TARGET_DAYS).map { index ->
+                    val day = existing.targetStartDay.plusDays(index.toLong())
+                    HistoryDailyBalance(
+                        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        dayLabel = day,
+                        accountIdentityDigest = accountDigest,
+                        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                        rawAssetClass = "currency",
+                        rawAssetKey = "ZUSD",
+                        quantity = BigDecimal("100"),
+                        sourceLedgerId = "cash-$index",
+                        sourceObservedAt = day.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        sourceRevision = 0,
+                        generationId = existing.generationId,
+                        status = HistoryDailyBalanceStatus.VALID,
+                    )
+                }
+                val offParPrices = balances.map { balance ->
+                    val open = balance.dayLabel.atStartOfDay(ZoneOffset.UTC).toInstant()
+                    HistoryDailyPrice(
+                        accountIdentityDigest = accountDigest,
+                        rawAssetKey = "ZUSD",
+                        pair = "USD",
+                        candleOpen = open,
+                        candleEnd = balance.dayEnd,
+                        closeUsd = BigDecimal("0.99"),
+                        source = "LEGACY_CACHE",
+                    )
+                }
+                val synchronizer = mockk<HistorySynchronizer>()
+                coEvery { synchronizer.verifiedAccount() } returns account
+
+                val firstDatabase = HistoryDatabase(path)
+                firstDatabase.initializeFreshSchema()
+                try {
+                    val firstStore = SqliteHistoryStore(firstDatabase)
+                    firstStore.saveDailyBalances(balances)
+                    firstStore.saveDailyPrices(offParPrices)
+                    firstStore.upsertValuationJob(existing)
+                    val firstKraken = mockk<KrakenService>(relaxed = true)
+
+                    HistoryValuationCoordinator(
+                        applicationScope = this,
+                        synchronizer = synchronizer,
+                        store = firstStore,
+                        priceResolver = HistoryDailyPriceResolver(firstKraken, nowProvider = { now }),
+                        nowProvider = { now },
+                    ).runOnce()
+
+                    val repaired = firstStore.queryDailyPrices(
+                        accountDigest,
+                        "USD",
+                        existing.targetStartDay.atStartOfDay(ZoneOffset.UTC).toEpochSecond(),
+                        existing.targetEndDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond(),
+                    )
+                    repaired.size shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                    repaired.all { it.closeUsd == BigDecimal.ONE && it.source == "EXACT_USD_UNIT" } shouldBe true
+                    coVerify(exactly = 0) { firstKraken.getOHLC(any(), any(), any()) }
+                } finally {
+                    firstDatabase.close()
+                }
+
+                val reopenedDatabase = HistoryDatabase(path)
+                try {
+                    val reopenedStore = SqliteHistoryStore(reopenedDatabase)
+                    val cachedAfterRestart = reopenedStore.queryDailyPrices(
+                        accountDigest,
+                        "USD",
+                        existing.targetStartDay.atStartOfDay(ZoneOffset.UTC).toEpochSecond(),
+                        existing.targetEndDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond(),
+                    )
+                    cachedAfterRestart.size shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                    cachedAfterRestart.all { it.closeUsd.compareTo(BigDecimal.ONE) == 0 } shouldBe true
+                    val restartedKraken = mockk<KrakenService>(relaxed = true)
+
+                    HistoryValuationCoordinator(
+                        applicationScope = this,
+                        synchronizer = synchronizer,
+                        store = reopenedStore,
+                        priceResolver = HistoryDailyPriceResolver(restartedKraken, nowProvider = { now }),
+                        nowProvider = { now },
+                    ).runOnce(forceRetry = true)
+
+                    val values = reopenedStore.queryDailyValues(
+                        accountDigest,
+                        HISTORY_ACCOUNT_DAILY_SCOPE,
+                        from = existing.targetStartDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        until = existing.targetEndDay.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        limit = HistoryValuationCoordinator.TARGET_DAYS,
+                    ).items
+                    values.size shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                    values.all {
+                        it.status == HistoryDailyValueStatus.COMPLETE && it.totalUsd == BigDecimal("100")
+                    } shouldBe
+                        true
+                    coVerify(exactly = 0) { restartedKraken.getOHLC(any(), any(), any()) }
+                } finally {
+                    reopenedDatabase.close()
+                    Files.deleteIfExists(path)
+                    Files.deleteIfExists(directory)
+                }
             }
         }
 

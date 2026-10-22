@@ -25,15 +25,21 @@ class HistoryDailyBalanceBuilder {
                     includeBucket(checkpoint.rawAssetClass, checkpoint.rawAssetKey)
             }
             .groupBy { checkpoint -> checkpoint.rawAssetClass to checkpoint.rawAssetKey.orEmpty() }
-        val unknownAssetEvidence = checkpoints.any { checkpoint ->
-            !isExcludedEquityBucket(checkpoint.rawAssetClass, checkpoint.rawAssetKey) &&
-                (checkpoint.rawAssetKey.isNullOrBlank() || !isSupportedAccountBucket(checkpoint.rawAssetClass))
-        }
         return buildList {
             var date = startDay
             while (date <= endDay) {
                 val boundary = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
                 val boundaryLastSecond = boundary.epochSecond - 1
+                val visibleUnknownEvidence = checkpoints.filter { checkpoint ->
+                    !isExcludedEquityBucket(checkpoint.rawAssetClass, checkpoint.rawAssetKey) &&
+                        (
+                            checkpoint.rawAssetKey.isNullOrBlank() || !isSupportedAccountBucket(
+                                checkpoint.rawAssetClass,
+                            )
+                            ) &&
+                        (checkpoint.observedAt == null || checkpoint.observedAt < boundary)
+                }
+                val unknownAssetEvidence = visibleUnknownEvidence.isNotEmpty()
                 streams.forEach { (key, events) ->
                     val replay = replayThrough(events, boundary, coverage, boundaryLastSecond)
                     add(
@@ -55,7 +61,7 @@ class HistoryDailyBalanceBuilder {
                                 replay.status
                             },
                             reason = if (unknownAssetEvidence) {
-                                unresolvedEvidenceReason(checkpoints)
+                                unresolvedEvidenceReason(visibleUnknownEvidence)
                             } else {
                                 replay.reason
                             },
@@ -85,7 +91,7 @@ class HistoryDailyBalanceBuilder {
                                 HistoryDailyBalanceStatus.NO_OPENING_ANCHOR
                             },
                             reason = if (unknownAssetEvidence) {
-                                unresolvedEvidenceReason(checkpoints)
+                                unresolvedEvidenceReason(visibleUnknownEvidence)
                             } else if (!emptyAccountCovered) {
                                 NO_ANCHOR_REASON
                             } else {

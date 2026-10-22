@@ -1114,14 +1114,14 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         val statistics = data.statistics
         div(CssClass.History.StatsGrid) {
             statusCard(
-                ViewText.HISTORY_LATEST_OBSERVED_VALUE,
+                ViewText.HISTORY_LATEST_ACCOUNT_VALUE,
                 Icons.WALLET,
                 statistics?.latestObservedValue?.let { reportUsd(it.valueUsd, it.complete) }
                     ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
                 HtmlIds.HISTORY_STAT_LATEST_VALUE,
             )
             statusCard(
-                ViewText.HISTORY_OBSERVED_VALUE_CHANGE,
+                ViewText.HISTORY_ACCOUNT_VALUE_CHANGE,
                 Icons.CHART,
                 statistics?.observedValueChange?.let { reportUsd(it.changeUsd, it.complete) }
                     ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
@@ -1150,7 +1150,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                         HtmlIds.HISTORY_STAT_RANGE_LOW,
                     )
                     reportRow(
-                        ViewText.HISTORY_OBSERVED_AT,
+                        ViewText.HISTORY_LATEST_VALUE_DETAILS,
                         latestValueDetails(statistics),
                         HtmlIds.HISTORY_STAT_LATEST_META,
                     )
@@ -1160,7 +1160,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                         HtmlIds.HISTORY_STAT_CHANGE_ENDPOINTS,
                     )
                     reportRow(
-                        ViewText.HISTORY_OBSERVED_VALUE_CHANGE,
+                        ViewText.HISTORY_ACCOUNT_VALUE_CHANGE,
                         statistics?.observedValueChange?.includesFlowsNotice ?: ViewText.HISTORY_VALUE_CHANGE_NOTICE,
                         HtmlIds.HISTORY_STAT_CHANGE_NOTICE,
                     )
@@ -2327,7 +2327,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 ).format(Locale.US, x) +
                 """<title>${timeFormatter.format(
                     it.observedAt,
-                )} · Incomplete observation; no portfolio value is plotted</title></circle>"""
+                )} · Incomplete sample; no portfolio value is plotted</title></circle>"""
         }
         val axisLabels = if (minV != null && maxV != null) {
             valueAxisLabels(Formatter.formatSignedUsd(maxV), Formatter.formatSignedUsd(minV))

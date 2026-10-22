@@ -10,6 +10,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -243,7 +244,7 @@ class HistoryValuationCoordinator(
         )
         val priceRequests = requiredPriceRequests(balances)
         val marketRequests = priceRequests.map(::marketRequest).toSet()
-        val cachedPrices = loadCachedPrices(account.digest, marketRequests)
+        val cachedPrices = loadCachedPrices(account.digest, priceRequests)
         val cachedRequests = priceRequests.count { request -> hasPrice(cachedPrices, request) }
         job = job.copy(
             requiredPriceTasks = priceRequests.size,
@@ -348,12 +349,13 @@ class HistoryValuationCoordinator(
         val end =
             requests.maxOfOrNull { it.day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond() }
                 ?: return mutableMapOf()
-        return requests.map { it.rawAssetKey }.distinct().flatMap { rawAssetKey ->
+        return requests.flatMap { request ->
+            listOf(request.rawAssetKey, Asset.normalizeLedgerAsset(request.rawAssetKey))
+        }.distinct().flatMap { rawAssetKey ->
             store.queryDailyPrices(accountIdentityDigest, rawAssetKey, start, end)
         }.filter { price ->
-            price.closeUsd.signum() > 0 &&
-                price.candleEnd == price.candleOpen.plusSeconds(HistoryDailyValueBuilder.SECONDS_PER_DAY)
-        }.associateByTo(mutableMapOf()) { it.rawAssetKey to it.candleOpen.epochSecond }
+            isValidCachedPrice(price)
+        }.associateByTo(mutableMapOf()) { Asset.normalizeLedgerAsset(it.rawAssetKey) to it.candleOpen.epochSecond }
     }
 
     private fun requiredPriceRequests(balances: List<HistoryDailyBalance>): Set<HistoryDailyPriceRequest> =
@@ -367,10 +369,17 @@ class HistoryValuationCoordinator(
         request: HistoryDailyPriceRequest,
     ): Boolean = request.day.atStartOfDay(ZoneOffset.UTC).toEpochSecond().let { open ->
         prices[Asset.normalizeLedgerAsset(request.rawAssetKey) to open]?.let {
-            it.closeUsd.signum() > 0 &&
-                it.candleEnd == it.candleOpen.plusSeconds(HistoryDailyValueBuilder.SECONDS_PER_DAY)
+            isValidCachedPrice(it)
         } == true
     }
+
+    private fun isValidCachedPrice(price: HistoryDailyPrice): Boolean =
+        price.candleEnd == price.candleOpen.plusSeconds(HistoryDailyValueBuilder.SECONDS_PER_DAY) &&
+            if (Asset.normalizeLedgerAsset(price.rawAssetKey).equals(Asset.USD, ignoreCase = true)) {
+                price.closeUsd.compareTo(BigDecimal.ONE) == 0
+            } else {
+                price.closeUsd.signum() > 0
+            }
 
     private fun marketRequest(request: HistoryDailyPriceRequest) =
         request.copy(rawAssetKey = Asset.normalizeLedgerAsset(request.rawAssetKey))

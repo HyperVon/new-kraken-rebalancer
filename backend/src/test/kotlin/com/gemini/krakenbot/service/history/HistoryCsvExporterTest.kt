@@ -32,6 +32,53 @@ class HistoryCsvExporterTest : StringSpec() {
     )
 
     init {
+        coEvery { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) } answers {
+            val limit = arg<Int>(4)
+            val offset = arg<Int>(5)
+            HistoryPage(emptyList(), 0L, limit, offset, false)
+        }
+        coEvery { historyStore.queryDailyAssetValues(any(), any(), any(), any(), any(), any()) } answers {
+            val limit = arg<Int>(4)
+            val offset = arg<Int>(5)
+            HistoryPage(emptyList(), 0L, limit, offset, false)
+        }
+        coEvery { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) } coAnswers {
+            val digest = firstArg<String>()
+            val scope = secondArg<String>()
+            val from = thirdArg<Instant?>()
+            val until = arg<Instant?>(3)
+            val limit = if (from != null && until == from.plusSeconds(1)) 1 else HISTORY_PAGE_LIMIT
+            val values = mutableListOf<HistoryDailyValue>()
+            val loadLegacyHoldings = from != null && until == from.plusSeconds(1)
+            var valueOffset = 0
+            while (true) {
+                val page = historyStore.queryDailyValues(digest, scope, from, until, limit, valueOffset)
+                for (value in page.items) {
+                    val assets = mutableListOf<HistoryDailyAssetValue>()
+                    if (loadLegacyHoldings) {
+                        var assetOffset = 0
+                        while (true) {
+                            val assetPage = historyStore.queryDailyAssetValues(
+                                digest,
+                                scope,
+                                value.dayEnd,
+                                value.dayEnd.plusSeconds(1),
+                                500,
+                                assetOffset,
+                            )
+                            assets += assetPage.items
+                            if (!assetPage.hasMore || assetPage.items.isEmpty()) break
+                            assetOffset += assetPage.items.size
+                        }
+                    }
+                    values += value.copy(assets = assets.ifEmpty { value.assets })
+                }
+                if (!page.hasMore || page.items.isEmpty()) break
+                valueOffset += page.items.size
+            }
+            HistoryDailyValueSnapshot(values, null)
+        }
+
         "exports daily account values with honest gaps and excludes equity-only reasons" {
             val day = LocalDate.parse("2026-03-09")
             val value = dailyValue(
@@ -77,6 +124,9 @@ class HistoryCsvExporterTest : StringSpec() {
             coVerify(exactly = 1) {
                 historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), 500, 0)
             }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any())
+            }
             confirmVerified(historyService, historyStore)
         }
 
@@ -112,6 +162,9 @@ class HistoryCsvExporterTest : StringSpec() {
                 "'=HYPERLINK(1): =HYPERLINK(1)"
             coVerify(exactly = 1) {
                 historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), 500, 0)
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any())
             }
             confirmVerified(historyService, historyStore)
         }
@@ -184,6 +237,14 @@ class HistoryCsvExporterTest : StringSpec() {
                     dayEnd.plusSeconds(1),
                     500,
                     0,
+                )
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
                 )
             }
             confirmVerified(historyService, historyStore)
@@ -261,10 +322,18 @@ class HistoryCsvExporterTest : StringSpec() {
                     0,
                 )
             }
+            coVerify(exactly = 2) {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            }
             confirmVerified(historyService, historyStore)
         }
 
-        "daily holdings export paginates beyond one storage page and omits equity rows" {
+        "daily holdings export materializes one generation and omits equity rows" {
             val day = LocalDate.parse("2026-03-09")
             val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
             val total = dailyValue(day, "501", HistoryDailyValueStatus.COMPLETE, emptyList())
@@ -281,35 +350,16 @@ class HistoryCsvExporterTest : StringSpec() {
             )
             val finalCash = dailyAsset(day, "LAST", quantity = "1", price = "1", value = "1")
             coEvery {
-                historyStore.queryDailyValues(
+                historyStore.queryDailyValueSnapshot(
                     accountDigest,
                     HISTORY_ACCOUNT_DAILY_SCOPE,
                     dayEnd,
                     dayEnd.plusSeconds(1),
-                    1,
-                    0,
                 )
-            } returns HistoryPage(listOf(total), 1L, 1, 0, false)
-            coEvery {
-                historyStore.queryDailyAssetValues(
-                    accountDigest,
-                    HISTORY_ACCOUNT_DAILY_SCOPE,
-                    dayEnd,
-                    dayEnd.plusSeconds(1),
-                    500,
-                    0,
-                )
-            } returns HistoryPage(firstPage, 502L, 500, 0, true)
-            coEvery {
-                historyStore.queryDailyAssetValues(
-                    accountDigest,
-                    HISTORY_ACCOUNT_DAILY_SCOPE,
-                    dayEnd,
-                    dayEnd.plusSeconds(1),
-                    500,
-                    500,
-                )
-            } returns HistoryPage(listOf(finalEquity, finalCash), 502L, 500, 500, false)
+            } returns HistoryDailyValueSnapshot(
+                listOf(total.copy(assets = firstPage + finalEquity + finalCash)),
+                null,
+            )
             val chunks = mutableListOf<String>()
 
             exporter.exportDailyHoldings(HistoryDailyHoldingsExportQuery(accountDigest, day)) {
@@ -321,35 +371,15 @@ class HistoryCsvExporterTest : StringSpec() {
             rows.last()["asset"] shouldBe "LAST"
             rows.any { it["asset"] == "TSLA" } shouldBe false
             coVerify(exactly = 1) {
-                historyStore.queryDailyValues(
+                historyStore.queryDailyValueSnapshot(
                     accountDigest,
                     HISTORY_ACCOUNT_DAILY_SCOPE,
                     dayEnd,
                     dayEnd.plusSeconds(1),
-                    1,
-                    0,
                 )
             }
-            coVerify(exactly = 1) {
-                historyStore.queryDailyAssetValues(
-                    accountDigest,
-                    HISTORY_ACCOUNT_DAILY_SCOPE,
-                    dayEnd,
-                    dayEnd.plusSeconds(1),
-                    500,
-                    0,
-                )
-            }
-            coVerify(exactly = 1) {
-                historyStore.queryDailyAssetValues(
-                    accountDigest,
-                    HISTORY_ACCOUNT_DAILY_SCOPE,
-                    dayEnd,
-                    dayEnd.plusSeconds(1),
-                    500,
-                    500,
-                )
-            }
+            coVerify(exactly = 0) { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { historyStore.queryDailyAssetValues(any(), any(), any(), any(), any(), any()) }
             confirmVerified(historyService, historyStore)
         }
 

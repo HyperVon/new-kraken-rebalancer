@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.6] - 2026-10-22
+
+### Fixed
+
+- **Historical price fallback**: treat Kraken's explicit unknown-pair response
+  as an unavailable market and try same-day conversion markets; network,
+  rate-limit, and malformed-response failures keep their retry/error behavior.
+- **History read consistency**: charts, holdings, status, and daily CSV exports
+  now read selected daily values and their asset details from one bounded SQLite
+  snapshot, so a concurrent publication cannot mix generations or counts.
+- **Historical evidence handling**: reject cached USD closes away from par and
+  keep future unsupported ledger evidence from invalidating earlier daily marks.
+- **Holdings selection**: discard stale async responses after the selected date
+  or account scope changes, and label accepted results and failures with the
+  current selection.
+- **History labels**: use account-value wording for summary cards and sample
+  counts, and remove redundant observation wording from visible details.
+
+### Changed
+
+- **Rebalancer asset eligibility**: require explicit Kraken `currency` metadata
+  for configured non-USD assets before price analysis. Missing or non-currency
+  metadata blocks the cycle instead of guessing from ticker names.
+
 ## [6.20.5] - 2026-10-21
 
 ### Added

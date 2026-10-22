@@ -74,10 +74,12 @@ class KrakenTransport(
                     path,
                     root.path(KrakenApiConstants.FIELD_ERROR),
                 )
-                throw RuntimeException(
-                    KrakenApiConstants.ERROR_PUBLIC_API_PREFIX +
-                        root.path(KrakenApiConstants.FIELD_ERROR).toString(),
-                )
+                val errors = root.path(KrakenApiConstants.FIELD_ERROR)
+                val message = KrakenApiConstants.ERROR_PUBLIC_API_PREFIX + errors.toString()
+                if (errors.isArray && errors.all(JsonNode::isTextual)) {
+                    throw KrakenPublicApiException(path, errors.map(JsonNode::asText), message)
+                }
+                throw RuntimeException(message)
             }
             return root
         } catch (e: JsonProcessingException) {

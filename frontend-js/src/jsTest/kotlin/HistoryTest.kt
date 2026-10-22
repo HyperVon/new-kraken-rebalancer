@@ -18,7 +18,7 @@ class HistoryTest :
             val root = document.createElement("div")
             root.innerHTML = """
             <svg>
-              <circle data-time="3000" data-value="12.5"/>
+              <circle data-time="3000" data-value="12.5" data-history-day="2026-03-10"/>
               <circle data-time="2000" data-gap="true" data-value="99"/>
               <circle data-time="1000" data-value="10"/>
               <circle data-time="bad" data-value="1"/>
@@ -30,7 +30,7 @@ class HistoryTest :
             historyChartPoints(root) shouldBe listOf(
                 HistoryChartPoint(1000.0, 10.0),
                 HistoryChartPoint(2000.0, null),
-                HistoryChartPoint(3000.0, 12.5),
+                HistoryChartPoint(3000.0, 12.5, "2026-03-10"),
             )
             val config = historyChartConfig(historyChartPoints(root), true, ChartRange(1000.0, 3000.0))
             assertHistoryValue(config.data.datasets[0].data[1].y, null)
