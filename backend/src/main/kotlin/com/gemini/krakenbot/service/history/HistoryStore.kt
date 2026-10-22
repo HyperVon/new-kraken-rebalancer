@@ -100,6 +100,32 @@ interface HistoryStore {
         limit: Int = MAX_DAILY_SOURCE_CHECKPOINTS,
     ): List<HistoryBalanceCheckpoint>
 
+    /** Stable paged source read for valuation; unlike a bounded list, this never truncates history. */
+    suspend fun queryDailyCheckpointInputPage(
+        accountIdentityDigest: String,
+        throughSec: Long,
+        limit: Int = HISTORY_MAX_PAGE_LIMIT,
+        offset: Int = 0,
+    ): HistoryPage<HistoryBalanceCheckpoint>
+
+    suspend fun currentLedgerRevision(accountIdentityDigest: String): Long
+
+    suspend fun loadValuationJob(accountIdentityDigest: String, sourceAssetScope: String): HistoryValuationJob?
+
+    suspend fun upsertValuationJob(job: HistoryValuationJob)
+
+    suspend fun saveDailyBalances(balances: List<HistoryDailyBalance>)
+
+    /** Replace one marked UTC day atomically so obsolete partitions do not survive a rebuild. */
+    suspend fun replaceDailyBalanceDay(balances: List<HistoryDailyBalance>)
+
+    suspend fun queryDailyBalances(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant? = null,
+        until: Instant? = null,
+    ): List<HistoryDailyBalance>
+
     suspend fun saveDailyPrices(prices: List<HistoryDailyPrice>)
 
     suspend fun queryDailyPrices(
@@ -110,6 +136,9 @@ interface HistoryStore {
     ): List<HistoryDailyPrice>
 
     suspend fun saveDailyValues(values: List<HistoryDailyValue>)
+
+    /** Publishes one complete bounded generation and its terminal durable progress atomically. */
+    suspend fun publishDailyValues(job: HistoryValuationJob, values: List<HistoryDailyValue>)
 
     suspend fun queryDailyValues(
         accountIdentityDigest: String,

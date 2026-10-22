@@ -110,9 +110,10 @@ class DashboardHistoryPageTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.OK
                 val html = response.bodyAsText()
                 html shouldContain "History"
-                html shouldContain "Portfolio Value"
-                html shouldContain "Trade History"
-                html shouldContain "Transactions &amp; Ledgers"
+                html shouldContain "Account value (USD)"
+                html shouldContain "Trades"
+                html shouldContain "Transactions"
+                html shouldContain "Data status"
             }
         }
 

@@ -16,7 +16,7 @@ internal fun mergeCoverageSegment(
     startSec: Long,
     endSec: Long,
     updatedAtNs: Long,
-) {
+): Boolean {
     val overlapping = mutableListOf<LongRange>()
     connection.prepareStatement(
         "SELECT start_sec, end_sec FROM history_sync_coverage WHERE account_identity_digest = ? " +
@@ -32,6 +32,7 @@ internal fun mergeCoverageSegment(
             }
         }
     }
+    if (overlapping.any { it.first <= startSec && it.last >= endSec }) return false
     val mergedStart = overlapping.minOfOrNull { it.first }?.coerceAtMost(startSec) ?: startSec
     val mergedEnd = overlapping.maxOfOrNull { it.last }?.coerceAtLeast(endSec) ?: endSec
     connection.prepareStatement(
@@ -55,4 +56,5 @@ internal fun mergeCoverageSegment(
         statement.setLong(5, updatedAtNs)
         statement.executeUpdate()
     }
+    return true
 }

@@ -37,6 +37,7 @@ import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistorySyncPurpose
 import com.gemini.krakenbot.service.history.HistorySyncState
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
 import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.DashboardView
@@ -122,6 +123,7 @@ class DashboardController(
     private val historyApi: HistoryApiPresenter? = null,
     private val historyReportingService: HistoryReportingService? = null,
     private val historyCsvExporter: HistoryCsvExporter? = null,
+    private val historyValuationCoordinator: HistoryValuationCoordinator? = null,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -200,6 +202,10 @@ class DashboardController(
                 handleGetHistoryCharts()
             }
 
+            get(Routes.API_HISTORY_HOLDINGS) {
+                handleGetHistoryHoldings()
+            }
+
             get(Routes.API_HISTORY_SUMMARY) {
                 handleGetHistorySummary()
             }
@@ -275,6 +281,29 @@ class DashboardController(
                 )
             }
 
+            get(Routes.API_HISTORY_EXPORT_ACCOUNT_VALUES) {
+                streamHistoryCsv(
+                    filename = "account-values",
+                    requiresAccount = true,
+                    resolveQuery = { api, scope -> api.dailyValueExportQuery(call.historyApiRangeParams(), scope) },
+                    writeCsv = { exporter, export, writeChunk ->
+                        exporter.exportDailyValues(export.query, writeChunk)
+                    },
+                )
+            }
+
+            get(Routes.API_HISTORY_EXPORT_ACCOUNT_HOLDINGS) {
+                val date = call.request.queryParameters["date"].orEmpty()
+                streamHistoryCsv(
+                    filename = "account-holdings",
+                    requiresAccount = true,
+                    resolveQuery = { api, scope -> api.dailyHoldingsExportQuery(date, scope) },
+                    writeCsv = { exporter, export, writeChunk ->
+                        exporter.exportDailyHoldings(export.query, writeChunk)
+                    },
+                )
+            }
+
             get(Routes.API_HISTORY_DATA_STATUS) {
                 handleGetHistoryDataStatus()
             }
@@ -295,6 +324,7 @@ class DashboardController(
                     return@post
                 }
                 startHistorySync(synchronizer, service, scope)
+                historyValuationCoordinator?.retryFailedWork()
                 call.response.header("Location", Routes.HISTORY)
                 call.respond(HttpStatusCode.SeeOther)
             }
@@ -828,21 +858,33 @@ class DashboardController(
                 }
             }
         }
+        val accountHoldings = if (historyApi != null && scope?.mode == HistorySourceMode.ACCOUNT) {
+            val selectedDay = portfolioChart?.series?.flatMap { it.points }
+                ?.lastOrNull { it.dayLabel != null }?.dayLabel
+            selectedDay?.let { day -> runCatching { historyApi.holdingsAtDate(scope, day) }.getOrNull() }
+        } else {
+            null
+        }
+        val dataStatus = historyApi?.let { api ->
+            scope?.let { sourceScope ->
+                try {
+                    api.dataStatus(call.historyApiRangeParams().copy(preset = range), sourceScope)
+                } catch (_: HistoryApiRequestException) {
+                    null
+                }
+            }
+        }
         val statistics = historyApi?.let { api ->
             scope?.let { sourceScope ->
-                if (range == HistoryRangePreset.CUSTOM.key) {
+                try {
+                    api.summary(
+                        params = call.historyApiRangeParams().copy(preset = range),
+                        currentScope = sourceScope,
+                        scopeId = params["scope"],
+                        targetAllocations = config.allocations,
+                    ).statistics
+                } catch (_: HistoryApiRequestException) {
                     null
-                } else {
-                    try {
-                        api.summary(
-                            params = call.historyApiRangeParams().copy(preset = range),
-                            currentScope = sourceScope,
-                            scopeId = params["scope"],
-                            targetAllocations = config.allocations,
-                        ).statistics
-                    } catch (_: HistoryApiRequestException) {
-                        null
-                    }
                 }
             }
         }
@@ -872,12 +914,15 @@ class DashboardController(
                 statistics = statistics,
                 allocations = config.allocations,
                 portfolioChart = portfolioChart,
+                dataStatus = dataStatus,
+                accountHoldings = accountHoldings,
             )
         }
         val chartLedgerQuery = filters.copy(pair = null, type = null, limit = HISTORY_MAX_PAGE_LIMIT)
         val fundingLedgers = listOf(
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
         ).flatMap { type -> service.queryAllLedgers(chartLedgerQuery.copy(type = type)) }
         val rewardLedgers = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
@@ -911,6 +956,8 @@ class DashboardController(
             statistics = statistics,
             allocations = config.allocations,
             portfolioChart = portfolioChart,
+            dataStatus = dataStatus,
+            accountHoldings = accountHoldings,
         )
     }
 
@@ -987,6 +1034,7 @@ class DashboardController(
             to = params["to"],
             tz = params["tz"],
             baselineFrom = params["baselineFrom"],
+            valueAsset = params["valueAsset"],
         )
     }
 
@@ -1058,6 +1106,12 @@ class DashboardController(
                 maxPoints = query["maxPoints"]?.toIntOrNull(),
                 targetAllocations = configService.getConfig().allocations,
             )
+        }
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryHoldings() {
+        withHistoryApi { api, scope ->
+            api.holdingsAtDate(scope, call.request.queryParameters["date"].orEmpty())
         }
     }
 

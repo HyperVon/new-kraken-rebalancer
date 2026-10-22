@@ -61,6 +61,7 @@ internal fun historyViewQuery(query: String): String {
         HistoryRangeQuery.PARAM_END,
         HistoryRangeQuery.PARAM_TZ,
         HistoryRangeQuery.PARAM_SCOPE,
+        HistoryRangeQuery.PARAM_VALUE_ASSET,
         HistoryRangeQuery.PARAM_ASSET,
         HistoryRangeQuery.PARAM_PAIR,
         HistoryRangeQuery.PARAM_TYPE,

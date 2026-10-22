@@ -138,6 +138,65 @@ class HistoryInteractionTest :
             historyApiSeries(json("series" to arrayOf<dynamic>())) shouldBe emptyList()
         }
 
+        "historical holdings keep missing prices explicit and distinguish an empty portfolio from a missing mark" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <section id="history-account-holdings">
+                  <h2></h2>
+                  <p id="history-holdings-total"></p>
+                  <table><tbody id="history-holdings-rows"></tbody></table>
+                </section>
+            """.trimIndent()
+            document.body?.appendChild(root)
+            try {
+                renderHistoryHoldings(
+                    json(
+                        "totalStatus" to "PARTIAL",
+                        "totalUsd" to null,
+                        "holdings" to arrayOf(
+                            json(
+                                "asset" to "BTC",
+                                "quantity" to "1.5",
+                                "priceUsd" to "100",
+                                "valueUsd" to "150",
+                                "availability" to "VALUED",
+                            ),
+                            json(
+                                "asset" to "ETH",
+                                "quantity" to "2",
+                                "priceUsd" to null,
+                                "valueUsd" to null,
+                                "reason" to "historical price unavailable",
+                            ),
+                        ),
+                    ),
+                    "2026-03-09",
+                )
+
+                root.querySelector("h2")!!.textContent shouldBe "Holdings at 2026-03-09"
+                root.querySelector("#history-holdings-total")!!.textContent shouldBe "PARTIAL: unavailable USD"
+                val rows = root.querySelectorAll("#history-holdings-rows tr")
+                rows.length shouldBe 2
+                rows.item(0)?.textContent shouldBe "BTC1.5100150VALUED"
+                rows.item(1)?.textContent shouldBe "ETH2Unavailable: historical price unavailable"
+
+                renderHistoryHoldings(
+                    json("available" to true, "holdings" to emptyArray<Any>()),
+                    "2026-03-10",
+                )
+                root.querySelector("#history-holdings-rows")!!.textContent shouldBe "No held assets for this date."
+
+                renderHistoryHoldings(
+                    json("available" to false, "holdings" to emptyArray<Any>()),
+                    "2026-03-11",
+                )
+                root.querySelector("#history-holdings-rows")!!.textContent shouldBe
+                    "No daily mark is available for this date."
+            } finally {
+                root.remove()
+            }
+        }
+
         "a point without a value stays an explicit break" {
             val response = json(
                 "series" to arrayOf(

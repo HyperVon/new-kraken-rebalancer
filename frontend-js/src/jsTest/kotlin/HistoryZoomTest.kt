@@ -60,6 +60,26 @@ class HistoryZoomTest :
             viewport.visible shouldBe full
         }
 
+        "Follow latest is visible only while the chart viewport is zoomed" {
+            val panel = document.createElement("section") as HTMLElement
+            val button = document.createElement("button") as HTMLButtonElement
+            button.setAttribute("data-history-follow-latest", "true")
+            val container = document.createElement("div") as HTMLElement
+            panel.appendChild(button)
+            panel.appendChild(container)
+            document.body!!.appendChild(panel)
+            try {
+                syncHistoryFollowLatestButton(container, zoomed = false)
+                button.hidden shouldBe true
+                syncHistoryFollowLatestButton(container, zoomed = true)
+                button.hidden shouldBe false
+                syncHistoryFollowLatestButton(container, zoomed = false)
+                button.hidden shouldBe true
+            } finally {
+                panel.remove()
+            }
+        }
+
         "wheel zoom factor clamps and pixel-to-time falls back without a chart scale" {
             wheelZoomFactor(0.0) shouldBe 1.0
             wheelZoomFactor(-5000.0) shouldBe 0.5

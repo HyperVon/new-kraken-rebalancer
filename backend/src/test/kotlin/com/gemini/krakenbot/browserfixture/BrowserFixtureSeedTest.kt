@@ -2,12 +2,15 @@ package com.gemini.krakenbot.browserfixture
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.configureSerialization
+import com.gemini.krakenbot.service.history.HISTORY_ACCOUNT_DAILY_SCOPE
 import com.gemini.krakenbot.service.history.HISTORY_MAX_PAGE_LIMIT
 import com.gemini.krakenbot.service.history.HistoryActivityQuery
 import com.gemini.krakenbot.service.history.HistoryCycleOutcome
+import com.gemini.krakenbot.service.history.HistoryDailyValueStatus
 import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryRangeQuery
 import com.gemini.krakenbot.service.history.HistorySourceMode
+import com.gemini.krakenbot.service.history.HistoryValuationJobState
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -28,6 +31,7 @@ import kotlinx.coroutines.coroutineScope
 import java.nio.file.Files
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 class BrowserFixtureSeedTest : StringSpec() {
@@ -112,6 +116,38 @@ class BrowserFixtureSeedTest : StringSpec() {
                 scope.mode shouldBe HistorySourceMode.ACCOUNT
                 scope.accountIdentityDigest shouldBe fakeAccountIdentityDigest()
 
+                val digest = checkNotNull(scope.accountIdentityDigest)
+                val dailyValues = fixture.historyStore.queryDailyValues(
+                    digest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    limit = 500,
+                )
+                val fixtureEndDay = fixture.fixtureNow.atZone(ZoneOffset.UTC).toLocalDate().minusDays(1)
+                dailyValues.total shouldBe 400L
+                dailyValues.items.size shouldBe 400
+                dailyValues.items.all { it.status == HistoryDailyValueStatus.COMPLETE } shouldBe true
+                dailyValues.items.first().dayLabel shouldBe fixtureEndDay.minusDays(399)
+                dailyValues.items.last().dayLabel shouldBe fixtureEndDay
+                val fixtureJob = fixture.historyStore.loadValuationJob(digest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                fixtureJob?.state shouldBe HistoryValuationJobState.COMPLETE
+                fixtureJob?.targetDays shouldBe 365
+                val firstDayAssets = fixture.historyStore.queryDailyAssetValues(
+                    digest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dailyValues.items.first().dayEnd,
+                    dailyValues.items.first().dayEnd.plusSeconds(1),
+                ).items.map { it.rawAssetKey }.toSet()
+                val lastDayAssets = fixture.historyStore.queryDailyAssetValues(
+                    digest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dailyValues.items.last().dayEnd,
+                    dailyValues.items.last().dayEnd.plusSeconds(1),
+                ).items.map { it.rawAssetKey }.toSet()
+                firstDayAssets.contains("LINK") shouldBe true
+                firstDayAssets.contains("XLM") shouldBe false
+                lastDayAssets.contains("LINK") shouldBe false
+                lastDayAssets.contains("XLM") shouldBe true
+
                 val coverage = fixture.historyStore.valuesCoverage(scope)
                 coverage.firstRecordedAt shouldBe fixture.firstSampleAt
                 coverage.lastRecordedAt shouldBe fixture.fixtureNow
@@ -129,7 +165,6 @@ class BrowserFixtureSeedTest : StringSpec() {
                 )
                 dashboardActivities.items.any { it.outcome == HistoryCycleOutcome.PROBLEM } shouldBe true
 
-                val digest = checkNotNull(scope.accountIdentityDigest)
                 val recordedScopes = fixture.historyStore.listRecordedScopes(digest)
                 recordedScopes.all { it.mode == HistorySourceMode.ACCOUNT } shouldBe true
                 recordedScopes.size shouldBe 2

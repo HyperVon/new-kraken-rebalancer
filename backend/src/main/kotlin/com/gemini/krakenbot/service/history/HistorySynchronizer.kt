@@ -40,6 +40,7 @@ class HistorySynchronizer(
         true
     },
     private val nowProvider: () -> Instant = Instant::now,
+    private val onLedgerPageCommitted: () -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(HistorySynchronizer::class.java)
     private val feedLocks = ConcurrentHashMap<HistoryFeed, Mutex>()
@@ -166,7 +167,7 @@ class HistorySynchronizer(
                                 HistoryFeed.LEDGERS -> store.commitLedgerPage(
                                     request,
                                     page as ExchangeHistoryPage<ExchangeLedgerHistoryEntry>,
-                                )
+                                ).also { onLedgerPageCommitted() }
                             }
                             var willRestart = false
                             var updatedStatus = committedStatus

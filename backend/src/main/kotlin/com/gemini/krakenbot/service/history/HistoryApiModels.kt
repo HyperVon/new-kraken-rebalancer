@@ -5,6 +5,7 @@ import com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics
 import com.gemini.krakenbot.view.util.HistoryChartSelections
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 
 /** Structured, UI-displayable rejection of History read API request parameters. */
@@ -38,6 +39,8 @@ data class HistoryApiRangeParams(
      * the selected period's baseline, so a cumulative curve does not restart inside the zoom.
      */
     val baselineFrom: String? = null,
+    /** Optional account-value component filter; activity's `asset` filter remains separate. */
+    val valueAsset: String? = null,
 )
 
 /** One captured-now range resolution: the selected interval plus the effective (viewport) interval. */
@@ -91,7 +94,32 @@ data class HistoryApiPoint(
     @get:JsonProperty("tIso") val isoTime: String,
     val v: BigDecimal?,
     val complete: Boolean,
+    val status: String? = null,
+    val reasons: List<String> = emptyList(),
+    val dayLabel: String? = null,
 )
+
+data class HistoryApiDailyHolding(
+    val asset: String,
+    val quantity: String?,
+    val priceUsd: String?,
+    val valueUsd: String?,
+    val availability: String,
+    val reason: String?,
+)
+
+data class HistoryApiHoldingsAtDate(
+    val day: String,
+    val available: Boolean,
+    val totalUsd: String?,
+    val totalStatus: String,
+    val generationId: String?,
+    val holdings: List<HistoryApiDailyHolding>,
+)
+
+data class HistoryDailyValueExportRange(val accountIdentityDigest: String, val from: Instant?, val until: Instant)
+
+data class HistoryDailyHoldingsExportQuery(val accountIdentityDigest: String, val day: LocalDate)
 
 enum class HistoryApiScopeSelection { CURRENT_SCOPE, EXPLICIT_SCOPE, ACCOUNT_RECORDED }
 
@@ -142,6 +170,14 @@ data class HistoryApiChartsResponse(
     val scopeSelection: HistoryApiScopeSelection = HistoryApiScopeSelection.CURRENT_SCOPE,
     val recordedScopes: List<HistoryApiScope> = emptyList(),
     val boundaries: List<HistoryApiBoundary> = emptyList(),
+    val resolution: String = "observation",
+    val valuationBasis: String? = null,
+    val generationId: String? = null,
+    val sourceRevision: Long? = null,
+    val availableValueFromIso: String? = null,
+    val availableValueToIso: String? = null,
+    val availableValueAssets: List<String> = emptyList(),
+    val selectedValueAsset: String? = null,
 )
 
 data class HistoryApiSummaryResponse(
@@ -198,6 +234,8 @@ data class HistoryApiSyncProgress(
     /** Verified scanned coverage of this feed; the union stays stable across rolling refreshes. */
     val coveredFromIso: String? = null,
     val coveredToIso: String? = null,
+    val coveredGapCount: Int = 0,
+    val targetCoverageComplete: Boolean? = null,
 )
 
 data class HistoryApiDataStatusResponse(
@@ -209,4 +247,31 @@ data class HistoryApiDataStatusResponse(
     val coverage: HistoryApiCoverage,
     val jobs: List<HistoryApiSyncJob>,
     val progress: List<HistoryApiSyncProgress>,
+    val valuation: HistoryApiValuationProgress? = null,
+    val tradeRecordsImported: Long? = null,
+    val ledgerRecordsImported: Long? = null,
+    val availableValueFromIso: String? = null,
+    val availableValueToIso: String? = null,
+    val availableValueDays: Long? = null,
+)
+
+data class HistoryApiValuationProgress(
+    val state: String,
+    val stage: String,
+    val targetStartDay: String,
+    val targetEndDay: String,
+    val targetDays: Int,
+    val balancesProcessed: Int,
+    val balancesValid: Int,
+    val balancesBlocked: Int,
+    val requiredPriceTasks: Int?,
+    val completedPriceTasks: Int,
+    val completeValueDays: Int,
+    val blockedValueDays: Int,
+    val lastProgressAtIso: String?,
+    val nextRetryAtIso: String?,
+    val lastSuccessAtIso: String?,
+    val lastError: String?,
+    val startedAtIso: String? = null,
+    val blockedValueReasons: List<String> = emptyList(),
 )

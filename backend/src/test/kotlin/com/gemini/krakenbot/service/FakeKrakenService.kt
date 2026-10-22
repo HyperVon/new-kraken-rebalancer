@@ -170,7 +170,7 @@ class FakeKrakenService : KrakenService {
                 "USDC",
                 "BABY",
             ).map { KrakenAssetMetadata(it, KrakenApiConstants.ASSET_CLASS_CURRENCY) } +
-                KrakenAssetMetadata("STRC", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET)
+                KrakenAssetMetadata("TOKENIZED_ASSET_1", KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET)
     }
 }
 

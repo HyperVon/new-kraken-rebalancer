@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.browserfixture
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
@@ -9,8 +10,15 @@ import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerCapture
 import com.gemini.krakenbot.service.DirectTickerMark
 import com.gemini.krakenbot.service.DirectValueEvidence
+import com.gemini.krakenbot.service.history.HISTORY_ACCOUNT_DAILY_SCOPE
+import com.gemini.krakenbot.service.history.HISTORY_DAILY_VALUE_POLICY_VERSION
 import com.gemini.krakenbot.service.history.HistoryCycleActivity
 import com.gemini.krakenbot.service.history.HistoryCycleOutcome
+import com.gemini.krakenbot.service.history.HistoryDailyBalance
+import com.gemini.krakenbot.service.history.HistoryDailyBalanceStatus
+import com.gemini.krakenbot.service.history.HistoryDailyPrice
+import com.gemini.krakenbot.service.history.HistoryDailyPriceLeg
+import com.gemini.krakenbot.service.history.HistoryDailyValueBuilder
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationValuator
 import com.gemini.krakenbot.service.history.HistoryPageRequest
@@ -19,8 +27,13 @@ import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistoryStore
 import com.gemini.krakenbot.service.history.HistorySyncPurpose
 import com.gemini.krakenbot.service.history.HistorySyncWindow
+import com.gemini.krakenbot.service.history.HistoryValuationJob
+import com.gemini.krakenbot.service.history.HistoryValuationJobState
+import com.gemini.krakenbot.service.history.HistoryValuationStage
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 internal const val BROWSER_FIXTURE_SAMPLE_COUNT = 100 * 24 + 1
 internal const val BROWSER_FIXTURE_RANGE_EDGE_COUNT = 2
@@ -115,6 +128,100 @@ internal object BrowserFixtureHistorySeed {
 
         seedTrades(store, accountScope, now)
         seedLedgers(store, accountScope, now)
+        seedDailyAccountValues(store, accountScope, now)
+    }
+
+    /** Synthetic, production-shaped marks for the browser fixture; never sourced from an account. */
+    private suspend fun seedDailyAccountValues(store: HistoryStore, scope: HistorySourceScope, now: Instant) {
+        val digest = checkNotNull(scope.accountIdentityDigest)
+        val endDay = now.atZone(ZoneOffset.UTC).toLocalDate().minusDays(1)
+        val startDay = endDay.minusDays(399)
+        val generationId = "browser-fixture-daily-values-v1"
+        val sourceRevision = store.currentLedgerRevision(digest)
+        val allBalances = mutableListOf<HistoryDailyBalance>()
+        val allPrices = mutableListOf<HistoryDailyPrice>()
+        var targetPriceCount = 0
+        repeat(400) { index ->
+            val day = startDay.plusDays(index.toLong())
+            val dayStart = day.atStartOfDay(ZoneOffset.UTC).toInstant()
+            val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            val held = buildList {
+                add("XXBT" to BigDecimal("0.10"))
+                add("XETH" to BigDecimal("1.20"))
+                add("ZUSD" to BigDecimal("3000.00"))
+                if (index in 80..260) add("SOL" to BigDecimal("0.80"))
+                if (index < 100) add("LINK" to BigDecimal("10"))
+                if (index >= 220) add("XLM" to BigDecimal("150"))
+            }
+            held.forEach { (rawAssetKey, quantity) ->
+                allBalances += HistoryDailyBalance(
+                    dayEnd = dayEnd,
+                    dayLabel = day,
+                    accountIdentityDigest = digest,
+                    sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                    rawAssetClass = "currency",
+                    rawAssetKey = rawAssetKey,
+                    quantity = quantity,
+                    sourceLedgerId = "fixture-daily-$index-$rawAssetKey",
+                    sourceObservedAt = dayEnd.minusSeconds(1),
+                    sourceRevision = sourceRevision,
+                    generationId = generationId,
+                    status = HistoryDailyBalanceStatus.VALID,
+                )
+                val symbol = Asset.normalizeLedgerAsset(rawAssetKey)
+                val close = when (symbol) {
+                    "BTC" -> BigDecimal("40000").add(BigDecimal(index * 25))
+                    "ETH" -> BigDecimal("2500").add(BigDecimal(index * 5))
+                    "USD" -> BigDecimal.ONE
+                    "SOL" -> BigDecimal("100").add(BigDecimal(index % 19))
+                    "LINK" -> BigDecimal("15").add(BigDecimal(index % 11))
+                    else -> BigDecimal("0.10").add(BigDecimal(index % 7).movePointLeft(2))
+                }
+                val pair = if (symbol == "USD") "USD" else Asset.tradingPair(symbol)
+                allPrices += HistoryDailyPrice(
+                    accountIdentityDigest = digest,
+                    rawAssetKey = symbol,
+                    pair = pair,
+                    candleOpen = dayStart,
+                    candleEnd = dayEnd,
+                    closeUsd = close,
+                    source = if (symbol == "USD") "EXACT_USD_UNIT" else "KRAKEN_COMPLETED_DAILY_OHLC",
+                    legs = if (symbol == "USD") emptyList() else listOf(HistoryDailyPriceLeg(pair, close, "USD")),
+                )
+            }
+            if (day >= endDay.minusDays(364)) targetPriceCount += held.size
+        }
+        store.saveDailyBalances(allBalances)
+        store.saveDailyPrices(allPrices)
+        store.saveDailyValues(HistoryDailyValueBuilder().build(allBalances, allPrices))
+        store.upsertValuationJob(
+            HistoryValuationJob(
+                accountIdentityDigest = digest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                generationId = generationId,
+                state = HistoryValuationJobState.COMPLETE,
+                stage = HistoryValuationStage.PRICE_AND_VALUE,
+                targetStartDay = endDay.minusDays(364),
+                targetEndDay = endDay,
+                nextDay = null,
+                targetDays = 365,
+                balancesProcessed = 365,
+                balancesValid = 365,
+                balancesBlocked = 0,
+                requiredPriceTasks = targetPriceCount,
+                completedPriceTasks = targetPriceCount,
+                completeValueDays = 365,
+                blockedValueDays = 0,
+                sourceRevision = sourceRevision,
+                calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+                lastProgressAt = now,
+                nextRetryAt = null,
+                lastSuccessAt = now,
+                lastError = null,
+                updatedAt = now,
+                startedAt = now.minusSeconds(90),
+            ),
+        )
     }
 
     private fun directObservation(

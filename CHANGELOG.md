@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.5] - 2026-10-21
+
+### Added
+
+- **Historical account values**: reuse imported account ledgers to establish daily
+  balances and calculate historical USD totals with durable progress, explicit
+  evidence gaps, and daily holdings/value exports.
+
+### Changed
+
+- **History**: make Account value, Trades, Transactions, and Data status the
+  primary views; exclude all equity-class share units while retaining every
+  USD ledger balance change, including stock settlement and dividend cash.
+
 ## [6.20.4] - 2026-10-21
 
 ### Security

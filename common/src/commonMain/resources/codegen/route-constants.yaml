@@ -26,7 +26,10 @@ Routes:
   STATIC_RESOURCES_DIR: "static"
   # --- History read API section (charts, summary, scopes, activities, data status, repair) ---
   API_HISTORY_CHARTS: "/api/history/charts"
+  API_HISTORY_HOLDINGS: "/api/history/holdings"
   API_HISTORY_SUMMARY: "/api/history/summary"
+  API_HISTORY_EXPORT_ACCOUNT_VALUES: "/api/history/export/account-values"
+  API_HISTORY_EXPORT_ACCOUNT_HOLDINGS: "/api/history/export/account-holdings"
   API_HISTORY_SCOPES: "/api/history/scopes"
   API_HISTORY_ACTIVITIES: "/api/history/activities"
   API_HISTORY_DATA_STATUS: "/api/history/data-status"

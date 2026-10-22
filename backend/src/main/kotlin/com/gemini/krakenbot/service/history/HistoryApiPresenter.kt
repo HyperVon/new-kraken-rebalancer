@@ -1,9 +1,14 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.reporting.HistoryReportingPeriod
 import com.gemini.krakenbot.service.reporting.HistoryReportingService
+import com.gemini.krakenbot.service.reporting.LatestObservedValue
+import com.gemini.krakenbot.service.reporting.ObservedValueChange
+import com.gemini.krakenbot.service.reporting.RangeExtrema
+import com.gemini.krakenbot.service.reporting.RangeExtremum
 import com.gemini.krakenbot.service.reporting.targetPercentsBySymbol
 import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
@@ -11,6 +16,7 @@ import java.time.DateTimeException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 import java.util.Base64
 
@@ -25,12 +31,12 @@ private const val CURSOR_SEPARATOR = "\n"
 private val FUNDING_LEDGER_TYPES = listOf(
     KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
     KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+    KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
 )
 
 /** Ledger families that can pay a reward; the row filter still decides which rows count. */
 private val REWARD_LEDGER_TYPES = listOf(
     KrakenApiConstants.LEDGER_TYPE_STAKING,
-    KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
     KrakenApiConstants.LEDGER_TYPE_EARN,
     KrakenApiConstants.LEDGER_TYPE_REWARD,
     KrakenApiConstants.LEDGER_TYPE_TRANSFER,
@@ -68,7 +74,7 @@ class HistoryApiPresenter(
         if (scopeId.isNullOrBlank() && currentScope.mode == HistorySourceMode.ACCOUNT &&
             selection == HistoryChartSelection.PORTFOLIO
         ) {
-            return recordedPortfolioCharts(currentScope, window, pointCap, startedNanos)
+            return accountDailyValueCharts(currentScope, window, pointCap, startedNanos, params.valueAsset)
         }
         val scope = resolveScope(scopeId, currentScope)
         val observations = historyService.queryChartObservations(scope, window.from, window.until, pointCap)
@@ -100,70 +106,306 @@ class HistoryApiPresenter(
         )
     }
 
-    private suspend fun recordedPortfolioCharts(
+    private suspend fun accountDailyValueCharts(
         currentScope: HistorySourceScope,
         window: HistoryApiWindow,
         pointCap: Int,
         startedNanos: Long,
+        rawValueAsset: String?,
     ): HistoryApiChartsResponse {
         val digest = checkNotNull(currentScope.accountIdentityDigest)
-        val scopes = (
-            historyStore.listRecordedScopes(digest).filter {
-                it.mode == HistorySourceMode.ACCOUNT && it.accountIdentityDigest == digest
-            }.map { it.toSourceScope() } + currentScope
-            ).distinctBy { it.sourceKey }
-        val coverages = scopes.associateWith { historyStore.valuesCoverage(it) }
-        val scopeDtos = scopes.map { scope ->
-            val coverage = coverages.getValue(scope)
-            HistoryApiScope(
-                id = scope.sourceKey,
-                symbols = scope.managedScopeSymbols.sorted(),
-                earliestIso = coverage.firstRecordedAt?.toString(),
-                latestIso = coverage.lastRecordedAt?.toString(),
-                current = scope.sourceKey == currentScope.sourceKey,
+        val values = mutableListOf<HistoryDailyValue>()
+        var offset = 0
+        var total: Long? = null
+        val (dailyFrom, dailyUntil) = window.dailyValueBounds()
+        while (true) {
+            val page = historyStore.queryDailyValues(
+                accountIdentityDigest = digest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                from = dailyFrom,
+                until = dailyUntil,
+                limit = HISTORY_PAGE_LIMIT,
+                offset = offset,
+            )
+            total = page.total
+            values += page.items
+            if (!page.hasMore || page.items.isEmpty()) break
+            offset += page.items.size
+        }
+        val from = values.firstOrNull()?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString()
+        val to = values.lastOrNull()?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString()
+        val displayValues = sampleDailyValues(values, pointCap)
+        val availableValueAssets = values.asSequence()
+            .flatMap { value -> value.assets.asSequence() }
+            .filterNot { asset -> asset.rawAssetClass.equals("equity", ignoreCase = true) }
+            .map { asset -> Asset.normalizeLedgerAsset(asset.rawAssetKey) }
+            .filter(String::isNotBlank)
+            .distinct()
+            .sorted()
+            .toList()
+        val selectedValueAsset = rawValueAsset?.trim()?.takeIf(String::isNotEmpty)?.let(Asset::normalizeLedgerAsset)
+            ?.takeIf { it in availableValueAssets }
+        val points = displayValues.map { value ->
+            val selectedAssets = selectedValueAsset?.let { symbol ->
+                value.assets.filter {
+                    !it.rawAssetClass.equals("equity", ignoreCase = true) &&
+                        Asset.normalizeLedgerAsset(it.rawAssetKey) == symbol
+                }
+            }.orEmpty()
+            val selectedValue = when {
+                selectedValueAsset == null -> value.totalUsd
+
+                selectedAssets.isEmpty() && value.status == HistoryDailyValueStatus.COMPLETE -> BigDecimal.ZERO
+
+                selectedAssets.isNotEmpty() && selectedAssets.all {
+                    it.status == HistoryDailyValueStatus.COMPLETE && it.valueUsd != null
+                } -> selectedAssets.fold(BigDecimal.ZERO) { totalUsd, asset ->
+                    totalUsd.add(asset.valueUsd ?: BigDecimal.ZERO)
+                }
+
+                else -> null
+            }
+            HistoryApiPoint(
+                t = value.dayEnd.toEpochMilli(),
+                isoTime = value.dayEnd.toString(),
+                v = selectedValue,
+                complete = selectedValue != null,
+                status = if (selectedValue == null) {
+                    selectedAssets.firstOrNull { it.status != HistoryDailyValueStatus.COMPLETE }?.status?.name
+                        ?: value.status.name
+                } else {
+                    HistoryDailyValueStatus.COMPLETE.name
+                },
+                reasons = if (selectedValue != null) {
+                    emptyList()
+                } else if (selectedValueAsset != null) {
+                    selectedAssets.filter { it.status != HistoryDailyValueStatus.COMPLETE }.map { asset ->
+                        "$selectedValueAsset: ${asset.reason ?: asset.status.name}"
+                    }.ifEmpty { listOf(value.status.name) }
+                } else {
+                    value.assets.filter { it.status != HistoryDailyValueStatus.COMPLETE }.map { asset ->
+                        "${Asset.normalizeLedgerAsset(asset.rawAssetKey)}: ${asset.reason ?: asset.status.name}"
+                    }.ifEmpty { listOf(value.status.name) }
+                },
+                dayLabel = value.dayLabel.toString(),
             )
         }
-        val observations = scopes.associate { scope ->
-            scope.sourceKey to historyService.queryChartObservations(scope, window.from, window.until, pointCap)
-        }
-        val totals = scopes.map { scope ->
-            historyService.queryValues(
-                HistoryRangeQuery(from = window.from, until = window.until, sourceScope = scope, limit = 1),
-            ).total ?: observations.getValue(scope.sourceKey).size.toLong()
-        }
-        val episodes = recordedEpisodes(observations)
-        val conflicts = recordedConflictInstants(observations)
-        val boundaries = recordedScopeBoundaries(episodes, conflicts, window)
-        val series = scopeDtos.map { scope ->
-            recordedPortfolioSeries(scope, episodes, conflicts)
-        }
-        val incompleteCount = coverages.values.sumOf { it.incompleteCount }
-        val firstRecordedAt = coverages.values.mapNotNull { it.firstRecordedAt }.minOrNull()
-        val lastRecordedAt = coverages.values.mapNotNull { it.lastRecordedAt }.maxOrNull()
+        val series = HistoryApiSeries(
+            key = selectedValueAsset?.let { "asset:$it" } ?: HISTORY_API_PORTFOLIO_KEY,
+            label = selectedValueAsset?.let { "$it · USD value" } ?: ViewText.HISTORY_API_SERIES_PORTFOLIO,
+            legendLabel = selectedValueAsset?.let { "$it · USD value" } ?: ViewText.HISTORY_API_SERIES_PORTFOLIO,
+            unit = "USD",
+            points = points,
+        )
+        val baseCoverage = buildCoverage(currentScope)
+        val dailyCoverage = baseCoverage.copy(
+            valuesFirstIso = from,
+            valuesLastIso = to,
+            incomplete = values.isEmpty() || values.any { it.status != HistoryDailyValueStatus.COMPLETE },
+            gapCount = values.count { it.status != HistoryDailyValueStatus.COMPLETE },
+        )
+        val latestGeneration = values.lastOrNull()
+        val earliestDay = values.firstOrNull()?.dayLabel
+        val latestDay = values.lastOrNull()?.dayLabel
         return HistoryApiChartsResponse(
             range = window.rangeDto(),
             scope = scopeDto(currentScope, currentScope),
-            coverage = buildCoverage(currentScope).copy(
-                valuesFirstIso = firstRecordedAt?.toString(),
-                valuesLastIso = lastRecordedAt?.toString(),
-                incomplete = incompleteCount > 0 || firstRecordedAt == null || boundaries.isNotEmpty(),
-                gapCount = maxOf(incompleteCount, boundaries.size.toLong())
-                    .coerceAtMost(Int.MAX_VALUE.toLong())
-                    .toInt(),
-            ),
-            series = series,
+            coverage = dailyCoverage,
+            series = listOf(series),
             fullRange = HistoryApiFullRange(
                 fromIso = window.selectedFrom?.toString(),
                 toIso = window.selectedUntil.toString(),
-                pointCount = series.maxOfOrNull { it.points.size } ?: 0,
-                totalObservations = totals.sum(),
-                representative = observations.values.sumOf { it.size.toLong() } < totals.sum(),
+                pointCount = points.size,
+                totalObservations = total ?: values.size.toLong(),
+                representative = points.size.toLong() < (total ?: values.size.toLong()),
+                baselineFromIso = window.baselineFrom?.toString(),
             ),
             generationMs = elapsedMs(startedNanos),
-            scopeSelection = HistoryApiScopeSelection.ACCOUNT_RECORDED,
-            recordedScopes = scopeDtos,
-            boundaries = boundaries,
+            scopeSelection = HistoryApiScopeSelection.CURRENT_SCOPE,
+            resolution = "1d",
+            valuationBasis = "Daily value · historical closing prices",
+            generationId = latestGeneration?.generationId,
+            sourceRevision = latestGeneration?.sourceRevision,
+            availableValueFromIso = earliestDay?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
+            availableValueToIso = latestDay?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
+            availableValueAssets = availableValueAssets,
+            selectedValueAsset = selectedValueAsset,
         )
+    }
+
+    suspend fun holdingsAtDate(currentScope: HistorySourceScope, dayValue: String): HistoryApiHoldingsAtDate {
+        val digest = currentScope.accountIdentityDigest
+            ?.takeIf { currentScope.mode == HistorySourceMode.ACCOUNT }
+            ?: throw HistoryApiRequestException(ViewText.HISTORY_ACCOUNT_UNAVAILABLE)
+        val day = try {
+            LocalDate.parse(dayValue)
+        } catch (_: DateTimeParseException) {
+            throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+        }
+        val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+        val total = historyStore.queryDailyValues(
+            accountIdentityDigest = digest,
+            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+            from = dayEnd,
+            until = dayEnd.plusSeconds(1),
+            limit = 1,
+        ).items.firstOrNull()
+        if (total == null) {
+            return HistoryApiHoldingsAtDate(
+                day = day.toString(),
+                available = false,
+                totalUsd = null,
+                totalStatus = HistoryDailyValueStatus.OUTSIDE_COVERAGE.name,
+                generationId = null,
+                holdings = emptyList(),
+            )
+        }
+        val assets = historyStore.queryDailyAssetValues(
+            accountIdentityDigest = digest,
+            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+            from = dayEnd,
+            until = dayEnd.plusSeconds(1),
+            limit = HISTORY_MAX_PAGE_LIMIT,
+        ).items
+        return HistoryApiHoldingsAtDate(
+            day = day.toString(),
+            available = true,
+            totalUsd = total.totalUsd?.toPlainString(),
+            totalStatus = total.status.name,
+            generationId = total.generationId,
+            holdings = assets.filterNot { asset ->
+                asset.rawAssetClass.equals("equity", ignoreCase = true)
+            }.map { asset ->
+                HistoryApiDailyHolding(
+                    asset = Asset.normalizeLedgerAsset(asset.rawAssetKey),
+                    quantity = asset.quantity?.toPlainString(),
+                    priceUsd = asset.priceUsd?.toPlainString(),
+                    valueUsd = asset.valueUsd?.toPlainString(),
+                    availability = asset.status.name,
+                    reason = asset.reason,
+                )
+            },
+        )
+    }
+
+    fun dailyValueExportQuery(
+        params: HistoryApiRangeParams,
+        currentScope: HistorySourceScope,
+    ): HistoryApiExportQuery<HistoryDailyValueExportRange> {
+        val digest = currentScope.accountIdentityDigest
+            ?.takeIf { currentScope.mode == HistorySourceMode.ACCOUNT }
+            ?: throw HistoryApiRequestException(ViewText.HISTORY_ACCOUNT_UNAVAILABLE)
+        val window = resolveWindow(params, nowProvider())
+        val (from, until) = window.dailyValueBounds()
+        return HistoryApiExportQuery(HistoryDailyValueExportRange(digest, from, until), window.zone)
+    }
+
+    fun dailyHoldingsExportQuery(
+        dayValue: String,
+        currentScope: HistorySourceScope,
+    ): HistoryApiExportQuery<HistoryDailyHoldingsExportQuery> {
+        val digest = currentScope.accountIdentityDigest
+            ?.takeIf { currentScope.mode == HistorySourceMode.ACCOUNT }
+            ?: throw HistoryApiRequestException(ViewText.HISTORY_ACCOUNT_UNAVAILABLE)
+        val day = try {
+            LocalDate.parse(dayValue)
+        } catch (_: DateTimeParseException) {
+            throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+        }
+        return HistoryApiExportQuery(HistoryDailyHoldingsExportQuery(digest, day), ZoneOffset.UTC)
+    }
+
+    private suspend fun dailyValueStatistics(
+        base: com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics,
+        scope: HistorySourceScope,
+        window: HistoryApiWindow,
+    ): com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics {
+        val digest = scope.accountIdentityDigest ?: return base
+        val values = mutableListOf<HistoryDailyValue>()
+        var offset = 0
+        val (dailyFrom, dailyUntil) = window.dailyValueBounds()
+        while (true) {
+            val page = historyStore.queryDailyValues(
+                accountIdentityDigest = digest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                from = dailyFrom,
+                until = dailyUntil,
+                limit = HISTORY_PAGE_LIMIT,
+                offset = offset,
+            )
+            values += page.items
+            if (!page.hasMore || page.items.isEmpty()) break
+            offset += page.items.size
+        }
+        val complete = values.filter { it.status == HistoryDailyValueStatus.COMPLETE && it.totalUsd != null }
+        val first = values.firstOrNull()
+        val last = values.lastOrNull()
+        val firstComplete = complete.firstOrNull()
+        val lastComplete = complete.lastOrNull()
+        val minValue = complete.minByOrNull { it.totalUsd!! }
+        val maxValue = complete.maxByOrNull { it.totalUsd!! }
+        val allComplete = values.isNotEmpty() && complete.size == values.size
+        val incompleteReason = values.firstOrNull { it.status != HistoryDailyValueStatus.COMPLETE }
+            ?.let { "Daily value is unavailable on ${it.dayLabel}: ${it.status.name.lowercase()}." }
+        return base.copy(
+            latestObservedValue = LatestObservedValue(
+                valueUsd = last?.totalUsd?.takeIf { last.status == HistoryDailyValueStatus.COMPLETE },
+                observedAt = last?.dayEnd,
+                outsideSelectedPeriod = false,
+                complete = last?.status == HistoryDailyValueStatus.COMPLETE,
+                incompleteReason = if (last?.status == HistoryDailyValueStatus.COMPLETE) null else incompleteReason,
+            ),
+            observedValueChange = ObservedValueChange(
+                changeUsd = if (allComplete && firstComplete != null && lastComplete != null) {
+                    lastComplete.totalUsd!!.subtract(firstComplete.totalUsd!!)
+                } else {
+                    null
+                },
+                firstValueUsd = firstComplete?.totalUsd,
+                firstObservedAt = firstComplete?.dayEnd,
+                lastValueUsd = lastComplete?.totalUsd,
+                lastObservedAt = lastComplete?.dayEnd,
+                includesFlowsNotice = "Deposits and withdrawals affect this change in account value.",
+                complete = allComplete,
+                incompleteReason = if (allComplete) {
+                    null
+                } else {
+                    incompleteReason
+                        ?: "No daily account values are available."
+                },
+            ),
+            rangeExtrema = RangeExtrema(
+                high = maxValue?.let { RangeExtremum("high", it.totalUsd!!, it.dayEnd) },
+                low = minValue?.let { RangeExtremum("low", it.totalUsd!!, it.dayEnd) },
+                complete = allComplete,
+                incompleteReason = if (allComplete) {
+                    null
+                } else {
+                    incompleteReason
+                        ?: "No daily account values are available."
+                },
+            ),
+        )
+    }
+
+    private fun sampleDailyValues(values: List<HistoryDailyValue>, pointCap: Int): List<HistoryDailyValue> {
+        if (values.size <= pointCap) return values
+        val mandatory = values.indices.filter { index -> values[index].status != HistoryDailyValueStatus.COMPLETE }
+            .toMutableSet()
+        mandatory += 0
+        mandatory += values.lastIndex
+        val remainingSlots = (pointCap - mandatory.size).coerceAtLeast(0)
+        if (remainingSlots > 0) {
+            repeat(remainingSlots) { slot ->
+                val index = if (remainingSlots == 1) {
+                    values.lastIndex / 2
+                } else {
+                    (slot * values.lastIndex) / (remainingSlots - 1)
+                }
+                mandatory += index
+            }
+        }
+        return mandatory.sorted().map(values::get)
     }
 
     suspend fun summary(
@@ -176,11 +418,17 @@ class HistoryApiPresenter(
         val window = resolveWindow(params, nowProvider())
         val scope = resolveScope(scopeId, currentScope)
         val period = HistoryReportingPeriod(sourceScope = scope, from = window.from, until = window.until)
+        val baseStatistics = reportingService.computeStatistics(period, targetAllocations)
+        val dailyStatistics = if (scopeId.isNullOrBlank() && scope.mode == HistorySourceMode.ACCOUNT) {
+            dailyValueStatistics(baseStatistics, scope, window)
+        } else {
+            baseStatistics
+        }
         return HistoryApiSummaryResponse(
             range = window.rangeDto(),
             scope = scopeDto(scope, currentScope),
             coverage = buildCoverage(scope),
-            statistics = reportingService.computeStatistics(period, targetAllocations),
+            statistics = dailyStatistics,
             generationMs = elapsedMs(startedNanos),
             scopeSelection = if (scopeId.isNullOrBlank()) {
                 HistoryApiScopeSelection.CURRENT_SCOPE
@@ -271,15 +519,89 @@ class HistoryApiPresenter(
         val digest = currentScope.accountIdentityDigest
         val jobs = if (digest == null) emptyList() else historyStore.loadSyncJobs(digest)
         val progress = if (digest == null) emptyList() else historyStore.syncProgress(digest)
+        val valuationJob = digest?.let { historyStore.loadValuationJob(it, HISTORY_ACCOUNT_DAILY_SCOPE) }
+        val valuation = if (digest == null || valuationJob == null) {
+            null
+        } else {
+            val targetRows = historyStore.queryDailyValues(
+                accountIdentityDigest = digest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                from = valuationJob.targetStartDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                until = valuationJob.targetEndDay.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                limit = valuationJob.targetDays.coerceAtLeast(1),
+            ).items
+            valuationJob.toApiProgress().copy(
+                blockedValueReasons = targetRows.asSequence()
+                    .filter { it.status != HistoryDailyValueStatus.COMPLETE }
+                    .flatMap { value ->
+                        value.assets.asSequence()
+                            .filter { it.status != HistoryDailyValueStatus.COMPLETE }
+                            .map { asset ->
+                                "${value.dayLabel} UTC · ${Asset.normalizeLedgerAsset(asset.rawAssetKey)}: " +
+                                    (asset.reason ?: asset.status.name.lowercase())
+                            }
+                            .ifEmpty { sequenceOf("${value.dayLabel} UTC · ${value.status.name.lowercase()}") }
+                    }
+                    .take(50)
+                    .toList(),
+            )
+        }
+        val tradeCount = digest?.let {
+            historyStore.queryTrades(HistoryEventQuery(accountIdentityDigest = it, limit = 1)).total
+        }
+        val ledgerCount = digest?.let {
+            historyStore.queryLedgers(HistoryEventQuery(accountIdentityDigest = it, limit = 1)).total
+        }
+        val firstDailyValue = digest?.let {
+            historyStore.queryDailyValues(it, HISTORY_ACCOUNT_DAILY_SCOPE, limit = 1)
+        }?.items?.firstOrNull()
+        val availableDays = digest?.let {
+            historyStore.queryDailyValues(it, HISTORY_ACCOUNT_DAILY_SCOPE, limit = 1).total
+        }
+        val lastDailyValue = if (digest != null && availableDays != null && availableDays > 0) {
+            historyStore.queryDailyValues(
+                digest,
+                HISTORY_ACCOUNT_DAILY_SCOPE,
+                limit = 1,
+                offset = (availableDays - 1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            ).items.firstOrNull()
+        } else {
+            null
+        }
+        val statusCoverage = if (currentScope.mode == HistorySourceMode.ACCOUNT) {
+            buildCoverage(currentScope).copy(
+                valuesFirstIso = firstDailyValue?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
+                valuesLastIso = lastDailyValue?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
+                incomplete =
+                valuation?.blockedValueDays?.let { it > 0 } ?: (availableDays == null || availableDays == 0L),
+                gapCount = valuation?.blockedValueDays ?: 0,
+            )
+        } else {
+            buildCoverage(currentScope)
+        }
+        val progressDtos = progress.map { feedProgress ->
+            val targetCoverageComplete = valuationJob?.let { job ->
+                val targetStart = job.targetStartDay.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+                val targetThrough = job.targetEndDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond() - 1
+                coverageCovers(feedProgress.coveredWindows, targetStart, targetThrough)
+            }
+            syncProgressDto(feedProgress).copy(targetCoverageComplete = targetCoverageComplete)
+        }
         return HistoryApiDataStatusResponse(
             range = window.rangeDto(),
             dataRevision = historyStore.currentDataRevision(),
             blockedReason = syncCoordinator.blockedReason(),
             syncFailure = syncCoordinator.lastFailure(),
             nextRetryAtIso = syncCoordinator.nextRetryAt()?.toString(),
-            coverage = buildCoverage(currentScope),
+            coverage = statusCoverage,
             jobs = jobs.map(::syncJobDto),
-            progress = progress.map(::syncProgressDto),
+            progress = progressDtos,
+            valuation = valuation,
+            tradeRecordsImported = tradeCount,
+            ledgerRecordsImported = ledgerCount,
+            availableValueFromIso = firstDailyValue?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
+            availableValueToIso = lastDailyValue?.dayLabel?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
+            availableValueDays = availableDays,
         )
     }
 
@@ -637,6 +959,41 @@ class HistoryApiPresenter(
         nextRetryAtIso = progress.nextRetryAt?.toString(),
         coveredFromIso = progress.coveredWindows.minOfOrNull { it.startSec }?.let(::instantFromSec),
         coveredToIso = progress.coveredWindows.maxOfOrNull { it.endSec }?.let(::instantFromSec),
+        coveredGapCount = progress.coveredWindows.sortedBy { it.startSec }
+            .zipWithNext()
+            .count { (earlier, later) -> earlier.endSec < Long.MAX_VALUE && later.startSec > earlier.endSec + 1 },
+    )
+
+    private fun coverageCovers(windows: List<HistorySyncCoverageWindow>, fromSec: Long, throughSec: Long): Boolean {
+        if (fromSec > throughSec) return true
+        var cursor = fromSec
+        for (window in windows.sortedBy { it.startSec }) {
+            if (window.endSec < cursor) continue
+            if (window.startSec > cursor) return false
+            if (window.endSec >= throughSec || window.endSec == Long.MAX_VALUE) return true
+            cursor = window.endSec + 1
+        }
+        return false
+    }
+
+    private fun HistoryValuationJob.toApiProgress() = HistoryApiValuationProgress(
+        state = state.name,
+        stage = stage.name,
+        targetStartDay = targetStartDay.toString(),
+        targetEndDay = targetEndDay.toString(),
+        targetDays = targetDays,
+        balancesProcessed = balancesProcessed,
+        balancesValid = balancesValid,
+        balancesBlocked = balancesBlocked,
+        requiredPriceTasks = requiredPriceTasks,
+        completedPriceTasks = completedPriceTasks,
+        completeValueDays = completeValueDays,
+        blockedValueDays = blockedValueDays,
+        lastProgressAtIso = lastProgressAt?.toString(),
+        nextRetryAtIso = nextRetryAt?.toString(),
+        lastSuccessAtIso = lastSuccessAt?.toString(),
+        lastError = lastError,
+        startedAtIso = startedAt.toString(),
     )
 }
 
@@ -646,6 +1003,14 @@ internal fun HistoryApiWindow.rangeDto(): HistoryApiRange = HistoryApiRange(
     tz = zone.id,
     preset = preset,
 )
+
+/** Maps selected civil dates to the UTC closing marks labeled with those dates. */
+private fun HistoryApiWindow.dailyValueBounds(): Pair<Instant?, Instant> {
+    val firstLabel = from?.atZone(zone)?.toLocalDate()
+    val lastLabel = until.minusNanos(1).atZone(zone).toLocalDate()
+    return firstLabel?.plusDays(1)?.atStartOfDay(ZoneOffset.UTC)?.toInstant() to
+        lastLabel.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant()
+}
 
 internal fun HistoryRecordedScope.toSourceScope(): HistorySourceScope = HistorySourceScope(
     mode = mode,

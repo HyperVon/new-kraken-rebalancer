@@ -7,6 +7,7 @@ import com.gemini.krakenbot.view.util.ChartGestureText
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HistoryChartActions
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -163,6 +164,7 @@ internal class HistoryChartSession(
         setChartXRange(chart, next.visible)
         updateChart(chart)
         syncHistoryScrubber(this)
+        syncHistoryFollowLatestButton(container, next.isZoomed)
         requestViewportDetail(container.id, next.visible.min, next.visible.max)
     }
 
@@ -212,6 +214,12 @@ internal fun syncHistoryScrubber(session: HistoryChartSession) {
     scrubber.disabled = !zoomed
     scrubber.value = (session.viewport.fraction * ChartGestureProps.SCRUBBER_STEPS).roundToInt().toString()
     scrubber.parentElement?.classList?.toggle(CssClass.Utility.Hidden, !zoomed)
+}
+
+internal fun syncHistoryFollowLatestButton(container: Element, zoomed: Boolean) {
+    container.parentElement
+        ?.querySelector("[${HtmlAttrs.DATA_HISTORY_FOLLOW_LATEST}]")
+        ?.let { (it as? HTMLElement)?.hidden = !zoomed }
 }
 
 internal fun bindHistoryScrubber(scrubber: HTMLInputElement, session: HistoryChartSession) {

@@ -232,5 +232,27 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             observed.directCapture?.resultShapeValid shouldBe true
             coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
         }
+
+        "account balances outside configured allocations do not enter rebalancer totals" {
+            every { configService.getConfig() } returns TestFixtures.config(
+                settings = TestFixtures.settings(),
+                allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+            )
+            val analyzer = PortfolioAnalyzerImpl(krakenService, configService)
+
+            val result = analyzer.calculatePortfolioValues(
+                balances = mapOf(
+                    "XXBT" to BigDecimal("1"),
+                    "ZUSD" to BigDecimal("100"),
+                    "STRC" to BigDecimal("3"),
+                    "AAPL" to BigDecimal("2"),
+                ),
+                prices = mapOf("BTC" to BigDecimal("20")),
+            )
+
+            val values = (result as Result.Success).value
+            values.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("120"))
+            values.currentValuesUSD.keys shouldBe setOf("BTC", "USD")
+        }
     }
 }

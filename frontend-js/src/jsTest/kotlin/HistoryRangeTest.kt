@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.HtmlIds
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -46,6 +47,75 @@ class HistoryRangeTest : StringSpec() {
 
                 bitcoin.hidden shouldBe true
                 ethereum.hidden shouldBe false
+            } finally {
+                root.remove()
+            }
+        }
+
+        "account value asset filter follows chart options and refreshes only the selected series" {
+            val root = historyRangeFixture()
+            val assetFilter = document.createElement("select") as HTMLSelectElement
+            assetFilter.id = HtmlIds.HISTORY_VALUE_ASSET_FILTER
+            root.appendChild(assetFilter)
+            val requests = mutableListOf<String>()
+            val destinations = mutableListOf<String>()
+            val fetch: (String, (dynamic) -> Unit, () -> Unit) -> Unit = { url, success, _ ->
+                requests += url
+                when {
+                    url == "/api/history/scopes" -> success(historyScopes())
+
+                    url.startsWith("/api/history/charts?") -> {
+                        val response = historyApiCharts(
+                            preset = "30d",
+                            from = "2026-02-08T00:00:00Z",
+                            to = "2026-03-10T00:00:00Z",
+                            timezone = "UTC",
+                            points = listOf("2026-03-09T12:00:00Z" to 100.0),
+                        )
+                        response.availableValueAssets = arrayOf("BTC", "USD")
+                        response.selectedValueAsset = historyQuery(url).get("valueAsset")
+                        success(response)
+                    }
+
+                    url.startsWith("/api/history/summary?") -> {
+                        val chart = historyApiCharts(
+                            preset = "30d",
+                            from = "2026-02-08T00:00:00Z",
+                            to = "2026-03-10T00:00:00Z",
+                            timezone = "UTC",
+                            points = listOf("2026-03-09T12:00:00Z" to 100.0),
+                        )
+                        success(historyApiSummary(chart))
+                    }
+                }
+            }
+
+            try {
+                initHistoryRangeControls(
+                    currentQuery = "?range=30d&valueAsset=BTC",
+                    fetchJson = fetch,
+                    pushState = destinations::add,
+                    timezone = { "UTC" },
+                )
+
+                assetFilter.value shouldBe "BTC"
+                assetFilter.options.length shouldBe 3
+                historyQuery(requests.first { it.startsWith("/api/history/charts?") })
+                    .get("valueAsset") as? String shouldBe "BTC"
+
+                assetFilter.value = "USD"
+                assetFilter.dispatchEvent(Event("change"))
+                historyQuery(destinations.last()).get("valueAsset") as? String shouldBe "USD"
+                historyQuery(requests.last { it.startsWith("/api/history/charts?") })
+                    .get("valueAsset") as? String shouldBe "USD"
+                assetFilter.value shouldBe "USD"
+
+                assetFilter.value = ""
+                assetFilter.dispatchEvent(Event("change"))
+                historyQuery(destinations.last()).get("valueAsset") as? String shouldBe null
+                historyQuery(requests.last { it.startsWith("/api/history/charts?") })
+                    .get("valueAsset") as? String shouldBe null
+                assetFilter.value shouldBe ""
             } finally {
                 root.remove()
             }

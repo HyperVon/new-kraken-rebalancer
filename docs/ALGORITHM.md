@@ -3,10 +3,11 @@
 This document describes the active rebalance cycle and the current portfolio
 surfaces. The cycle uses the configured allocation directly, including its
 configured USD percentage target. Its dollar target scales with the current
-portfolio total. The History page reports direct cycle samples and synchronized
-Kraken trade and ledger records; it does not reconstruct historical portfolio
-values or calculate Buy & Hold performance. Current planning does not use
-ATH/drawdown deployment.
+portfolio total. The History page reports direct cycle samples, synchronized
+Kraken trade and ledger records, and a separate daily account-value estimate
+derived from imported balances and historical prices. Historical reporting does
+not change rebalancing math or calculate Buy & Hold performance. Current
+planning does not use ATH/drawdown deployment.
 
 ## Overview
 
@@ -196,9 +197,22 @@ credential scope around each page and verifies the active data-directory
 account binding before storing data. A changed account or managed-asset scope
 cannot be joined to another value series. The History page provides time
 ranges, event filters, paginated trade and ledger tables, and exchange-reported
-balance checkpoints. It displays evidence; it does not reconstruct a complete
-historical portfolio value from those events or compute retrospective
-performance.
+balance checkpoints.
+
+`HistoryValuationCoordinator` runs outside the portfolio cycle and reuses those
+committed records. It derives the latest 365 completed UTC daily balance marks
+from ledger post-balances and verified coverage, obtains same-day completed
+Kraken daily candles for nonzero holdings, and atomically publishes a generation
+with per-asset evidence. Missing checkpoints, coverage, or prices remain
+unavailable with a dated reason; a partial subtotal is never presented as the
+account total. Direct USD markets are preferred, with same-day BTC then EUR
+conversion only when required. USD is valued at par. All equity-class share
+units are excluded from holdings and totals, while every USD ledger change,
+including stock-trade settlements and dividend credits, remains cash. Derivatives and
+unidentifiable wallet scopes are outside this release. The reported change in
+account value includes deposits and withdrawals and is not profit, performance,
+TWR, IRR, or Buy & Hold. These derived values are read-only reporting data and
+do not feed portfolio planning or order execution.
 
 See the [History section in the User Guide](USER_GUIDE.md#history) for the
 operator-facing behavior and limitations.

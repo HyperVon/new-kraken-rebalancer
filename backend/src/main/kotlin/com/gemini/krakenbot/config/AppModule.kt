@@ -21,6 +21,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.history.HistoryApiPresenter
 import com.gemini.krakenbot.service.history.HistoryCsvExporter
 import com.gemini.krakenbot.service.history.HistoryCycleGate
+import com.gemini.krakenbot.service.history.HistoryDailyPriceResolver
 import com.gemini.krakenbot.service.history.HistoryDatabase
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryService
@@ -28,6 +29,7 @@ import com.gemini.krakenbot.service.history.HistoryServiceImpl
 import com.gemini.krakenbot.service.history.HistoryStore
 import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
 import com.gemini.krakenbot.service.history.SqliteHistoryStore
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
@@ -140,6 +142,18 @@ val coreModule =
                 dataDirectoryIdentity = get(),
                 store = get(),
                 cycleGate = HistoryCycleGate { block -> get<PortfolioManager>().runHistoryPageIfAdmitted(block) },
+                onLedgerPageCommitted = { get<HistoryValuationCoordinator>().requestRebuild() },
+            )
+        }
+        single {
+            HistoryDailyPriceResolver(krakenService = get())
+        }
+        single {
+            HistoryValuationCoordinator(
+                applicationScope = get(qualifier = named(APPLICATION_SCOPE_QUALIFIER)),
+                synchronizer = get(),
+                store = get(),
+                priceResolver = get(),
             )
         }
         single {
@@ -216,6 +230,7 @@ val webModule =
                 historyApi = get(),
                 historyReportingService = get(),
                 historyCsvExporter = get(),
+                historyValuationCoordinator = get(),
             )
         }
     }

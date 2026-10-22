@@ -73,14 +73,17 @@ Live Trading settings.
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Latest completed cycle snapshot, allocation bars, performance table, current-cycle actions |
-| **History** | `/history` | Recorded portfolio values, Kraken trades and ledgers, and balance checkpoints |
+| **History** | `/history` | Historical account values, Kraken trades and transactions, and durable data progress |
 | **Settings** | `/settings` | Loop timing, triggers, USD percentage target, safety modes, allocations |
 
 The History page synchronizes Kraken trade and ledger records for the verified
-account. Its portfolio-value chart uses direct per-cycle samples and leaves
-missing or incomplete intervals unfilled; it does not reconstruct historical
-portfolio values or calculate Buy & Hold performance. Operator recovery for
-unresolved live orders remains available through the separate safety workflow.
+account, then derives daily balances and values from those committed records.
+It shows a complete account total only when every included nonzero balance has
+valid same-day price evidence; missing dates and assets remain explicit gaps.
+The chart reports account-value changes, not profit or investment returns.
+Simulation keeps its process-scoped samples separate from authenticated account
+history. Operator recovery for unresolved live orders remains available through
+the separate safety workflow.
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 **Only the Dashboard** shows a stream-health chip in the header next to the mode
@@ -323,123 +326,29 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 
 ## History
 
-<a href="images/history.png"><img src="images/history.png" alt="History with portfolio values, range statistics, and page tabs" width="960"></a>
-*History — recorded portfolio values from a verified fake account in an isolated capture, with the current scope and an earlier recorded scope shown as separate series.*
+<a href="images/history.png"><img src="images/history.png" alt="Account value history and daily holdings" width="960"></a>
+*History — daily account values derived from imported exchange records and completed historical closing prices.*
 
-The **History** page separates three views:
+History restores account history from imported Kraken records. It keeps four views: **Account value**, **Trades**, **Transactions**, and **Data status**. The Account value range defaults to 30 days and offers 24h, 7d, 30d, 90d, 1y, All, and custom dates. Values are daily UTC marks; the 24h range uses the available daily marks because this release does not capture full-account intraday balances. In Simulation, process-scoped cycle samples stay separate and authenticated account history is unavailable.
 
-- **Portfolio** opens with a value-led summary and the primary chart. Open
-  **Explore holdings, allocation and flows** to choose one secondary analysis:
-  holdings, target deviations, native-quantity funding/rewards, or balance
-  checkpoints. **Chart tools** holds the presentation, zoom, pan, reset and expand
-  controls; drag-to-zoom remains available directly on the chart.
-- **Activity** contains separate **Bot activity**, **Trades**, and
-  **Transactions** tabs. Exchange tables scroll within their panels and are
-  independently paginated. Bot activity shows cycle outcome, mode, details, and
-  cycle identity; Kraken trade and ledger rows do not establish authoritative
-  bot linkage or order lifecycle, so linkage is displayed as **Unknown**.
-- **Data status** shows per-feed recent, backfill, repair, and failure progress.
-  The **Retry** control is manual recovery; ordinary synchronization continues
-  automatically after the account identity is verified. Coverage, recorded-source
-  provenance and the compact **Saved views** management action also live here.
+The **Account value (USD)** chart includes spot balances, USD cash, and identifiable staking/Earn balance buckets represented in ledger history, including assets that are no longer configured or held. All ledger assets classified as equities are excluded from holdings and totals; all USD ledger balance changes remain included, including stock trade settlements and dividend credits. Separate derivatives and margin positions are outside this chart. The chart uses completed Kraken daily candles and labels the results as historical closing-price estimates. Missing balances or prices create visible gaps; a known subtotal is never shown as a total. Daily historical value is not an exchange-certified statement, tax valuation, profit, investment return, or strategy performance.
 
-Time-range and scope controls apply across the History views. Asset, pair, and
-event-type filters apply to Kraken trades and ledgers; they do not apply to bot
-activity. The activity CSV export uses the selected range, scope, and mode and
-explicitly explains that those exchange-record filters do not apply. Trade and
-ledger CSV exports match their respective filtered table results. Use **Clear
-filters** to retain the selected time range. Use **Save view** to name the
-current range and filters, then choose it from **Saved views** on a later visit.
-Views are stored in this browser; **Delete view** removes the selected preset.
+The chart reports the latest available value, the account-value change over the selected range, and the actual baseline date used. Deposits and withdrawals affect that change. A missing or zero baseline does not produce a percentage. Select a daily point, or choose a date under **Holdings at [date]**, to inspect that day's asset, quantity, historical USD price, value, and availability. The daily-total and selected-date holdings CSV exports preserve missing-data status.
 
-The portfolio-value chart uses a completed per-cycle sample of the configured
-managed assets, priced from the cycle's direct balance and ticker evidence. It
-does not reconstruct a past portfolio from ledger events or substitute
-historical OHLC prices. Incomplete samples do not expose a total, and missing
-time periods are not interpolated. Deposits, withdrawals, manual trades, and
-other account activity can change the observed value, so the chart is not a
-profit or investment-return calculation.
+Drag to zoom, use **Reset zoom** to restore the selected period, and use the chart tooltips for exact daily values. The chart leaves a break at every incomplete date. Older ranges use daily marks and do not imply that all transaction history has a complete price series. **All** shows available account-value history; **Data status** reports the requested period and its actual value coverage.
 
-When the account has more than one recorded scope, the value chart presents every
-recorded scope as its own series, with the current scope marked **(current)**, and
-never sums them. Scopes are read chronologically: when the recorded scope
-changes, the line breaks between the two episodes and both scopes keep their own
-totals. Only two scopes observed at the very same instant are withheld as
-incompatible, because those two records cannot both be one total. The axis always
-spans the full selected period, so a
-period with only a few observations still reads against the range you selected. The
-recorded sources, their symbols, and their recording windows are listed on **Data
-status**.
+**Data status** separates the four kinds of work:
 
-Ranges with at most 2,000 observations show every sample. Larger ranges are
-sampled across the full time span: each time bucket retains its first and last
-observations, complete-value extrema, and incomplete-cycle boundary markers.
-The coverage label distinguishes total recorded observations from the number of
-representative points actually plotted.
-The chart connects adjacent complete samples with lines. An incomplete cycle
-breaks the line, so the chart never bridges a missing observation. The line
-joins recorded endpoints only; it does not infer values between samples.
+1. **Import exchange records** reports imported trade and transaction counts, covered dates, the active scan window, and saved progress. Kraken does not provide a stable total, so the page does not invent a completion percentage.
+2. **Establish daily balances** reports evaluated days, valid days, and dates that lack balance evidence.
+3. **Obtain prices and calculate values** reports required asset-days priced, complete account totals, and blocked dates.
+4. **Routine refresh** is shown separately from the frozen historical import job. A recent check does not restart or erase the historical-import status.
 
-The **Latest observed value** is timestamped and may fall outside the selected
-range. **Observed value change** compares the first and last complete values in
-the selected period and includes deposits, withdrawals, and market moves.
-**Range high** and **Range low** are calculated only from complete observations
-inside that period. Exchange-fill counts and bot-cycle counts are separate;
-trade volume and fees are grouped by their reported currency. Deposits,
-withdrawals, and rewards are shown in native asset units. The funding chart is a
-running total that starts at the selected period's baseline: a deposit raises it
-and a withdrawal lowers it, and zooming keeps the baseline of the period you
-selected. The rewards chart lets
-you select an asset and never values old ledger events using a nearby cycle
-price. Missing or invalid amounts are marked unavailable or incomplete rather
-than presented as zero.
+The page shows the requested value period, available-value dates, last successful update, elapsed time, and last committed progress. A collapsed **Why is this incomplete?** section lists specific unavailable evidence and dates. **Retry failed work** resumes durable checkpoints; it does not delete or reimport intact records. Technical details contain cursors, source identifiers, coverage intervals, and sanitized errors. A cursor is not evidence that the account history is complete.
 
-**Target deviations** are shown in percentage points: the share the portfolio
-holds of an asset minus the share you configured for it. The chart lists the
-configured targets only. A target the portfolio does not hold is worth zero, so
-it deviates by its full target; a holding whose value is unknown, or an
-incomplete sample, states no deviation at all instead of a confident zero.
+Trades and transactions retain their independent filters, pagination, and CSV exports. Exchange trades and ledger rows are account history; bot cycle observations remain separate and are not used as account-value inputs. Account identity is verified before synchronization, and the local account reference is stored as a digest. The sync and valuation workers do not participate in the portfolio trading calculation.
 
-A range is reported as **not synchronized** when the recorded coverage does not
-reach across it: a gap between two covered intervals leaves the range
-unsynchronized, and a range without a start bound needs coverage that reaches
-its end.
-
-Hover or tap the chart for exact values and UTC timestamps. Dense portfolio
-lines use smaller point markers to keep the trend readable; **Points** makes
-them larger again. **Points** and
-**Line** switch the portfolio chart's presentation. **Zoom in** focuses on the
-latest samples; **Earlier** and **Later** move through the zoomed range. Use
-**Zoom out** or **Reset** to restore context, and **Expand** for a taller chart.
-The holdings chart always shows individual checkpoints. If the chart library
-cannot load, the native chart remains available with point tooltips.
-
-For a verified account, History synchronization runs automatically. Recent
-trade and ledger windows refresh every 60 seconds, starting with the last 24
-hours and overlapping the prior scan by 24 hours. After a qualifying live order
-submission, a nonblocking recent refresh is requested five seconds later. Older
-history is backfilled in durable pages, yielding to recent work and resuming from
-its committed cursor after restart; a bounded seven-day window is repaired daily.
-Transient failures use a jittered 1, 2, 5, then 15 minute retry schedule until
-the operation succeeds. Account-scope or API-key restriction changes remain
-visible until **Retry** is used. Expand
-**Sync details** for stored/fetched counts, the last page time, and scan window.
-
-Records are scoped to the authenticated account and the portfolio-value series
-is also scoped to the configured asset set. Changing accounts or the managed
-asset set does not combine those series. The local account reference is stored
-as a digest; the raw identity is not displayed. Kraken history requires the
-read permissions described in [SECURITY.md](../SECURITY.md).
-
-Simulation creates a separate process-scoped value series from emulator cycle
-snapshots. It cannot authenticate an account or import Kraken trades and
-ledgers, and those simulated values are not account history. A newly started
-simulation session begins a new series.
-
-History and live-order state use separate SQLite files under the configured
-data directory. Initialize the data directory before first launch; details and
-backup requirements are in the [README storage notes](../README.md#configuration-reference)
-and [SECURITY.md](../SECURITY.md#execution-journal-storage-and-recovery).
+History and live-order state use separate SQLite files under the configured data directory. Initialize the data directory before first launch; details and backup requirements are in the [README storage notes](../README.md#configuration-reference) and [SECURITY.md](../SECURITY.md#execution-journal-storage-and-recovery).
 
 ---
 

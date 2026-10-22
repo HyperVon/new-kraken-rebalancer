@@ -210,7 +210,7 @@ The experimental branches (`go-rewrite` and `feature/typescript-rewrite`) remain
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
-Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and paginated trade-history reporting. The current History page restores account-scoped trade and ledger synchronization plus directly observed cycle values; it does not reconstruct retrospective portfolio values. Order-specific fill confirmation continues to use Kraken trade history for sell settlement. The remaining client-side JavaScript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
+Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and paginated trade-history reporting. The History page now reuses those imported account ledgers to derive historical daily balances and USD values while retaining the separate direct cycle observations. Order-specific fill confirmation continues to use Kraken trade history for sell settlement. The remaining client-side JavaScript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
 
 ### Technologies Explored
 
@@ -275,11 +275,11 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 
 ### Account History and Portfolio Value
 
-- `/history` shows directly observed per-cycle portfolio values, Kraken trade
-  and ledger activity, bot-cycle activity, and balance checkpoints for the
-  authenticated account. Portfolio, Activity, and Data status tabs keep values,
-  bot activity, exchange records, and per-feed synchronization progress
-  distinct. Trades and transactions are independently paginated and exportable.
+- `/history` has Account value, Trades, Transactions, and Data status views.
+  Account value reuses imported exchange records to derive daily historical
+  balances and USD totals for a 365-day target; direct cycle observations remain
+  separate. Trades and transactions are independently filtered, paginated, and
+  exportable.
 - After account identity is verified, a background coordinator refreshes the
   recent trade and ledger windows, resumes a durable older backfill, repairs the
   last seven days daily, and requests a refresh five seconds after a qualifying
@@ -291,19 +291,24 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   to exchange records, not bot-activity exports. Because Kraken records do not
   prove which bot cycle caused a fill or its lifecycle, linkage is shown as
   `Unknown` rather than inferred.
-- History statistics distinguish the latest observed value from the selected
-  period's first-to-last change and range high/low. Trade volume and fees stay
-  grouped by currency; funding and rewards stay in native asset units, with a
-  selectable asset chart and no nearest-price historical conversion.
+- Account History reuses imported Kraken ledgers to derive daily balances and
+  USD values for the latest year. Completed Kraken daily candles price holdings;
+  missing balance or price evidence stays visible as a dated gap. Equity-class
+  share balances are excluded; all USD ledger changes, including stock-trade
+  settlement and dividend credits, remain cash. These are historical closing-price estimates,
+  not profit or investment-return calculations.
+- History statistics show the latest available account value and its change
+  over the selected period, with deposits and withdrawals called out. Trade
+  volume and fees stay grouped by currency; funding and rewards stay in native
+  asset units.
+- Account-value ranges default to 30 days and offer 24h, 7d, 30d, 90d, 1y, All,
+  and custom dates. Marks use completed UTC daily candles. The 24h range uses
+  available daily marks because a full-account intraday capture is not available.
 - Save named views in your browser to recall favorite filters. Interactive
   charts support value/time tooltips, line/point views, zoom, earlier/later
   navigation, reset, and expansion.
-  The value chart returns every observation up to 2,000 points; larger ranges
-  are sampled across the full time span while retaining bucket endpoints,
-  complete-value extrema, and incomplete-cycle markers. The UI labels recorded
-  observations separately from plotted representative points. It connects
-  adjacent complete samples and breaks at incomplete cycles. The chart does not
-  reconstruct earlier balances or calculate Buy & Hold performance. See the
+  Account-value charts retain daily gaps and export missing-data reasons. Legacy
+  direct observations remain available as technical recorded history. See the
   [History section in the User Guide](docs/USER_GUIDE.md#history) for sources,
   scope, and limitations.
 
@@ -377,7 +382,7 @@ active Settings.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
 
-<a href="docs/images/history.png"><img src="docs/images/history.png" alt="History with the portfolio value chart, range statistics, and recorded scope series" width="960"></a>
+<a href="docs/images/history.png"><img src="docs/images/history.png" alt="History with daily account values, holdings, and data status" width="960"></a>
 
 ---
 
@@ -634,6 +639,7 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/api/history/checkpoints` | Paginated ledger balance checkpoints (JSON) |
 | `GET` | `/api/history/sync-status` | Current account-history synchronization status (JSON) |
 | `GET` | `/api/history/charts` | Range- and scope-selected History chart series (JSON) |
+| `GET` | `/api/history/holdings?date=YYYY-MM-DD` | Account holdings and availability for a daily UTC mark (JSON) |
 | `GET` | `/api/history/summary` | Coverage and range-aware History statistics (JSON) |
 | `GET` | `/api/history/scopes` | Available recorded portfolio scopes (JSON) |
 | `GET` | `/api/history/activities` | Cursor-paginated bot-cycle activity (JSON) |
@@ -641,6 +647,8 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/api/history/export/trades` | CSV export of filtered trade records |
 | `GET` | `/api/history/export/ledgers` | CSV export of filtered ledger records |
 | `GET` | `/api/history/export/activity` | CSV export of scoped bot activity; event filters do not apply |
+| `GET` | `/api/history/export/account-values` | CSV export of daily account totals and missing-data reasons |
+| `GET` | `/api/history/export/account-holdings?date=YYYY-MM-DD` | CSV export of holdings for one UTC daily mark |
 | `POST` | `/api/history/repair` | Queue a selected date/window repair (CSRF-protected) |
 | `POST` | `/api/history/sync/start` | Request or resume bounded trade and ledger synchronization (CSRF-protected) |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
@@ -653,12 +661,11 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `POST` | `/api/resume` | Resume loop (CSRF-protected) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 
-The History value chart uses directly captured cycle samples for configured
-assets. For ranges over 2,000 observations, it samples each time bucket's first
-and last observations, complete-value extrema, and incomplete-cycle boundary
-markers. It connects adjacent complete samples and breaks the line at
-incomplete cycles; the line does not infer values between samples or earlier
-portfolio values, or calculate Buy & Hold performance.
+History uses daily full-account values by default. The background valuation
+worker reuses imported ledger checkpoints, records daily balances and completed
+Kraken candle prices, and publishes each generation atomically. Data status
+separates exchange import, balance establishment, value calculation, and
+routine refresh. The API does not fetch private account history in simulation.
 
 ---
 

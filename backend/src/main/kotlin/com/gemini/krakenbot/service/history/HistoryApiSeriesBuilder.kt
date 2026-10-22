@@ -236,6 +236,7 @@ internal fun ledgerQuantitySeries(
 /** Signed amount of a funding event: a deposit adds capital, a withdrawal removes it. */
 internal fun fundingAmountOf(row: HistoryLedger): BigDecimal? {
     val amount = row.amount?.toBigDecimalOrNull()?.takeIf { row.hasValidAmount } ?: return null
+    if (row.isUsdCashDividendDeposit()) return amount.abs()
     return when (row.type?.trim()?.lowercase()) {
         KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> amount.abs()
         KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> amount.abs().negate()
@@ -253,7 +254,7 @@ internal fun rewardAmountOf(row: HistoryLedger): BigDecimal? {
 internal fun HistoryLedger.isFundingRow(): Boolean = type?.trim()?.lowercase() in setOf(
     KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
     KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
-)
+) || isUsdCashDividendDeposit()
 
 /**
  * Running total of one asset's events, ordered by event time and then by the stable ledger id. An
@@ -307,11 +308,18 @@ internal fun checkpointQuantitySeries(rows: List<HistoryBalanceCheckpoint>): Lis
 
 internal fun HistoryLedger.isRewardRow(): Boolean {
     val type = type?.trim()?.lowercase().orEmpty()
+    if (type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND) return false
     if (type in LedgerEvent.REWARD_TYPES) return true
     val subtype = subtype?.trim()?.lowercase().orEmpty()
     return (type == KrakenApiConstants.LEDGER_TYPE_EARN && subtype == REWARD_SUBTYPE) ||
         (type == KrakenApiConstants.LEDGER_TYPE_TRANSFER && subtype in REWARD_TRANSFER_SUBTYPES)
 }
+
+/** A USD cash dividend is a cash deposit, not a held share or a portfolio reward asset. */
+internal fun HistoryLedger.isUsdCashDividendDeposit(): Boolean =
+    type?.trim()?.equals(KrakenApiConstants.LEDGER_TYPE_DIVIDEND, ignoreCase = true) == true &&
+        subtype?.trim()?.equals("cashdividend", ignoreCase = true) == true &&
+        asset?.let(Asset::normalizeLedgerAsset)?.equals(Asset.USD, ignoreCase = true) == true
 
 private fun assetSeries(
     observations: List<HistoryObservation>,

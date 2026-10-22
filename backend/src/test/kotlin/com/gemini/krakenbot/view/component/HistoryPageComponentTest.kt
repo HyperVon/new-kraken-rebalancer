@@ -4,12 +4,18 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.history.HistoryApiChartsResponse
 import com.gemini.krakenbot.service.history.HistoryApiCoverage
+import com.gemini.krakenbot.service.history.HistoryApiDailyHolding
+import com.gemini.krakenbot.service.history.HistoryApiDataStatusResponse
 import com.gemini.krakenbot.service.history.HistoryApiFullRange
+import com.gemini.krakenbot.service.history.HistoryApiHoldingsAtDate
 import com.gemini.krakenbot.service.history.HistoryApiPoint
 import com.gemini.krakenbot.service.history.HistoryApiRange
 import com.gemini.krakenbot.service.history.HistoryApiScope
 import com.gemini.krakenbot.service.history.HistoryApiScopeSelection
 import com.gemini.krakenbot.service.history.HistoryApiSeries
+import com.gemini.krakenbot.service.history.HistoryApiSyncJob
+import com.gemini.krakenbot.service.history.HistoryApiSyncProgress
+import com.gemini.krakenbot.service.history.HistoryApiValuationProgress
 import com.gemini.krakenbot.service.history.HistoryAssetValue
 import com.gemini.krakenbot.service.history.HistoryAssetValueStatus
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
@@ -48,6 +54,7 @@ import kotlinx.html.html
 import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 
 class HistoryPageComponentTest : StringSpec() {
@@ -68,6 +75,370 @@ class HistoryPageComponentTest : StringSpec() {
         }
 
     init {
+        "shows Account value, Trades, Transactions, and daily holdings as the primary History workflow" {
+            val html = render(
+                samplePageData(emptyList()).copy(
+                    accountHoldings = HistoryApiHoldingsAtDate(
+                        day = "2026-10-20",
+                        available = true,
+                        totalUsd = "125.50",
+                        totalStatus = "COMPLETE",
+                        generationId = "generation",
+                        holdings = listOf(
+                            HistoryApiDailyHolding(
+                                asset = "USD",
+                                quantity = "25.50",
+                                priceUsd = "1",
+                                valueUsd = "25.50",
+                                availability = "COMPLETE",
+                                reason = null,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+
+            html shouldContain "Account value"
+            html shouldContain "data-history-tab=\"activity\" data-history-activity-tab=\"trades\""
+            html shouldContain "Transactions"
+            html shouldContain "Data status"
+            html shouldContain "Account value (USD)"
+            html shouldContain "Holdings at 2026-10-20"
+            html shouldContain "Historical USD price"
+            html shouldContain "data-history-export=\"account-holdings\""
+        }
+
+        "distinguishes importing records, establishing balances, and calculating values" {
+            val importStatus = historyDataStatus(
+                progress = listOf(
+                    syncProgress("TRADES", "RUNNING"),
+                    syncProgress("LEDGERS", "PENDING"),
+                ),
+                jobs = listOf(syncJob()),
+                tradeRecords = 520L,
+                ledgerRecords = 1_240L,
+            )
+            val importing = render(samplePageData(emptyList()).copy(dataStatus = importStatus))
+            importing shouldContain "Importing records"
+            importing shouldContain "Waiting for imported ledger records."
+            importing shouldContain "Waiting for daily balances."
+            importing shouldContain "520 records"
+            importing shouldContain "1240 records"
+            importing shouldContain "Current scan window: 2025-10-21 – 2026-10-21 (UTC)."
+            importing shouldContain "Total not provided by Kraken."
+
+            val balanceStatus = historyDataStatus(
+                progress = listOf(
+                    syncProgress("TRADES", "COMPLETE", targetCovered = true),
+                    syncProgress("LEDGERS", "COMPLETE", targetCovered = true),
+                ),
+                valuation = valuationProgress(
+                    stage = "ESTABLISH_BALANCES",
+                    balancesProcessed = 100,
+                    balancesValid = 80,
+                    balancesBlocked = 20,
+                    requiredPriceTasks = null,
+                ),
+            )
+            val establishing = render(samplePageData(emptyList()).copy(dataStatus = balanceStatus))
+            establishing shouldContain "Historical import complete"
+            establishing shouldContain ">Establishing balances<"
+            establishing shouldContain "Determining required prices."
+            establishing shouldContain "Preparing account history — establishing daily balances."
+            establishing shouldContain "100 / 365 days evaluated · 80 valid · 20 need balance evidence."
+
+            val pricingStatus = historyDataStatus(
+                progress = listOf(
+                    syncProgress("TRADES", "COMPLETE", targetCovered = true),
+                    syncProgress("LEDGERS", "COMPLETE", targetCovered = true),
+                ),
+                valuation = valuationProgress(
+                    stage = "PRICE_AND_VALUE",
+                    balancesProcessed = 365,
+                    balancesValid = 365,
+                    requiredPriceTasks = 1_000,
+                    completedPriceTasks = 300,
+                    completeValueDays = 100,
+                    blockedValueDays = 1,
+                ),
+            )
+            val calculating = render(samplePageData(emptyList()).copy(dataStatus = pricingStatus))
+            calculating shouldContain ">Complete<"
+            calculating shouldContain ">Calculating values<"
+            calculating shouldContain "300 / 1000 required asset-days priced"
+            calculating shouldContain "100 / 365 complete totals · 1 dates blocked."
+            calculating shouldContain ">Complete<"
+            calculating shouldContain "Preparing account history — calculating daily values."
+        }
+
+        "shows ready, waiting, and blocked history states with durable explanations" {
+            val complete = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        valuation = valuationProgress(
+                            state = "COMPLETE",
+                            stage = "PRICE_AND_VALUE",
+                            balancesProcessed = 365,
+                            balancesValid = 365,
+                            requiredPriceTasks = 1_000,
+                            completedPriceTasks = 1_000,
+                            completeValueDays = 365,
+                            lastSuccessAtIso = "2026-10-21T11:45:00Z",
+                        ),
+                    ),
+                ),
+            )
+            complete shouldContain "History ready through 2026-10-20 · checking for new activity automatically."
+            complete shouldContain "2026-10-21 11:45:00"
+
+            val waiting = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        valuation = valuationProgress(
+                            state = "WAITING",
+                            stage = "PRICE_AND_VALUE",
+                            nextRetryAtIso = "2026-10-21T12:30:00Z",
+                            lastError = "Price service is unavailable.",
+                        ),
+                    ),
+                ),
+            )
+            waiting shouldContain "History paused · waiting to retry historical work."
+            waiting shouldContain "Waiting to retry"
+            waiting shouldContain "Retry scheduled for 2026-10-21 12:30:00"
+
+            val blocked = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        valuation = valuationProgress(
+                            state = "NEEDS_ATTENTION",
+                            stage = "PRICE_AND_VALUE",
+                            balancesProcessed = 365,
+                            balancesValid = 365,
+                            requiredPriceTasks = 1_000,
+                            completedPriceTasks = 999,
+                            completeValueDays = 364,
+                            blockedValueDays = 1,
+                            lastError = "Historical daily prices could not be fetched.",
+                            blockedValueReasons = listOf("2026-10-20 UTC · BTC: No completed USD close."),
+                        ),
+                    ),
+                ),
+            )
+            blocked shouldContain "History partially available · 1 date needs attention."
+            blocked shouldContain "2026-10-20 UTC · BTC: No completed USD close."
+            blocked shouldContain "Retry failed work"
+        }
+
+        "reports durable import gaps, completed value coverage, and unavailable accounts" {
+            val importComplete = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        progress = listOf(
+                            syncProgress(
+                                "TRADES",
+                                "COMPLETE",
+                                coveredFrom = "2025-10-21T00:00:00Z",
+                                coveredTo = "2026-10-20T23:59:59Z",
+                            ),
+                            syncProgress(
+                                "LEDGERS",
+                                "COMPLETE",
+                                coveredFrom = "2025-10-21T00:00:00Z",
+                                coveredTo = "2026-10-20T23:59:59Z",
+                            ),
+                        ),
+                        tradeRecords = 520L,
+                        ledgerRecords = 1_240L,
+                        valueFrom = "2026-10-11T00:00:00Z",
+                        valueTo = "2026-10-20T00:00:00Z",
+                        valueDays = 10,
+                    ),
+                ),
+            )
+            importComplete shouldContain "Historical import complete"
+            importComplete shouldContain "Preparing account history — establishing daily balances."
+            importComplete shouldContain "2026-10-11 – 2026-10-20 · 10 days (UTC)"
+            importComplete shouldContain "2025-10-21 – 2026-10-20 (UTC) covered continuously"
+
+            val importGap = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        progress = listOf(
+                            syncProgress(
+                                "TRADES",
+                                "COMPLETE",
+                                coveredFrom = "2025-10-21T00:00:00Z",
+                                coveredTo = "2026-10-20T23:59:59Z",
+                            ),
+                            syncProgress(
+                                "LEDGERS",
+                                "COMPLETE",
+                                coveredFrom = "2025-10-21T00:00:00Z",
+                                coveredTo = "2026-10-20T23:59:59Z",
+                                coveredGaps = 1,
+                            ),
+                        ),
+                        jobs = listOf(
+                            syncJob().copy(
+                                state = "FAILED",
+                                lastError = "Historical page request timed out.",
+                                nextRetryAtIso = "2026-10-21T12:30:00Z",
+                                updatedAtIso = "2026-10-21T11:45:00Z",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            importGap shouldContain "Needs attention"
+            importGap shouldContain "2025-10-21 – 2026-10-20 (UTC) scanned with 1 interior gaps"
+            importGap shouldContain "Historical page request timed out."
+            importGap shouldContain "Last progress saved 2026-10-21 11:45:00 UTC."
+            importGap shouldContain "Retry scheduled for 2026-10-21 12:30:00 UTC"
+
+            val unavailable = render(
+                samplePageData(emptyList()).copy(
+                    accountAvailable = false,
+                    dataStatus = historyDataStatus(),
+                ),
+            )
+            unavailable shouldContain "Account history is unavailable until the Kraken account can be verified."
+            unavailable shouldNotContain "Retry failed work"
+
+            val failedImport = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        progress = listOf(
+                            syncProgress("TRADES", "FAILED", error = "Trade history request failed."),
+                            syncProgress("LEDGERS", "PENDING"),
+                        ),
+                    ),
+                ),
+            )
+            failedImport shouldContain "Needs attention"
+            failedImport shouldContain "Trades: Trade history request failed."
+
+            val blockedWithoutReasons = render(
+                samplePageData(emptyList()).copy(
+                    dataStatus = historyDataStatus(
+                        valuation = valuationProgress(
+                            state = "NEEDS_ATTENTION",
+                            stage = "PRICE_AND_VALUE",
+                            blockedValueDays = 2,
+                            lastError = "Source evidence is incomplete.",
+                        ),
+                    ),
+                ),
+            )
+            blockedWithoutReasons shouldContain "History partially available · 2 dates need attention."
+            blockedWithoutReasons shouldContain "Source evidence is incomplete."
+        }
+
+        "renders the account-value asset filter without exposing account scope details" {
+            val chart = HistoryApiChartsResponse(
+                range = HistoryApiRange("2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z", "UTC", "1y"),
+                scope = HistoryApiScope("account", listOf("BTC", "USD"), null, null, true),
+                coverage = HistoryApiCoverage(null, null, null, null, null, null, false, 0),
+                series = listOf(
+                    HistoryApiSeries(
+                        key = "asset:BTC",
+                        label = "BTC · USD value",
+                        unit = "USD",
+                        points = listOf(HistoryApiPoint(1L, "2026-10-20T00:00:00Z", BigDecimal("25"), true)),
+                    ),
+                ),
+                fullRange = HistoryApiFullRange("2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z", 1, 1, false),
+                generationMs = 0,
+                scopeSelection = HistoryApiScopeSelection.CURRENT_SCOPE,
+                resolution = "1d",
+                availableValueAssets = listOf("BTC", "USD"),
+                selectedValueAsset = "BTC",
+            )
+
+            val html = render(samplePageData(emptyList()).copy(portfolioChart = chart))
+
+            html shouldContain "id=\"history-value-asset-filter\""
+            html shouldContain "data-history-value-asset=\"true\""
+            html shouldContain "Account total"
+            html shouldContain "value=\"BTC\""
+            html shouldContain "value=\"USD\""
+            html shouldContain "selected"
+            html shouldNotContain validHash
+        }
+
+        "plots daily account values across complete runs and marks every unavailable day" {
+            val dates = listOf(
+                "2026-10-16",
+                "2026-10-17",
+                "2026-10-18",
+                "2026-10-19",
+                "2026-10-20",
+            )
+            val points = dates.mapIndexed { index, date ->
+                val day = LocalDate.parse(date)
+                val at = day.atStartOfDay(ZoneOffset.UTC).toInstant()
+                if (index == 2) {
+                    HistoryApiPoint(
+                        t = at.toEpochMilli(),
+                        isoTime = at.toString(),
+                        v = null,
+                        complete = false,
+                        status = "NO_PRICE",
+                        reasons = listOf("BTC has no completed USD close."),
+                        dayLabel = date,
+                    )
+                } else {
+                    HistoryApiPoint(
+                        t = at.toEpochMilli(),
+                        isoTime = at.toString(),
+                        v = BigDecimal((100 + index * 10).toString()),
+                        complete = true,
+                        dayLabel = date,
+                    )
+                }
+            }
+            val chart = HistoryApiChartsResponse(
+                range = HistoryApiRange("2026-10-16T00:00:00Z", "2026-10-21T00:00:00Z", "UTC", "1y"),
+                scope = HistoryApiScope("account", listOf("BTC", "USD"), null, null, true),
+                coverage = HistoryApiCoverage(
+                    "2026-10-16T00:00:00Z",
+                    "2026-10-21T00:00:00Z",
+                    null,
+                    null,
+                    null,
+                    null,
+                    true,
+                    1,
+                ),
+                series = listOf(
+                    HistoryApiSeries("account-value", "Account value", "USD", points),
+                ),
+                fullRange = HistoryApiFullRange(
+                    "2026-10-16T00:00:00Z",
+                    "2026-10-21T00:00:00Z",
+                    points.size,
+                    points.size.toLong(),
+                    false,
+                ),
+                generationMs = 0,
+                resolution = "1d",
+                valuationBasis = "historical USD closes",
+                availableValueAssets = listOf("BTC", "USD"),
+                selectedValueAsset = "BTC",
+            )
+
+            val html = render(samplePageData(emptyList()).copy(portfolioChart = chart))
+            val svg = html.chartSvg("history-value-chart")
+
+            svg shouldContain "Daily account values; gaps mark unavailable dates"
+            svg shouldContain "class=\"history-gap-marker\""
+            svg shouldContain "data-history-day=\"2026-10-18\""
+            svg shouldContain "BTC has no completed USD close."
+            svg.countOccurrences("<polyline") shouldBe 2
+            svg.countOccurrences("<circle") shouldBe 9
+            html shouldContain "Daily marks · 1d UTC · historical USD closes"
+        }
+
         "portfolio prioritizes values and keeps analysis tools and administration out of the default view" {
             val html = render(samplePageData(emptyList()))
             val portfolio = html.substringAfter("id=\"history-panel-portfolio\"")
@@ -181,13 +552,13 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain
                 "No matching records in this range. Try another range or clear the event filters."
             html shouldContain
-                "No portfolio observations are available for this range yet. Portfolio values are captured during rebalance cycles."
-            html shouldContain "Exchange History Sync"
+                "No daily account values are available for this range yet."
+            html shouldContain "Account value history"
             html shouldNotContain "Synchronizing Exchange History"
             html shouldNotContain "action=\"/api/history/sync/start\""
             html shouldNotContain "id=\"history-sync-button\""
             val verifiedHtml = render(emptyData.copy(accountAvailable = true))
-            verifiedHtml shouldContain "No account history sync has been recorded yet."
+            verifiedHtml shouldContain "Preparing account history — importing older transactions."
             verifiedHtml shouldContain "id=\"history-sync-button\""
         }
 
@@ -283,7 +654,12 @@ class HistoryPageComponentTest : StringSpec() {
             listOf("Running", "Complete", "Paused", "Failed", "Not started", "Rate limit hit").forEach {
                 html shouldContain ">$it<"
             }
-            html shouldContain "<summary>Sync details</summary>"
+            html shouldContain "<summary>Technical details</summary>"
+            html shouldContain "<h2 class=\"history-sync-title\">Exchange import details</h2>"
+            html shouldContain "1. Import exchange records"
+            html shouldContain "2. Establish daily balances"
+            html shouldContain "3. Obtain prices and calculate values"
+            html shouldContain "Total not provided by Kraken."
             html shouldContain "<dt>Stored records</dt>"
             html shouldContain "<dd>5</dd>"
             html shouldContain "<dt>Fetched this scan</dt>"
@@ -294,7 +670,7 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "method=\"post\""
             html shouldContain "action=\"/api/history/sync/start\""
             html shouldContain "name=\"csrfToken\" value=\"test-csrf\""
-            html shouldContain ">Retry</button>"
+            html shouldContain ">Retry failed work</button>"
             (html.indexOf("Rate limit hit") < html.indexOf("<summary>Sync details</summary>")) shouldBe true
         }
 
@@ -327,15 +703,16 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "selected"
             html shouldNotContain "type=\"text\""
             html shouldContain "href=\"/history?tab=portfolio\""
-            html shouldContain "href=\"/history?tab=activity&amp;activity=trades\""
-            html shouldContain "href=\"/history?tab=activity&amp;activity=transactions\""
+            html shouldContain "href=\"/history?tab=activity\""
+            html shouldContain "data-history-activity-tab=\"trades\""
+            html shouldContain "data-history-activity-tab=\"transactions\""
             html shouldContain "id=\"history-panel-portfolio\""
             html shouldContain "id=\"history-trades-section\""
             html shouldContain "id=\"history-ledgers-section\""
             html shouldContain "data-history-tab=\"portfolio\""
             html shouldContain "data-history-tab=\"activity\""
             html shouldContain "data-history-tab=\"data\""
-            html shouldContain "range=30d&amp;asset=BTC&amp;pair=XXBTZUSD&amp;type=buy"
+            html shouldContain "value=\"7d\""
             html shouldContain "Asset, pair and type filters apply to account records."
         }
 
@@ -361,7 +738,9 @@ class HistoryPageComponentTest : StringSpec() {
             )
 
             val html = render(data)
-            html shouldContain "href=\"/history?tab=activity&amp;activity=bot\""
+            html shouldContain "data-history-tab=\"portfolio\""
+            html shouldContain "data-history-activity-tab=\"trades\""
+            html shouldContain "data-history-activity-tab=\"transactions\""
             html shouldContain "href=\"/api/history/export/activity\""
             html shouldContain "href=\"/api/history/export/trades\""
             html shouldContain "href=\"/api/history/export/ledgers\""
@@ -494,13 +873,16 @@ class HistoryPageComponentTest : StringSpec() {
             val html = render(data)
             html.chartSvg("history-value-chart").countOccurrences("<circle") shouldBe 4
             html.chartSvg("history-asset-chart").countOccurrences("<circle") shouldBe 4
-            html shouldContain "data-time=\"1699999900000\" data-value=\"50000.00\""
+            html shouldContain "data-time=\"1699999900000\""
+            html shouldContain "data-value=\"50000.00\""
             html shouldContain "2023-11-14 22:13:20 · $55,000.00"
             html shouldContain "data-history-zoom=\"reset\""
+            html shouldContain "data-history-follow-latest=\"true\""
+            html shouldContain "Follow latest"
             html shouldContain "data-history-view=\"points\""
             html shouldContain "src=\"/static/vendor/chart.umd.js\""
             html shouldContain "id=\"history-saved-views\""
-            html shouldContain "Portfolio Value"
+            html shouldContain "Account value (USD)"
             html shouldContain "Balance Checkpoints (BTC)"
             html shouldContain "Asset Holdings Over Time"
             html shouldContain "/static/rebalancer.js?v="
@@ -572,7 +954,7 @@ class HistoryPageComponentTest : StringSpec() {
             html.chartSvg("history-value-chart").countOccurrences("<circle") shouldBe 9
             html.countOccurrences("class=\"history-gap-marker\"") shouldBe 1
             html shouldContain "data-time=\"1699999940000\" data-gap=\"true\""
-            html shouldContain "Lines connect complete cycle samples; incomplete cycles break the line."
+            html shouldContain "Direct value samples stay unchanged; incomplete cycles break the line."
             html shouldContain "No values are inferred between samples."
             html shouldContain "Some cycles have incomplete values. Gaps remain visible in the chart."
         }
@@ -1117,8 +1499,9 @@ class HistoryPageComponentTest : StringSpec() {
                     svg shouldContain "data-time=\"1700000000000\" data-gap=\"true\" data-series=\"$symbol\""
                 }
                 svg.countOccurrences("data-gap=\"true\"") shouldBe symbols.size
-                svg shouldContain "data-time=\"1699999940000\" data-value="
-                svg shouldContain "data-time=\"1700000060000\" data-value="
+                svg shouldContain "data-time=\"1699999940000\""
+                svg shouldContain "data-time=\"1700000060000\""
+                svg shouldContain "data-value=\""
             }
         }
 
@@ -1134,7 +1517,8 @@ class HistoryPageComponentTest : StringSpec() {
             listOf("history-holdings-chart", "history-allocation-chart").forEach { chartId ->
                 val svg = html.chartSvg(chartId)
                 svg.countOccurrences("<circle") shouldBe if (chartId == "history-allocation-chart") 6 else 2
-                svg shouldContain "data-time=\"1700000000000\" data-value="
+                svg shouldContain "data-time=\"1700000000000\""
+                svg shouldContain "data-value=\""
                 svg shouldContain "data-series=\"BTC\""
                 svg shouldNotContain "data-gap="
                 svg shouldNotContain "<polyline"
@@ -1204,6 +1588,107 @@ class HistoryPageComponentTest : StringSpec() {
             HistoryApiPoint(1L, "1970-01-01T00:00:01Z", BigDecimal("10.00"), true),
         ),
         legendLabel = legendLabel,
+    )
+
+    private fun historyDataStatus(
+        valuation: HistoryApiValuationProgress? = null,
+        progress: List<HistoryApiSyncProgress> = emptyList(),
+        jobs: List<HistoryApiSyncJob> = emptyList(),
+        tradeRecords: Long? = 0,
+        ledgerRecords: Long? = 0,
+        valueFrom: String? = null,
+        valueTo: String? = null,
+        valueDays: Long? = 0,
+    ) = HistoryApiDataStatusResponse(
+        range = HistoryApiRange(null, null, "UTC", "all"),
+        dataRevision = 1,
+        blockedReason = null,
+        syncFailure = null,
+        nextRetryAtIso = null,
+        coverage = HistoryApiCoverage(null, null, null, null, null, null, true, 0),
+        jobs = jobs,
+        progress = progress,
+        valuation = valuation,
+        tradeRecordsImported = tradeRecords,
+        ledgerRecordsImported = ledgerRecords,
+        availableValueFromIso = valueFrom,
+        availableValueToIso = valueTo,
+        availableValueDays = valueDays,
+    )
+
+    private fun syncProgress(
+        feed: String,
+        state: String,
+        targetCovered: Boolean? = null,
+        coveredFrom: String? = null,
+        coveredTo: String? = null,
+        coveredGaps: Int = 0,
+        error: String? = null,
+        retryAt: String? = null,
+    ) = HistoryApiSyncProgress(
+        feed = feed,
+        recentWindowStartIso = null,
+        recentCompletedThroughIso = null,
+        recentLastSuccessAtIso = null,
+        backfillState = state,
+        backfillCompletedThroughIso = null,
+        backfillCursor = null,
+        repairLastRunAtIso = null,
+        lastError = error,
+        nextRetryAtIso = retryAt,
+        coveredFromIso = coveredFrom,
+        coveredToIso = coveredTo,
+        coveredGapCount = coveredGaps,
+        targetCoverageComplete = targetCovered,
+    )
+
+    private fun syncJob() = HistoryApiSyncJob(
+        feed = "LEDGERS",
+        purpose = "BACKFILL",
+        state = "RUNNING",
+        windowStartIso = "2025-10-21T00:00:00Z",
+        windowEndIso = "2026-10-21T00:00:00Z",
+        cursor = "cursor-next",
+        completedThroughIso = "2025-10-22T00:00:00Z",
+        lastError = null,
+        nextRetryAtIso = null,
+        lastSuccessAtIso = null,
+        updatedAtIso = "2026-10-21T11:00:00Z",
+    )
+
+    private fun valuationProgress(
+        state: String = "RUNNING",
+        stage: String,
+        balancesProcessed: Int = 0,
+        balancesValid: Int = 0,
+        balancesBlocked: Int = 0,
+        requiredPriceTasks: Int? = 0,
+        completedPriceTasks: Int = 0,
+        completeValueDays: Int = 0,
+        blockedValueDays: Int = 0,
+        nextRetryAtIso: String? = null,
+        lastSuccessAtIso: String? = null,
+        lastError: String? = null,
+        blockedValueReasons: List<String> = emptyList(),
+    ) = HistoryApiValuationProgress(
+        state = state,
+        stage = stage,
+        targetStartDay = "2025-10-21",
+        targetEndDay = "2026-10-20",
+        targetDays = 365,
+        balancesProcessed = balancesProcessed,
+        balancesValid = balancesValid,
+        balancesBlocked = balancesBlocked,
+        requiredPriceTasks = requiredPriceTasks,
+        completedPriceTasks = completedPriceTasks,
+        completeValueDays = completeValueDays,
+        blockedValueDays = blockedValueDays,
+        lastProgressAtIso = "2026-10-21T11:30:00Z",
+        nextRetryAtIso = nextRetryAtIso,
+        lastSuccessAtIso = lastSuccessAtIso,
+        lastError = lastError,
+        startedAtIso = "2026-10-21T10:00:00Z",
+        blockedValueReasons = blockedValueReasons,
     )
 
     private fun samplePageData(observations: List<HistoryObservation>): HistoryPageData = HistoryPageData(

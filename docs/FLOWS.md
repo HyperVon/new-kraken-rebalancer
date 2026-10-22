@@ -221,8 +221,9 @@ checks that the authenticated identity remains stable around the exchange read.
 The shared data-directory identity digest must match before account-scoped data
 is written. A failed page gets one bounded restart; further failures remain
 visible in the feed's sync status. The History UI exposes per-feed progress,
-time ranges, event filters, paginated trade and ledger tables, a portfolio-value
-chart, and ledger-reported balance checkpoints.
+time ranges, event filters, paginated trade and ledger tables, daily account
+values, and ledger-reported balance checkpoints. Its top-level tabs are Account
+value, Trades, Transactions, and Data status.
 
 `HistorySyncCoordinator` owns automatic account synchronization. Once an
 authenticated identity is verified, a periodic trigger runs every 60 seconds.
@@ -253,10 +254,36 @@ revision refreshes affected History panels in the open page without navigation;
 the client retains the selected range, scope, page, chart viewport, and scroll
 position.
 
-The reporting service derives period extrema and first-to-last value changes
-from complete direct samples. Trade volume and fees remain grouped by the
-exchange-reported currency; funding and rewards remain in native asset units.
-No historical amount is converted using a nearest portfolio-cycle price.
+**Historical valuation path:** existing ledger checkpoints and verified
+coverage → `HistoryValuationCoordinator` → `HistoryDailyBalanceBuilder` →
+per-day balances → `HistoryDailyPriceResolver` → cached completed OHLC candles →
+`HistoryDailyValueBuilder` → atomic daily-value generation.
+
+The coordinator runs outside the portfolio cycle. It starts after account
+identity verification, resumes durable progress after restart, and reuses
+committed ledger rows instead of restarting import. It evaluates 365 completed
+UTC dates. Each daily quantity is the last verified state before next midnight.
+Coverage must bridge checkpoints; same-time events need one unique
+amount/fee-continuity order. Unknown, invalid, ambiguous, and uncovered
+evidence remains blocked.
+
+Price tasks use the completed Kraken 1440-minute candle for that same UTC day.
+The resolver prefers asset/USD and uses same-day BTC then EUR conversion only
+when needed, persisting both legs. The current candle, ticker fallback, stale
+price carry, and missing-value substitutes are excluded. USD is exactly one
+dollar. Every nonzero included balance needs a price; otherwise that day has no
+total and the API exposes per-asset reasons. All equity-class shares are
+excluded from portfolio balances, while all USD ledger changes, including
+stock settlements and dividends, remain cash. Derivatives and unidentifiable wallets are outside
+this reporting scope.
+
+Data status keeps import, balance establishment, price/value calculation, and
+routine refresh separate. Progress and valuation jobs are durable. A generation
+publishes only if its source revision remains current; newer ledger or coverage
+evidence schedules recalculation without deleting the import. Daily values use
+historical closes and do not affect rebalance planning, order sizing, or
+execution. Trade volume and fees remain grouped by currency; funding and
+rewards remain in native asset units.
 
 History write transactions use SQLite `IMMEDIATE` mode, acquiring the writer
 reservation before reading transaction state. Sync startup/status changes and

@@ -156,7 +156,11 @@ internal class BrowserFixtureEnvironment private constructor(
                     fundingEvidenceScopeSupplier = { "browser-fixture-account-v1" }
                     authenticatedAccountIdentitySupplier = { BROWSER_FIXTURE_ACCOUNT_IDENTITY }
                     authenticatedAccountInfoFactory = { identity ->
-                        AuthenticatedAccountInfo(identity = identity, queryBoundsVerified = true)
+                        AuthenticatedAccountInfo(
+                            identity = identity,
+                            queryFromSec = fixtureNow.minusSeconds(400L * 24 * 60 * 60).epochSecond,
+                            queryBoundsVerified = true,
+                        )
                     }
                     tradePageSupplier = { startSec, endSec, cursor, _ ->
                         exchangeFeed.tradePage(startSec, endSec, cursor)
