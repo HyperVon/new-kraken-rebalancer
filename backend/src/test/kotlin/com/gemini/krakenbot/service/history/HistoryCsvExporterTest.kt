@@ -8,7 +8,10 @@ import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.confirmVerified
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.flow.flowOf
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -77,6 +80,82 @@ class HistoryCsvExporterTest : StringSpec() {
                 valueOffset += page.items.size
             }
             HistoryDailyValueSnapshot(values, null)
+        }
+
+        "exports intraday account values from timestamped cycle samples" {
+            val firstAt = Instant.parse("2026-03-09T12:00:00Z")
+            val first = intradayObservation("cycle-one", firstAt, "150")
+            val incomplete = intradayObservation("cycle-two", firstAt.plusSeconds(30), null)
+            every {
+                historyStore.queryObservationSnapshotPages(any())
+            } returns flowOf(listOf(first), listOf(incomplete))
+            val chunks = mutableListOf<String>()
+
+            exporter.exportDailyValues(
+                HistoryDailyValueExportRange(
+                    accountIdentityDigest = accountDigest,
+                    from = firstAt.minusSeconds(1),
+                    until = firstAt.plusSeconds(60),
+                    intraday = true,
+                ),
+            ) { chunks += it } shouldBe 2L
+
+            val rows = recordMaps(chunks.joinToString(""))
+            rows.map { it["timestamp_utc"] } shouldContainExactly
+                listOf(firstAt.toString(), firstAt.plusSeconds(30).toString())
+            rows.map { it["account_value_usd"] } shouldContainExactly listOf("150", "")
+            rows.map { it["availability"] } shouldContainExactly listOf("COMPLETE", "INCOMPLETE")
+            rows.map { it["cycle_id"] } shouldContainExactly listOf("cycle-one", "cycle-two")
+            verify {
+                historyStore.queryObservationSnapshotPages(
+                    match {
+                        it.sourceScope == HistoryObservationValuator.fullAccountScope(accountDigest) &&
+                            it.from == firstAt.minusSeconds(1) && it.until == firstAt.plusSeconds(60) &&
+                            it.limit == HISTORY_MAX_PAGE_LIMIT
+                    },
+                )
+            }
+        }
+
+        "intraday holdings export preserves sample time and labels missing or empty samples" {
+            val sampleAt = Instant.parse("2026-03-09T12:34:56.123Z")
+            val holding = HistoryAssetValue(
+                symbol = "XXBT",
+                status = HistoryAssetValueStatus.COMPLETE,
+                quantity = BigDecimal.ONE,
+                priceUsd = BigDecimal("50000"),
+                valueUsd = BigDecimal("50000"),
+            )
+            val available = intradayObservation("cycle-holdings", sampleAt, "50000", listOf(holding))
+            val empty = available.copy(assets = emptyList())
+            coEvery { historyStore.queryObservationsSnapshot(any()) } returnsMany listOf(
+                listOf(available),
+                emptyList(),
+                listOf(empty),
+            )
+            val query = HistoryDailyHoldingsExportQuery(
+                accountDigest,
+                sampleAt.atZone(ZoneOffset.UTC).toLocalDate(),
+                sampleAt,
+            )
+            val availableChunks = mutableListOf<String>()
+            val missingChunks = mutableListOf<String>()
+            val emptyChunks = mutableListOf<String>()
+
+            exporter.exportDailyHoldings(query) { availableChunks += it } shouldBe 1L
+            exporter.exportDailyHoldings(query) { missingChunks += it } shouldBe 1L
+            exporter.exportDailyHoldings(query) { emptyChunks += it } shouldBe 1L
+
+            val availableRow = recordMaps(availableChunks.joinToString("")).single()
+            availableRow["timestamp_utc"] shouldBe sampleAt.toString()
+            availableRow["asset"] shouldBe "BTC"
+            availableRow["quantity"] shouldBe "1"
+            availableRow["availability"] shouldBe "COMPLETE"
+            val missingRow = recordMaps(missingChunks.joinToString("")).single()
+            missingRow["account_availability"] shouldBe "OUTSIDE_COVERAGE"
+            missingRow["reason"] shouldBe "No account value is available at this time."
+            val emptyRow = recordMaps(emptyChunks.joinToString("")).single()
+            emptyRow["reason"] shouldBe "No held assets."
         }
 
         "exports daily account values with honest gaps and excludes equity-only reasons" {
@@ -892,6 +971,26 @@ class HistoryCsvExporterTest : StringSpec() {
         val headers = rows.first()
         return rows.drop(1).map { headers.zip(it).toMap() }
     }
+
+    private fun intradayObservation(
+        cycleId: String,
+        time: Instant,
+        totalUsd: String?,
+        assets: List<HistoryAssetValue> = emptyList(),
+    ) = HistoryObservation(
+        observationId = "$cycleId:full-account-intraday-v1",
+        cycleId = cycleId,
+        sourceScope = HistoryObservationValuator.fullAccountScope(accountDigest),
+        observedAt = time,
+        balanceRequestStartedAt = time.minusMillis(100),
+        balanceResponseEndedAt = time,
+        priceRequestStartedAt = time.minusMillis(50),
+        priceResponseEndedAt = time,
+        status = if (totalUsd == null) HistoryObservationStatus.INCOMPLETE else HistoryObservationStatus.COMPLETE,
+        totalUsd = totalUsd?.let(::BigDecimal),
+        incompleteReasons = if (totalUsd == null) listOf("missing-direct-price") else emptyList(),
+        assets = assets,
+    )
 
     private fun countCsvRecords(csv: String): Int = parseCsv(csv).drop(1).size
 

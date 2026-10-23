@@ -48,6 +48,152 @@ class HistoryApiPresenterTest : StringSpec() {
     init {
         stubEmptyReads()
 
+        "24h portfolio chart and summary use full-account cycle values" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val first = observation(
+                id = "full-first",
+                time = fixedNow.minusSeconds(7_200),
+                totalUsd = "100",
+                scope = fullScope,
+            )
+            val last = observation(
+                id = "full-last",
+                time = fixedNow.minusSeconds(3_600),
+                totalUsd = "150",
+                scope = fullScope,
+            )
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(listOf(first, last))
+
+            val chart = charts(HistoryApiRangeParams(preset = "24h"))
+            chart.resolution shouldBe "cycle"
+            chart.valuationBasis shouldBe "Full account balances · direct USD ticker prices"
+            chart.series.single().points.map { it.v } shouldBe listOf(BigDecimal("100"), BigDecimal("150"))
+            chart.series.single().points.all { it.selectionTimeIso != null } shouldBe true
+            coVerify(exactly = 0) { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) }
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.observedValueChange.changeUsd shouldBe BigDecimal("50")
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("100")
+            coVerify(exactly = 0) { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) }
+        }
+
+        "24h account chart stays empty when no full-account cycle samples exist" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(emptyList())
+
+            val chart = charts(HistoryApiRangeParams(preset = "24h"))
+            chart.resolution shouldBe "cycle"
+            chart.series.single().points shouldBe emptyList()
+            chart.coverage.incomplete shouldBe true
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+            statistics.latestObservedValue.valueUsd.shouldBeNull()
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe
+                "No full-account cycle values are available for this range."
+            coVerify(exactly = 0) { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) }
+        }
+
+        "24h summary keeps one complete value while leaving change unavailable" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val only = observation(
+                id = "full-only",
+                time = fixedNow.minusSeconds(60),
+                totalUsd = "150",
+                scope = fullScope,
+            )
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(listOf(only))
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.latestObservedValue.incompleteReason.shouldBeNull()
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe
+                "At least two full-account cycle values are needed to calculate the change."
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+        }
+
+        "24h asset selection preserves missing marks and zeroes absent complete holdings" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val first = observation(
+                id = "asset-present",
+                time = fixedNow.minusSeconds(120),
+                totalUsd = "50",
+                assets = listOf(asset("BTC", "40"), asset("ETH", "10")),
+                scope = fullScope,
+            )
+            val absent = observation(
+                id = "asset-absent",
+                time = fixedNow.minusSeconds(60),
+                totalUsd = "60",
+                assets = listOf(asset("BTC", "60")),
+                scope = fullScope,
+            )
+            val missing = observation(
+                id = "asset-unpriced",
+                time = fixedNow.minusSeconds(30),
+                totalUsd = null,
+                assets = listOf(asset("ETH", null)),
+                scope = fullScope,
+            )
+            val samples = listOf(first, absent, missing)
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(samples)
+
+            val filtered = charts(HistoryApiRangeParams(preset = "24h", valueAsset = "ETH"))
+
+            filtered.selectedValueAsset shouldBe "ETH"
+            filtered.availableValueAssets shouldBe listOf("BTC", "ETH")
+            filtered.series.single().points.map { it.v } shouldBe
+                listOf(BigDecimal("10"), BigDecimal.ZERO, null)
+            filtered.series.single().points.last().status shouldBe HistoryAssetValueStatus.MISSING_PRICE.name
+            filtered.series.single().points.last().reasons shouldBe listOf("missing-price")
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+            statistics.latestObservedValue.valueUsd.shouldBeNull()
+            statistics.latestObservedValue.incompleteReason shouldBe "missing-price"
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe "missing-price"
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("60")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("50")
+
+            val unfiltered = charts(HistoryApiRangeParams(preset = "24h", valueAsset = "DOGE"))
+            unfiltered.selectedValueAsset shouldBe null
+            unfiltered.series.single().key shouldBe HISTORY_API_PORTFOLIO_KEY
+            unfiltered.series.single().points.map { it.v } shouldBe
+                listOf(BigDecimal("50"), BigDecimal("60"), null)
+        }
+
         "rejects an unknown range preset with the API error contract" {
             expectRequestError("Unknown history range preset.") {
                 charts(HistoryApiRangeParams(preset = "fortnight"))
@@ -294,7 +440,7 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "rejects scope identifiers not recorded for the verified account" {
-            expectRequestError("Unknown recorded portfolio scope.") {
+            expectRequestError("Unknown portfolio scope.") {
                 charts(scopeId = "ACCOUNT:$accountDigest:unrecorded")
             }
         }
@@ -357,7 +503,7 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "rejects a requested activity mode that differs from the selected scope" {
-            expectRequestError("Recorded portfolio scope does not match the requested mode.") {
+            expectRequestError("Portfolio scope does not match the requested mode.") {
                 presenter.activities(
                     params = HistoryApiRangeParams(),
                     currentScope = accountScope,
@@ -960,6 +1106,8 @@ class HistoryApiPresenterTest : StringSpec() {
             status.coverage.valuesFirstIso shouldBe "2026-03-09T00:00:00Z"
             status.coverage.valuesLastIso shouldBe "2026-03-09T00:00:00Z"
             status.coverage.incomplete shouldBe false
+            status.publishedValueGenerationId shouldBe value.generationId
+            status.publishedValueSourceRevision shouldBe value.sourceRevision
         }
 
         "data status counts durable incomplete daily rows when no valuation job exists" {
@@ -1160,6 +1308,53 @@ class HistoryApiPresenterTest : StringSpec() {
             response.holdings shouldBe emptyList()
         }
 
+        "intraday holdings lookup requires and returns the exact cycle timestamp" {
+            val sampleAt = Instant.parse("2026-03-09T22:15:00Z")
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val sample = observation(
+                id = "exact-time-holdings",
+                time = sampleAt,
+                totalUsd = "100",
+                assets = listOf(asset("BTC", "100")),
+                scope = fullScope,
+            )
+            coEvery {
+                historyStore.queryObservationsSnapshot(
+                    match {
+                        it.sourceScope == fullScope && it.from == sampleAt && it.until == sampleAt.plusNanos(1)
+                    },
+                )
+            } returns listOf(sample)
+
+            val holdings = presenter.holdingsAtDate(accountScope, "2026-03-09", sampleAt.toString())
+
+            holdings.available shouldBe true
+            holdings.sampleAtIso shouldBe sampleAt.toString()
+            holdings.totalUsd shouldBe "100"
+            holdings.holdings.single().asset shouldBe "BTC"
+            coVerify {
+                historyStore.queryObservationsSnapshot(
+                    match {
+                        it.sourceScope == fullScope && it.from == sampleAt && it.until == sampleAt.plusNanos(1)
+                    },
+                )
+            }
+
+            coEvery {
+                historyStore.queryObservationsSnapshot(match { it.sourceScope == fullScope })
+            } returns emptyList()
+            val missing = presenter.holdingsAtDate(accountScope, "2026-03-09", sampleAt.plusSeconds(1).toString())
+            missing.available shouldBe false
+            missing.totalStatus shouldBe HistoryDailyValueStatus.OUTSIDE_COVERAGE.name
+            missing.sampleAtIso shouldBe sampleAt.plusSeconds(1).toString()
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.holdingsAtDate(accountScope, "2026-03-10", sampleAt.toString())
+            }
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.holdingsAtDate(accountScope, "2026-03-09", "not-an-instant")
+            }
+        }
+
         "daily summary keeps observed value change unavailable across a missing day" {
             val first = dailyValue(LocalDate.parse("2026-03-07"), "100")
             val last = dailyValue(LocalDate.parse("2026-03-09"), "125").copy(
@@ -1263,6 +1458,23 @@ class HistoryApiPresenterTest : StringSpec() {
             val holdings = presenter.dailyHoldingsExportQuery("2026-03-09", accountScope)
             holdings.query.day shouldBe LocalDate.parse("2026-03-09")
             holdings.zone shouldBe ZoneOffset.UTC
+            val intradayValues = presenter.dailyValueExportQuery(
+                HistoryApiRangeParams(preset = "24h"),
+                accountScope,
+            )
+            intradayValues.query.intraday shouldBe true
+            val intradayHoldings = presenter.dailyHoldingsExportQuery(
+                "2026-03-09",
+                accountScope,
+                "2026-03-09T12:00:00Z",
+            )
+            intradayHoldings.query.sampleAt shouldBe Instant.parse("2026-03-09T12:00:00Z")
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.dailyHoldingsExportQuery("2026-03-09", accountScope, "not-an-instant")
+            }
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.dailyHoldingsExportQuery("2026-03-09", accountScope, "2026-03-10T00:00:00Z")
+            }
             expectRequestError("History range dates must use the YYYY-MM-DD format.") {
                 presenter.dailyHoldingsExportQuery("2026-02-30", accountScope)
             }
@@ -1400,6 +1612,8 @@ class HistoryApiPresenterTest : StringSpec() {
     }
 
     private fun stubEmptyReads() {
+        coEvery { historyStore.queryObservationChartSnapshot(any(), any()) } returns
+            observationChartSnapshot(emptyList())
         coEvery { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) } answers {
             val limit = arg<Int>(4)
             val offset = arg<Int>(5)
@@ -1448,6 +1662,28 @@ class HistoryApiPresenterTest : StringSpec() {
         coEvery { historyStore.syncProgress(any()) } returns emptyList()
         coEvery { historyStore.loadValuationJob(any(), any()) } returns null
         every { syncCoordinator.blockedReason() } returns null
+    }
+
+    private fun observationChartSnapshot(observations: List<HistoryObservation>): HistoryObservationChartSnapshot {
+        val ordered = observations.sortedWith(
+            compareBy(HistoryObservation::observedAt, HistoryObservation::observationId),
+        )
+        val complete = ordered.filter { it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null }
+        val incomplete = ordered.filterNot { it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null }
+        return HistoryObservationChartSnapshot(
+            chartObservations = ordered,
+            totalObservations = ordered.size.toLong(),
+            firstObservation = ordered.firstOrNull(),
+            lastObservation = ordered.lastOrNull(),
+            incompleteObservations = incomplete.size.toLong(),
+            firstIncompleteReason = incomplete.firstOrNull()?.incompleteReasons?.firstOrNull(),
+            availableAssetSymbols = ordered.flatMap { it.assets }.map { it.symbol }.distinct().sorted(),
+            completeObservations = complete.size.toLong(),
+            firstCompleteObservation = complete.firstOrNull(),
+            lastCompleteObservation = complete.lastOrNull(),
+            minimumCompleteObservation = complete.minByOrNull { it.totalUsd!! },
+            maximumCompleteObservation = complete.maxByOrNull { it.totalUsd!! },
+        )
     }
 
     private fun newPresenter(store: HistoryStore = historyStore, nowProvider: () -> Instant = { fixedNow }) =
@@ -1549,6 +1785,8 @@ class HistoryApiPresenterTest : StringSpec() {
             incompleteDays = values.count { it.status != HistoryDailyValueStatus.COMPLETE }.toLong(),
             valuationJob = job,
             blockedReasons = reasons,
+            publishedGenerationId = values.map { it.generationId }.distinct().singleOrNull(),
+            publishedSourceRevision = values.map { it.sourceRevision }.distinct().singleOrNull(),
         )
     }
 

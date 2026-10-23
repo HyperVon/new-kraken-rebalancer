@@ -62,9 +62,10 @@ class PortfolioAnalyzerImpl(
             )
         }
 
+        val metadata = krakenService.getAssetMetadata()
         ConfiguredAssetTradingEligibility.requireEligible(
             configuredSymbols = nonUsd.map { it.symbol.value },
-            metadata = krakenService.getAssetMetadata(),
+            metadata = metadata,
         )
 
         val requests = nonUsd.map { (symbol, _) -> DirectTickerRequest(symbol.value, symbol.tradingPair) }
@@ -72,7 +73,7 @@ class PortfolioAnalyzerImpl(
         val prices = nonUsd.associate { (symbol, _) ->
             symbol.value to resolvePriceFromTicker(symbol.value, read.prices)
         }
-        return ObservedPrices(prices = prices, directCapture = read.capture)
+        return ObservedPrices(prices = prices, directCapture = read.capture, assetMetadata = metadata)
     }
 
     override fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal =

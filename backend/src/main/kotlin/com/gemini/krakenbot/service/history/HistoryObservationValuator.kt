@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.history
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.DirectBalanceCapture
 import com.gemini.krakenbot.service.DirectEvidenceStatus
@@ -55,6 +56,16 @@ object HistoryObservationValuator {
         )
     }
 
+    fun fullAccountScope(accountIdentityDigest: String): HistorySourceScope {
+        val symbols = listOf(HISTORY_FULL_ACCOUNT_SCOPE_SYMBOL)
+        return HistorySourceScope(
+            mode = HistorySourceMode.ACCOUNT,
+            managedScopeFingerprint = sha256("$HISTORY_ACCOUNT_INTRADAY_SCOPE\u0000${symbols.single()}"),
+            managedScopeSymbols = symbols,
+            accountIdentityDigest = accountIdentityDigest,
+        )
+    }
+
     fun buildDirect(
         observationId: String,
         cycleId: String,
@@ -95,7 +106,8 @@ object HistoryObservationValuator {
             !balances.resultShapeValid || !prices.resultShapeValid -> "Balance or ticker response data is invalid."
 
             observationWindow?.let { it > maxObservationWindow } == true ->
-                "The combined balance and ticker request window exceeds $MAX_HISTORY_OBSERVATION_WINDOW_SECONDS seconds."
+                "The combined balance and ticker request window exceeds " +
+                    "$MAX_HISTORY_OBSERVATION_WINDOW_SECONDS seconds."
 
             gap > maxBalancePriceGap ->
                 "Balance and ticker observations are more than $MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS seconds apart."
@@ -181,6 +193,197 @@ object HistoryObservationValuator {
             incompleteReasons = reasons,
             assets = assets,
         )
+    }
+
+    /** Values every supported account balance partition without inheriting the configured asset set. */
+    fun buildFullAccountDirect(
+        observationId: String,
+        cycleId: String,
+        accountIdentityDigest: String,
+        balances: DirectBalanceCapture,
+        prices: DirectTickerCapture,
+        assetMetadata: List<KrakenAssetMetadata>,
+        sampleSelection: HistorySampleSelection = HistorySampleSelection.FINAL,
+        now: Instant = Instant.now(),
+    ): HistoryObservation {
+        val sourceScope = fullAccountScope(accountIdentityDigest)
+        val timestampsOrdered = balances.requestStartedAt <= balances.responseEndedAt &&
+            prices.requestStartedAt <= prices.responseEndedAt
+        val observationWindow = if (timestampsOrdered) {
+            Duration.between(
+                minOf(balances.requestStartedAt, prices.requestStartedAt),
+                maxOf(balances.responseEndedAt, prices.responseEndedAt),
+            )
+        } else {
+            null
+        }
+        val gap = if (balances.responseEndedAt.isBefore(prices.requestStartedAt)) {
+            Duration.between(balances.responseEndedAt, prices.requestStartedAt)
+        } else if (prices.responseEndedAt.isBefore(balances.requestStartedAt)) {
+            Duration.between(prices.responseEndedAt, balances.requestStartedAt)
+        } else {
+            Duration.ZERO
+        }
+        val maxWindow = Duration.ofSeconds(MAX_HISTORY_OBSERVATION_WINDOW_SECONDS)
+        val maxGap = Duration.ofSeconds(MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS)
+        val windowValid = timestampsOrdered && balances.resultShapeValid && prices.resultShapeValid &&
+            observationWindow?.let { it <= maxWindow } == true && gap <= maxGap
+        val windowReason = when {
+            !timestampsOrdered -> "Balance or ticker request timestamps are invalid."
+
+            !balances.resultShapeValid || !prices.resultShapeValid -> "Balance or ticker response data is invalid."
+
+            observationWindow?.let { it > maxWindow } == true ->
+                "The combined balance and ticker request window exceeds " +
+                    "$MAX_HISTORY_OBSERVATION_WINDOW_SECONDS seconds."
+
+            gap > maxGap ->
+                "Balance and ticker responses are more than $MAX_HISTORY_BALANCE_PRICE_GAP_SECONDS seconds apart."
+
+            else -> null
+        }
+        val metadataByRawKey = assetMetadata.groupBy { it.assetId.trim().uppercase(Locale.ROOT) }
+        val metadataBySymbol = assetMetadata.groupBy { canonicalLedgerAsset(it.assetId) }
+        val assets = balances.valuesByAssetId.keys
+            .groupBy(::canonicalLedgerAsset)
+            .toSortedMap()
+            .mapNotNull { (symbol, rawKeys) ->
+                val assetClass = resolveAssetClass(rawKeys, symbol, metadataByRawKey, metadataBySymbol)
+                if (assetClass.value == EQUITY_ASSET_CLASS) return@mapNotNull null
+
+                val evidence = rawKeys.map { rawKey -> rawKey to balances.valuesByAssetId.getValue(rawKey) }
+                val rawValues = evidence.associate { (key, value) -> key to value.rawValue }
+                val quantityValid = balances.resultShapeValid && evidence.all { (_, value) ->
+                    value.status == DirectEvidenceStatus.VALID && value.value != null && value.value.signum() >= 0
+                }
+                val quantity = if (quantityValid) {
+                    evidence.fold(BigDecimal.ZERO) { total, (_, value) -> total.add(checkNotNull(value.value)) }
+                } else {
+                    null
+                }
+                val isUsd = symbol == Asset.USD
+                val mark = prices.marksBySymbol[symbol]
+                val priceUsd = when {
+                    isUsd -> BigDecimal.ONE
+                    quantity?.signum() == 0 -> null
+                    else -> mark?.price
+                }
+                val assetClassSupported = assetClass.value in SUPPORTED_ACCOUNT_ASSET_CLASSES
+                val priceInvalid = mark?.status != DirectEvidenceStatus.VALID || priceUsd == null ||
+                    priceUsd.signum() <= 0
+                val status = when {
+                    !windowValid -> HistoryAssetValueStatus.INVALID_TIME_WINDOW
+
+                    !quantityValid || quantity == null -> HistoryAssetValueStatus.INVALID_BALANCE
+
+                    assetClass.reason != null -> HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+
+                    !assetClassSupported -> HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+
+                    !isUsd && quantity.signum() != 0 && (mark == null || mark.status == DirectEvidenceStatus.MISSING) ->
+                        HistoryAssetValueStatus.MISSING_PRICE
+
+                    !isUsd && quantity.signum() != 0 && priceInvalid -> HistoryAssetValueStatus.INVALID_PRICE
+
+                    else -> HistoryAssetValueStatus.COMPLETE
+                }
+                val reason = when {
+                    !windowValid -> windowReason
+
+                    !quantityValid || quantity == null -> "Balance amount is invalid or negative."
+
+                    assetClass.reason != null -> assetClass.reason
+
+                    !assetClassSupported -> "Kraken does not classify this balance as a supported spot asset."
+
+                    status == HistoryAssetValueStatus.MISSING_PRICE -> "No direct USD ticker price is available."
+
+                    status == HistoryAssetValueStatus.INVALID_PRICE ->
+                        "Direct USD ticker price is invalid or ambiguous."
+
+                    else -> null
+                }
+                val value = if (status == HistoryAssetValueStatus.COMPLETE) {
+                    checkNotNull(quantity).multiply(if (isUsd) BigDecimal.ONE else priceUsd ?: BigDecimal.ZERO)
+                } else {
+                    null
+                }
+                HistoryAssetValue(
+                    symbol = symbol,
+                    status = status,
+                    rawBalanceKeys = rawKeys.sorted(),
+                    rawBalanceValues = rawValues,
+                    quantity = quantity,
+                    requestedPair = if (isUsd) "USD" else mark?.requestedPair,
+                    responsePair = if (isUsd) "USD" else mark?.responsePair,
+                    candidateResponsePairs = if (isUsd) emptyList() else mark?.candidateResponsePairs.orEmpty(),
+                    candidateRawPrices = if (isUsd) {
+                        emptyMap()
+                    } else {
+                        mark?.candidateValuesByPair.orEmpty()
+                            .mapValues { (_, value) -> value.rawValue }
+                    },
+                    rawPrice = if (isUsd) "1" else mark?.rawPrice,
+                    priceUsd = if (status == HistoryAssetValueStatus.COMPLETE && isUsd) BigDecimal.ONE else priceUsd,
+                    valueUsd = value,
+                    reason = reason,
+                )
+            }
+        val reasons = assets.filter { it.status != HistoryAssetValueStatus.COMPLETE }
+            .map { asset -> "${asset.symbol}: ${asset.reason ?: asset.status.name}" }
+        val complete = windowValid && reasons.isEmpty()
+        val observedAt = maxOf(balances.responseEndedAt, prices.responseEndedAt)
+        require(now >= observedAt) { "History observation timestamps cannot be in the future." }
+        return HistoryObservation(
+            observationId = observationId,
+            cycleId = cycleId,
+            sourceScope = sourceScope,
+            sampleSelection = sampleSelection,
+            observedAt = observedAt,
+            balanceRequestStartedAt = balances.requestStartedAt,
+            balanceResponseEndedAt = balances.responseEndedAt,
+            priceRequestStartedAt = prices.requestStartedAt,
+            priceResponseEndedAt = prices.responseEndedAt,
+            status = if (complete) HistoryObservationStatus.COMPLETE else HistoryObservationStatus.INCOMPLETE,
+            totalUsd = if (complete) {
+                assets.fold(BigDecimal.ZERO) { total, asset -> total.add(checkNotNull(asset.valueUsd)) }
+            } else {
+                null
+            },
+            incompleteReasons = reasons.ifEmpty {
+                if (complete) emptyList() else listOf(windowReason ?: "Full-account evidence is incomplete.")
+            },
+            assets = assets,
+        )
+    }
+
+    /** Returns positive, supported non-USD account assets that still need a direct ticker read. */
+    fun fullAccountTickerSymbols(
+        balances: DirectBalanceCapture,
+        prices: DirectTickerCapture?,
+        assetMetadata: List<KrakenAssetMetadata>,
+    ): List<String> {
+        if (!balances.resultShapeValid) return emptyList()
+        val metadataByRawKey = assetMetadata.groupBy { it.assetId.trim().uppercase(Locale.ROOT) }
+        val metadataBySymbol = assetMetadata.groupBy { canonicalLedgerAsset(it.assetId) }
+        return balances.valuesByAssetId.keys
+            .groupBy(::canonicalLedgerAsset)
+            .filter { (symbol, rawKeys) ->
+                symbol != Asset.USD && rawKeys.all { key ->
+                    val value = balances.valuesByAssetId.getValue(key)
+                    value.status == DirectEvidenceStatus.VALID && value.value != null && value.value.signum() >= 0
+                } && rawKeys.fold(BigDecimal.ZERO) { total, key ->
+                    total.add(checkNotNull(balances.valuesByAssetId.getValue(key).value))
+                }.signum() > 0 && resolveAssetClass(rawKeys, symbol, metadataByRawKey, metadataBySymbol)
+                    .value in SUPPORTED_ACCOUNT_ASSET_CLASSES
+            }
+            .keys
+            .filter { symbol ->
+                prices?.marksBySymbol?.get(symbol)?.let { mark ->
+                    mark.status == DirectEvidenceStatus.VALID && mark.price?.signum() == 1
+                } != true
+            }
+            .sorted()
     }
 
     fun buildSimulation(
@@ -286,6 +489,41 @@ object HistoryObservationValuator {
                 )
             },
         )
+
+    private fun resolveAssetClass(
+        rawKeys: List<String>,
+        symbol: String,
+        metadataByRawKey: Map<String, List<KrakenAssetMetadata>>,
+        metadataBySymbol: Map<String, List<KrakenAssetMetadata>>,
+    ): AssetClassResolution {
+        val resolvedClasses = mutableSetOf<String>()
+        rawKeys.forEach { rawKey ->
+            val candidates = metadataByRawKey[rawKey.uppercase(Locale.ROOT)]
+                .takeUnless { it.isNullOrEmpty() }
+                ?: metadataBySymbol[symbol].orEmpty()
+            if (candidates.isEmpty()) {
+                return AssetClassResolution(null, "Kraken asset metadata is unavailable for this balance.")
+            }
+            val classes = candidates.map { it.assetClass.trim().lowercase(Locale.ROOT) }.toSet()
+            if (classes.size != 1) {
+                return AssetClassResolution(null, "Kraken asset metadata is ambiguous for this balance.")
+            }
+            resolvedClasses += classes.single()
+        }
+        return if (resolvedClasses.size == 1) {
+            AssetClassResolution(resolvedClasses.single(), null)
+        } else {
+            AssetClassResolution(null, "Kraken asset metadata conflicts across balance partitions.")
+        }
+    }
+
+    private fun canonicalLedgerAsset(rawAssetKey: String): String =
+        Asset.normalizeLedgerAsset(rawAssetKey).uppercase(Locale.ROOT)
+
+    private data class AssetClassResolution(val value: String?, val reason: String?)
+
+    private const val EQUITY_ASSET_CLASS = "equity"
+    private val SUPPORTED_ACCOUNT_ASSET_CLASSES = setOf("currency", "tokenized_asset")
 
     private fun reasonFor(
         status: HistoryAssetValueStatus,

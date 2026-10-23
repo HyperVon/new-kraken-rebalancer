@@ -40,7 +40,7 @@ Main chart: **Account value (USD)**. Under it: value at latest available mark, c
 
 Below chart: **Holdings at [date]**, selected by clicking a daily point or choosing a date. Columns: asset, quantity, historical USD price, USD value, availability. Include assets held then even if no longer configured or held today. Provide CSV for daily account totals and selected-date holdings, including missing-data status.
 
-Use daily historical values for 7d and longer ranges. For 24h, use full-account direct observations only after implementing and validating an equivalent full-account capture scope. Never splice existing managed-asset-only observations into account totals. If full-account intraday data is unavailable, show available daily marks with an explicit resolution label; do not invent intraday history. Preserve legacy managed-asset charts in technical/recorded-history details where useful, without making them the default.
+Use daily historical values for 7d and longer ranges. For 24h, use full-account direct observations captured during account cycles. Never splice existing managed-asset-only observations into account totals or substitute a daily close when full-account intraday samples are unavailable; show an explicit empty state until a valid full-account sample exists. Preserve legacy managed-asset charts in technical/recorded-history details where useful, without making them the default.
 
 Drag-to-zoom, tooltips, reset, and responsive sizing must work. Refresh must preserve selected tab, dates, asset filter, zoom and table position. Relative windows advance only while following latest; zooming pauses that behavior and exposes **Follow latest**. Custom historical windows stay fixed.
 

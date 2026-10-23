@@ -40,7 +40,13 @@ class HistoryChartRefreshTest : StringSpec() {
                 "label" to "Account value",
                 "unit" to "USD",
                 "points" to arrayOf(
-                    json("t" to 1000.0, "v" to 1.0, "complete" to true, "dayLabel" to "2026-03-10"),
+                    json(
+                        "t" to 1000.0,
+                        "v" to 1.0,
+                        "complete" to true,
+                        "dayLabel" to "2026-03-10",
+                        "selectionTimeIso" to "2026-03-10T12:30:00Z",
+                    ),
                     json("t" to 2000.0, "v" to null, "complete" to false, "dayLabel" to "2026-03-11"),
                 ),
             )
@@ -49,6 +55,7 @@ class HistoryChartRefreshTest : StringSpec() {
 
                 root.querySelector("circle[data-time='1000']")?.getAttribute("data-history-day") shouldBe "2026-03-10"
                 root.querySelector("circle[data-gap='true']")?.getAttribute("data-history-day") shouldBe "2026-03-11"
+                session.selectionTimes[1000.0] shouldBe "2026-03-10T12:30:00Z"
                 historyChartSessions[root.id] shouldBe session
             } finally {
                 root.remove()

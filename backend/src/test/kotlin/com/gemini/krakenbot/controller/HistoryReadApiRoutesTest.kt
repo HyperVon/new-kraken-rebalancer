@@ -232,7 +232,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 json["series"][0].keys() shouldBe
                     setOf("key", "label", "legendLabel", "unit", "points", "provenance")
                 json["series"][0]["points"][0].keys() shouldBe
-                    setOf("t", "tIso", "v", "complete", "status", "reasons", "dayLabel")
+                    setOf("t", "tIso", "v", "complete", "status", "reasons", "dayLabel", "selectionTimeIso")
                 (json["generationMs"].asLong() >= 0) shouldBe true
             }
         }
@@ -768,6 +768,8 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     "availableValueFromIso",
                     "availableValueToIso",
                     "availableValueDays",
+                    "publishedValueGenerationId",
+                    "publishedValueSourceRevision",
                 )
                 json["dataRevision"].asLong() shouldBe 42L
                 json["blockedReason"].asText() shouldBe "operator-blocked"
@@ -819,6 +821,21 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 }
                 rejected.status shouldBe HttpStatusCode.Forbidden
 
+                val invalidDate = client.post(Routes.API_HISTORY_REPAIR) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            "date" to listOf("2026-02-30"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
+                }
+                invalidDate.status shouldBe HttpStatusCode.BadRequest
+                body(invalidDate.bodyAsText())["error"].asText() shouldBe
+                    "History range dates must use the YYYY-MM-DD format."
+
                 val accepted = client.post(Routes.API_HISTORY_REPAIR) {
                     setBody(
                         parametersOf(
@@ -855,6 +872,9 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     HistorySyncPurpose.REPAIR,
                     null,
                 )
+            }
+            verify(exactly = 2) {
+                historySynchronizer.startSync(any(), any(), any(), any(), any())
             }
         }
 

@@ -15,7 +15,9 @@ const val HISTORY_WALLET_SCOPE = "KRAKEN_DEFAULT_WALLET"
 const val HISTORY_BALANCE_SOURCE = "KRAKEN_PRIVATE_BALANCE"
 const val HISTORY_PRICE_SOURCE = "KRAKEN_PUBLIC_TICKER_LAST_TRADE_C0"
 const val HISTORY_ACCOUNT_DAILY_SCOPE = "KRAKEN_SPOT_EARN_ACCOUNT_DAILY_V1"
-const val HISTORY_DAILY_VALUE_POLICY_VERSION = "ACCOUNT_DAILY_CLOSE_V1"
+const val HISTORY_ACCOUNT_INTRADAY_SCOPE = "KRAKEN_SPOT_FULL_ACCOUNT_INTRADAY_V1"
+const val HISTORY_FULL_ACCOUNT_SCOPE_SYMBOL = "FULL_ACCOUNT_INTRADAY"
+const val HISTORY_DAILY_VALUE_POLICY_VERSION = "ACCOUNT_DAILY_CLOSE_V2"
 
 enum class HistorySourceMode { ACCOUNT, SIMULATION }
 
@@ -196,6 +198,22 @@ data class HistoryRangeQuery(
         require(offset >= 0)
     }
 }
+
+/** Bounded chart samples and range-wide facts read from one database snapshot. */
+data class HistoryObservationChartSnapshot(
+    val chartObservations: List<HistoryObservation>,
+    val totalObservations: Long,
+    val firstObservation: HistoryObservation?,
+    val lastObservation: HistoryObservation?,
+    val incompleteObservations: Long,
+    val firstIncompleteReason: String?,
+    val availableAssetSymbols: List<String>,
+    val completeObservations: Long,
+    val firstCompleteObservation: HistoryObservation?,
+    val lastCompleteObservation: HistoryObservation?,
+    val minimumCompleteObservation: HistoryObservation?,
+    val maximumCompleteObservation: HistoryObservation?,
+)
 
 data class HistoryEventQuery(
     /** Inclusive lower time bound. */
@@ -389,6 +407,8 @@ data class HistoryDailyValueStatusSnapshot(
     val incompleteDays: Long,
     val valuationJob: HistoryValuationJob?,
     val blockedReasons: List<HistoryDailyValueStatusReason>,
+    val publishedGenerationId: String? = null,
+    val publishedSourceRevision: Long? = null,
 )
 
 data class HistoryValuationJob(

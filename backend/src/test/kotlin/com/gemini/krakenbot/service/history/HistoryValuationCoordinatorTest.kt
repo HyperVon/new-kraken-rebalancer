@@ -32,7 +32,7 @@ class HistoryValuationCoordinatorTest : StringSpec() {
     private val accountDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     init {
-        "rebuilds one year from a committed ledger page and publishes through the SQLite store" {
+        "rebuilds one year without consuming retained balance rows before the target window" {
             runTest {
                 val now = Instant.parse("2026-10-21T12:00:00Z")
                 val targetEnd = LocalDate.parse("2026-10-20")
@@ -114,6 +114,15 @@ class HistoryValuationCoordinatorTest : StringSpec() {
                             valid = true,
                         ),
                     )
+                    store.saveDailyBalances(
+                        (0 until 400).map { index ->
+                            dailyBalance(
+                                day = targetEnd.minusDays((399 - index).toLong()),
+                                sourceRevision = 0,
+                                generationId = "retained-older-generation",
+                            )
+                        },
+                    )
 
                     val synchronizer = mockk<HistorySynchronizer>()
                     val krakenService = mockk<KrakenService>(relaxed = true)
@@ -147,8 +156,16 @@ class HistoryValuationCoordinatorTest : StringSpec() {
                         it.status == HistoryDailyValueStatus.COMPLETE && it.totalUsd == BigDecimal("200") &&
                             it.assets.size == 2
                     } shouldBe true
-                    val balances = store.queryDailyBalances(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                    val balances = store.queryDailyBalances(
+                        accountIdentityDigest = accountDigest,
+                        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                        from = targetStart.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        until = targetEnd.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    )
                     balances.size shouldBe HistoryValuationCoordinator.TARGET_DAYS * 2
+                    balances.map { it.dayLabel }.distinct().size shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                    store.queryDailyBalances(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).size shouldBe
+                        HistoryValuationCoordinator.TARGET_DAYS * 2 + 35
                     store.queryDailyPrices(
                         accountDigest,
                         "BTC",
@@ -597,6 +614,94 @@ class HistoryValuationCoordinatorTest : StringSpec() {
                 savedPrices.size shouldBe 5
                 savedPrices.all { it.closeUsd == BigDecimal.ONE && it.candleEnd > it.candleOpen } shouldBe true
                 savedPrices.all { it.rawAssetKey == "USD" } shouldBe true
+                coVerify(exactly = 1) { store.queryDailyPrices(accountDigest, "ZUSD", any(), any()) }
+                coVerify(exactly = 1) { store.queryDailyPrices(accountDigest, "USD", any(), any()) }
+                coVerify(exactly = 0) { krakenService.getOHLC(any(), any(), any()) }
+            }
+        }
+
+        "consumes a valid cached Kraken USD alias for cash valuation without fetching it again" {
+            runTest {
+                val now = Instant.parse("2026-10-21T12:00:00Z")
+                val account = VerifiedHistoryAccount(accountDigest, null, null)
+                val existing = valuationJob(now, HistoryValuationJobState.RUNNING).copy(
+                    generationId = "cached-zusd-generation",
+                    sourceRevision = 9,
+                    requiredPriceTasks = HistoryValuationCoordinator.TARGET_DAYS,
+                )
+                val balances = (0 until HistoryValuationCoordinator.TARGET_DAYS).map { index ->
+                    val day = existing.targetStartDay.plusDays(index.toLong())
+                    HistoryDailyBalance(
+                        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        dayLabel = day,
+                        accountIdentityDigest = accountDigest,
+                        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                        rawAssetClass = "currency",
+                        rawAssetKey = "ZUSD",
+                        quantity = BigDecimal("100"),
+                        sourceLedgerId = "usd-$index",
+                        sourceObservedAt = day.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        sourceRevision = 9,
+                        generationId = existing.generationId,
+                        status = HistoryDailyBalanceStatus.VALID,
+                    )
+                }
+                val cachedPrices = balances.map { balance ->
+                    val open = balance.dayLabel.atStartOfDay(ZoneOffset.UTC).toInstant()
+                    HistoryDailyPrice(
+                        accountIdentityDigest = accountDigest,
+                        rawAssetKey = "ZUSD",
+                        pair = "USD",
+                        candleOpen = open,
+                        candleEnd = balance.dayEnd,
+                        closeUsd = BigDecimal.ONE,
+                        source = "EXACT_USD_UNIT",
+                    )
+                }
+                var publishedJob: HistoryValuationJob? = null
+                var publishedValues = emptyList<HistoryDailyValue>()
+                var savedPrices = emptyList<HistoryDailyPrice>()
+                val synchronizer = mockk<HistorySynchronizer>()
+                val store = mockk<HistoryStore>()
+                val krakenService = mockk<KrakenService>()
+                coEvery { synchronizer.verifiedAccount() } returns account
+                coEvery { store.loadSyncJobs(accountDigest) } returns emptyList()
+                coEvery { store.currentLedgerRevision(accountDigest) } returns 9L
+                coEvery { store.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns existing
+                coEvery { store.upsertValuationJob(any()) } just runs
+                coEvery { store.queryDailyBalances(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any()) } returns
+                    balances
+                coEvery { store.queryDailyPrices(accountDigest, "ZUSD", any(), any()) } returns cachedPrices
+                coEvery { store.queryDailyPrices(accountDigest, "USD", any(), any()) } returns emptyList()
+                coEvery { store.saveDailyPrices(any()) } coAnswers { savedPrices = firstArg() }
+                coEvery { store.publishDailyValues(any(), any()) } coAnswers {
+                    publishedJob = firstArg()
+                    publishedValues = secondArg()
+                }
+
+                HistoryValuationCoordinator(
+                    applicationScope = this,
+                    synchronizer = synchronizer,
+                    store = store,
+                    priceResolver = HistoryDailyPriceResolver(krakenService, nowProvider = { now }),
+                    nowProvider = { now },
+                ).runOnce()
+
+                publishedJob?.state shouldBe HistoryValuationJobState.COMPLETE
+                publishedJob?.completeValueDays shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                publishedJob?.blockedValueDays shouldBe 0
+                publishedJob?.completedPriceTasks shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                publishedValues.size shouldBe HistoryValuationCoordinator.TARGET_DAYS
+                publishedValues.all { it.generationId == existing.generationId } shouldBe true
+                publishedValues.all { it.status == HistoryDailyValueStatus.COMPLETE } shouldBe true
+                publishedValues.all { it.totalUsd == BigDecimal("100") } shouldBe true
+                publishedValues.flatMap { it.assets }.all { asset ->
+                    asset.rawAssetKey == "ZUSD" &&
+                        asset.priceSource == "EXACT_USD_UNIT" &&
+                        asset.priceUsd == BigDecimal.ONE &&
+                        asset.valueUsd == BigDecimal("100")
+                } shouldBe true
+                savedPrices shouldBe emptyList()
                 coVerify(exactly = 1) { store.queryDailyPrices(accountDigest, "ZUSD", any(), any()) }
                 coVerify(exactly = 1) { store.queryDailyPrices(accountDigest, "USD", any(), any()) }
                 coVerify(exactly = 0) { krakenService.getOHLC(any(), any(), any()) }

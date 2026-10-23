@@ -386,7 +386,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
 
             importStates.any { it == "PENDING" } -> "Waiting to import records"
 
-            else -> "Import status not yet recorded"
+            else -> "History import has not started"
         }
         val importedTrades = status?.tradeRecordsImported?.toString() ?: "—"
         val importedLedgers = status?.ledgerRecordsImported?.toString() ?: "—"
@@ -512,7 +512,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             val hasFailedWork = importState == "Needs attention" ||
                 valuation?.state == "NEEDS_ATTENTION" ||
                 data.syncStatuses.any { it.state == HistorySyncState.FAILED }
-            val historyNotStarted = importState == "Import status not yet recorded"
+            val historyNotStarted = importState == "History import has not started"
             if (data.accountAvailable && (hasFailedWork || historyNotStarted)) {
                 form(action = Routes.API_HISTORY_SYNC_START, method = FormMethod.post) {
                     input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) { value = csrfToken.orEmpty() }
@@ -1000,12 +1000,12 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             div(CssClass.History.FilterRow) {
                 label {
                     htmlFor = "history-scope-select"
-                    +"Recorded portfolio"
+                    +HistoryRangeText.SCOPE_LABEL
                     select(classes = CssClass.History.FilterInput.value) {
                         id = "history-scope-select"
                         option {
                             value = ""
-                            +"Loading recorded portfolios"
+                            +"Loading portfolio periods"
                         }
                     }
                 }
@@ -1015,7 +1015,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 ) {
                     id = "history-scope-link"
                     attributes["hidden"] = "hidden"
-                    +"Earlier recorded portfolios available"
+                    +HistoryRangeText.EARLIER_SCOPES
                 }
             }
             div(CssClass.History.MutedSmallText) {
@@ -1320,12 +1320,14 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     private fun DIV.renderValueChart(data: HistoryPageData) {
         val observations = data.observations.sortedBy { it.observedAt }
         val dailyChart = data.portfolioChart?.takeIf { it.resolution == "1d" }
+        val intradayChart = data.portfolioChart?.takeIf { it.resolution == "cycle" }
         val recordedChart = data.portfolioChart?.takeIf {
             it.scopeSelection == HistoryApiScopeSelection.ACCOUNT_RECORDED
         }
-        val hasCompleteValue = dailyChart?.series?.any { series -> series.points.any { it.complete && it.v != null } }
+        val valueChart = dailyChart ?: intradayChart ?: recordedChart
+        val hasCompleteValue = valueChart?.series?.any { series -> series.points.any { it.complete && it.v != null } }
             ?: observations.any { it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null }
-        val hasChartValues = dailyChart != null || recordedChart != null
+        val hasChartValues = valueChart != null
         div(CssClass.Layout.GlassPanel) {
             id = HtmlIds.HISTORY_PORTFOLIO_SECTION
             div(CssClass.History.ChartHeader) {
@@ -1340,8 +1342,8 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 chartControls()
                 exportButton("account-values", Routes.API_HISTORY_EXPORT_ACCOUNT_VALUES)
             }
-            if (dailyChart != null && dailyChart.availableValueAssets.isNotEmpty()) {
-                renderValueAssetFilter(dailyChart)
+            if (valueChart != null && valueChart.availableValueAssets.isNotEmpty()) {
+                renderValueAssetFilter(valueChart)
             }
             renderStatsGrid(data)
             if (recordedChart != null) {
@@ -1361,20 +1363,38 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     +"Daily marks · ${dailyChart.resolution} UTC · "
                     +(dailyChart.valuationBasis ?: "historical closing prices")
                 }
+            } else if (intradayChart != null) {
+                p(CssClass.History.ChartCaption) {
+                    +"24h cycle values · "
+                    +(intradayChart.valuationBasis ?: "full account balances and direct USD ticker prices")
+                }
             }
-            if ((observations.isNotEmpty() || dailyChart != null) && !hasCompleteValue) {
-                p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+            if ((observations.isNotEmpty() || valueChart != null) && !hasCompleteValue) {
+                p(CssClass.History.MutedSmallText) {
+                    +if (intradayChart !=
+                        null
+                    ) {
+                        ViewText.HISTORY_INTRADAY_VALUE_NO_DATA
+                    } else {
+                        ViewText.HISTORY_VALUE_NO_DATA
+                    }
+                }
             }
-            val recordedSeries = recordedChart?.series?.map { series ->
+            val chartSeries = (intradayChart ?: recordedChart)?.series?.map { series ->
                 series.legendLabel to series.points.mapNotNull { point ->
                     point.v?.takeIf { point.complete }?.let {
-                        HistorySeriesPoint(Instant.ofEpochMilli(point.t), it)
+                        HistorySeriesPoint(
+                            time = Instant.ofEpochMilli(point.t),
+                            value = it,
+                            dayLabel = point.dayLabel,
+                            selectionTimeIso = point.selectionTimeIso,
+                        )
                     }
                 }
             }?.filter { it.second.isNotEmpty() }.orEmpty()
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                val primaryChart = dailyChart ?: recordedChart
+                val primaryChart = valueChart
                 if (primaryChart != null) {
                     attributes[HtmlAttrs.DATA_HISTORY_SCOPE_SELECTION] = primaryChart.scopeSelection.name
                     primaryChart.fullRange.fromIso?.let { attributes[HtmlAttrs.DATA_FULL_FROM] = it }
@@ -1386,17 +1406,13 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                             attributes[HtmlAttrs.DATA_HISTORY_SOURCE_LABEL] = series.label
                         }
                     }
-                    val series = recordedSeries
+                    val series = chartSeries
                     if (dailyChart != null) {
                         val points = dailyChart.series.firstOrNull()?.points.orEmpty()
-                        if (points.isEmpty()) {
-                            p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
-                        } else {
+                        if (points.isNotEmpty()) {
                             unsafe { +dailyValueSvg(points) }
                         }
-                    } else if (series.isEmpty()) {
-                        p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
-                    } else {
+                    } else if (series.isNotEmpty()) {
                         val times = primaryChart.series.flatMap { it.points }.map { Instant.ofEpochMilli(it.t) } +
                             listOfNotNull(primaryChart.fullRange.fromIso, primaryChart.fullRange.toIso)
                                 .map(Instant::parse)
@@ -1408,7 +1424,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     unsafe { +valuePointSvg(observations) }
                 }
             }
-            if (recordedSeries.size > 1) renderSeriesLegend(recordedSeries)
+            if (chartSeries.size > 1) renderSeriesLegend(chartSeries)
             div {
                 attributes["class"] = HistoryRangeCss.BANNER
                 id = HistoryRangeIds.NEW_DATA_BANNER
@@ -1419,13 +1435,15 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     +HistoryRangeText.NEW_DATA_ACTION
                 }
             }
-            if (hasCompleteValue && dailyChart == null &&
+            if (hasCompleteValue && dailyChart == null && intradayChart == null &&
                 observations.any { it.status != HistoryObservationStatus.COMPLETE }
             ) {
                 p(CssClass.History.SyncText) { +ViewText.HISTORY_VALUE_PARTIAL }
             }
             renderChartScrubber(HtmlIds.HISTORY_VALUE_CHART)
-            if (dailyChart == null) p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
+            if (dailyChart == null && intradayChart == null) {
+                p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
+            }
             renderPeriodDetails(data)
         }
     }
@@ -1435,7 +1453,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             label {
                 htmlFor = HtmlIds.HISTORY_VALUE_ASSET_FILTER
                 +"Asset filter"
-                select {
+                select(classes = CssClass.History.FilterInput.value) {
                     id = HtmlIds.HISTORY_VALUE_ASSET_FILTER
                     attributes[HtmlAttrs.DATA_HISTORY_VALUE_ASSET] = "true"
                     option {
@@ -1459,16 +1477,23 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         val day = holdings?.day.orEmpty()
         div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
             id = "history-account-holdings"
-            h2(CssClass.Utility.GlassPanelTitle) { +"Holdings at $day" }
+            h2(CssClass.Utility.GlassPanelTitle) {
+                +holdings?.sampleAtIso?.let { "Holdings at ${formatStatusTimeUtc(it)}" }.orEmpty()
+                    .ifEmpty { "Holdings at $day" }
+            }
             div(CssClass.History.ChartControls) {
                 label {
                     htmlFor = "history-holdings-date"
                     +"Date (UTC)"
                 }
-                input(type = InputType.date) {
+                input(type = InputType.date, classes = CssClass.History.FilterInput.value) {
                     id = "history-holdings-date"
                     value = day
                     attributes["data-history-holdings-date"] = "true"
+                }
+                input(type = InputType.hidden) {
+                    id = "history-holdings-at"
+                    value = holdings?.sampleAtIso.orEmpty()
                 }
                 a(href = Routes.API_HISTORY_EXPORT_ACCOUNT_HOLDINGS, classes = CssClass.History.PaginationBtn.value) {
                     attributes["data-history-export"] = "account-holdings"
@@ -1480,14 +1505,20 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 id = "history-holdings-total"
                 +(
                     holdings?.let { "${it.totalStatus}: ${it.totalUsd ?: "unavailable"} USD" }
-                        ?: "No daily mark selected."
+                        ?: "No account value selected."
                     )
             }
             div(CssClass.Table.Wrapper) {
                 table {
                     thead {
                         tr {
-                            listOf("Asset", "Quantity", "Historical USD price", "USD value", "Availability").forEach {
+                            listOf(
+                                "Asset",
+                                "Quantity",
+                                if (holdings?.sampleAtIso != null) "USD price" else "Historical USD price",
+                                "USD value",
+                                "Availability",
+                            ).forEach {
                                 th { +it }
                             }
                         }
@@ -2248,7 +2279,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             color = null,
         )
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
-            """preserveAspectRatio="none"><title>Exchange-reported balance checkpoints</title>${svgGrid()}$markers""" +
+            """preserveAspectRatio="none"><title>Balances at ledger events</title>${svgGrid()}$markers""" +
             valueAxisLabels(
                 minV.max(maxV).stripTrailingZeros().toPlainString(),
                 minV.stripTrailingZeros().toPlainString(),
@@ -2327,7 +2358,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 ).format(Locale.US, x) +
                 """<title>${timeFormatter.format(
                     it.observedAt,
-                )} · Incomplete sample; no portfolio value is plotted</title></circle>"""
+                )} · Incomplete cycle; no portfolio value is plotted</title></circle>"""
         }
         val axisLabels = if (minV != null && maxV != null) {
             valueAxisLabels(Formatter.formatSignedUsd(maxV), Formatter.formatSignedUsd(minV))
@@ -2335,7 +2366,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             ""
         }
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
-            """preserveAspectRatio="none"><title>Portfolio samples; gaps mark incomplete cycles</title>""" +
+            """preserveAspectRatio="none"><title>Portfolio values; gaps mark incomplete cycles</title>""" +
             svgGrid() + lines + markers + gapMarkers + axisLabels + timeAxis(minT, maxT) + "</svg>"
     }
 
@@ -2385,6 +2416,8 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     timeMillis = point.time.toEpochMilli(),
                     valueAttr = point.value.toPlainString(),
                     series = symbol,
+                    dayLabel = point.dayLabel,
+                    selectionTimeIso = point.selectionTimeIso,
                 )
             }
             line + gapMarkers +
@@ -2459,12 +2492,13 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         color: String?,
     ): String = samples.mapIndexed { index, sample ->
         val seriesAttr = sample.series?.let { " ${HtmlAttrs.DATA_SERIES}=\"${escapeSvgText(it)}\"" } ?: ""
+        val selectionTimeAttr = sample.selectionTimeIso?.let { " data-history-at=\"${escapeSvgText(it)}\"" }.orEmpty()
         val hit =
             (
                 """<circle cx="%.2f" cy="%.2f" r="7" fill="transparent" """ +
                     "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
                     "data-history-day=\"${escapeSvgText(sample.dayLabel.orEmpty())}\" " +
-                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
+                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr$selectionTimeAttr>"
                 ).format(Locale.US, sample.x, sample.y) + "<title>${escapeSvgText(sample.title)}</title></circle>"
         val visible = if (index % visibleEvery == 0 || index == samples.lastIndex) {
             val fill = color?.let { """ style="fill:$it"""" } ?: ""
@@ -2472,7 +2506,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="$visibleRadius"$fill """ +
                     "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
                     "data-history-day=\"${escapeSvgText(sample.dayLabel.orEmpty())}\" " +
-                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
+                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr$selectionTimeAttr>"
                 ).format(Locale.US, sample.x, sample.y) + "<title>${escapeSvgText(sample.title)}</title></circle>"
         } else {
             ""
@@ -2495,6 +2529,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         val valueAttr: String,
         val series: String? = null,
         val dayLabel: String? = null,
+        val selectionTimeIso: String? = null,
     )
 
     private companion object {
@@ -2516,7 +2551,12 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     }
 }
 
-internal data class HistorySeriesPoint(val time: Instant, val value: BigDecimal)
+internal data class HistorySeriesPoint(
+    val time: Instant,
+    val value: BigDecimal,
+    val dayLabel: String? = null,
+    val selectionTimeIso: String? = null,
+)
 
 internal fun assetValueSeries(observations: List<HistoryObservation>): List<Pair<String, List<HistorySeriesPoint>>> =
     observations

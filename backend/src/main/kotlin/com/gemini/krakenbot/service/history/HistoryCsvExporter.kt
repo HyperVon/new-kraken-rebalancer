@@ -1,12 +1,14 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.model.Asset
+import kotlinx.coroutines.flow.collect
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class HistoryCsvExporter(private val historyService: HistoryService, private val historyStore: HistoryStore) {
     suspend fun exportDailyValues(query: HistoryDailyValueExportRange, writeChunk: suspend (String) -> Unit): Long {
+        if (query.intraday) return exportIntradayValues(query, writeChunk)
         val values = historyStore.queryDailyValueSnapshot(
             accountIdentityDigest = query.accountIdentityDigest,
             sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
@@ -49,6 +51,7 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
         query: HistoryDailyHoldingsExportQuery,
         writeChunk: suspend (String) -> Unit,
     ): Long {
+        query.sampleAt?.let { return exportIntradayHoldings(query, it, writeChunk) }
         val dayEnd = query.day.plusDays(1).atStartOfDay(ZoneId.of("UTC")).toInstant()
         val total = historyStore.queryDailyValueSnapshot(
             accountIdentityDigest = query.accountIdentityDigest,
@@ -123,6 +126,123 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
         }
         return rowsWritten
     }
+
+    private suspend fun exportIntradayValues(
+        query: HistoryDailyValueExportRange,
+        writeChunk: suspend (String) -> Unit,
+    ): Long {
+        writeChunk(csvRow(INTRADAY_VALUE_HEADERS))
+        var rowsWritten = 0L
+        historyStore.queryObservationSnapshotPages(intradayQuery(query.accountIdentityDigest, query.from, query.until))
+            .collect { observations ->
+                writeChunk(
+                    buildString {
+                        observations.forEach { observation ->
+                            append(
+                                csvRow(
+                                    listOf(
+                                        observation.observedAt.toString(),
+                                        observation.totalUsd?.toPlainString(),
+                                        observation.status.name,
+                                        observation.cycleId.asCsvText(),
+                                        observation.incompleteReasons.joinToString("; ").asCsvText(),
+                                    ),
+                                ),
+                            )
+                        }
+                    },
+                )
+                rowsWritten += observations.size
+            }
+        return rowsWritten
+    }
+
+    private suspend fun exportIntradayHoldings(
+        query: HistoryDailyHoldingsExportQuery,
+        sampleAt: Instant,
+        writeChunk: suspend (String) -> Unit,
+    ): Long {
+        val observation = queryIntradayObservations(
+            accountIdentityDigest = query.accountIdentityDigest,
+            from = sampleAt,
+            until = sampleAt.plusNanos(1),
+        ).singleOrNull { it.observedAt == sampleAt }
+        writeChunk(csvRow(INTRADAY_HOLDING_HEADERS))
+        if (observation == null) {
+            writeChunk(
+                csvRow(
+                    listOf(
+                        sampleAt.toString(),
+                        null,
+                        "OUTSIDE_COVERAGE",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "No account value is available at this time.",
+                    ),
+                ),
+            )
+            return 1
+        }
+        val holdings = observation.assets
+        if (holdings.isEmpty()) {
+            writeChunk(
+                csvRow(
+                    listOf(
+                        observation.observedAt.toString(),
+                        observation.totalUsd?.toPlainString(),
+                        observation.status.name,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "No held assets.",
+                    ),
+                ),
+            )
+            return 1
+        }
+        writeChunk(
+            buildString {
+                holdings.forEach { asset ->
+                    append(
+                        csvRow(
+                            listOf(
+                                observation.observedAt.toString(),
+                                observation.totalUsd?.toPlainString(),
+                                observation.status.name,
+                                Asset.normalizeLedgerAsset(asset.symbol).asCsvText(),
+                                asset.quantity?.toPlainString(),
+                                asset.priceUsd?.toPlainString(),
+                                asset.valueUsd?.toPlainString(),
+                                asset.status.name,
+                                asset.reason,
+                            ),
+                        ),
+                    )
+                }
+            },
+        )
+        return holdings.size.toLong()
+    }
+
+    private suspend fun queryIntradayObservations(
+        accountIdentityDigest: String,
+        from: Instant?,
+        until: Instant,
+    ): List<HistoryObservation> =
+        historyStore.queryObservationsSnapshot(intradayQuery(accountIdentityDigest, from, until))
+            .sortedBy { it.observedAt }
+
+    private fun intradayQuery(accountIdentityDigest: String, from: Instant?, until: Instant) = HistoryRangeQuery(
+        from = from,
+        until = until,
+        sourceScope = HistoryObservationValuator.fullAccountScope(accountIdentityDigest),
+        limit = HISTORY_MAX_PAGE_LIMIT,
+    )
 
     suspend fun exportTrades(query: HistoryEventQuery, zone: ZoneId, writeChunk: suspend (String) -> Unit): Long =
         stream(
@@ -387,6 +507,26 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
             "asset",
             "quantity",
             "historical_price_usd",
+            "value_usd",
+            "availability",
+            "reason",
+        )
+
+        val INTRADAY_VALUE_HEADERS = listOf(
+            "timestamp_utc",
+            "account_value_usd",
+            "availability",
+            "cycle_id",
+            "missing_asset_reasons",
+        )
+
+        val INTRADAY_HOLDING_HEADERS = listOf(
+            "timestamp_utc",
+            "account_value_usd",
+            "account_availability",
+            "asset",
+            "quantity",
+            "price_usd",
             "value_usd",
             "availability",
             "reason",

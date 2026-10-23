@@ -1,11 +1,15 @@
 package com.gemini.krakenbot.service.history
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -23,6 +27,158 @@ class HistorySnapshotConsistencyTest : StringSpec() {
     private val accountB = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
 
     init {
+        "observation snapshot returns an empty range and rejects a nonzero offset" {
+            withDatabase { store, _ ->
+                store.queryObservationsSnapshot(HistoryRangeQuery(limit = 2)) shouldBe emptyList()
+                shouldThrow<IllegalArgumentException> {
+                    store.queryObservationsSnapshot(HistoryRangeQuery(limit = 2, offset = 1))
+                }
+            }
+        }
+
+        "observation pages remain consistent while a new sample is inserted" {
+            withDatabase { store, _ ->
+                val scope = HistoryObservationValuator.fullAccountScope(accountA)
+                val start = Instant.parse("2026-03-08T12:00:00Z")
+                repeat(5) { index ->
+                    store.appendObservation(
+                        observation("sample-$index", "cycle-$index", start.plusSeconds(index.toLong()), scope),
+                    )
+                }
+                val firstPageRead = CountDownLatch(1)
+                val continueRead = CountDownLatch(1)
+                store.observationSnapshotReadHookForTest = { point, offset ->
+                    if (point == ObservationSnapshotReadPoint.AFTER_PAGE && offset == 2) {
+                        firstPageRead.countDown()
+                        check(continueRead.await(5, TimeUnit.SECONDS)) {
+                            "Observation snapshot reader was not released."
+                        }
+                    }
+                }
+
+                val reader = async(Dispatchers.IO) {
+                    store.queryObservationsSnapshot(
+                        HistoryRangeQuery(
+                            from = start.minusSeconds(1),
+                            until = start.plusSeconds(100),
+                            sourceScope = scope,
+                            limit = 2,
+                        ),
+                    )
+                }
+                try {
+                    await(firstPageRead)
+                    store.appendObservation(observation("sample-new", "cycle-new", start.plusSeconds(50), scope))
+                } finally {
+                    continueRead.countDown()
+                }
+
+                reader.await().map { it.observationId } shouldContainExactly
+                    (4 downTo 0).map { "sample-$it" }
+                store.observationSnapshotReadHookForTest = null
+                store.queryObservationsSnapshot(
+                    HistoryRangeQuery(
+                        from = start.minusSeconds(1),
+                        until = start.plusSeconds(100),
+                        sourceScope = scope,
+                        limit = 2,
+                    ),
+                ).size shouldBe 6
+                store.queryObservationSnapshotPages(
+                    HistoryRangeQuery(
+                        from = start.minusSeconds(1),
+                        until = start.plusSeconds(100),
+                        sourceScope = scope,
+                        limit = 2,
+                    ),
+                ).toList().flatten().map { it.observationId } shouldContainExactly
+                    ((0..4).map { "sample-$it" } + "sample-new")
+            }
+        }
+
+        "intraday chart points and range summary remain consistent while a writer commits" {
+            withDatabase { store, _ ->
+                val scope = HistoryObservationValuator.fullAccountScope(accountA)
+                val start = Instant.parse("2026-03-08T12:00:00Z")
+                repeat(5) { index ->
+                    store.appendObservation(
+                        observation("chart-$index", "chart-cycle-$index", start.plusSeconds(index.toLong()), scope),
+                    )
+                }
+                val firstPageRead = CountDownLatch(1)
+                val continueRead = CountDownLatch(1)
+                store.observationSnapshotReadHookForTest = { point, offset ->
+                    if (point == ObservationSnapshotReadPoint.AFTER_PAGE && offset == 2) {
+                        firstPageRead.countDown()
+                        check(continueRead.await(5, TimeUnit.SECONDS)) {
+                            "Observation chart snapshot reader was not released."
+                        }
+                    }
+                }
+
+                val reader = async(Dispatchers.IO) {
+                    store.queryObservationChartSnapshot(
+                        HistoryRangeQuery(
+                            from = start.minusSeconds(1),
+                            until = start.plusSeconds(100),
+                            sourceScope = scope,
+                            limit = 2,
+                        ),
+                        maxPoints = 6,
+                    )
+                }
+                try {
+                    await(firstPageRead)
+                    store.appendObservation(
+                        observation("chart-new", "chart-cycle-new", start.plusSeconds(50), scope),
+                    )
+                } finally {
+                    continueRead.countDown()
+                }
+
+                val snapshot = reader.await()
+                snapshot.totalObservations shouldBe 5L
+                snapshot.chartObservations.map { it.observationId } shouldContainExactly
+                    (4 downTo 0).map { "chart-$it" }.reversed()
+                snapshot.firstObservation?.observationId shouldBe "chart-0"
+                snapshot.lastObservation?.observationId shouldBe "chart-4"
+                snapshot.chartObservations.any { it.observationId == "chart-new" } shouldBe false
+                store.observationSnapshotReadHookForTest = null
+                store.queryObservationChartSnapshot(
+                    HistoryRangeQuery(sourceScope = scope, limit = 2),
+                    maxPoints = 6,
+                ).totalObservations shouldBe 6L
+            }
+        }
+
+        "intraday chart and export snapshots stream ranges above one hundred thousand rows" {
+            withDatabase { store, database ->
+                val scope = HistoryObservationValuator.fullAccountScope(accountA)
+                val start = Instant.parse("2026-01-01T00:00:00Z")
+                insertObservationRows(database, scope, start, 100_001)
+
+                val chart = store.queryObservationChartSnapshot(
+                    HistoryRangeQuery(sourceScope = scope, limit = HISTORY_MAX_PAGE_LIMIT),
+                    maxPoints = 20,
+                )
+                chart.totalObservations shouldBe 100_001L
+                (chart.chartObservations.size <= 20) shouldBe true
+                chart.firstObservation?.observedAt shouldBe start
+                chart.lastObservation?.observedAt shouldBe start.plusSeconds(100_000)
+
+                var streamedRows = 0L
+                var largestPage = 0
+                store.queryObservationSnapshotPages(
+                    HistoryRangeQuery(sourceScope = scope, limit = HISTORY_MAX_PAGE_LIMIT),
+                ).collect { page ->
+                    streamedRows += page.size
+                    largestPage = maxOf(largestPage, page.size)
+                }
+                streamedRows shouldBe 100_001L
+                largestPage shouldBe HISTORY_MAX_PAGE_LIMIT
+            }
+        }
+
         "status summary stays on one published generation while a writer commits" {
             withDatabase { store, _ ->
                 val start = LocalDate.parse("2026-03-08")
@@ -438,6 +594,77 @@ class HistorySnapshotConsistencyTest : StringSpec() {
             "Snapshot test reader did not reach its coordination point."
         }
     }
+
+    private fun insertObservationRows(
+        database: HistoryDatabase,
+        scope: HistorySourceScope,
+        start: Instant,
+        count: Int,
+    ) {
+        val sql = "INSERT INTO history_observations(" +
+            "observation_id, cycle_id, source_key, source_mode, account_identity_digest, simulation_session_id, " +
+            "managed_scope_fingerprint, managed_scope_symbols, wallet_scope, balance_source, price_source, " +
+            "valuation_currency, sample_selection, observed_at_ns, balance_request_started_at_ns, " +
+            "balance_response_ended_at_ns, price_request_started_at_ns, price_response_ended_at_ns, " +
+            "persisted_at_ns, status, total_usd, incomplete_reasons, payload_hash) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        database.connect().use { connection ->
+            connection.autoCommit = false
+            try {
+                connection.prepareStatement(sql).use { statement ->
+                    repeat(count) { index ->
+                        val id = "large-$index"
+                        val observedAt = start.plusSeconds(index.toLong()).toEpochNanos()
+                        statement.setString(1, id)
+                        statement.setString(2, "large-cycle-$index")
+                        statement.setString(3, scope.sourceKey)
+                        statement.setString(4, scope.mode.name)
+                        statement.setString(5, scope.accountIdentityDigest)
+                        statement.setString(6, scope.simulationSessionId)
+                        statement.setString(7, scope.managedScopeFingerprint)
+                        statement.setString(8, encodeHistoryStrings(scope.managedScopeSymbols))
+                        statement.setString(9, HISTORY_WALLET_SCOPE)
+                        statement.setString(10, HISTORY_BALANCE_SOURCE)
+                        statement.setString(11, HISTORY_PRICE_SOURCE)
+                        statement.setString(12, "USD")
+                        statement.setString(13, HistorySampleSelection.FINAL.name)
+                        statement.setLong(14, observedAt)
+                        statement.setLong(15, observedAt)
+                        statement.setLong(16, observedAt)
+                        statement.setLong(17, observedAt)
+                        statement.setLong(18, observedAt)
+                        statement.setLong(19, observedAt)
+                        statement.setString(20, HistoryObservationStatus.COMPLETE.name)
+                        statement.setString(21, "10")
+                        statement.setString(22, encodeHistoryStrings(emptyList()))
+                        statement.setString(23, "payload-$index")
+                        statement.addBatch()
+                        if ((index + 1) % 1_000 == 0) statement.executeBatch()
+                    }
+                    statement.executeBatch()
+                }
+                connection.commit()
+            } catch (error: Throwable) {
+                connection.rollback()
+                throw error
+            }
+        }
+    }
+
+    private fun observation(id: String, cycleId: String, time: Instant, scope: HistorySourceScope) = HistoryObservation(
+        observationId = id,
+        cycleId = cycleId,
+        sourceScope = scope,
+        observedAt = time,
+        balanceRequestStartedAt = time,
+        balanceResponseEndedAt = time,
+        priceRequestStartedAt = time,
+        priceResponseEndedAt = time,
+        status = HistoryObservationStatus.COMPLETE,
+        totalUsd = BigDecimal.TEN,
+        incompleteReasons = emptyList(),
+        assets = emptyList(),
+    )
 
     private infix fun String.shouldContainCsvValue(value: String) {
         split("\r\n").any { row -> row.split(',').any { cell -> cell.trim('"') == value } } shouldBe true

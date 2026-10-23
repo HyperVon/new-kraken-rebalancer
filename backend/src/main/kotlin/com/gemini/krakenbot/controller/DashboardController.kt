@@ -294,10 +294,11 @@ class DashboardController(
 
             get(Routes.API_HISTORY_EXPORT_ACCOUNT_HOLDINGS) {
                 val date = call.request.queryParameters["date"].orEmpty()
+                val sampleAt = call.request.queryParameters["at"]
                 streamHistoryCsv(
                     filename = "account-holdings",
                     requiresAccount = true,
-                    resolveQuery = { api, scope -> api.dailyHoldingsExportQuery(date, scope) },
+                    resolveQuery = { api, scope -> api.dailyHoldingsExportQuery(date, scope, sampleAt) },
                     writeCsv = { exporter, export, writeChunk ->
                         exporter.exportDailyHoldings(export.query, writeChunk)
                     },
@@ -859,9 +860,17 @@ class DashboardController(
             }
         }
         val accountHoldings = if (historyApi != null && scope?.mode == HistorySourceMode.ACCOUNT) {
-            val selectedDay = portfolioChart?.series?.flatMap { it.points }
-                ?.lastOrNull { it.dayLabel != null }?.dayLabel
-            selectedDay?.let { day -> runCatching { historyApi.holdingsAtDate(scope, day) }.getOrNull() }
+            val selectedPoint = portfolioChart?.series?.flatMap { it.points }
+                ?.lastOrNull { it.dayLabel != null }
+            selectedPoint?.dayLabel?.let { day ->
+                runCatching {
+                    historyApi.holdingsAtDate(
+                        currentScope = scope,
+                        dayValue = day,
+                        sampleAtValue = selectedPoint.selectionTimeIso,
+                    )
+                }.getOrNull()
+            }
         } else {
             null
         }
@@ -1111,7 +1120,11 @@ class DashboardController(
 
     private suspend fun RoutingContext.handleGetHistoryHoldings() {
         withHistoryApi { api, scope ->
-            api.holdingsAtDate(scope, call.request.queryParameters["date"].orEmpty())
+            api.holdingsAtDate(
+                currentScope = scope,
+                dayValue = call.request.queryParameters["date"].orEmpty(),
+                sampleAtValue = call.request.queryParameters["at"],
+            )
         }
     }
 

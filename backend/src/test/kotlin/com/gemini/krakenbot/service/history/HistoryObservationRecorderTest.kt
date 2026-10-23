@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DataDirectoryIdentity
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectBalanceCapture
@@ -46,6 +47,115 @@ class HistoryObservationRecorderTest : StringSpec() {
     )
 
     init {
+        "account cycle capture stores separate full-account direct values" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                    "XETH" to DirectValueEvidence("2", BigDecimal("2"), DirectEvidenceStatus.VALID),
+                    "ZUSD" to DirectValueEvidence("100", BigDecimal("100"), DirectEvidenceStatus.VALID),
+                ),
+            )
+            val priceCapture = DirectTickerCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                marksBySymbol = mapOf("BTC" to directMark("BTC", "50000")),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("XETH", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "full-account-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "FULL_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { krakenService.getAssetMetadata() } returns metadata
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureIncompleteCycle(
+                        cycleId = "direct-full-account-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(
+                            prices = emptyMap(),
+                            directCapture = priceCapture,
+                            observedAt = now,
+                            assetMetadata = metadata,
+                        ),
+                        reason = "The managed portfolio valuation did not finish.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify {
+                        store.appendObservation(
+                            match {
+                                it.observationId == "direct-full-account-cycle:full-account-intraday-v1" &&
+                                    it.sourceScope == HistoryObservationValuator.fullAccountScope(
+                                        java.security.MessageDigest.getInstance("SHA-256")
+                                            .digest("FULL_ACCOUNT".toByteArray(Charsets.UTF_8))
+                                            .joinToString("") { byte -> "%02x".format(byte) },
+                                    ) && it.status == HistoryObservationStatus.INCOMPLETE && it.totalUsd == null &&
+                                    it.assets.single { asset -> asset.symbol == "BTC" }.valueUsd ==
+                                    BigDecimal("50000") &&
+                                    it.assets.single { asset -> asset.symbol == "ETH" }.status ==
+                                    HistoryAssetValueStatus.MISSING_PRICE &&
+                                    it.assets.single { asset -> asset.symbol == "USD" }.valueUsd == BigDecimal("100")
+                            },
+                        )
+                    }
+                    coVerify(exactly = 1) { krakenService.getTickerPrices(any()) }
+                    coVerify { dataDirectoryIdentity.bindOrVerify(any()) }
+
+                    recorder.captureIncompleteCycle(
+                        cycleId = "direct-full-account-complete",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(
+                            prices = emptyMap(),
+                            directCapture = DirectTickerCapture(
+                                requestStartedAt = now,
+                                responseEndedAt = now,
+                                resultShapeValid = true,
+                                marksBySymbol = mapOf(
+                                    "BTC" to directMark("BTC", "50000"),
+                                    "ETH" to directMark("ETH", "3000"),
+                                ),
+                            ),
+                            observedAt = now,
+                            assetMetadata = metadata,
+                        ),
+                        reason = "The managed portfolio valuation did not finish.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+                    coVerify {
+                        store.appendObservation(
+                            match {
+                                it.cycleId == "direct-full-account-complete" &&
+                                    it.status == HistoryObservationStatus.COMPLETE &&
+                                    it.totalUsd == BigDecimal("56100") &&
+                                    it.assets.map { asset -> asset.symbol } == listOf("BTC", "ETH", "USD")
+                            },
+                        )
+                    }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
         "currentSourceScope returns simulation scope when configured for simulation" {
             val config = TestFixtures.DEFAULT_TEST_CONFIG.let {
                 it.copy(settings = it.settings.copy(simulation = true))

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.model.ExchangeHistoryPage
+import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
 /** Persistence boundary for the one active History database. */
@@ -12,6 +13,18 @@ interface HistoryStore {
     suspend fun appendCycle(observation: HistoryObservation?, activity: HistoryCycleActivity): Boolean
 
     suspend fun queryObservations(query: HistoryRangeQuery): HistoryPage<HistoryObservation>
+
+    /** All matching observations paged inside one read snapshot; [HistoryRangeQuery.limit] is the page size. */
+    suspend fun queryObservationsSnapshot(query: HistoryRangeQuery): List<HistoryObservation>
+
+    /** Bounded observation pages streamed from one pinned read snapshot. */
+    fun queryObservationSnapshotPages(query: HistoryRangeQuery): Flow<List<HistoryObservation>>
+
+    /** Range summary and representative chart samples from the same pinned read snapshot. */
+    suspend fun queryObservationChartSnapshot(
+        query: HistoryRangeQuery,
+        maxPoints: Int,
+    ): HistoryObservationChartSnapshot
 
     /** Bounded representative samples from the complete selected time range, oldest to newest. */
     suspend fun queryChartObservations(

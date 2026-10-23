@@ -50,7 +50,7 @@ class HistoryDailyBalanceBuilder {
                             sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
                             rawAssetClass = key.first,
                             rawAssetKey = key.second,
-                            quantity = replay.quantity,
+                            quantity = replay.quantity.takeUnless { unknownAssetEvidence },
                             sourceLedgerId = replay.ledgerId,
                             sourceObservedAt = replay.observedAt,
                             sourceRevision = sourceRevision,
@@ -149,12 +149,21 @@ class HistoryDailyBalanceBuilder {
                 continue
             }
             val ordered = group
-            if (ordered.any { it.status != HistoryBalanceStatus.VALID || it.quantity == null }) {
+            val negativeBalance = ordered.firstOrNull { checkpoint ->
+                checkpoint.quantity?.signum() == -1 || checkpoint.rawBalance?.toBigDecimalOrNull()?.signum() == -1
+            }
+            if (ordered.any { it.status != HistoryBalanceStatus.VALID || it.quantity == null } ||
+                negativeBalance != null
+            ) {
                 status = HistoryDailyBalanceStatus.INVALID_CHECKPOINT
                 quantity = null
                 lastLedgerId = ordered.lastOrNull()?.ledgerId
                 lastObservedAt = observedAt
-                reason = ordered.firstNotNullOfOrNull { it.reason } ?: "A ledger balance checkpoint is invalid."
+                reason = if (negativeBalance != null) {
+                    negativeBalance.reason ?: "A ledger balance checkpoint has a negative quantity."
+                } else {
+                    ordered.firstNotNullOfOrNull { it.reason } ?: "A ledger balance checkpoint is invalid."
+                }
                 continue
             }
 
@@ -225,7 +234,7 @@ class HistoryDailyBalanceBuilder {
                 val amount = checkpoint.rawAmount?.toBigDecimalOrNull() ?: return@forEach
                 val fee = checkpoint.rawFee?.toBigDecimalOrNull() ?: return@forEach
                 val postBalance = checkpoint.rawBalance?.toBigDecimalOrNull() ?: return@forEach
-                if (amount.subtract(fee).add(balance).compareTo(postBalance) == 0) {
+                if (postBalance.signum() >= 0 && amount.subtract(fee).add(balance).compareTo(postBalance) == 0) {
                     search(postBalance, remaining - checkpoint, path + checkpoint)
                 }
             }

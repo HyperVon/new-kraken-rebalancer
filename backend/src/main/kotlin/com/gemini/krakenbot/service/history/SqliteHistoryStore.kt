@@ -7,6 +7,11 @@ import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import org.sqlite.SQLiteConfig
 import org.sqlite.SQLiteConnection
@@ -26,11 +31,17 @@ internal enum class DailyValueSnapshotReadPoint {
     AFTER_STATUS_SUMMARY,
 }
 
+internal enum class ObservationSnapshotReadPoint {
+    AFTER_PAGE,
+}
+
 private data class DailyValueStatusCounts(
     val availableDays: Long,
     val firstDayLabel: LocalDate?,
     val lastDayLabel: LocalDate?,
     val incompleteDays: Long,
+    val publishedGenerationId: String?,
+    val publishedSourceRevision: Long?,
 )
 
 class SqliteHistoryStore(
@@ -39,6 +50,7 @@ class SqliteHistoryStore(
     private val maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,
 ) : HistoryStore {
     internal var dailyValueSnapshotReadHookForTest: ((DailyValueSnapshotReadPoint, String) -> Unit)? = null
+    internal var observationSnapshotReadHookForTest: ((ObservationSnapshotReadPoint, Int) -> Unit)? = null
 
     init {
         require(maxPagesPerScan > 0)
@@ -82,6 +94,116 @@ class SqliteHistoryStore(
             database.connect().use { connection -> queryObservations(connection, query) }
         }
 
+    override suspend fun queryObservationsSnapshot(query: HistoryRangeQuery): List<HistoryObservation> {
+        require(query.offset == 0) { "An observation snapshot must start at offset zero." }
+        val observations = mutableListOf<HistoryObservation>()
+        queryObservationSnapshotPages(query).collect { observations += it }
+        return observations.asReversed()
+    }
+
+    override fun queryObservationSnapshotPages(query: HistoryRangeQuery): Flow<List<HistoryObservation>> = channelFlow {
+        require(query.offset == 0) { "An observation snapshot must start at offset zero." }
+        val output = this
+        withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                connection.inReadTransactionSuspending {
+                    val total = countRows(connection, "history_observations", observationFilter(query))
+                    var offset = 0
+                    while (offset.toLong() < total) {
+                        val items =
+                            queryObservationItems(connection, query.copy(offset = offset), oldestFirst = true)
+                        check(items.isNotEmpty()) {
+                            "The observation snapshot did not return its complete row set."
+                        }
+                        offset += items.size
+                        output.send(items)
+                        observationSnapshotReadHookForTest?.invoke(ObservationSnapshotReadPoint.AFTER_PAGE, offset)
+                    }
+                    check(offset.toLong() == total) {
+                        "The observation snapshot did not return its complete row set."
+                    }
+                }
+            }
+        }
+    }.buffer(Channel.RENDEZVOUS)
+
+    override suspend fun queryObservationChartSnapshot(
+        query: HistoryRangeQuery,
+        maxPoints: Int,
+    ): HistoryObservationChartSnapshot = withContext(Dispatchers.IO) {
+        require(query.offset == 0) { "An observation snapshot must start at offset zero." }
+        require(maxPoints in 2..HISTORY_MAX_CHART_POINTS)
+        val sourceScope = requireNotNull(query.sourceScope) { "A chart snapshot requires a source scope." }
+        database.connect().use { connection ->
+            connection.inReadTransaction {
+                val total = countRows(connection, "history_observations", observationFilter(query))
+                var offset = 0
+                var first: HistoryObservation? = null
+                var last: HistoryObservation? = null
+                var incompleteCount = 0L
+                var firstIncompleteObservation: HistoryObservation? = null
+                var firstIncompleteReason: String? = null
+                var completeCount = 0L
+                var firstComplete: HistoryObservation? = null
+                var lastComplete: HistoryObservation? = null
+                var minimumComplete: HistoryObservation? = null
+                var maximumComplete: HistoryObservation? = null
+                val assetSymbols = sortedSetOf<String>()
+                while (offset < total) {
+                    val observations = queryObservationItems(connection, query.copy(offset = offset))
+                    check(observations.isNotEmpty()) {
+                        "The observation snapshot did not return its complete row set."
+                    }
+                    observations.forEach { observation ->
+                        first = earlierObservation(first, observation)
+                        last = laterObservation(last, observation)
+                        assetSymbols += observation.assets.map { it.symbol }
+                        if (observation.status == HistoryObservationStatus.COMPLETE && observation.totalUsd != null) {
+                            completeCount++
+                            firstComplete = earlierObservation(firstComplete, observation)
+                            lastComplete = laterObservation(lastComplete, observation)
+                            minimumComplete = extremeObservation(minimumComplete, observation, minimum = true)
+                            maximumComplete = extremeObservation(maximumComplete, observation, minimum = false)
+                        } else {
+                            incompleteCount++
+                            if (firstIncompleteObservation == null ||
+                                isEarlierObservation(observation, firstIncompleteObservation)
+                            ) {
+                                firstIncompleteObservation = observation
+                                firstIncompleteReason = observation.incompleteReasons.firstOrNull()
+                            }
+                        }
+                    }
+                    offset += observations.size
+                    observationSnapshotReadHookForTest?.invoke(ObservationSnapshotReadPoint.AFTER_PAGE, offset)
+                }
+                check(offset.toLong() == total) {
+                    "The observation snapshot did not return its complete row set."
+                }
+                HistoryObservationChartSnapshot(
+                    chartObservations = queryChartObservations(
+                        connection,
+                        sourceScope,
+                        query.from,
+                        query.until,
+                        maxPoints,
+                    ),
+                    totalObservations = total,
+                    firstObservation = first,
+                    lastObservation = last,
+                    incompleteObservations = incompleteCount,
+                    firstIncompleteReason = firstIncompleteReason,
+                    availableAssetSymbols = assetSymbols.toList(),
+                    completeObservations = completeCount,
+                    firstCompleteObservation = firstComplete,
+                    lastCompleteObservation = lastComplete,
+                    minimumCompleteObservation = minimumComplete,
+                    maximumCompleteObservation = maximumComplete,
+                )
+            }
+        }
+    }
+
     override suspend fun queryChartObservations(
         sourceScope: HistorySourceScope,
         from: Instant?,
@@ -90,6 +212,16 @@ class SqliteHistoryStore(
     ): List<HistoryObservation> = withContext(Dispatchers.IO) {
         require(from == null || until == null || from <= until)
         require(maxPoints in 2..HISTORY_MAX_CHART_POINTS)
+        database.connect().use { connection -> queryChartObservations(connection, sourceScope, from, until, maxPoints) }
+    }
+
+    private fun queryChartObservations(
+        connection: Connection,
+        sourceScope: HistorySourceScope,
+        from: Instant?,
+        until: Instant?,
+        maxPoints: Int,
+    ): List<HistoryObservation> {
         val perBucketSamples = if (maxPoints >= 6) 6 else 5
         val bucketCount = (maxPoints / perBucketSamples).coerceAtLeast(1)
         val includeIncompleteSamples = maxPoints >= 3
@@ -113,49 +245,47 @@ class SqliteHistoryStore(
         val filter = observationFilter(
             HistoryRangeQuery(from = from, until = until, sourceScope = sourceScope, limit = HISTORY_MAX_PAGE_LIMIT),
         )
-        database.connect().use { connection ->
-            connection.prepareStatement(
-                "WITH filtered AS (" +
-                    "SELECT history_observations.*, ROW_NUMBER() OVER " +
-                    "(ORDER BY observed_at_ns, observation_id) AS sample_order, COUNT(*) OVER () AS row_count, " +
-                    "MIN(observed_at_ns) OVER () AS first_time_ns, MAX(observed_at_ns) OVER () AS last_time_ns " +
-                    "FROM history_observations ${filter.where}" +
-                    "), bucketed AS (" +
-                    "SELECT filtered.*, CASE WHEN row_count <= ? THEN sample_order " +
-                    "WHEN last_time_ns = first_time_ns THEN " +
-                    "CAST((sample_order - 1) * ? / row_count AS INTEGER) ELSE " +
-                    "CAST((observed_at_ns - first_time_ns) * 1.0 * ? / " +
-                    "(last_time_ns - first_time_ns + 1) AS INTEGER) END AS bucket_id " +
-                    "FROM filtered WHERE row_count > 0" +
-                    "), ranked AS (" +
-                    "SELECT bucketed.*, ROW_NUMBER() OVER (PARTITION BY bucket_id " +
-                    "ORDER BY sample_order) AS first_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY sample_order DESC) AS last_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, sample_order) AS first_incomplete_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, " +
-                    "sample_order DESC) AS last_incomplete_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
-                    "CAST(total_usd AS NUMERIC), sample_order) AS min_value_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
-                    "CAST(total_usd AS NUMERIC) DESC, sample_order) AS max_value_in_bucket " +
-                    "FROM bucketed" +
-                    ") SELECT * FROM ranked WHERE first_in_bucket = 1 OR last_in_bucket = 1 " +
-                    incompleteClause + extremaClause +
-                    "ORDER BY observed_at_ns, observation_id",
-            ).use { statement ->
-                bindValues(statement, filter.values)
-                statement.setInt(filter.values.size + 1, maxPoints)
-                statement.setInt(filter.values.size + 2, bucketCount)
-                statement.setInt(filter.values.size + 3, bucketCount)
-                val headers = statement.executeQuery().use { resultSet ->
-                    buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
-                }
-                headers.loadObservationAssets(connection)
+        return connection.prepareStatement(
+            "WITH filtered AS (" +
+                "SELECT history_observations.*, ROW_NUMBER() OVER " +
+                "(ORDER BY observed_at_ns, observation_id) AS sample_order, COUNT(*) OVER () AS row_count, " +
+                "MIN(observed_at_ns) OVER () AS first_time_ns, MAX(observed_at_ns) OVER () AS last_time_ns " +
+                "FROM history_observations ${filter.where}" +
+                "), bucketed AS (" +
+                "SELECT filtered.*, CASE WHEN row_count <= ? THEN sample_order " +
+                "WHEN last_time_ns = first_time_ns THEN " +
+                "CAST((sample_order - 1) * ? / row_count AS INTEGER) ELSE " +
+                "CAST((observed_at_ns - first_time_ns) * 1.0 * ? / " +
+                "(last_time_ns - first_time_ns + 1) AS INTEGER) END AS bucket_id " +
+                "FROM filtered WHERE row_count > 0" +
+                "), ranked AS (" +
+                "SELECT bucketed.*, ROW_NUMBER() OVER (PARTITION BY bucket_id " +
+                "ORDER BY sample_order) AS first_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY sample_order DESC) AS last_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, sample_order) AS first_incomplete_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, " +
+                "sample_order DESC) AS last_incomplete_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
+                "CAST(total_usd AS NUMERIC), sample_order) AS min_value_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
+                "CAST(total_usd AS NUMERIC) DESC, sample_order) AS max_value_in_bucket " +
+                "FROM bucketed" +
+                ") SELECT * FROM ranked WHERE first_in_bucket = 1 OR last_in_bucket = 1 " +
+                incompleteClause + extremaClause +
+                "ORDER BY observed_at_ns, observation_id",
+        ).use { statement ->
+            bindValues(statement, filter.values)
+            statement.setInt(filter.values.size + 1, maxPoints)
+            statement.setInt(filter.values.size + 2, bucketCount)
+            statement.setInt(filter.values.size + 3, bucketCount)
+            val headers = statement.executeQuery().use { resultSet ->
+                buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
             }
+            headers.loadObservationAssets(connection)
         }
     }
 
@@ -1109,6 +1239,7 @@ class SqliteHistoryStore(
                     }
                     ordered.forEach { insertDailyValue(connection, it) }
                     upsertValuationJob(connection, job)
+                    bumpDataRevision(connection)
                 }
             }
         }
@@ -1184,7 +1315,9 @@ class SqliteHistoryStore(
             connection.inReadTransaction {
                 val summary = connection.prepareStatement(
                     "SELECT COUNT(*), MIN(day_label), MAX(day_label), " +
-                        "SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END) " +
+                        "SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), " +
+                        "CASE WHEN COUNT(DISTINCT generation_id) = 1 THEN MIN(generation_id) END, " +
+                        "CASE WHEN COUNT(DISTINCT source_revision) = 1 THEN MIN(source_revision) END " +
                         "FROM history_daily_values WHERE account_identity_digest = ? AND source_asset_scope = ?",
                 ).use { statement ->
                     statement.setString(1, HistoryDailyValueStatus.COMPLETE.name)
@@ -1197,6 +1330,10 @@ class SqliteHistoryStore(
                             firstDayLabel = resultSet.getString(2)?.let(LocalDate::parse),
                             lastDayLabel = resultSet.getString(3)?.let(LocalDate::parse),
                             incompleteDays = resultSet.getLong(4),
+                            publishedGenerationId = resultSet.getString(5),
+                            publishedSourceRevision = resultSet.getLong(6).let { value ->
+                                if (resultSet.wasNull()) null else value
+                            },
                         )
                     }
                 }
@@ -1214,6 +1351,8 @@ class SqliteHistoryStore(
                     blockedReasons = job?.let {
                         queryDailyValueStatusReasons(connection, accountIdentityDigest, sourceAssetScope, it)
                     }.orEmpty(),
+                    publishedGenerationId = summary.publishedGenerationId,
+                    publishedSourceRevision = summary.publishedSourceRevision,
                 )
             }
         }
@@ -1444,9 +1583,20 @@ class SqliteHistoryStore(
     private fun queryObservations(connection: Connection, query: HistoryRangeQuery): HistoryPage<HistoryObservation> {
         val filter = observationFilter(query)
         val total = countRows(connection, "history_observations", filter)
+        val observations = queryObservationItems(connection, query)
+        return HistoryPage(observations, total, query.limit, query.offset, query.offset + observations.size < total)
+    }
+
+    private fun queryObservationItems(
+        connection: Connection,
+        query: HistoryRangeQuery,
+        oldestFirst: Boolean = false,
+    ): List<HistoryObservation> {
+        val filter = observationFilter(query)
+        val direction = if (oldestFirst) "ASC" else "DESC"
         val headers = connection.prepareStatement(
-            "SELECT * FROM history_observations ${filter.where} ORDER BY observed_at_ns DESC, observation_id " +
-                "DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM history_observations ${filter.where} ORDER BY observed_at_ns $direction, " +
+                "observation_id $direction LIMIT ? OFFSET ?",
         ).use { statement ->
             bindValues(statement, filter.values)
             statement.setInt(filter.values.size + 1, query.limit)
@@ -1455,8 +1605,7 @@ class SqliteHistoryStore(
                 buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
             }
         }
-        val observations = headers.loadObservationAssets(connection)
-        return HistoryPage(observations, total, query.limit, query.offset, query.offset + observations.size < total)
+        return headers.loadObservationAssets(connection)
     }
 
     private fun queryAssetValues(connection: Connection, query: HistoryRangeQuery): HistoryPage<HistoryAssetValue> {
@@ -2650,16 +2799,53 @@ class SqliteHistoryStore(
         }
     }
 
-    private fun <T> Connection.transaction(block: () -> T): T {
-        val originalAutoCommit = autoCommit
+    private suspend fun <T> Connection.inReadTransactionSuspending(block: suspend () -> T): T {
+        val config = unwrap(SQLiteConnection::class.java).connectionConfig
+        val originalMode = config.transactionMode
+        config.transactionMode = SQLiteConfig.TransactionMode.DEFERRED
         autoCommit = false
         return try {
             block().also { commit() }
-        } catch (error: Exception) {
-            rollback()
+        } catch (error: Throwable) {
+            runCatching { rollback() }.exceptionOrNull()?.let(error::addSuppressed)
             throw error
         } finally {
-            autoCommit = originalAutoCommit
+            config.transactionMode = originalMode
+        }
+    }
+
+    private fun earlierObservation(current: HistoryObservation?, candidate: HistoryObservation): HistoryObservation =
+        if (current == null || isEarlierObservation(candidate, current)) candidate else current
+
+    private fun laterObservation(current: HistoryObservation?, candidate: HistoryObservation): HistoryObservation =
+        if (current == null || isEarlierObservation(current, candidate)) candidate else current
+
+    private fun isEarlierObservation(first: HistoryObservation, second: HistoryObservation): Boolean =
+        compareValuesBy(first, second, HistoryObservation::observedAt, HistoryObservation::observationId) < 0
+
+    private fun extremeObservation(
+        current: HistoryObservation?,
+        candidate: HistoryObservation,
+        minimum: Boolean,
+    ): HistoryObservation {
+        if (current == null) return candidate
+        val comparison = candidate.totalUsd!!.compareTo(current.totalUsd!!)
+        return when {
+            minimum && comparison < 0 -> candidate
+            !minimum && comparison > 0 -> candidate
+            comparison == 0 && isEarlierObservation(candidate, current) -> candidate
+            else -> current
+        }
+    }
+
+    private fun <T> Connection.transaction(block: () -> T): T {
+        // This connection closes with the store operation; resetting autoCommit after rollback could commit.
+        autoCommit = false
+        return try {
+            block().also { commit() }
+        } catch (error: Throwable) {
+            runCatching { rollback() }.exceptionOrNull()?.let(error::addSuppressed)
+            throw error
         }
     }
 

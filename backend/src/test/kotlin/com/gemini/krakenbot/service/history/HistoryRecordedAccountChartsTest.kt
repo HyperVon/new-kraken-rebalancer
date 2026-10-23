@@ -297,7 +297,7 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
         } catch (error: HistoryApiRequestException) {
             error.message
         }
-        error shouldBe "Unknown recorded portfolio scope."
+        error shouldBe "Unknown portfolio scope."
     }
 
     private suspend fun withPresenter(block: suspend (HistoryStore, HistoryApiPresenter) -> Unit) {

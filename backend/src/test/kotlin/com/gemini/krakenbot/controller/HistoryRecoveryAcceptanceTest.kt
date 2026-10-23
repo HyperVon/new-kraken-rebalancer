@@ -6,10 +6,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.DataDirectoryIdentity
 import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
+import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
@@ -17,7 +19,9 @@ import com.gemini.krakenbot.service.history.HISTORY_ACCOUNT_DAILY_SCOPE
 import com.gemini.krakenbot.service.history.HistoryApiPresenter
 import com.gemini.krakenbot.service.history.HistoryCsvExporter
 import com.gemini.krakenbot.service.history.HistoryDailyPriceResolver
+import com.gemini.krakenbot.service.history.HistoryDailyValue
 import com.gemini.krakenbot.service.history.HistoryDatabase
+import com.gemini.krakenbot.service.history.HistoryEventQuery
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryPageRequest
@@ -26,9 +30,13 @@ import com.gemini.krakenbot.service.history.HistorySourceMode
 import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistoryStore
 import com.gemini.krakenbot.service.history.HistorySyncCoordinator
+import com.gemini.krakenbot.service.history.HistorySyncJobState
 import com.gemini.krakenbot.service.history.HistorySyncPurpose
+import com.gemini.krakenbot.service.history.HistorySyncRetryPolicy
 import com.gemini.krakenbot.service.history.HistorySyncWindow
+import com.gemini.krakenbot.service.history.HistorySynchronizer
 import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
+import com.gemini.krakenbot.service.history.HistoryValuationJob
 import com.gemini.krakenbot.service.history.HistoryValuationJobState
 import com.gemini.krakenbot.service.history.HistoryValuationStage
 import com.gemini.krakenbot.service.history.SqliteHistoryStore
@@ -49,6 +57,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
@@ -57,12 +66,19 @@ import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -204,6 +220,318 @@ class HistoryRecoveryAcceptanceTest : StringSpec() {
                     }
                 } finally {
                     database?.close()
+                    listOf("", "-wal", "-shm").forEach { suffix ->
+                        Files.deleteIfExists(Path.of(databasePath.toString() + suffix))
+                    }
+                    Files.deleteIfExists(directory)
+                }
+            }
+        }
+
+        "a new sync coordinator resumes a committed ledger page cursor after SQLite reopen" {
+            kotlinx.coroutines.test.runTest {
+                val now = Instant.parse("2026-10-21T12:00:00Z")
+                val firstEntry = ledger("resumed-page-one", now.minusSeconds(60), "ZUSD", "1", "1")
+                val secondEntry = ledger("resumed-page-two", now.minusSeconds(30), "ZUSD", "1", "2")
+                val directory = Files.createTempDirectory("history-sync-reopen-")
+                val databasePath = directory.resolve("history.db")
+                var database = HistoryDatabase(databasePath)
+                val firstScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(testScheduler))
+                val firstPageCommitted = CompletableDeferred<Unit>()
+                try {
+                    database.initializeFreshSchema()
+                    var store = SqliteHistoryStore(database)
+                    val firstKraken = FakeKrakenService()
+                    firstKraken.fundingEvidenceScopeSupplier = { "acceptance-account" }
+                    val firstCalls = mutableListOf<String?>()
+                    firstKraken.ledgerPageSupplier = { start, end, cursor ->
+                        firstCalls += cursor
+                        ExchangeHistoryPage(
+                            entries = listOf(firstEntry),
+                            startSec = start,
+                            endSec = end,
+                            requestedCursor = cursor,
+                            nextCursor = "C1",
+                            count = 1,
+                            rawSize = 1,
+                            valid = true,
+                        )
+                    }
+                    lateinit var firstCoordinator: HistorySyncCoordinator
+                    val firstSynchronizer = HistorySynchronizer(
+                        applicationScope = firstScope,
+                        krakenService = firstKraken,
+                        configService = mockk<ConfigService>(relaxed = true),
+                        dataDirectoryIdentity = mockk<DataDirectoryIdentity>(relaxed = true),
+                        store = store,
+                        nowProvider = { now },
+                        onLedgerPageCommitted = {
+                            firstCoordinator.stop()
+                            firstPageCommitted.complete(Unit)
+                        },
+                    )
+                    val digest = checkNotNull(firstSynchronizer.accountIdentityDigest())
+                    firstCoordinator = HistorySyncCoordinator(
+                        applicationScope = firstScope,
+                        synchronizer = firstSynchronizer,
+                        store = store,
+                        settingsProvider = { TestFixtures.settings(simulation = false, dryRun = true) },
+                        nowProvider = { now },
+                        delayFn = {},
+                        retryPolicy = HistorySyncRetryPolicy(jitter = { it }),
+                        periodicTicks = emptyFlow(),
+                    )
+
+                    firstCoordinator.start()
+                    firstCoordinator.requestRecentRefresh()
+                    firstPageCommitted.await()
+                    firstCoordinator.stop()
+
+                    val interrupted = store.loadSyncJobs(digest).single {
+                        it.feed == HistoryFeed.LEDGERS && it.purpose == HistorySyncPurpose.RECENT
+                    }
+                    interrupted.state shouldBe HistorySyncJobState.RUNNING
+                    interrupted.cursor shouldBe "C1"
+                    interrupted.windowStartSec shouldNotBe null
+                    interrupted.windowEndSec shouldNotBe null
+                    firstCalls shouldBe listOf(null)
+                    store.currentLedgerRevision(digest) shouldBe 1L
+                    val firstRows = store.queryLedgers(HistoryEventQuery(accountIdentityDigest = digest, limit = 10))
+                    firstRows.total shouldBe 1L
+                    firstRows.items.single().ledgerId shouldBe firstEntry.ledgerId
+
+                    firstScope.cancel()
+                    database.close()
+                    database = HistoryDatabase(databasePath)
+                    store = SqliteHistoryStore(database)
+
+                    val restartedKraken = FakeKrakenService()
+                    restartedKraken.fundingEvidenceScopeSupplier = { "acceptance-account" }
+                    val resumedCursors = mutableListOf<String?>()
+                    restartedKraken.ledgerPageSupplier = { start, end, cursor ->
+                        resumedCursors += cursor
+                        if (cursor == "C1") {
+                            ExchangeHistoryPage(
+                                entries = listOf(firstEntry, secondEntry),
+                                startSec = start,
+                                endSec = end,
+                                requestedCursor = cursor,
+                                nextCursor = null,
+                                count = 2,
+                                rawSize = 2,
+                                valid = true,
+                            )
+                        } else {
+                            ExchangeHistoryPage(
+                                entries = emptyList(),
+                                startSec = start,
+                                endSec = end,
+                                requestedCursor = cursor,
+                                nextCursor = null,
+                                count = 0,
+                                rawSize = 0,
+                                valid = true,
+                            )
+                        }
+                    }
+                    val restartedSynchronizer = HistorySynchronizer(
+                        applicationScope = this,
+                        krakenService = restartedKraken,
+                        configService = mockk<ConfigService>(relaxed = true),
+                        dataDirectoryIdentity = mockk<DataDirectoryIdentity>(relaxed = true),
+                        store = store,
+                        nowProvider = { now },
+                    )
+                    restartedSynchronizer.accountIdentityDigest() shouldBe digest
+                    val restartedCoordinator = HistorySyncCoordinator(
+                        applicationScope = this,
+                        synchronizer = restartedSynchronizer,
+                        store = store,
+                        settingsProvider = { TestFixtures.settings(simulation = false, dryRun = true) },
+                        nowProvider = { now },
+                        delayFn = {},
+                        retryPolicy = HistorySyncRetryPolicy(jitter = { it }),
+                        periodicTicks = emptyFlow(),
+                    )
+
+                    restartedCoordinator.runCoalescedPass()
+
+                    resumedCursors.first() shouldBe "C1"
+                    val completed = store.loadSyncJobs(digest).single {
+                        it.feed == HistoryFeed.LEDGERS && it.purpose == HistorySyncPurpose.RECENT
+                    }
+                    completed.state shouldBe HistorySyncJobState.COMPLETE
+                    completed.cursor shouldBe null
+                    val rows = store.queryLedgers(HistoryEventQuery(accountIdentityDigest = digest, limit = 10))
+                    rows.total shouldBe 2L
+                    rows.items.map { it.ledgerId }.toSet() shouldBe setOf(firstEntry.ledgerId, secondEntry.ledgerId)
+                    store.querySyncCoverageWindows(digest, HistoryFeed.LEDGERS).isNotEmpty() shouldBe true
+                    val revisionAfterRecovery = store.currentLedgerRevision(digest)
+                    revisionAfterRecovery shouldBe 3L
+
+                    restartedCoordinator.runCoalescedPass()
+
+                    store.queryLedgers(HistoryEventQuery(accountIdentityDigest = digest, limit = 10)).total shouldBe 2L
+                    store.currentLedgerRevision(digest) shouldBe revisionAfterRecovery
+                } finally {
+                    firstScope.cancel()
+                    database.close()
+                    listOf("", "-wal", "-shm").forEach { suffix ->
+                        Files.deleteIfExists(Path.of(databasePath.toString() + suffix))
+                    }
+                    Files.deleteIfExists(directory)
+                }
+            }
+        }
+
+        "terminal price failure survives SQLite reopen until an explicit operator retry" {
+            kotlinx.coroutines.test.runTest {
+                val now = Instant.parse("2026-10-21T12:00:00Z")
+                val targetEnd = now.atZone(ZoneOffset.UTC).toLocalDate().minusDays(1)
+                val targetStart = targetEnd.minusDays(364)
+                val lateDay = targetStart.plusDays(100)
+                val startSec = targetStart.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+                val lateStartSec = lateDay.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+                val throughSec = targetEnd.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond() - 1
+                val lateDays = java.time.temporal.ChronoUnit.DAYS.between(lateDay, targetEnd).toInt() + 1
+                val directory = Files.createTempDirectory("history-terminal-retry-")
+                val databasePath = directory.resolve("history.db")
+                var database = HistoryDatabase(databasePath)
+                try {
+                    database.initializeFreshSchema()
+                    var store = SqliteHistoryStore(database)
+                    val synchronizer = verifiedSynchronizer(accountDigest)
+                    val kraken = mockk<KrakenService>()
+                    val btcCandles = (0 until 365).map { offset ->
+                        (startSec + offset * 86_400L) to BigDecimal("100")
+                    }
+                    val xmrCandles = (0 until lateDays).map { offset ->
+                        (lateStartSec + offset * 86_400L) to BigDecimal("10")
+                    }
+                    var xmrAvailable = false
+                    var xmrCalls = 0
+                    coEvery { kraken.getOHLC("XBTUSD", 1_440, startSec) } returns btcCandles
+                    coEvery { kraken.getOHLC("XMRUSD", 1_440, lateStartSec) } coAnswers {
+                        xmrCalls++
+                        if (!xmrAvailable) throw IllegalStateException("temporary historical price outage")
+                        xmrCandles
+                    }
+                    seedOpeningLedgerHistory(store, now, startSec, throughSec)
+                    coordinator(this, store, synchronizer, kraken, now).runOnce()
+                    val previousValues = store.queryDailyValueSnapshot(
+                        accountDigest,
+                        HISTORY_ACCOUNT_DAILY_SCOPE,
+                    ).values
+                    previousValues.size shouldBe 365
+                    previousValues.all {
+                        it.status.name == "COMPLETE" && it.totalUsd?.compareTo(BigDecimal("200")) == 0
+                    } shouldBe true
+                    val previousGeneration = previousValues.first().generationId
+                    val oldRevision = store.currentLedgerRevision(accountDigest)
+
+                    commitLateLedgerEntry(
+                        store = store,
+                        now = now,
+                        time = lateDay.atTime(12, 0).toInstant(ZoneOffset.UTC),
+                        ledgerId = "late-xmr-for-terminal-retry",
+                        assetKey = "XXMR",
+                        amount = "1",
+                        balance = "1",
+                    )
+                    val changedRevision = store.currentLedgerRevision(accountDigest)
+                    changedRevision shouldBe oldRevision + 1
+                    val retryDelays = listOf(Duration.ofMinutes(1))
+                    HistoryValuationCoordinator(
+                        applicationScope = this,
+                        synchronizer = synchronizer,
+                        store = store,
+                        priceResolver = HistoryDailyPriceResolver(kraken, nowProvider = { now }),
+                        nowProvider = { now },
+                        pollInterval = Duration.ofDays(1),
+                        retryDelays = retryDelays,
+                    ).runOnce()
+
+                    val terminal = store.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                    terminal?.state shouldBe HistoryValuationJobState.NEEDS_ATTENTION
+                    terminal?.retryAttempt shouldBe 1
+                    terminal?.nextRetryAt shouldBe null
+                    terminal?.lastError shouldBe "Historical daily prices could not be fetched."
+                    terminal?.sourceRevision shouldBe changedRevision
+                    xmrCalls shouldBe 1
+                    store.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).values.map {
+                        it.generationId
+                    }.distinct() shouldBe listOf(previousGeneration)
+
+                    database.close()
+                    database = HistoryDatabase(databasePath)
+                    store = SqliteHistoryStore(database)
+                    val restoredJob = store.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                    restoredJob?.state shouldBe HistoryValuationJobState.NEEDS_ATTENTION
+                    restoredJob?.retryAttempt shouldBe 1
+                    restoredJob?.lastError shouldBe "Historical daily prices could not be fetched."
+                    val restoredValues = store.queryDailyValueSnapshot(
+                        accountDigest,
+                        HISTORY_ACCOUNT_DAILY_SCOPE,
+                    ).values
+                    restoredValues.map { it.generationId }.distinct() shouldBe listOf(previousGeneration)
+                    restoredValues.all { it.status.name == "COMPLETE" } shouldBe true
+
+                    val pendingPublication = CompletableDeferred<Boolean>()
+                    val retryStore = object : HistoryStore by store {
+                        override suspend fun publishDailyValues(
+                            job: HistoryValuationJob,
+                            values: List<HistoryDailyValue>,
+                        ) {
+                            val current = store.queryDailyValueSnapshot(
+                                accountDigest,
+                                HISTORY_ACCOUNT_DAILY_SCOPE,
+                            ).values
+                            val previousGenerationStillVisible = current.size == 365 &&
+                                current.all { it.generationId == previousGeneration && it.status.name == "COMPLETE" }
+                            store.publishDailyValues(job, values)
+                            pendingPublication.complete(previousGenerationStillVisible)
+                        }
+                    }
+                    val restartedCoordinator = HistoryValuationCoordinator(
+                        applicationScope = this,
+                        synchronizer = synchronizer,
+                        store = retryStore,
+                        priceResolver = HistoryDailyPriceResolver(kraken, nowProvider = { now }),
+                        nowProvider = { now },
+                        pollInterval = Duration.ofDays(1),
+                        retryDelays = retryDelays,
+                    )
+
+                    restartedCoordinator.runOnce()
+                    store.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)?.state shouldBe
+                        HistoryValuationJobState.NEEDS_ATTENTION
+                    xmrCalls shouldBe 1
+                    store.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).values.map {
+                        it.generationId
+                    }.distinct() shouldBe listOf(previousGeneration)
+
+                    xmrAvailable = true
+                    restartedCoordinator.start()
+                    restartedCoordinator.retryFailedWork()
+                    runCurrent()
+                    pendingPublication.await() shouldBe true
+                    restartedCoordinator.stop()
+
+                    val recovered = store.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                    recovered?.state shouldBe HistoryValuationJobState.COMPLETE
+                    recovered?.retryAttempt shouldBe 0
+                    recovered?.sourceRevision shouldBe changedRevision
+                    val values = store.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).values
+                    values.size shouldBe 365
+                    values.map { it.generationId }.distinct().size shouldBe 1
+                    (values.first().generationId != previousGeneration) shouldBe true
+                    values.single { it.dayLabel == lateDay.minusDays(1) }.totalUsd
+                        ?.compareTo(BigDecimal("200")) shouldBe 0
+                    values.single { it.dayLabel == lateDay }.totalUsd?.compareTo(BigDecimal("210")) shouldBe 0
+                    xmrCalls shouldBe 2
+                    coVerify(exactly = 1) { kraken.getOHLC("XBTUSD", 1_440, startSec) }
+                } finally {
+                    database.close()
                     listOf("", "-wal", "-shm").forEach { suffix ->
                         Files.deleteIfExists(Path.of(databasePath.toString() + suffix))
                     }

@@ -1,7 +1,7 @@
 # User Guide — Kraken Rebalancer
 
 This guide walks through the Dashboard, account History, and Settings. It
-explains how to read the latest rebalance cycle, review recorded portfolio and
+explains how to read the latest rebalance cycle, review portfolio values and
 exchange activity, and configure the bot.
 
 For install and first launch, see the [README Getting Started](../README.md#getting-started)
@@ -337,7 +337,7 @@ The configured USD percentage target, sell-then-buy sequence, and dust handling 
 <a href="images/history.png"><img src="images/history.png" alt="Account value history and daily holdings" width="960"></a>
 *History — daily account values derived from imported exchange records and completed historical closing prices.*
 
-History restores account history from imported Kraken records. It keeps four views: **Account value**, **Trades**, **Transactions**, and **Data status**. The Account value range defaults to 30 days and offers 24h, 7d, 30d, 90d, 1y, All, and custom dates. Values are daily UTC marks; the 24h range uses the available daily marks because this release does not capture full-account intraday balances. In Simulation, process-scoped cycle samples stay separate and authenticated account history is unavailable.
+History restores account history from imported Kraken records. It keeps four views: **Account value**, **Trades**, **Transactions**, and **Data status**. The Account value range defaults to 30 days and offers 24h, 7d, 30d, 90d, 1y, All, and custom dates. Ranges from 7d onward use daily UTC closing-price values. The 24h range uses full-account balance and direct USD price samples captured during account cycles; selecting a chart point opens holdings from that exact sample. If no full-account samples are available in the last 24 hours, History shows an empty state instead of substituting a daily mark. In Simulation, process-scoped cycle samples stay separate and authenticated account history is unavailable.
 
 The **Account value (USD)** chart includes spot balances, USD cash, and identifiable staking/Earn balance buckets represented in ledger history, including assets that are no longer configured or held. All ledger assets classified as equities are excluded from holdings and totals; all USD ledger balance changes remain included, including stock trade settlements and dividend credits. Separate derivatives and margin positions are outside this chart. The chart uses completed Kraken daily candles and labels the results as historical closing-price estimates. Missing balances or prices create visible gaps; a known subtotal is never shown as a total. Daily historical value is not an exchange-certified statement, tax valuation, profit, investment return, or strategy performance.
 
@@ -356,7 +356,7 @@ loads; only the response for the still-selected date and account scope is shown.
 
 The page shows the requested value period, available-value dates, last successful update, elapsed time, and last committed progress. A collapsed **Why is this incomplete?** section lists specific unavailable evidence and dates. **Retry failed work** resumes durable checkpoints; it does not delete or reimport intact records. Technical details contain cursors, source identifiers, coverage intervals, and sanitized errors. A cursor is not evidence that the account history is complete.
 
-Trades and transactions retain their independent filters, pagination, and CSV exports. Exchange trades and ledger rows are account history; bot cycle observations remain separate and are not used as account-value inputs. Account identity is verified before synchronization, and the local account reference is stored as a digest. The sync and valuation workers do not participate in the portfolio trading calculation.
+Trades and transactions retain their independent filters, pagination, and CSV exports. Exchange trades and ledger rows are account history; bot-cycle values remain separate and do not feed account-value history. Account identity is verified before synchronization, and the local account reference is stored as a digest. The sync and valuation workers do not participate in the portfolio trading calculation.
 
 History and live-order state use separate SQLite files under the configured data directory. Initialize the data directory before first launch; details and backup requirements are in the [README storage notes](../README.md#configuration-reference) and [SECURITY.md](../SECURITY.md#execution-journal-storage-and-recovery).
 

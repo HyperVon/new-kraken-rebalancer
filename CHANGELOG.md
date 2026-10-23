@@ -21,8 +21,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Holdings selection**: discard stale async responses after the selected date
   or account scope changes, and label accepted results and failures with the
   current selection.
-- **History labels**: use account-value wording for summary cards and sample
-  counts, and remove redundant observation wording from visible details.
+- **History labels**: use account-value wording for summary cards and point
+  counts, and simplify captions and period labels.
+- **24h account values**: chart directly captured full-account cycle values,
+  keep missing direct evidence incomplete, and resolve point selection and CSV
+  exports to the exact capture time from a single consistent SQLite read
+  snapshot. Longer ranges continue to use daily closes.
+- **Incomplete account replay**: when unsupported ledger evidence blocks a UTC
+  day, clear known-balance quantities in that invalid day so persisted status
+  and quantity remain consistent. Negative spot balances now block daily
+  account values and trigger a policy-versioned rebuild of persisted values.
 
 ### Changed
 

@@ -120,12 +120,14 @@ class HistoryInteractionTest :
             val root: HTMLElement = document.createElement("div") as HTMLElement
             root.innerHTML = """
                 <input id="history-holdings-date">
+                <input id="history-holdings-at" type="hidden">
                 <section id="history-account-holdings"><h2></h2></section>
                 <p id="history-holdings-total"></p>
                 <table><tbody id="history-holdings-rows"></tbody></table>
             """.trimIndent()
             document.body?.appendChild(root)
             val date = root.querySelector("#history-holdings-date") as org.w3c.dom.HTMLInputElement
+            val sampleAt = root.querySelector("#history-holdings-at") as org.w3c.dom.HTMLInputElement
             val pending = mutableListOf<Triple<String, (dynamic) -> Unit, () -> Unit>>()
             val request = newHistoryHoldingsSelectionRequest(
                 request = { url, success, failure ->
@@ -138,7 +140,8 @@ class HistoryInteractionTest :
 
             fun select(day: String) {
                 date.value = day
-                request.load("/holdings?date=$day", "$day|${window.location.search}")
+                sampleAt.value = ""
+                request.load("/holdings?date=$day", "$day||${window.location.search}")
             }
 
             try {
@@ -153,6 +156,45 @@ class HistoryInteractionTest :
                 pending[3].third()
                 pending[2].third()
                 root.querySelector("#history-holdings-total")?.textContent shouldBe "Could not load holdings for B."
+            } finally {
+                root.remove()
+            }
+        }
+
+        "holdings responses for another sample on the same day are obsolete" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <input id="history-holdings-date" value="2026-10-22">
+                <input id="history-holdings-at" type="hidden" value="2026-10-22T10:00:00Z">
+                <section id="history-account-holdings"><h2></h2></section>
+                <p id="history-holdings-total"></p>
+                <table><tbody id="history-holdings-rows"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+            val pending = mutableListOf<Pair<(dynamic) -> Unit, () -> Unit>>()
+            val request = newHistoryHoldingsSelectionRequest(
+                request = { _, success, failure ->
+                    pending.add(success to failure)
+                    val cancel: () -> Unit = {}
+                    cancel
+                },
+                currentDay = {
+                    (document.getElementById("history-holdings-date") as? org.w3c.dom.HTMLInputElement)
+                        ?.value?.takeIf(String::isNotBlank)
+                },
+            )
+
+            try {
+                request.load(
+                    "/holdings?date=2026-10-22&at=2026-10-22T10:00:00Z",
+                    "2026-10-22|2026-10-22T10:00:00Z|${window.location.search}",
+                )
+                (document.getElementById("history-holdings-at") as org.w3c.dom.HTMLInputElement).value =
+                    "2026-10-22T11:00:00Z"
+                pending.single().first(json("sampleAtIso" to "2026-10-22T10:00:00Z"))
+
+                root.querySelector("#history-account-holdings h2")?.textContent shouldBe ""
+                root.querySelector("#history-holdings-total")?.textContent shouldBe ""
             } finally {
                 root.remove()
             }
@@ -232,6 +274,7 @@ class HistoryInteractionTest :
                                 "v" to 10.0,
                                 "complete" to true,
                                 "dayLabel" to "2026-03-10",
+                                "selectionTimeIso" to "2026-03-10T12:30:00Z",
                             ),
                             json("t" to 2000.0, "v" to 20.0, "complete" to true),
                         ),
@@ -251,6 +294,7 @@ class HistoryInteractionTest :
             series[0].first shouldBe "Portfolio value"
             series[0].second.size shouldBe 2
             series[0].second.first().dayLabel shouldBe "2026-03-10"
+            series[0].second.first().selectionTimeIso shouldBe "2026-03-10T12:30:00Z"
             series[1].first shouldBe "BTC"
             series[1].second.single().value shouldBe 0.5
         }

@@ -360,6 +360,8 @@ class HistoryPageComponentTest : StringSpec() {
 
             html shouldContain "id=\"history-value-asset-filter\""
             html shouldContain "data-history-value-asset=\"true\""
+            Regex("""<select(?=[^>]*id="history-value-asset-filter")(?=[^>]*class="history-filter-input")[^>]*>""")
+                .containsMatchIn(html) shouldBe true
             html shouldContain "Account total"
             html shouldContain "value=\"BTC\""
             html shouldContain "value=\"USD\""
@@ -527,7 +529,7 @@ class HistoryPageComponentTest : StringSpec() {
                 "id=\"history-scope-details\"",
                 "id=\"history-scope-list\"",
             ).forEach { html shouldContain it }
-            html shouldContain "Earlier recorded portfolios available"
+            html shouldContain "Earlier portfolio periods available"
             Regex("""<a\b(?=[^>]*data-history-range="90d")(?=[^>]*class="time-range-btn active")[^>]*>""")
                 .containsMatchIn(html) shouldBe true
         }
@@ -549,11 +551,10 @@ class HistoryPageComponentTest : StringSpec() {
             val html = render(emptyData)
             html shouldContain
                 "Kraken account identity is not verified yet; imported history appears after the first successful authentication."
-            html shouldContain "Select an asset in the filter to chart its exchange-reported balance."
+            html shouldContain "Select an asset to chart its balance."
             html shouldContain
                 "No matching records in this range. Try another range or clear the event filters."
-            html shouldContain
-                "No daily account values are available for this range yet."
+            html shouldContain "No account values are available for this range yet."
             html shouldContain "Account value history"
             html shouldNotContain "Synchronizing Exchange History"
             html shouldNotContain "action=\"/api/history/sync/start\""
@@ -715,7 +716,8 @@ class HistoryPageComponentTest : StringSpec() {
             html shouldContain "data-history-tab=\"activity\""
             html shouldContain "data-history-tab=\"data\""
             html shouldContain "value=\"7d\""
-            html shouldContain "Asset, pair and type filters apply to account records."
+            html shouldContain
+                "Asset, pair and type filters apply to account activity. Portfolio value includes the full range."
         }
 
         "R6 activity tabs expose exports and repair controls without rendering raw records" {
@@ -956,10 +958,14 @@ class HistoryPageComponentTest : StringSpec() {
             html.chartSvg("history-value-chart").countOccurrences("<circle") shouldBe 9
             html.countOccurrences("class=\"history-gap-marker\"") shouldBe 1
             html shouldContain "data-time=\"1699999940000\" data-gap=\"true\""
-            html shouldContain "Direct value samples stay unchanged; incomplete cycles break the line."
-            html shouldContain "No values are inferred between samples."
+            html shouldContain
+                "Daily account values use historical closing prices. Missing evidence leaves gaps; no values are estimated between points."
             html shouldContain "Some cycles have incomplete values. Gaps remain visible in the chart."
-            html shouldContain "Incomplete sample; no portfolio value is plotted"
+            html shouldContain "Incomplete cycle; no portfolio value is plotted"
+            Regex("""<input(?=[^>]*id="history-holdings-date")(?=[^>]*class="history-filter-input")[^>]*>""")
+                .containsMatchIn(html) shouldBe true
+            listOf("observed", "recorded values", "recorded portfolio", "exchange-reported balance")
+                .forEach { html.lowercase() shouldNotContain it }
         }
 
         "renders trades, ledgers, and pagination buttons" {
@@ -1294,7 +1300,7 @@ class HistoryPageComponentTest : StringSpec() {
                 accountAvailable = true,
             )
             val html = render(data)
-            html shouldContain "(currency not reported)"
+            html shouldContain "(currency unavailable)"
             html.countOccurrences("title=\"1700000000\"") shouldBe 2
             html.countOccurrences(">1700000000<") shouldBe 4
             html shouldContain "1–1"

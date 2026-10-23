@@ -39,6 +39,8 @@ internal const val BROWSER_FIXTURE_SAMPLE_COUNT = 100 * 24 + 1
 internal const val BROWSER_FIXTURE_RANGE_EDGE_COUNT = 2
 internal const val BROWSER_FIXTURE_EVENT_COUNT = 103
 internal const val BROWSER_FIXTURE_EVENT_DAY_COUNT = 101
+internal const val BROWSER_FIXTURE_LEDGER_EVENT_COUNT = 106
+internal const val BROWSER_FIXTURE_LEDGER_EVENT_DAY_COUNT = 102
 private const val SECONDS_PER_DAY = 24L * 60 * 60
 private const val SAMPLE_INTERVAL_SECONDS = 60L * 60
 
@@ -149,9 +151,6 @@ internal object BrowserFixtureHistorySeed {
                 add("XXBT" to BigDecimal("0.10"))
                 add("XETH" to BigDecimal("1.20"))
                 add("ZUSD" to BigDecimal("3000.00"))
-                if (index in 80..260) add("SOL" to BigDecimal("0.80"))
-                if (index < 100) add("LINK" to BigDecimal("10"))
-                if (index >= 220) add("XLM" to BigDecimal("150"))
             }
             held.forEach { (rawAssetKey, quantity) ->
                 allBalances += HistoryDailyBalance(
@@ -173,9 +172,7 @@ internal object BrowserFixtureHistorySeed {
                     "BTC" -> BigDecimal("40000").add(BigDecimal(index * 25))
                     "ETH" -> BigDecimal("2500").add(BigDecimal(index * 5))
                     "USD" -> BigDecimal.ONE
-                    "SOL" -> BigDecimal("100").add(BigDecimal(index % 19))
-                    "LINK" -> BigDecimal("15").add(BigDecimal(index % 11))
-                    else -> BigDecimal("0.10").add(BigDecimal(index % 7).movePointLeft(2))
+                    else -> error("Unexpected browser-fixture asset: $symbol")
                 }
                 val pair = if (symbol == "USD") "USD" else Asset.tradingPair(symbol)
                 allPrices += HistoryDailyPrice(
@@ -289,7 +286,7 @@ internal object BrowserFixtureHistorySeed {
 
     private suspend fun seedTrades(store: HistoryStore, scope: HistorySourceScope, now: Instant) {
         val digest = checkNotNull(scope.accountIdentityDigest)
-        val startSec = now.minusSeconds(400 * SECONDS_PER_DAY).epochSecond
+        val startSec = now.minusSeconds(401 * SECONDS_PER_DAY).epochSecond
         val endSec = now.epochSecond + 1
         val boundary = now.minusSeconds(30 * SECONDS_PER_DAY)
         val timedTradeIds = buildList {
@@ -362,7 +359,7 @@ internal object BrowserFixtureHistorySeed {
 
     private suspend fun seedLedgers(store: HistoryStore, scope: HistorySourceScope, now: Instant) {
         val digest = checkNotNull(scope.accountIdentityDigest)
-        val startSec = now.minusSeconds(400 * SECONDS_PER_DAY).epochSecond
+        val startSec = now.minusSeconds(401 * SECONDS_PER_DAY).epochSecond
         val endSec = now.epochSecond + 1
         val boundary = now.minusSeconds(30 * SECONDS_PER_DAY)
         val timedLedgerIds = buildList {
@@ -379,7 +376,50 @@ internal object BrowserFixtureHistorySeed {
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_EARN,
         )
-        val entries = timedLedgerIds.mapIndexed { index, (ledgerId, at) ->
+        val firstValueDay = now.atZone(ZoneOffset.UTC).toLocalDate().minusDays(400)
+        val openingAt = firstValueDay.atStartOfDay(ZoneOffset.UTC).toInstant().minusSeconds(1)
+        fun ledger(
+            ledgerId: String,
+            at: Instant,
+            type: String,
+            asset: String,
+            amount: String,
+            balance: String,
+            subtype: String = "spot",
+        ) = ExchangeLedgerHistoryEntry(
+            ledgerId = ledgerId,
+            refid = "fixture-ledger-ref-$ledgerId",
+            time = at,
+            rawTime = at.epochSecond.toString(),
+            type = type,
+            subtype = subtype,
+            assetClass = "currency",
+            asset = asset,
+            amount = amount,
+            fee = "0.00",
+            balance = balance,
+            rawRecordJson = "{}",
+            hasValidTime = true,
+            hasValidAmount = true,
+            hasValidFee = true,
+            hasValidBalance = true,
+            isValidRecord = true,
+        )
+        val openingBalances = listOf(
+            "ZUSD" to "3000.00",
+            "XXBT" to "0.10",
+            "XETH" to "1.20",
+        ).map { (asset, balance) ->
+            ledger(
+                ledgerId = "fixture-opening-$asset",
+                at = openingAt,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = asset,
+                amount = balance,
+                balance = balance,
+            )
+        }
+        val regularEntries = timedLedgerIds.mapIndexed { index, (ledgerId, at) ->
             val asset = when (index % 3) {
                 0 -> "ZUSD"
                 1 -> "XXBT"
@@ -388,26 +428,22 @@ internal object BrowserFixtureHistorySeed {
             val type = types[index % types.size]
             val isReward = type == KrakenApiConstants.LEDGER_TYPE_STAKING ||
                 type == KrakenApiConstants.LEDGER_TYPE_EARN
-            ExchangeLedgerHistoryEntry(
+            val balance = when (asset) {
+                "ZUSD" -> "3000.00"
+                "XXBT" -> "0.10"
+                else -> "1.20"
+            }
+            ledger(
                 ledgerId = ledgerId,
-                refid = "fixture-ledger-ref-$ledgerId",
-                time = at,
-                rawTime = at.epochSecond.toString(),
+                at = at,
                 type = type,
-                subtype = if (isReward) "reward" else "spot",
-                assetClass = "currency",
                 asset = asset,
-                amount = if (type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL) "-0.25" else "1.00",
-                fee = "0.00",
-                balance = "10.00",
-                rawRecordJson = "{}",
-                hasValidTime = true,
-                hasValidAmount = true,
-                hasValidFee = true,
-                hasValidBalance = true,
-                isValidRecord = true,
+                amount = "0.00",
+                balance = balance,
+                subtype = if (isReward) "reward" else "spot",
             )
         }
+        val entries = openingBalances + regularEntries
         store.beginSyncWindow(
             HistorySyncWindow(digest, HistoryFeed.LEDGERS, "browser-fixture-ledgers", startSec, endSec),
         )

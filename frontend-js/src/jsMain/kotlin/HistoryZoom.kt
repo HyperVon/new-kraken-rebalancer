@@ -158,6 +158,7 @@ internal class HistoryChartSession(
 ) {
     var viewport: ChartViewport = ChartViewport(fullRange, fullRange)
     var dayLabels: Map<Double, String> = emptyMap()
+    var selectionTimes: Map<Double, String> = emptyMap()
     val disposers = mutableListOf<() -> Unit>()
 
     fun setViewport(next: ChartViewport) {

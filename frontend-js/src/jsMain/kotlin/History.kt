@@ -32,7 +32,12 @@ import org.w3c.dom.events.Event
 import kotlin.js.Date
 import kotlin.js.json
 
-internal data class HistoryChartPoint(val time: Double, val value: Double?, val dayLabel: String? = null)
+internal data class HistoryChartPoint(
+    val time: Double,
+    val value: Double?,
+    val dayLabel: String? = null,
+    val selectionTimeIso: String? = null,
+)
 
 internal data class HistoryRangeState(
     val preset: String,
@@ -69,11 +74,12 @@ internal fun historyChartPoints(container: Element): List<HistoryChartPoint> {
         val time = marker.getAttribute(HtmlAttrs.DATA_TIME)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: return@mapNotNull null
         val dayLabel = marker.getAttribute("data-history-day")?.takeIf(String::isNotBlank)
+        val selectionTimeIso = marker.getAttribute("data-history-at")?.takeIf(String::isNotBlank)
         val value = marker.getAttribute(HtmlAttrs.DATA_VALUE)?.toDoubleOrNull()?.takeIf { it.isFinite() }
         if (marker.getAttribute(HtmlAttrs.DATA_GAP) == "true") {
-            HistoryChartPoint(time, null, dayLabel)
+            HistoryChartPoint(time, null, dayLabel, selectionTimeIso)
         } else {
-            value?.let { HistoryChartPoint(time, it, dayLabel) }
+            value?.let { HistoryChartPoint(time, it, dayLabel, selectionTimeIso) }
         }
     }.sortedBy { it.time }.distinctBy { it.time }
 }
@@ -87,6 +93,7 @@ internal fun historySeriesPoints(container: Element): List<Pair<String, List<His
         val time = marker.getAttribute(HtmlAttrs.DATA_TIME)?.toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: return@repeat
         val dayLabel = marker.getAttribute("data-history-day")?.takeIf(String::isNotBlank)
+        val selectionTimeIso = marker.getAttribute("data-history-at")?.takeIf(String::isNotBlank)
         val value = if (marker.getAttribute(HtmlAttrs.DATA_GAP) == "true") {
             null
         } else {
@@ -94,7 +101,8 @@ internal fun historySeriesPoints(container: Element): List<Pair<String, List<His
                 ?: return@repeat
         }
         val series = marker.getAttribute(HtmlAttrs.DATA_SERIES) ?: ""
-        grouped.getOrPut(series) { mutableListOf() }.add(HistoryChartPoint(time, value, dayLabel))
+        grouped.getOrPut(series) { mutableListOf() }
+            .add(HistoryChartPoint(time, value, dayLabel, selectionTimeIso))
     }
     return grouped.map { (series, points) ->
         series to points.sortedBy { it.time }.distinctBy { it.time }
@@ -321,6 +329,7 @@ internal fun historyExportUrl(
     preset: String? = null,
     fallbackTimezone: String = historyBrowserTimezone(),
     date: String? = null,
+    at: String? = null,
 ): String {
     val route = when (kind) {
         "activity" -> Routes.API_HISTORY_EXPORT_ACTIVITY
@@ -333,6 +342,7 @@ internal fun historyExportUrl(
     val params: dynamic = js("new URLSearchParams()")
     if (kind == "account-holdings") {
         date?.takeIf(String::isNotBlank)?.let { params.set("date", it) }
+        at?.takeIf(String::isNotBlank)?.let { params.set("at", it) }
         return "$route?$params"
     }
     params.set(
@@ -462,7 +472,20 @@ private fun updateHistoryExportLinks(query: String, range: dynamic) {
         } else {
             null
         }
-        historyExportUrl(kind, query, from, to, historyStatusString(range, "preset"), date = selectedDay)
+        val selectedAt = if (kind == "account-holdings") {
+            (document.getElementById("history-holdings-at") as? HTMLInputElement)?.value
+        } else {
+            null
+        }
+        historyExportUrl(
+            kind,
+            query,
+            from,
+            to,
+            historyStatusString(range, "preset"),
+            date = selectedDay,
+            at = selectedAt,
+        )
             .takeIf(String::isNotBlank)
             ?.let {
                 link.setAttribute("href", it)
@@ -554,17 +577,35 @@ internal fun initHistoryDataActions() {
         document.addEventListener(HtmlEvents.CLICK, { event: Event ->
             val target = event.target as? Element ?: return@addEventListener
             val marker = target.asDynamic().closest("[data-history-day]") as? Element ?: return@addEventListener
-            selectHistoryHoldingsDay(marker.getAttribute("data-history-day") ?: return@addEventListener)
+            val day = marker.getAttribute("data-history-day") ?: return@addEventListener
+            val sampleAt = marker.getAttribute("data-history-at")?.takeIf(String::isNotBlank)
+            selectHistoryHoldingsPoint(day, sampleAt)
         })
     }
 }
 
 private fun selectHistoryHoldingsDay(day: String) {
+    selectHistoryHoldingsPoint(day, null)
+}
+
+private fun selectHistoryHoldingsPoint(day: String, sampleAtIso: String?) {
     if (day.isBlank()) return
     val input = document.getElementById("history-holdings-date") as? HTMLInputElement ?: return
     input.value = day
-    updateAccountHoldings(day)
+    updateAccountHoldings(day, sampleAtIso)
     updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
+}
+
+private fun refreshSelectedHistoryHoldings() {
+    refreshSelectedHistoryHoldings(::updateAccountHoldings)
+}
+
+internal fun refreshSelectedHistoryHoldings(refresh: (String, String?) -> Unit) {
+    val day = (document.getElementById("history-holdings-date") as? HTMLInputElement)
+        ?.value?.takeIf(String::isNotBlank) ?: return
+    val sampleAt = (document.getElementById("history-holdings-at") as? HTMLInputElement)
+        ?.value?.takeIf(String::isNotBlank)
+    refresh(day, sampleAt)
 }
 
 /** The value chart canvas replaces its SVG samples after enhancement, so it must keep day selection. */
@@ -584,26 +625,31 @@ private fun bindHistoryHoldingsChartSelection(session: HistoryChartSession) {
             val pointIndex = (match["index"] as? Number)?.toInt() ?: return@listenDom
             val time = (session.chart.data.datasets[datasetIndex].data[pointIndex].x as? Number)?.toDouble()
                 ?: return@listenDom
-            session.dayLabels[time]?.let(::selectHistoryHoldingsDay)
+            val day = session.dayLabels[time] ?: return@listenDom
+            selectHistoryHoldingsPoint(day, session.selectionTimes[time])
         },
     )
 }
 
-private fun updateAccountHoldings(day: String) {
+private fun updateAccountHoldings(day: String, sampleAtIso: String? = null) {
     if (day.isBlank()) return
-    document.querySelector("#history-account-holdings h2")?.textContent = "Loading holdings for $day…"
+    (document.getElementById("history-holdings-at") as? HTMLInputElement)?.value = sampleAtIso.orEmpty()
+    document.querySelector("#history-account-holdings h2")?.textContent =
+        if (sampleAtIso == null) "Loading holdings for $day…" else "Loading holdings at $sampleAtIso…"
     document.getElementById("history-holdings-total")?.textContent = "Loading holdings…"
     val rows = document.getElementById("history-holdings-rows")
     while (rows?.firstChild != null) rows.removeChild(rows.firstChild!!)
     val params: dynamic = js("new URLSearchParams()")
     params.set("date", day)
-    val selection = historyHoldingsSelection(day)
+    sampleAtIso?.let { params.set("at", it) }
+    val selection = historyHoldingsSelection(day, sampleAtIso)
     val request = historyHoldingsRequest ?: newHistoryHoldingsSelectionRequest()
     historyHoldingsRequest = request
     request.load("${Routes.API_HISTORY_HOLDINGS}?$params", selection)
 }
 
-private fun historyHoldingsSelection(day: String): String = "$day|${window.location.search}"
+private fun historyHoldingsSelection(day: String, sampleAtIso: String? = null): String =
+    "$day|${sampleAtIso.orEmpty()}|${window.location.search}"
 
 internal fun newHistoryHoldingsSelectionRequest(
     request: (String, (dynamic) -> Unit, () -> Unit) -> (() -> Unit) = ::fetchHistoryRequest,
@@ -613,7 +659,13 @@ internal fun newHistoryHoldingsSelectionRequest(
     },
 ): HistorySelectionRequest = HistorySelectionRequest(
     request = request,
-    currentSelection = { currentDay()?.let(::historyHoldingsSelection) },
+    currentSelection = {
+        currentDay()?.let { day ->
+            val sampleAt = (document.getElementById("history-holdings-at") as? HTMLInputElement)
+                ?.value?.takeIf(String::isNotBlank)
+            historyHoldingsSelection(day, sampleAt)
+        }
+    },
     onSuccess = { response ->
         currentDay()?.let { renderHistoryHoldings(response, it) }
         updateHistoryExportLinks(window.location.search.removePrefix("?"), null)
@@ -626,7 +678,10 @@ internal fun newHistoryHoldingsSelectionRequest(
 )
 
 internal fun renderHistoryHoldings(response: dynamic, day: String) {
-    document.querySelector("#history-account-holdings h2")?.textContent = "Holdings at $day"
+    val sampleAt = historyStatusString(response, "sampleAtIso")
+    (document.getElementById("history-holdings-at") as? HTMLInputElement)?.value = sampleAt.orEmpty()
+    document.querySelector("#history-account-holdings h2")?.textContent =
+        sampleAt?.let { "Holdings at ${it.replace('T', ' ').removeSuffix("Z")} UTC" } ?: "Holdings at $day"
     document.getElementById("history-holdings-total")?.textContent =
         "${historyStatusString(response, "totalStatus") ?: "Unavailable"}: " +
         "${historyStatusString(response, "totalUsd") ?: "unavailable"} USD"
@@ -1094,7 +1149,7 @@ internal fun updateHistoryAccountProgress(response: dynamic) {
 
         importStates.any { it == "PENDING" } -> "Waiting to import records"
 
-        else -> "Import status not yet recorded"
+        else -> "History import has not started"
     }
     val tradeCountText = tradeCount?.toString() ?: "—"
     val ledgerCountText = ledgerCount?.toString() ?: "—"
@@ -1341,6 +1396,7 @@ private fun historyRecentHorizon(progress: List<dynamic>, feed: String): Double?
 internal data class HistoryRefreshTargets(
     val charts: Boolean,
     val summary: Boolean,
+    val holdings: Boolean,
     val trades: Boolean,
     val ledgers: Boolean,
     val activity: Boolean,
@@ -1392,7 +1448,14 @@ private fun historyStatusCoverageSignature(response: dynamic, feed: String): Str
         "TRADES" -> listOf("tradesFirstIso", "tradesLastIso")
         else -> listOf("ledgersFirstIso", "ledgersLastIso")
     }
-    return fields.joinToString("|") { historyStatusScalar(response?.coverage, it) }
+    val coverage = fields.joinToString("|") { historyStatusScalar(response?.coverage, it) }
+    val publication = if (feed == "VALUES") {
+        listOf("publishedValueGenerationId", "publishedValueSourceRevision")
+            .joinToString("|") { historyStatusScalar(response, it) }
+    } else {
+        ""
+    }
+    return "$coverage|$publication"
 }
 
 internal fun historyRefreshTargets(previous: dynamic, current: dynamic): HistoryRefreshTargets {
@@ -1410,6 +1473,7 @@ internal fun historyRefreshTargets(previous: dynamic, current: dynamic): History
     return HistoryRefreshTargets(
         charts = valuesChanged || ledgersChanged || noFeedEvidence,
         summary = valuesChanged || tradesChanged || ledgersChanged || noFeedEvidence,
+        holdings = valuesChanged,
         trades = tradesChanged,
         ledgers = ledgersChanged,
         activity = historyStatusScalar(previous, "dataRevision") !=
@@ -1474,7 +1538,7 @@ private fun historyStatusFeedText(response: dynamic, feed: String): List<String>
             recentThrough?.let { "through ${historyStatusTime(it)}" },
             recentSuccess?.let { "success ${historyStatusTime(it)}" },
             recentCursor?.let { "cursor $it" },
-        ).joinToString(" · ").ifEmpty { "No recent completion recorded" },
+        ).joinToString(" · ").ifEmpty { "No recent sync completed" },
         listOfNotNull(
             backfillState,
             backfillThrough?.let { "through ${historyStatusTime(it)}" },
@@ -1893,7 +1957,8 @@ private fun historyKeyedApiSeries(response: dynamic): List<HistoryApiChartSeries
             val time = (point.t as? Number)?.toDouble() ?: historyIsoTime(point.tIso) ?: return@mapNotNull null
             val value = (point.v as? Number)?.toDouble()?.takeIf { point.complete == true && it.isFinite() }
             val dayLabel = (point.dayLabel as? String)?.takeIf(String::isNotBlank)
-            HistoryChartPoint(time, value, dayLabel)
+            val selectionTimeIso = (point.selectionTimeIso as? String)?.takeIf(String::isNotBlank)
+            HistoryChartPoint(time, value, dayLabel, selectionTimeIso)
         }.sortedBy { it.time }
         HistoryApiChartSeries(key, label, legendLabel, points)
     }
@@ -2029,6 +2094,9 @@ internal fun applyHistoryChartSeries(
     session?.dayLabels = allSeries.flatMap { it.points }
         .mapNotNull { point -> point.dayLabel?.let { point.time to it } }
         .toMap()
+    session?.selectionTimes = allSeries.flatMap { it.points }
+        .mapNotNull { point -> point.selectionTimeIso?.let { point.time to it } }
+        .toMap()
     val points = allSeries.flatMap { it.points }.sortedBy { it.time }
     val incomingRange = historyChartRange(response, points)
     val range = if (session != null && (viewportDetail || (preserveViewport && session.viewport.isZoomed))) {
@@ -2059,7 +2127,7 @@ internal fun applyHistoryChartSeries(
     if (allSeries.isEmpty()) {
         container.asDynamic().insertAdjacentHTML(
             "beforeend",
-            historyPortfolioSvg(emptyList(), range, "No recorded values", !native, session != null),
+            historyPortfolioSvg(emptyList(), range, "No account values available", !native, session != null),
         )
     }
     if (session == null) {
@@ -2281,8 +2349,8 @@ private fun historyDateAtTime(time: Double, timezone: String): String {
 }
 
 private fun historyCoverageWindow(first: dynamic, last: dynamic, timezone: String): String {
-    val firstTime = historyIsoTime(first) ?: return "No data recorded"
-    val lastTime = historyIsoTime(last) ?: return "No data recorded"
+    val firstTime = historyIsoTime(first) ?: return "No data available"
+    val lastTime = historyIsoTime(last) ?: return "No data available"
     val from = historyDateAtTime(minOf(firstTime, lastTime), timezone)
     val to = historyDateAtTime(maxOf(firstTime, lastTime), timezone)
     return "$from – $to"
@@ -2292,7 +2360,7 @@ private fun updateHistoryCoverage(response: dynamic, chartResponse: dynamic, old
     val range = response.range
     val coverage = response.coverage
     val timezone = range.tz as? String ?: historyBrowserTimezone()
-    val from = historyDateInZone(range.fromIso, timezone) ?: "All recorded data"
+    val from = historyDateInZone(range.fromIso, timezone) ?: "All history"
     val toTime = historyIsoTime(range.toIso)?.let { if (range.preset == "custom") it - 1.0 else it }
     val to = toTime?.let { historyDateAtTime(it, timezone) }.orEmpty()
     document.getElementById("history-coverage-selected")?.textContent =
@@ -2323,9 +2391,8 @@ private fun updateHistoryCoverage(response: dynamic, chartResponse: dynamic, old
     val sparseMessage = document.getElementById("history-coverage-sparse") as? HTMLElement ?: return
     sparseMessage.hidden = !sparse
     if (sparse) {
-        sparseMessage.textContent =
-            "Portfolio values have been recorded since ${historyDateAtTime(first, timezone)}. " +
-            "Older trades and transactions are available separately."
+        sparseMessage.textContent = HistoryRangeText.SPARSE_SINCE_PREFIX +
+            historyDateAtTime(first, timezone) + HistoryRangeText.SPARSE_SINCE_SUFFIX
     }
     document.getElementById("history-scope-link")?.let { (it as HTMLElement).hidden = !olderScopesAvailable }
 }
@@ -2522,6 +2589,7 @@ internal fun initHistoryRangeControls(
     statusRequest: (String, (dynamic) -> Unit, () -> Unit) -> (() -> Unit) = ::fetchHistoryRequest,
     panelRequest: (String, (dynamic) -> Unit, () -> Unit) -> (() -> Unit) = ::fetchHistoryRequest,
     now: () -> Double = { Date.now() },
+    refreshHoldings: () -> Unit = ::refreshSelectedHistoryHoldings,
 ) {
     initHistorySeriesSelectors()
     val rangeLinks = document.querySelectorAll("[data-history-range]")
@@ -2630,7 +2698,7 @@ internal fun initHistoryRangeControls(
         currentScopes.forEach { scope ->
             val option = document.createElement("option") as HTMLElement
             option.setAttribute("value", scope.id)
-            val symbols = scope.symbols.joinToString(" + ").ifEmpty { "Recorded portfolio" }
+            val symbols = scope.symbols.joinToString(" + ").ifEmpty { "Portfolio" }
             val dates = historyCoverageWindow(scope.earliestIso, scope.latestIso, timezone())
             option.textContent = "$symbols · $dates${if (scope.current) " · Current" else ""}"
             scopeSelect.appendChild(option)
@@ -2862,6 +2930,7 @@ internal fun initHistoryRangeControls(
             })
             refreshAnalysisCharts(state)
         }
+        if (targets.holdings) refreshHoldings()
         if (targets.summary) {
             val summaryQuery = historyApiQuery(state, chart = false, pinnedRange = pinnedRange)
             requestPanel(queryUrl(HistoryRangeQuery.API_SUMMARY, summaryQuery), onSuccess = { response ->
@@ -3442,6 +3511,9 @@ internal fun initHistoryCharts(factory: (HTMLCanvasElement, dynamic) -> dynamic 
             fullRange = domRange ?: ChartRange(chartPoints.first().time, chartPoints.last().time),
         )
         session.dayLabels = chartPoints.mapNotNull { point -> point.dayLabel?.let { point.time to it } }.toMap()
+        session.selectionTimes = chartPoints.mapNotNull { point ->
+            point.selectionTimeIso?.let { point.time to it }
+        }.toMap()
         historyChartSessions[id] = session
         syncHistoryFollowLatestButton(container, session.viewport.isZoomed)
         refreshedHistoryEvidenceSignatures.remove(id)

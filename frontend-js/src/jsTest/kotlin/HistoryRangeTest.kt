@@ -493,7 +493,7 @@ class HistoryRangeTest : StringSpec() {
                 val sparse = root.querySelector("#history-coverage-sparse") as HTMLElement
                 sparse.hidden shouldBe false
                 sparse.textContent shouldBe
-                    "Portfolio values have been recorded since 2026-03-09. " +
+                    "Portfolio history starts on 2026-03-09. " +
                     "Older trades and transactions are available separately."
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
                     "Account value points: 1 · Incomplete · Gaps: 2"
@@ -540,7 +540,7 @@ class HistoryRangeTest : StringSpec() {
                 val sparse = root.querySelector("#history-coverage-sparse") as HTMLElement
                 sparse.hidden shouldBe false
                 sparse.textContent shouldBe
-                    "Portfolio values have been recorded since 2026-03-09. " +
+                    "Portfolio history starts on 2026-03-09. " +
                     "Older trades and transactions are available separately."
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
                     "Account value points: 2 · Complete · Gaps: 0"
@@ -596,9 +596,10 @@ class HistoryRangeTest : StringSpec() {
                 initHistoryRangeControls(currentQuery = "?range=all", fetchJson = fetch, timezone = { "UTC" })
 
                 (root.querySelector("#history-coverage-selected") as HTMLElement).textContent shouldBe
-                    "All recorded data – 2026-03-10"
-                (root.querySelector("#history-coverage-trades") as HTMLElement).textContent shouldBe "No data recorded"
-                (root.querySelector("#history-coverage-ledgers") as HTMLElement).textContent shouldBe "No data recorded"
+                    "All history – 2026-03-10"
+                (root.querySelector("#history-coverage-trades") as HTMLElement).textContent shouldBe "No data available"
+                (root.querySelector("#history-coverage-ledgers") as HTMLElement).textContent shouldBe
+                    "No data available"
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
                     "Account value points: 19 · Incomplete · Gaps: 1"
                 (root.querySelector("#history-scope-link") as HTMLElement).hidden shouldBe true
@@ -679,8 +680,8 @@ class HistoryRangeTest : StringSpec() {
                 initHistoryRangeControls(currentQuery = "?range=30d", fetchJson = fetch)
 
                 (root.querySelector("#history-coverage-selected") as HTMLElement).textContent shouldBe
-                    "All recorded data"
-                (root.querySelector("#history-coverage-values") as HTMLElement).textContent shouldBe "No data recorded"
+                    "All history"
+                (root.querySelector("#history-coverage-values") as HTMLElement).textContent shouldBe "No data available"
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
                     "Account value points: 0 · Complete · Gaps: 0"
                 (root.querySelector("#history-coverage-sparse") as HTMLElement).hidden shouldBe true
@@ -715,7 +716,7 @@ private fun historyRangeFixture(): HTMLElement {
             <p id="history-range-custom-error" hidden></p>
         </div>
         <select id="history-scope-select"></select>
-        <a href="#history-scope-select" id="history-scope-link" hidden>Earlier recorded portfolios available</a>
+        <a href="#history-scope-select" id="history-scope-link" hidden>Earlier portfolio periods available</a>
         <div id="history-coverage-selected"></div>
         <div id="history-coverage-values"></div>
         <div id="history-coverage-trades"></div>

@@ -2,13 +2,18 @@ package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DataDirectoryIdentity
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectBalanceCapture
+import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerCapture
+import com.gemini.krakenbot.service.DirectTickerMark
+import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.ObservedPrices
+import com.gemini.krakenbot.service.readTickerPricesWithCapture
 import com.gemini.krakenbot.service.withExecutionSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.time.Instant
@@ -314,6 +320,10 @@ class HistoryObservationRecorder(
             )
             store.appendCycle(observation, activity)
             if (scope.mode == HistorySourceMode.ACCOUNT) {
+                balances?.directCapture?.let { balanceCapture ->
+                    val fullAccount = fullAccountObservation(pending, scope, balanceCapture)
+                    if (fullAccount != null) store.appendObservation(fullAccount)
+                }
                 verifiedAccountScope = VerifiedAccountScope(
                     accountIdentityDigest = checkNotNull(scope.accountIdentityDigest),
                     credentialScope = checkNotNull(pending.credentialScope),
@@ -329,25 +339,140 @@ class HistoryObservationRecorder(
         }
     }
 
+    private suspend fun fullAccountObservation(
+        pending: PendingCycle,
+        managedScope: HistorySourceScope,
+        balanceCapture: DirectBalanceCapture,
+    ): HistoryObservation? = withTimeoutOrNull(identityLookupTimeoutMs) {
+        configService.withExecutionSession {
+            krakenService.withStableBackend { backend ->
+                val digest = checkNotNull(managedScope.accountIdentityDigest)
+                val before = authenticatedAccount(backend, pending.credentialScope) ?: return@withStableBackend null
+                if (before.accountIdentityDigest != digest) return@withStableBackend null
+
+                val metadata = pending.prices?.assetMetadata ?: runCatching { backend.getAssetMetadata() }
+                    .getOrElse { emptyList() }
+                val existingCapture = pending.prices?.directCapture
+                val missingPriceSymbols = HistoryObservationValuator.fullAccountTickerSymbols(
+                    balances = balanceCapture,
+                    prices = existingCapture,
+                    assetMetadata = metadata,
+                )
+                val extraRequests = missingPriceSymbols.map { symbol ->
+                    DirectTickerRequest(symbol = symbol, pair = Asset.tradingPair(symbol))
+                }
+                val extraCapture = if (extraRequests.isEmpty()) {
+                    null
+                } else {
+                    try {
+                        backend.readTickerPricesWithCapture(extraRequests).capture
+                            ?: unavailableTickerCapture(nowProvider(), extraRequests)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        unavailableTickerCapture(nowProvider(), extraRequests)
+                    }
+                }
+
+                val after = authenticatedAccount(backend, pending.credentialScope) ?: return@withStableBackend null
+                if (after.accountIdentityDigest != digest || after.credentialScope != before.credentialScope) {
+                    return@withStableBackend null
+                }
+                val mergedPrices = mergeAccountTickerCaptures(
+                    balanceCapture = balanceCapture,
+                    existing = existingCapture,
+                    extra = extraCapture,
+                    requestedSymbols = missingPriceSymbols,
+                )
+                HistoryObservationValuator.buildFullAccountDirect(
+                    observationId = "${pending.cycleId}:full-account-intraday-v1",
+                    cycleId = pending.cycleId,
+                    accountIdentityDigest = digest,
+                    balances = balanceCapture,
+                    prices = mergedPrices,
+                    assetMetadata = metadata,
+                    sampleSelection = pending.sampleSelection,
+                    now = nowProvider(),
+                )
+            }
+        }
+    }
+
+    private fun mergeAccountTickerCaptures(
+        balanceCapture: DirectBalanceCapture,
+        existing: DirectTickerCapture?,
+        extra: DirectTickerCapture?,
+        requestedSymbols: List<String>,
+    ): DirectTickerCapture {
+        val reusable = if (existing?.resultShapeValid == true) {
+            existing.marksBySymbol.filterValues { mark ->
+                mark.status == DirectEvidenceStatus.VALID && mark.price?.signum() == 1
+            }
+        } else {
+            emptyMap()
+        }
+        val marks = (reusable + extra?.marksBySymbol.orEmpty()).toMutableMap()
+        requestedSymbols.forEach { symbol ->
+            if (symbol !in marks) marks[symbol] = missingTickerMark(symbol)
+        }
+        val usedCaptures = buildList {
+            if (reusable.isNotEmpty()) existing?.let(::add)
+            if (requestedSymbols.isNotEmpty()) extra?.let(::add)
+        }
+        val at = balanceCapture.responseEndedAt
+        return DirectTickerCapture(
+            requestStartedAt = usedCaptures.minOfOrNull { it.requestStartedAt } ?: at,
+            responseEndedAt = usedCaptures.maxOfOrNull { it.responseEndedAt } ?: at,
+            resultShapeValid = true,
+            marksBySymbol = marks,
+        )
+    }
+
+    private fun unavailableTickerCapture(at: Instant, requests: List<DirectTickerRequest>) = DirectTickerCapture(
+        requestStartedAt = at,
+        responseEndedAt = at,
+        resultShapeValid = true,
+        marksBySymbol = requests.associate { request ->
+            Asset.canonicalSymbol(request.symbol) to missingTickerMark(request.symbol)
+        },
+    )
+
+    private fun missingTickerMark(symbol: String) = DirectTickerMark(
+        symbol = Asset.canonicalSymbol(symbol),
+        requestedPair = Asset.tradingPair(symbol),
+        responsePair = null,
+        candidateResponsePairs = emptyList(),
+        rawPrice = null,
+        price = null,
+        status = DirectEvidenceStatus.MISSING,
+    )
+
     private suspend fun authenticatedAccount(expectedCredentialScope: String?): AuthenticatedAccount? = try {
         withTimeout(identityLookupTimeoutMs) {
             krakenService.withStableBackend { backend ->
-                val credentialScope = backend.getFundingEvidenceScope().trim()
-                if (credentialScope.isBlank() || credentialScope == "scope-unavailable" ||
-                    (expectedCredentialScope != null && credentialScope != expectedCredentialScope)
-                ) {
-                    return@withStableBackend null
-                }
-                val identity = backend.getAuthenticatedAccountIdentity()
-                    ?.filterNot(Char::isWhitespace)
-                    ?.uppercase(Locale.ROOT)
-                    ?.takeIf(String::isNotBlank)
-                    ?: return@withStableBackend null
-                AuthenticatedAccount(sha256(identity), credentialScope)
+                authenticatedAccount(backend, expectedCredentialScope)
             }
         }
     } catch (timeout: TimeoutCancellationException) {
         null
+    }
+
+    private suspend fun authenticatedAccount(
+        backend: KrakenService,
+        expectedCredentialScope: String?,
+    ): AuthenticatedAccount? {
+        val credentialScope = backend.getFundingEvidenceScope().trim()
+        if (credentialScope.isBlank() || credentialScope == "scope-unavailable" ||
+            (expectedCredentialScope != null && credentialScope != expectedCredentialScope)
+        ) {
+            return null
+        }
+        val identity = backend.getAuthenticatedAccountIdentity()
+            ?.filterNot(Char::isWhitespace)
+            ?.uppercase(Locale.ROOT)
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        return AuthenticatedAccount(sha256(identity), credentialScope)
     }
 
     private suspend fun currentCredentialScope(): String? = try {

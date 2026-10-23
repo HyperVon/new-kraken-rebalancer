@@ -97,6 +97,7 @@ data class HistoryApiPoint(
     val status: String? = null,
     val reasons: List<String> = emptyList(),
     val dayLabel: String? = null,
+    val selectionTimeIso: String? = null,
 )
 
 data class HistoryApiDailyHolding(
@@ -115,11 +116,21 @@ data class HistoryApiHoldingsAtDate(
     val totalStatus: String,
     val generationId: String?,
     val holdings: List<HistoryApiDailyHolding>,
+    val sampleAtIso: String? = null,
 )
 
-data class HistoryDailyValueExportRange(val accountIdentityDigest: String, val from: Instant?, val until: Instant)
+data class HistoryDailyValueExportRange(
+    val accountIdentityDigest: String,
+    val from: Instant?,
+    val until: Instant,
+    val intraday: Boolean = false,
+)
 
-data class HistoryDailyHoldingsExportQuery(val accountIdentityDigest: String, val day: LocalDate)
+data class HistoryDailyHoldingsExportQuery(
+    val accountIdentityDigest: String,
+    val day: LocalDate,
+    val sampleAt: Instant? = null,
+)
 
 enum class HistoryApiScopeSelection { CURRENT_SCOPE, EXPLICIT_SCOPE, ACCOUNT_RECORDED }
 
@@ -253,6 +264,8 @@ data class HistoryApiDataStatusResponse(
     val availableValueFromIso: String? = null,
     val availableValueToIso: String? = null,
     val availableValueDays: Long? = null,
+    val publishedValueGenerationId: String? = null,
+    val publishedValueSourceRevision: Long? = null,
 )
 
 data class HistoryApiValuationProgress(

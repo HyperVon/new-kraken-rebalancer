@@ -10,7 +10,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
-import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -154,7 +153,7 @@ class HistoryValuationCoordinator(
         var balances = store.queryDailyBalances(
             accountIdentityDigest = account.digest,
             sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-            from = targetStart.atStartOfDay(ZoneOffset.UTC).toInstant(),
+            from = targetStart.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
             until = targetEnd.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
         )
         if (job.stage == HistoryValuationStage.PRICE_AND_VALUE &&
@@ -239,13 +238,13 @@ class HistoryValuationCoordinator(
         balances = store.queryDailyBalances(
             accountIdentityDigest = account.digest,
             sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
-            from = targetStart.atStartOfDay(ZoneOffset.UTC).toInstant(),
+            from = targetStart.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
             until = targetEnd.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
         )
         val priceRequests = requiredPriceRequests(balances)
         val marketRequests = priceRequests.map(::marketRequest).toSet()
-        val cachedPrices = loadCachedPrices(account.digest, priceRequests)
-        val cachedRequests = priceRequests.count { request -> hasPrice(cachedPrices, request) }
+        var cachedPrices = loadCachedPrices(account.digest, priceRequests)
+        val cachedRequests = priceRequests.count { request -> hasPrice(cachedPrices, account.digest, request) }
         job = job.copy(
             requiredPriceTasks = priceRequests.size,
             completedPriceTasks = cachedRequests,
@@ -256,20 +255,34 @@ class HistoryValuationCoordinator(
 
         try {
             for (requestsForAsset in marketRequests.groupBy { it.rawAssetKey }.toSortedMap().values) {
-                val unresolved = requestsForAsset.filterNot { hasPrice(cachedPrices, it) }.toSet()
+                val unresolved = requestsForAsset.filterNot { hasPrice(cachedPrices, account.digest, it) }.toSet()
                 if (unresolved.isEmpty()) continue
                 val resolved = priceResolver.resolve(account.digest, unresolved)
-                val usable = resolved.filter { price ->
-                    unresolved.any { request ->
-                        request.rawAssetKey == price.rawAssetKey &&
-                            request.day.atStartOfDay(ZoneOffset.UTC).toEpochSecond() == price.candleOpen.epochSecond &&
-                            price.candleEnd == price.candleOpen.plusSeconds(HistoryDailyValueBuilder.SECONDS_PER_DAY)
-                    }
-                }.distinctBy { it.rawAssetKey to it.candleOpen.epochSecond }
+                val requested = resolved.filter { price ->
+                    price.accountIdentityDigest == account.digest &&
+                        unresolved.any { request ->
+                            request.rawAssetKey == price.rawAssetKey &&
+                                request.day.atStartOfDay(ZoneOffset.UTC).toEpochSecond() ==
+                                price.candleOpen.epochSecond &&
+                                price.candleEnd ==
+                                price.candleOpen.plusSeconds(HistoryDailyValueBuilder.SECONDS_PER_DAY)
+                        }
+                }
+                val usable = requested.groupBy { price ->
+                    HistoryDailyPriceIdentity.forAssetAndOpen(
+                        account.digest,
+                        price.rawAssetKey,
+                        price.candleOpen.epochSecond,
+                    )
+                }.values.flatMap { sameDayPrices ->
+                    HistoryDailyPriceIndex.from(sameDayPrices).selectedPrices
+                }
                 store.saveDailyPrices(usable)
-                usable.forEach { price -> cachedPrices[price.rawAssetKey to price.candleOpen.epochSecond] = price }
+                cachedPrices = cachedPrices.plus(usable)
                 job = job.copy(
-                    completedPriceTasks = priceRequests.count { request -> hasPrice(cachedPrices, request) },
+                    completedPriceTasks = priceRequests.count { request ->
+                        hasPrice(cachedPrices, account.digest, request)
+                    },
                     lastProgressAt = nowProvider(),
                     updatedAt = nowProvider(),
                 )
@@ -282,18 +295,22 @@ class HistoryValuationCoordinator(
             return
         }
 
-        val dailyValues = valueBuilder.build(balances, cachedPrices.values.toList())
-        check(dailyValues.size == TARGET_DAYS) { "Value replay did not evaluate the frozen target period." }
+        val dailyValues = valueBuilder.build(balances, cachedPrices)
+        check(dailyValues.size == TARGET_DAYS) {
+            "Value replay did not evaluate the frozen target period: expected=$TARGET_DAYS value days, " +
+                "found=${dailyValues.size} across ${balances.map { it.dayLabel }.distinct().size} balance days."
+        }
         val completeDays = dailyValues.count { it.status == HistoryDailyValueStatus.COMPLETE }
         val blockedDays = TARGET_DAYS - completeDays
         val needsAttention =
-            blockedDays > 0 || cachedRequestsForRequired(priceRequests, cachedPrices) < priceRequests.size
+            blockedDays > 0 ||
+                cachedRequestsForRequired(account.digest, priceRequests, cachedPrices) < priceRequests.size
         val publishAt = nowProvider()
         val terminalJob = job.copy(
             state = if (needsAttention) HistoryValuationJobState.NEEDS_ATTENTION else HistoryValuationJobState.COMPLETE,
             completeValueDays = completeDays,
             blockedValueDays = blockedDays,
-            completedPriceTasks = cachedRequestsForRequired(priceRequests, cachedPrices),
+            completedPriceTasks = cachedRequestsForRequired(account.digest, priceRequests, cachedPrices),
             nextDay = null,
             lastProgressAt = publishAt,
             nextRetryAt = null,
@@ -343,19 +360,19 @@ class HistoryValuationCoordinator(
     private suspend fun loadCachedPrices(
         accountIdentityDigest: String,
         requests: Set<HistoryDailyPriceRequest>,
-    ): MutableMap<Pair<String, Long>, HistoryDailyPrice> {
+    ): HistoryDailyPriceIndex {
         val start =
-            requests.minOfOrNull { it.day.atStartOfDay(ZoneOffset.UTC).toEpochSecond() } ?: return mutableMapOf()
+            requests.minOfOrNull { it.day.atStartOfDay(ZoneOffset.UTC).toEpochSecond() }
+                ?: return HistoryDailyPriceIndex.from(emptyList())
         val end =
             requests.maxOfOrNull { it.day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond() }
-                ?: return mutableMapOf()
-        return requests.flatMap { request ->
+                ?: return HistoryDailyPriceIndex.from(emptyList())
+        val cached = requests.flatMap { request ->
             listOf(request.rawAssetKey, Asset.normalizeLedgerAsset(request.rawAssetKey))
         }.distinct().flatMap { rawAssetKey ->
             store.queryDailyPrices(accountIdentityDigest, rawAssetKey, start, end)
-        }.filter { price ->
-            isValidCachedPrice(price)
-        }.associateByTo(mutableMapOf()) { Asset.normalizeLedgerAsset(it.rawAssetKey) to it.candleOpen.epochSecond }
+        }
+        return HistoryDailyPriceIndex.from(cached)
     }
 
     private fun requiredPriceRequests(balances: List<HistoryDailyBalance>): Set<HistoryDailyPriceRequest> =
@@ -365,29 +382,21 @@ class HistoryValuationCoordinator(
             .toSet()
 
     private fun hasPrice(
-        prices: Map<Pair<String, Long>, HistoryDailyPrice>,
+        prices: HistoryDailyPriceIndex,
+        accountIdentityDigest: String,
         request: HistoryDailyPriceRequest,
     ): Boolean = request.day.atStartOfDay(ZoneOffset.UTC).toEpochSecond().let { open ->
-        prices[Asset.normalizeLedgerAsset(request.rawAssetKey) to open]?.let {
-            isValidCachedPrice(it)
-        } == true
+        prices.price(accountIdentityDigest, request.rawAssetKey, open) != null
     }
-
-    private fun isValidCachedPrice(price: HistoryDailyPrice): Boolean =
-        price.candleEnd == price.candleOpen.plusSeconds(HistoryDailyValueBuilder.SECONDS_PER_DAY) &&
-            if (Asset.normalizeLedgerAsset(price.rawAssetKey).equals(Asset.USD, ignoreCase = true)) {
-                price.closeUsd.compareTo(BigDecimal.ONE) == 0
-            } else {
-                price.closeUsd.signum() > 0
-            }
 
     private fun marketRequest(request: HistoryDailyPriceRequest) =
         request.copy(rawAssetKey = Asset.normalizeLedgerAsset(request.rawAssetKey))
 
     private fun cachedRequestsForRequired(
+        accountIdentityDigest: String,
         requests: Set<HistoryDailyPriceRequest>,
-        prices: Map<Pair<String, Long>, HistoryDailyPrice>,
-    ): Int = requests.count { hasPrice(prices, it) }
+        prices: HistoryDailyPriceIndex,
+    ): Int = requests.count { hasPrice(prices, accountIdentityDigest, it) }
 
     private suspend fun ensureSourceRevision(accountIdentityDigest: String, expectedRevision: Long) {
         check(store.currentLedgerRevision(accountIdentityDigest) == expectedRevision) {

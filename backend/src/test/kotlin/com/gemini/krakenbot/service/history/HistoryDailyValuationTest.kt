@@ -152,6 +152,36 @@ class HistoryDailyValuationTest : StringSpec() {
             result.status shouldBe HistoryDailyBalanceStatus.INVALID_CHECKPOINT
         }
 
+        "blocks negative spot balances from daily holdings and totals" {
+            val negativeCheckpoint = checkpoint(
+                "negative-cash",
+                "2026-03-31T10:00:00Z",
+                "-1",
+                "0",
+                "-1",
+                "-1",
+            )
+
+            val balance = build(listOf(negativeCheckpoint), coverage(dayEnd)).single()
+
+            balance.quantity shouldBe null
+            balance.status shouldBe HistoryDailyBalanceStatus.INVALID_CHECKPOINT
+            balance.reason shouldBe "A ledger balance checkpoint has a negative quantity."
+
+            val value = HistoryDailyValueBuilder().build(
+                listOf(balance),
+                listOf(dailyPrice("USD", BigDecimal.ONE)),
+            ).single()
+            value.totalUsd shouldBe null
+            value.status shouldBe HistoryDailyValueStatus.NO_BALANCE
+
+            val legacyNegative = dailyBalance("USD", BigDecimal("-1"))
+            val guardedValue = HistoryDailyValueBuilder().build(listOf(legacyNegative), emptyList()).single()
+            guardedValue.totalUsd shouldBe null
+            guardedValue.status shouldBe HistoryDailyValueStatus.NO_BALANCE
+            guardedValue.assets.single().quantity shouldBe null
+        }
+
         "retains missing asset identity and missing ledger times as blocking evidence" {
             val unidentified = HistoryBalanceCheckpoint(
                 accountIdentityDigest = accountDigest,
@@ -249,6 +279,110 @@ class HistoryDailyValuationTest : StringSpec() {
             ).single()
             invalid.totalUsd shouldBe null
             invalid.status shouldBe HistoryDailyValueStatus.NO_PRICE
+        }
+
+        "canonicalizes cached price aliases without merging raw balance partitions" {
+            val balances = listOf(
+                dailyBalance("ZUSD", BigDecimal("10")),
+                dailyBalance("USD", BigDecimal("20")),
+                dailyBalance("XXBT", BigDecimal("2")),
+                dailyBalance("BTC", BigDecimal("3")),
+                dailyBalance("DOT.S", BigDecimal("4")),
+            )
+            val prices = listOf(
+                dailyPrice("ZUSD", BigDecimal.ONE).copy(source = "alias-unit"),
+                dailyPrice("USD", BigDecimal.ONE).copy(source = "canonical-unit"),
+                dailyPrice("XXBT", BigDecimal("5")).copy(source = "alias-market"),
+                dailyPrice("BTC", BigDecimal("5")).copy(source = "canonical-market"),
+                dailyPrice("DOT", BigDecimal("2")).copy(source = "earn-market"),
+            )
+
+            val result = HistoryDailyValueBuilder().build(balances, prices).single()
+
+            result.status shouldBe HistoryDailyValueStatus.COMPLETE
+            checkNotNull(result.totalUsd) shouldBeEqualComparingTo BigDecimal("63")
+            result.assets.map { it.rawAssetKey } shouldContainExactly listOf("ZUSD", "USD", "XXBT", "BTC", "DOT.S")
+            result.assets.map { it.priceUsd } shouldContainExactly listOf(
+                BigDecimal.ONE,
+                BigDecimal.ONE,
+                BigDecimal("5"),
+                BigDecimal("5"),
+                BigDecimal("2"),
+            )
+            result.assets.filter { it.rawAssetKey in setOf("ZUSD", "USD") }.all {
+                it.priceUsd == BigDecimal.ONE && it.valueUsd == it.quantity
+            } shouldBe true
+            result.assets.filter { it.rawAssetKey in setOf("XXBT", "BTC") }.all {
+                it.priceSource == "canonical-market" && it.pricePair == "BTCUSD"
+            } shouldBe true
+            result.assets.single { it.rawAssetKey == "DOT.S" }.valueUsd shouldBe BigDecimal("8")
+        }
+
+        "chooses identical canonical price aliases deterministically and orders identities" {
+            val prices = listOf(
+                dailyPrice("ZUSD", BigDecimal.ONE),
+                dailyPrice("XBT", BigDecimal("5")).copy(pair = "XXBTZUSD"),
+                dailyPrice("BTC", BigDecimal("5")).copy(pair = "XXBTZUSD"),
+                dailyPrice("BTC", BigDecimal("5")).copy(pair = "XBTUSD"),
+                dailyPrice("XXBT", BigDecimal("5")).copy(pair = "XXBTZUSD"),
+            )
+
+            val selected = HistoryDailyPriceIndex.from(prices.reversed()).selectedPrices
+
+            selected.map { it.rawAssetKey } shouldContainExactly listOf("BTC", "ZUSD")
+            selected.first().pair shouldBe "XBTUSD"
+            selected.first().closeUsd shouldBe BigDecimal("5")
+            selected.last().closeUsd shouldBe BigDecimal.ONE
+        }
+
+        "orders equivalent price provenance legs deterministically" {
+            val canonicalLeg = HistoryDailyPriceLeg("BTCUSD", BigDecimal("5"), "USD")
+            val aliasLeg = HistoryDailyPriceLeg("XBTUSD", BigDecimal("5"), "USD")
+            val prices = listOf(
+                dailyPrice("BTC", BigDecimal("5")).copy(
+                    pair = "XBTUSD",
+                    source = "same-source",
+                    legs = listOf(aliasLeg),
+                ),
+                dailyPrice("BTC", BigDecimal("5")).copy(
+                    pair = "XBTUSD",
+                    source = "same-source",
+                    legs = listOf(canonicalLeg),
+                ),
+            )
+
+            val forward = HistoryDailyPriceIndex.from(prices).selectedPrices.single()
+            val reversed = HistoryDailyPriceIndex.from(prices.reversed()).selectedPrices.single()
+
+            forward.legs shouldBe listOf(canonicalLeg)
+            reversed.legs shouldBe listOf(canonicalLeg)
+        }
+
+        "leaves conflicting alias-only prices unavailable and uses one canonical resolver price" {
+            val balance = dailyBalance("XXBT", BigDecimal("2"))
+            val aliasPrices = listOf(
+                dailyPrice("XXBT", BigDecimal("10")),
+                dailyPrice("XBT", BigDecimal("11")),
+            )
+
+            val ambiguous = HistoryDailyValueBuilder().build(listOf(balance), aliasPrices).single()
+
+            ambiguous.status shouldBe HistoryDailyValueStatus.NO_PRICE
+            ambiguous.totalUsd shouldBe null
+            ambiguous.assets.single().status shouldBe HistoryDailyValueStatus.NO_PRICE
+            ambiguous.assets.single().reason shouldBe
+                "Conflicting completed Kraken USD closes are available for this holding on this UTC date."
+
+            val resolved = HistoryDailyValueBuilder().build(
+                listOf(balance),
+                aliasPrices + dailyPrice("BTC", BigDecimal("12")).copy(source = "KRAKEN_COMPLETED_DAILY_OHLC"),
+            ).single()
+
+            resolved.status shouldBe HistoryDailyValueStatus.COMPLETE
+            checkNotNull(resolved.totalUsd) shouldBeEqualComparingTo BigDecimal("24")
+            resolved.assets.single().rawAssetKey shouldBe "XXBT"
+            resolved.assets.single().priceUsd shouldBe BigDecimal("12")
+            resolved.assets.single().priceSource shouldBe "KRAKEN_COMPLETED_DAILY_OHLC"
         }
 
         "keeps invalid and ambiguous balance states visible without publishing partial totals" {
@@ -382,6 +516,32 @@ class HistoryDailyValuationTest : StringSpec() {
                 HistoryDailyBalanceStatus.INVALID_CHECKPOINT
             balances.getValue(LocalDate.parse("2026-10-16")).reason shouldBe
                 "Ledger history contains an unsupported wallet or asset class for account totals."
+        }
+
+        "unsupported evidence invalidates known balance quantities for the same day" {
+            val unsupported = checkpoint(
+                "unsupported-tokenized",
+                "2026-03-31T11:00:00Z",
+                "1",
+                "0",
+                "1",
+                "1",
+                rawAssetClass = "tokenized_asset",
+                rawAssetKey = "TOKENIZED_SHARE",
+            )
+            val balances = build(
+                listOf(
+                    checkpoint("usd-anchor", "2026-03-31T10:00:00Z", "25", "0", "25", "25"),
+                    unsupported,
+                ),
+                coverage(dayEnd),
+            )
+
+            balances.size shouldBe 2
+            balances.forEach { balance ->
+                balance.status shouldBe HistoryDailyBalanceStatus.INVALID_CHECKPOINT
+                balance.quantity shouldBe null
+            }
         }
 
         "unknown evidence before the period and untimed unknown evidence remain fail closed" {

@@ -74,6 +74,9 @@ class HistoryApiPresenter(
         if (scopeId.isNullOrBlank() && currentScope.mode == HistorySourceMode.ACCOUNT &&
             selection == HistoryChartSelection.PORTFOLIO
         ) {
+            if (window.preset == HistoryRangePreset.TWENTY_FOUR_HOURS.key) {
+                return accountIntradayValueCharts(currentScope, window, pointCap, startedNanos, params.valueAsset)
+            }
             return accountDailyValueCharts(currentScope, window, pointCap, startedNanos, params.valueAsset)
         }
         val scope = resolveScope(scopeId, currentScope)
@@ -223,7 +226,130 @@ class HistoryApiPresenter(
         )
     }
 
-    suspend fun holdingsAtDate(currentScope: HistorySourceScope, dayValue: String): HistoryApiHoldingsAtDate {
+    private suspend fun accountIntradayValueCharts(
+        currentScope: HistorySourceScope,
+        window: HistoryApiWindow,
+        pointCap: Int,
+        startedNanos: Long,
+        rawValueAsset: String?,
+    ): HistoryApiChartsResponse {
+        val accountDigest = checkNotNull(currentScope.accountIdentityDigest)
+        val accountScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+        val observationSnapshot = historyStore.queryObservationChartSnapshot(
+            query = HistoryRangeQuery(
+                from = window.from,
+                until = window.until,
+                sourceScope = accountScope,
+                limit = HISTORY_MAX_PAGE_LIMIT,
+            ),
+            maxPoints = pointCap,
+        )
+        val availableValueAssets = observationSnapshot.availableAssetSymbols.asSequence()
+            .map(Asset::normalizeLedgerAsset)
+            .filter(String::isNotBlank)
+            .distinct()
+            .sorted()
+            .toList()
+        val selectedValueAsset = rawValueAsset?.trim()?.takeIf(String::isNotEmpty)
+            ?.let(Asset::normalizeLedgerAsset)
+            ?.takeIf { it in availableValueAssets }
+        val points = observationSnapshot.chartObservations.map { observation ->
+            val matchingAssets = selectedValueAsset?.let { symbol ->
+                observation.assets.filter { Asset.normalizeLedgerAsset(it.symbol) == symbol }
+            }.orEmpty()
+            val selectedValue = when {
+                selectedValueAsset == null -> observation.totalUsd
+
+                matchingAssets.isEmpty() && observation.status == HistoryObservationStatus.COMPLETE -> BigDecimal.ZERO
+
+                matchingAssets.isNotEmpty() && matchingAssets.all {
+                    it.status == HistoryAssetValueStatus.COMPLETE && it.valueUsd != null
+                } -> matchingAssets.fold(BigDecimal.ZERO) { total, asset ->
+                    total.add(asset.valueUsd ?: BigDecimal.ZERO)
+                }
+
+                else -> null
+            }
+            val incompleteAsset = matchingAssets.firstOrNull { it.status != HistoryAssetValueStatus.COMPLETE }
+            val day = observation.observedAt.atZone(ZoneOffset.UTC).toLocalDate().toString()
+            HistoryApiPoint(
+                t = observation.observedAt.toEpochMilli(),
+                isoTime = observation.observedAt.toString(),
+                v = selectedValue,
+                complete = selectedValue != null,
+                status = if (selectedValue != null) {
+                    HistoryObservationStatus.COMPLETE.name
+                } else {
+                    incompleteAsset?.status?.name ?: observation.status.name
+                },
+                reasons = if (selectedValue != null) {
+                    emptyList()
+                } else if (selectedValueAsset != null) {
+                    listOfNotNull(incompleteAsset?.reason ?: observation.incompleteReasons.firstOrNull())
+                } else {
+                    observation.incompleteReasons
+                },
+                dayLabel = day,
+                selectionTimeIso = observation.observedAt.toString(),
+            )
+        }
+        val series = HistoryApiSeries(
+            key = selectedValueAsset?.let { "asset:$it" } ?: HISTORY_API_PORTFOLIO_KEY,
+            label = selectedValueAsset?.let { "$it · USD value" } ?: ViewText.HISTORY_API_SERIES_PORTFOLIO,
+            legendLabel = selectedValueAsset?.let { "$it · USD value" } ?: ViewText.HISTORY_API_SERIES_PORTFOLIO,
+            unit = "USD",
+            points = points,
+        )
+        val first = observationSnapshot.firstObservation
+        val last = observationSnapshot.lastObservation
+        val coverage = buildCoverage(currentScope).copy(
+            valuesFirstIso = first?.observedAt?.toString(),
+            valuesLastIso = last?.observedAt?.toString(),
+            incomplete = first == null || observationSnapshot.incompleteObservations > 0,
+            gapCount = observationSnapshot.incompleteObservations.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        )
+        return HistoryApiChartsResponse(
+            range = window.rangeDto(),
+            scope = scopeDto(currentScope, currentScope),
+            coverage = coverage,
+            series = listOf(series),
+            fullRange = HistoryApiFullRange(
+                fromIso = window.selectedFrom?.toString(),
+                toIso = window.selectedUntil.toString(),
+                pointCount = points.size,
+                totalObservations = observationSnapshot.totalObservations,
+                representative = points.size.toLong() < observationSnapshot.totalObservations,
+                baselineFromIso = window.baselineFrom?.toString(),
+            ),
+            generationMs = elapsedMs(startedNanos),
+            scopeSelection = HistoryApiScopeSelection.CURRENT_SCOPE,
+            resolution = "cycle",
+            valuationBasis = "Full account balances · direct USD ticker prices",
+            availableValueFromIso = first?.observedAt?.toString(),
+            availableValueToIso = last?.observedAt?.toString(),
+            availableValueAssets = availableValueAssets,
+            selectedValueAsset = selectedValueAsset,
+        )
+    }
+
+    private suspend fun queryAccountIntradayObservations(
+        sourceScope: HistorySourceScope,
+        from: Instant?,
+        until: Instant,
+    ): List<HistoryObservation> = historyStore.queryObservationsSnapshot(
+        HistoryRangeQuery(
+            from = from,
+            until = until,
+            sourceScope = sourceScope,
+            limit = HISTORY_MAX_PAGE_LIMIT,
+        ),
+    ).sortedBy { it.observedAt }
+
+    suspend fun holdingsAtDate(
+        currentScope: HistorySourceScope,
+        dayValue: String,
+        sampleAtValue: String? = null,
+    ): HistoryApiHoldingsAtDate {
         val digest = currentScope.accountIdentityDigest
             ?.takeIf { currentScope.mode == HistorySourceMode.ACCOUNT }
             ?: throw HistoryApiRequestException(ViewText.HISTORY_ACCOUNT_UNAVAILABLE)
@@ -231,6 +357,53 @@ class HistoryApiPresenter(
             LocalDate.parse(dayValue)
         } catch (_: DateTimeParseException) {
             throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+        }
+        val sampleAt = sampleAtValue?.trim()?.takeIf(String::isNotEmpty)?.let { raw ->
+            try {
+                Instant.parse(raw)
+            } catch (_: DateTimeParseException) {
+                throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+            }
+        }
+        if (sampleAt != null) {
+            if (sampleAt.atZone(ZoneOffset.UTC).toLocalDate() != day) {
+                throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+            }
+            val observation = queryAccountIntradayObservations(
+                HistoryObservationValuator.fullAccountScope(digest),
+                sampleAt,
+                sampleAt.plusNanos(1),
+            ).singleOrNull { it.observedAt == sampleAt }
+            return if (observation == null) {
+                HistoryApiHoldingsAtDate(
+                    day = day.toString(),
+                    available = false,
+                    totalUsd = null,
+                    totalStatus = HistoryDailyValueStatus.OUTSIDE_COVERAGE.name,
+                    generationId = null,
+                    holdings = emptyList(),
+                    sampleAtIso = sampleAt.toString(),
+                )
+            } else {
+                HistoryApiHoldingsAtDate(
+                    day = day.toString(),
+                    available = true,
+                    totalUsd = observation.totalUsd?.toPlainString(),
+                    totalStatus = observation.status.name,
+                    generationId = null,
+                    holdings = observation.assets.map { asset ->
+                        HistoryApiDailyHolding(
+                            asset = Asset.normalizeLedgerAsset(asset.symbol),
+                            quantity = asset.quantity?.toPlainString(),
+                            priceUsd = asset.priceUsd?.toPlainString(),
+                            valueUsd = asset.valueUsd?.toPlainString(),
+                            availability = asset.status.name,
+                            reason = asset.reason,
+                        )
+                    },
+                    sampleAtIso = observation.observedAt.toString(),
+                )
+            }
         }
         val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
         val value = historyStore.queryDailyValueSnapshot(
@@ -278,13 +451,19 @@ class HistoryApiPresenter(
             ?.takeIf { currentScope.mode == HistorySourceMode.ACCOUNT }
             ?: throw HistoryApiRequestException(ViewText.HISTORY_ACCOUNT_UNAVAILABLE)
         val window = resolveWindow(params, nowProvider())
-        val (from, until) = window.dailyValueBounds()
-        return HistoryApiExportQuery(HistoryDailyValueExportRange(digest, from, until), window.zone)
+        val intraday = window.preset == HistoryRangePreset.TWENTY_FOUR_HOURS.key
+        val (from, until) = if (intraday) {
+            window.from to window.until
+        } else {
+            window.dailyValueBounds()
+        }
+        return HistoryApiExportQuery(HistoryDailyValueExportRange(digest, from, until, intraday), window.zone)
     }
 
     fun dailyHoldingsExportQuery(
         dayValue: String,
         currentScope: HistorySourceScope,
+        sampleAtValue: String? = null,
     ): HistoryApiExportQuery<HistoryDailyHoldingsExportQuery> {
         val digest = currentScope.accountIdentityDigest
             ?.takeIf { currentScope.mode == HistorySourceMode.ACCOUNT }
@@ -294,7 +473,17 @@ class HistoryApiPresenter(
         } catch (_: DateTimeParseException) {
             throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
         }
-        return HistoryApiExportQuery(HistoryDailyHoldingsExportQuery(digest, day), ZoneOffset.UTC)
+        val sampleAt = sampleAtValue?.trim()?.takeIf(String::isNotEmpty)?.let { raw ->
+            try {
+                Instant.parse(raw)
+            } catch (_: DateTimeParseException) {
+                throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+            }
+        }
+        if (sampleAt != null && sampleAt.atZone(ZoneOffset.UTC).toLocalDate() != day) {
+            throw HistoryApiRequestException(ViewText.HISTORY_API_RANGE_INVALID_DATE)
+        }
+        return HistoryApiExportQuery(HistoryDailyHoldingsExportQuery(digest, day, sampleAt), ZoneOffset.UTC)
     }
 
     private suspend fun dailyValueStatistics(
@@ -361,6 +550,71 @@ class HistoryApiPresenter(
         )
     }
 
+    private suspend fun intradayValueStatistics(
+        base: com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics,
+        scope: HistorySourceScope,
+        window: HistoryApiWindow,
+    ): com.gemini.krakenbot.service.reporting.HistoryPeriodStatistics {
+        val digest = scope.accountIdentityDigest ?: return base
+        val observationSnapshot = historyStore.queryObservationChartSnapshot(
+            query = HistoryRangeQuery(
+                from = window.from,
+                until = window.until,
+                sourceScope = HistoryObservationValuator.fullAccountScope(digest),
+                limit = HISTORY_MAX_PAGE_LIMIT,
+            ),
+            maxPoints = 2,
+        )
+        val first = observationSnapshot.firstObservation
+        val last = observationSnapshot.lastObservation
+        val firstComplete = observationSnapshot.firstCompleteObservation
+        val lastComplete = observationSnapshot.lastCompleteObservation
+        val minValue = observationSnapshot.minimumCompleteObservation
+        val maxValue = observationSnapshot.maximumCompleteObservation
+        val allEvidenceComplete = observationSnapshot.totalObservations > 0 &&
+            observationSnapshot.completeObservations == observationSnapshot.totalObservations
+        val changeComplete = allEvidenceComplete && observationSnapshot.completeObservations >= 2
+        val incompleteReason = observationSnapshot.firstIncompleteReason ?: when {
+            observationSnapshot.totalObservations == 0L -> "No full-account cycle values are available for this range."
+
+            observationSnapshot.completeObservations < 2 ->
+                "At least two full-account cycle values are needed to calculate the change."
+
+            !allEvidenceComplete -> "Some full-account cycle values are incomplete."
+
+            else -> null
+        }
+        return base.copy(
+            latestObservedValue = LatestObservedValue(
+                valueUsd = last?.totalUsd?.takeIf { last.status == HistoryObservationStatus.COMPLETE },
+                observedAt = last?.observedAt,
+                outsideSelectedPeriod = false,
+                complete = last?.status == HistoryObservationStatus.COMPLETE,
+                incompleteReason = if (last?.status == HistoryObservationStatus.COMPLETE) null else incompleteReason,
+            ),
+            observedValueChange = ObservedValueChange(
+                changeUsd = if (changeComplete && firstComplete != null && lastComplete != null) {
+                    lastComplete.totalUsd!!.subtract(firstComplete.totalUsd!!)
+                } else {
+                    null
+                },
+                firstValueUsd = firstComplete?.totalUsd,
+                firstObservedAt = firstComplete?.observedAt,
+                lastValueUsd = lastComplete?.totalUsd,
+                lastObservedAt = lastComplete?.observedAt,
+                includesFlowsNotice = "Deposits and withdrawals affect this change in account value.",
+                complete = changeComplete,
+                incompleteReason = if (changeComplete) null else incompleteReason,
+            ),
+            rangeExtrema = RangeExtrema(
+                high = maxValue?.let { RangeExtremum("high", it.totalUsd!!, it.observedAt) },
+                low = minValue?.let { RangeExtremum("low", it.totalUsd!!, it.observedAt) },
+                complete = allEvidenceComplete,
+                incompleteReason = if (allEvidenceComplete) null else incompleteReason,
+            ),
+        )
+    }
+
     private fun sampleDailyValues(values: List<HistoryDailyValue>, pointCap: Int): List<HistoryDailyValue> {
         if (values.size <= pointCap) return values
         val mandatory = values.indices.filter { index -> values[index].status != HistoryDailyValueStatus.COMPLETE }
@@ -392,8 +646,12 @@ class HistoryApiPresenter(
         val scope = resolveScope(scopeId, currentScope)
         val period = HistoryReportingPeriod(sourceScope = scope, from = window.from, until = window.until)
         val baseStatistics = reportingService.computeStatistics(period, targetAllocations)
-        val dailyStatistics = if (scopeId.isNullOrBlank() && scope.mode == HistorySourceMode.ACCOUNT) {
-            dailyValueStatistics(baseStatistics, scope, window)
+        val valueStatistics = if (scopeId.isNullOrBlank() && scope.mode == HistorySourceMode.ACCOUNT) {
+            if (window.preset == HistoryRangePreset.TWENTY_FOUR_HOURS.key) {
+                intradayValueStatistics(baseStatistics, scope, window)
+            } else {
+                dailyValueStatistics(baseStatistics, scope, window)
+            }
         } else {
             baseStatistics
         }
@@ -401,7 +659,7 @@ class HistoryApiPresenter(
             range = window.rangeDto(),
             scope = scopeDto(scope, currentScope),
             coverage = buildCoverage(scope),
-            statistics = dailyStatistics,
+            statistics = valueStatistics,
             generationMs = elapsedMs(startedNanos),
             scopeSelection = if (scopeId.isNullOrBlank()) {
                 HistoryApiScopeSelection.CURRENT_SCOPE
@@ -558,6 +816,8 @@ class HistoryApiPresenter(
             availableValueFromIso = firstDailyValue?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
             availableValueToIso = lastDailyValue?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString(),
             availableValueDays = availableDays,
+            publishedValueGenerationId = dailySnapshot?.publishedGenerationId,
+            publishedValueSourceRevision = dailySnapshot?.publishedSourceRevision,
         )
     }
 
