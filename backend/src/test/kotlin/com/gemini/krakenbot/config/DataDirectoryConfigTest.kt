@@ -20,7 +20,8 @@ class DataDirectoryConfigTest : StringSpec() {
             val original = System.getProperty(DataDirectoryConfig.DATA_DIR_PROPERTY)
             try {
                 System.setProperty(DataDirectoryConfig.DATA_DIR_PROPERTY, "/custom/data/dir")
-                DataDirectoryConfig.resolveDataDirectory() shouldBe Path.of("/custom/data/dir").toAbsolutePath().normalize()
+                DataDirectoryConfig.resolveDataDirectory() shouldBe
+                    Path.of("/custom/data/dir").toAbsolutePath().normalize()
             } finally {
                 if (original != null) {
                     System.setProperty(DataDirectoryConfig.DATA_DIR_PROPERTY, original)
@@ -50,6 +51,29 @@ class DataDirectoryConfigTest : StringSpec() {
         "executionDatabasePath resolves the execution journal file name" {
             val dir = Path.of("/test/data")
             DataDirectoryConfig.executionDatabasePath(dir) shouldBe dir.resolve(DataDirectoryConfig.EXECUTION_DB_FILE)
+        }
+
+        "no-argument startup methods use the configured data directory" {
+            val tempDir = Files.createTempDirectory("data-dir-configured-default-test-")
+            val original = System.getProperty(DataDirectoryConfig.DATA_DIR_PROPERTY)
+            try {
+                System.setProperty(DataDirectoryConfig.DATA_DIR_PROPERTY, tempDir.toString())
+
+                DataDirectoryConfig.initializeDataDirectory()
+
+                val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+                val originalBytes = Files.readAllBytes(executionDb)
+                DataDirectoryConfig.ensureDataDirectory()
+
+                Files.readAllBytes(executionDb) shouldBe originalBytes
+            } finally {
+                if (original != null) {
+                    System.setProperty(DataDirectoryConfig.DATA_DIR_PROPERTY, original)
+                } else {
+                    System.clearProperty(DataDirectoryConfig.DATA_DIR_PROPERTY)
+                }
+                tempDir.toFile().deleteRecursively()
+            }
         }
 
         "initializeDataDirectory creates the execution database and removes its marker" {

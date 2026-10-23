@@ -17,10 +17,7 @@ import java.math.RoundingMode
 
 class AllocationChartComponent {
     context(div: DIV)
-    fun render(
-        latest: PortfolioSnapshot,
-        allocations: List<Allocation> = emptyList(),
-    ) {
+    fun render(latest: PortfolioSnapshot, allocations: List<Allocation> = emptyList()) {
         val colorMap = allocations.symbolColorMap()
         div.glassPanel(ViewText.PORTFOLIO_ALLOCATION, Icons.DOLLAR_CIRCLE) {
             div(CssClass.AllocationChart.Container) {

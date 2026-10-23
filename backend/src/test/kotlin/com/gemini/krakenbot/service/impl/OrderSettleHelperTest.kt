@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.ExchangeTradeFill
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -242,15 +242,12 @@ class OrderSettleHelperTest : StringSpec() {
         }
     }
 
-    private fun page(
-        vararg entries: ExchangeTradeFill,
-        nextCursor: String? = null,
-        valid: Boolean = true,
-    ) = ExchangeTradePage(
-        entries = entries.toList(),
-        nextCursor = nextCursor,
-        valid = valid,
-    )
+    private fun page(vararg entries: ExchangeTradeFill, nextCursor: String? = null, valid: Boolean = true) =
+        ExchangeTradePage(
+            entries = entries.toList(),
+            nextCursor = nextCursor,
+            valid = valid,
+        )
 
     private fun trade(id: String, txid: String, cost: String, fee: String, feeCurrency: String? = null) =
         ExchangeTradeFill(

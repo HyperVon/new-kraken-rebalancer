@@ -68,7 +68,7 @@ class OrderExecutorImpl(
             if (journal.hasUnresolvedIntents()) {
                 log.error("Refusing live orders while an unresolved submission intent exists")
                 actionLog.add(ViewText.ERROR_LIVE_ORDERS_BLOCKED)
-                return OrderExecutionOutcome()
+                return OrderExecutionOutcome(blockedByUnresolvedIntents = true)
             }
             journal
         } else {

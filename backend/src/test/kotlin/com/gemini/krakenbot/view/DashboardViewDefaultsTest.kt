@@ -10,6 +10,7 @@ import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.div
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
@@ -57,5 +58,37 @@ class DashboardViewDefaultsTest :
                 }
             }
             fragment shouldContain "mode-plate"
+        }
+
+        "dashboard components retain their defaults when rendered directly" {
+            val settings = TestFixtures.DEFAULT_TEST_CONFIG.settings
+            val latest = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("100"))
+            val shell = createHTML(prettyPrint = false).html {
+                with(this) { DashboardShellComponent().render(settings) }
+            }
+            shell shouldContain "mode-plate"
+
+            val fragmentComponent = DashboardFragmentComponent(
+                overviewGridComponent = OverviewGridComponent(),
+                allocationChartComponent = AllocationChartComponent(),
+                performanceTableComponent = PerformanceTableComponent(),
+                recentActivityComponent = RecentActivityComponent(),
+            )
+            val fragment = createHTML(prettyPrint = false).div {
+                with(this) { fragmentComponent.render(settings, latest) }
+            }
+            fragment shouldContain "Recent Activity"
+            fragment shouldContain "data-activity-source-id=\"\""
+            fragment shouldNotContain "<form"
+
+            val allocation = createHTML(prettyPrint = false).div {
+                with(this) { AllocationChartComponent().render(latest) }
+            }
+            allocation shouldContain "Portfolio Allocation"
+
+            val performance = createHTML(prettyPrint = false).div {
+                with(this) { PerformanceTableComponent().render(latest) }
+            }
+            performance shouldContain "Asset Performance"
         }
     })

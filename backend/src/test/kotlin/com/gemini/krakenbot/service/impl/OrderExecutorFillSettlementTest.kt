@@ -3,8 +3,8 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.ExchangeTradeFill
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.OrderIntentService
 import io.kotest.core.spec.IsolationMode
@@ -29,6 +29,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-FILL-1"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -68,6 +69,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-MULTI-LEG"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -109,6 +111,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-FILTER"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -151,6 +154,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                     when {
                         side == TestFixtures.SELL && pair == Asset.BTC_USD_PAIR ->
                             OrderResult(
+                                pair = pair,
                                 success = false,
                                 side = side,
                                 volume = volume,
@@ -200,6 +204,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-FILL-CAP"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -233,6 +238,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -269,6 +275,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-HISTORY-FAILURE"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -301,6 +308,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -335,6 +343,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-PAGE-2"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -433,6 +442,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.balanceSupplier = { emptyMap() }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -469,6 +479,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-OVERSTATED"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -504,6 +515,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-ZERO-BALANCE"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
+                        pair = pair,
                         success = true,
                         side = side,
                         volume = volume,
@@ -566,13 +578,12 @@ class OrderExecutorFillSettlementTest : StringSpec() {
         )
     }
 
-    private fun pages(
-        vararg entries: ExchangeTradeFill,
-    ): (Long?, Long?, String?, Int?) -> ExchangeTradePage = { _, _, _, _ ->
-        ExchangeTradePage(
-            entries = entries.toList(),
-            nextCursor = null,
-            valid = true,
-        )
-    }
+    private fun pages(vararg entries: ExchangeTradeFill): (Long?, Long?, String?, Int?) -> ExchangeTradePage =
+        { _, _, _, _ ->
+            ExchangeTradePage(
+                entries = entries.toList(),
+                nextCursor = null,
+                valid = true,
+            )
+        }
 }

@@ -14,7 +14,10 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.KrakenPublicApiException
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.KrakenTransport
 import com.gemini.krakenbot.service.impl.PublicRateLimiter
+import com.gemini.krakenbot.service.impl.RateLimiter
+import com.gemini.krakenbot.service.impl.isFundingPermissionPath
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -35,6 +38,7 @@ import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -44,6 +48,49 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         checkNotNull(javaClass.getResource("/kraken-assets/$name")).readText()
 
     init {
+        "funding permission classification matches only the configured endpoints" {
+            listOf(
+                KrakenApiConstants.PATH_DEPOSIT_STATUS,
+                KrakenApiConstants.PATH_WITHDRAW_STATUS,
+                KrakenApiConstants.PATH_FUNDING_DEPOSITS,
+                KrakenApiConstants.PATH_FUNDING_WITHDRAWALS,
+                KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT,
+                KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW,
+            ).forEach { path -> isFundingPermissionPath(path) shouldBe true }
+
+            isFundingPermissionPath(KrakenApiConstants.PATH_ADD_ORDER) shouldBe false
+            isFundingPermissionPath("/0/private/FundingMethods/Unknown") shouldBe false
+        }
+
+        "transport parses public responses with its default rate limiter" {
+            runTest {
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """{"error":[],"result":{"unixtime":1}}""",
+                            headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                        )
+                    },
+                )
+                try {
+                    val transport = KrakenTransport(
+                        configService = mockk(relaxed = true),
+                        objectMapper = jacksonObjectMapper(),
+                        httpClient = client,
+                        rateLimiter = mockk<RateLimiter>(relaxed = true),
+                        nonceGenerator = AtomicLong(),
+                    )
+
+                    transport.queryPublic("/0/public/Time")
+                        .path("result")
+                        .path("unixtime")
+                        .asInt() shouldBe 1
+                } finally {
+                    client.close()
+                }
+            }
+        }
+
         "getAuthenticatedAccountIdentity reads the IIBAN returned by Kraken" {
             runTest {
                 val paths = mutableListOf<String>()
@@ -91,7 +138,6 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     .shouldBeFalse()
                 unboundedTradeBody.contains("${KrakenApiConstants.PARAM_LIMIT}=").shouldBeFalse()
                 shouldThrow<IllegalArgumentException> { tradeService.getRecentTradePage(limit = 0) }
-
             }
         }
 

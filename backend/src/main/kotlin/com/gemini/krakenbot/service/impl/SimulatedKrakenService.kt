@@ -86,7 +86,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     driftedUSDValue.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
             }
         }
-
     }
 
     private fun fluctuatePrices() {
@@ -163,7 +162,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val price = simulatedPrices[symbol] ?: BigDecimal.TEN
         val normalizedVolume = volume.toCryptoScale()
         val usdAmount = normalizedVolume.multiply(price).toUsdScale()
-        val fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
+        val fee = usdAmount.multiply(SIMULATED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
 
         if (dryRun) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully cl_ord_id=$clOrdId")
@@ -330,5 +329,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 .map { KrakenAssetMetadata(it, KrakenApiConstants.ASSET_CLASS_CURRENCY) }
         const val SIM_ORDER_TXID_PREFIX = "SIM-"
         const val SIM_TRADE_ID_PREFIX = "SIM-FILL-"
+        val SIMULATED_FEE_RATE: BigDecimal = BigDecimal("0.0026")
     }
 }

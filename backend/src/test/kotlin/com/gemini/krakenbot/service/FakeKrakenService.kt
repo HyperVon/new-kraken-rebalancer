@@ -27,6 +27,7 @@ class FakeKrakenService : KrakenService {
         { _, _, _, _ -> emptyPage() }
     var fundingEvidenceScopeSupplier: () -> String = { "fake-account" }
     var authenticatedAccountIdentitySupplier: () -> String? = { "AA00 TEST TEST TEST" }
+
     /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
         null
@@ -85,7 +86,6 @@ class FakeKrakenService : KrakenService {
         getAuthenticatedAccountIdentityCallCount++
         return authenticatedAccountIdentitySupplier()
     }
-
 
     override suspend fun executeOrder(
         pair: String,

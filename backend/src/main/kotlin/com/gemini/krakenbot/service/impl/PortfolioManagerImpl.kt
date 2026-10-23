@@ -336,9 +336,7 @@ class PortfolioManagerImpl(
         return withContext(MDCContext(contextMap)) { block() }
     }
 
-    private suspend fun performRebalanceCyclePinned(
-        activityDraft: CycleActivityDraft,
-    ): PortfolioSnapshot? {
+    private suspend fun performRebalanceCyclePinned(activityDraft: CycleActivityDraft): PortfolioSnapshot? {
         log.info("--- Starting Snapshot Phase ---")
         val config = activityDraft.config
         val actionLog = activityDraft.actions
@@ -394,7 +392,7 @@ class PortfolioManagerImpl(
                 prices = prices,
                 settings = config.settings,
                 actionLog = actionLog,
-                cycleId = cycleId,
+                cycleId = activityDraft.cycleId,
                 availableBalances = balances,
                 attempts = executionAttempts,
             )
@@ -451,9 +449,13 @@ class PortfolioManagerImpl(
             }
 
         val cycleOutcome = when {
-            executionFailed || operationalStatus.lastCycleError != null -> CurrentCycleOutcome.PROBLEM
+            executionFailed || operationalStatus.lastCycleError != null ||
+                executionOutcome?.blockedByUnresolvedIntents == true -> CurrentCycleOutcome.PROBLEM
+
             config.settings.dryRun && activityDraft.hasOrders -> CurrentCycleOutcome.DRY_RUN_PLAN
+
             executionAttemptedExchange -> CurrentCycleOutcome.ORDERS_ATTEMPTED
+
             else -> CurrentCycleOutcome.NO_TRADE
         }
         activityDraft.outcome = cycleOutcome

@@ -206,8 +206,12 @@ blocks later live submissions. If this occurs:
 #### Operator recovery runbook
 
 Resolving an intent is a deliberate local-recovery action, not an order retry.
-The endpoint updates the execution journal. It does **not** submit, cancel, or
-change an order at Kraken.
+The endpoint updates only the execution-journal row with the outcome, evidence
+note, and optional order transaction ID supplied by the operator. It does not
+query Kraken, synchronize `API_FILL` rows, match unkeyed trades, check fill
+candidates, or remove a duplicate failed estimate. The operator must verify the
+exchange outcome independently before resolving the intent. Resolution does
+not submit, cancel, or change an order at Kraken.
 Operators can inspect and resolve unresolved intents directly via the Dashboard
 Action Required banner and form or programmatically via the
 `POST /api/order-intents/{id}/resolve` endpoint.
@@ -224,8 +228,8 @@ Before sending a resolution request:
    as proof that the exchange rejected an order.
 
 For a confirmed fill, send the order transaction ID even though the endpoint
-accepts it as optional. It preserves the evidence needed to reconcile the
-local record with the authoritative exchange fill.
+accepts it as optional. The journal stores it as operator-supplied evidence; the
+endpoint does not verify it against Kraken or reconcile a local fill record.
 
 The following macOS/Linux `curl` example requests a CSRF token from the
 Settings page, keeps the matching cookie, then resolves intent `42`. Replace
@@ -262,27 +266,15 @@ rejected order, change `state` to `REJECTED`, omit `orderTxid` unless one exists
 and record the specific negative exchange evidence. Never infer rejection from
 silence or from the application's provisional local estimate.
 
-Some historical `API_FILL` rows may predate persistence of Kraken's order and
-trade identifiers. During a manually confirmed resolution, the application
-accepts such a row only when exactly one unkeyed API fill matches the intent's
-pair, symbol, side, volume, and a timestamp within ±10 seconds of the intent,
-plus 1% USD tolerance and, when available, 1% expected-price tolerance. If the
-unkeyed fallback is evaluated and multiple candidates match, the request
-returns HTTP `409` and leaves the intent unresolved for further
-investigation.
-This manual fallback is deliberately stricter than background sync: every
-listed constraint must pass, and pair aliases or exact-volume overrides do not
-qualify a candidate.
-
 After a successful resolution response, while the loop is still paused:
 
 1. Re-fetch `GET /api/order-intents`; the resolved ID must no longer appear.
 2. Check `GET /api/health`; `unresolvedOrderIntents` must decrease. It reaches
    `0` only when no other intent remains unresolved. Readiness remains `PAUSED`
    (and `/api/readiness` returns `503`) until you resume, which is expected.
-3. Inspect the matching Kraken fill. When the exact Kraken API fill has
-   already synced, confirmation keeps that fill and removes only its duplicate
-   local failed estimate.
+3. Independently re-check that the Kraken outcome matches the evidence you
+   submitted. A successful resolution response confirms only the journal state;
+   it does not verify or import a Kraken fill.
 4. Resume from the dashboard only after all checks pass and no other safety
    condition remains.
 
@@ -291,11 +283,11 @@ and TradesHistory. Direct REST verification through OpenOrders additionally
 requires **Query Open Orders & Trades**, even though the application does not
 need that permission during normal operation. If it is needed for an
 investigation, prefer a separate read-only diagnostic key or remove the added
-permission after reconciliation.
+permission after the investigation.
 
 An empty trade-history response is not sufficient proof that Kraken rejected the
-order. Unresolved intents are deliberately excluded from heuristic
-reconciliation, duplicate cleanup, and age-based pruning.
+order. Intent resolution does not perform heuristic reconciliation, duplicate
+cleanup, or age-based pruning.
 
 `GET /api/readiness` returns `503` while an unresolved intent exists, while the
 loop is paused or stopped, before a snapshot has been produced, after a cycle

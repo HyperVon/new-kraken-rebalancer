@@ -269,6 +269,8 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 - Displays loop controls, operational status, and the active simulation/dry-run/live mode.
 - Uses HTMX for HTML swaps and form submissions, plus Kotlin/JS for browser interactions.
 
+<a href="docs/images/dashboard.png"><img src="docs/images/dashboard.png" alt="Dashboard showing the latest current-cycle snapshot, allocation, performance, and recent activity" width="960"></a>
+
 ### Hot-Reload Configuration
 
 - Modify all settings (allocations, thresholds, assets) via the web UI
@@ -278,6 +280,8 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   `PortfolioManagerImpl` uses to restart its sleeping rebalancing loop with new
   settings without polling. Saves made during an active cycle persist
   immediately but defer runtime publication until that execution session ends.
+
+<a href="docs/images/settings.png"><img src="docs/images/settings.png" alt="Settings showing active controls, safety modes, and target allocations" width="960"></a>
 
 ### Offline Exchange Simulator
 

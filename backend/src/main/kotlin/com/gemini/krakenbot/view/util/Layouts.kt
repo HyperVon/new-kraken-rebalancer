@@ -162,19 +162,6 @@ fun FlowContent.primaryNav(active: ActiveNav) {
     }
 }
 
-fun FlowContent.statusCard(title: String, iconSvg: String, value: String, valueId: String) {
-    div(CssClass.StatusCard.Default) {
-        div(CssClass.StatusCard.Header) {
-            span(CssClass.StatusCard.Title) { +title }
-            div(CssClass.StatusCard.Icon) { icon(iconSvg) }
-        }
-        div(CssClass.StatusCard.Value) {
-            id = valueId
-            +value
-        }
-    }
-}
-
 fun DIV.formSection(title: String, iconSvg: String, block: DIV.() -> Unit) {
     div(CssClass.Form.Section) {
         h3(CssClass.Form.SectionTitle) {

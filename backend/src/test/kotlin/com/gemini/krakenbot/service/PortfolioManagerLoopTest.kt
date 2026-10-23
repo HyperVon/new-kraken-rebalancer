@@ -22,6 +22,7 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.RebalanceSessionContext
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -76,6 +77,30 @@ class PortfolioManagerLoopTest : StringSpec() {
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)
             }
+        }
+
+        "rebalance sessions own independent order attempt evidence" {
+            val first = RebalanceSessionContext(
+                cycleId = "first-cycle",
+                backend = FakeKrakenService(),
+                prices = emptyMap(),
+                settings = TestFixtures.settings(),
+                actionLog = mutableListOf(),
+            )
+            val second = RebalanceSessionContext(
+                cycleId = "second-cycle",
+                backend = FakeKrakenService(),
+                prices = emptyMap(),
+                settings = TestFixtures.settings(),
+                actionLog = mutableListOf(),
+            )
+
+            first.attempts.record(isLiveSubmission = true)
+
+            first.attempts.liveSubmissionAttempted shouldBe true
+            first.attempts.exchangeOrderAttempted shouldBe true
+            second.attempts.liveSubmissionAttempted shouldBe false
+            second.attempts.exchangeOrderAttempted shouldBe false
         }
 
         "startRebalancingLoop_RunsWhenEnabled" {
@@ -943,9 +968,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val failure = shouldThrow<IllegalStateException> { manager.performRebalanceCycle() }
                 failure.message shouldBe "balance backend down"
                 manager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
-
             }
         }
-
     }
 }

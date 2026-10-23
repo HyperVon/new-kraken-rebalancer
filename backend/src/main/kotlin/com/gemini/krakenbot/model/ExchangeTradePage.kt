@@ -1,11 +1,7 @@
 package com.gemini.krakenbot.model
 
 /** One Kraken trade page used to confirm fills before the Rebalancer spends sell proceeds. */
-data class ExchangeTradePage(
-    val entries: List<ExchangeTradeFill>,
-    val nextCursor: String?,
-    val valid: Boolean,
-)
+data class ExchangeTradePage(val entries: List<ExchangeTradeFill>, val nextCursor: String?, val valid: Boolean)
 
 /** Trade fields needed to prove a USD sell fill and calculate its net proceeds. */
 data class ExchangeTradeFill(

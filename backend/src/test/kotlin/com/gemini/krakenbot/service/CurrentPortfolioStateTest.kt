@@ -13,6 +13,13 @@ class CurrentPortfolioStateTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "dashboard views default to empty in-memory activity" {
+            val view = CurrentPortfolioDashboardView(latest = null, recentSnapshots = emptyList())
+
+            view.recentActivities shouldBe emptyList()
+            view.activitySourceId shouldBe ""
+        }
+
         "dashboard view retains only the latest 24 completed snapshots in publish order" {
             val state = CurrentPortfolioState()
             val start = Instant.parse("2026-10-11T12:00:00Z")

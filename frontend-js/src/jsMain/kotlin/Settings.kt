@@ -36,7 +36,8 @@ private val SETTINGS_FIELD_NAMES = setOf(
 
 private var settingsResponseListenerInstalled = false
 private var beforeUnloadListenerInstalled = false
-private var submittedSettingsSnapshot: String? = null
+private val submittedSettingsSnapshots = js("new WeakMap()")
+private var latestSubmittedSettingsRequestId = 0L
 private val beforeUnloadListener: (Event) -> Unit = { event ->
     event.preventDefault()
     event.asDynamic().returnValue = ""
@@ -66,14 +67,19 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
     val target = event.asDynamic().target as? Element ?: return
     val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
     if (target.id != SettingsState.FORM_ID && !form.contains(target)) return
-    val requestConfig = event.asDynamic().detail?.requestConfig
+    val detail = event.asDynamic().detail ?: return
+    val requestConfig = detail.requestConfig
     val path = (requestConfig?.path as? String)
         ?: target.getAttribute("hx-post")
         ?: target.getAttribute("hx-get")
         ?: return
     if (requestConfig?.verb?.toString()?.equals("post", ignoreCase = true) == false) return
     if (path.substringBefore('?').trimEnd('/') != Routes.SETTINGS.trimEnd('/')) return
-    submittedSettingsSnapshot = settingsSnapshot(form)
+    val xhr = detail.xhr ?: return
+    submittedSettingsSnapshots.set(
+        xhr,
+        SubmittedSettingsSnapshot(++latestSubmittedSettingsRequestId, settingsSnapshot(form)),
+    )
 }
 
 fun updateAllocationTotal() {
@@ -230,10 +236,13 @@ private fun handleSettingsSaveResponse(event: Event) {
     val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
     val detail = event.asDynamic().detail ?: return
     val xhr = detail.xhr ?: return
+    val submitted = submittedSettingsSnapshots.get(xhr) as? SubmittedSettingsSnapshot ?: return
+    submittedSettingsSnapshots.delete(xhr)
     val contentType = xhr.getResponseHeader("Content-Type") as? String ?: return
     if (!contentType.substringBefore(';').trim().equals("application/json", ignoreCase = true)) return
 
     detail.shouldSwap = false
+    if (submitted.requestId != latestSubmittedSettingsRequestId) return
     if ((xhr.status as? Int)?.let { it in 200..299 } != true) return
 
     val responseText = xhr.responseText as? String ?: return
@@ -245,9 +254,7 @@ private fun handleSettingsSaveResponse(event: Event) {
     val configPublicationPending = response.configPublicationPending as? Boolean ?: return
     val savedAt = response.savedAt as? String ?: return
 
-    val submitted = submittedSettingsSnapshot
-    submittedSettingsSnapshot = null
-    form.setAttribute(SettingsState.BASELINE_ATTRIBUTE, submitted ?: settingsSnapshot(form))
+    form.setAttribute(SettingsState.BASELINE_ATTRIBUTE, submitted.values)
     val status = document.getElementById(SettingsState.SAVE_STATUS_ID) as? HTMLElement ?: return
     status.textContent = if (configPublicationPending) {
         SettingsState.SAVED_APPLIES_AFTER_CURRENT_CYCLE
@@ -259,6 +266,8 @@ private fun handleSettingsSaveResponse(event: Event) {
     // Edits made while the request was in flight are not covered by the acknowledgement.
     updateSettingsState()
 }
+
+private data class SubmittedSettingsSnapshot(val requestId: Long, val values: String)
 
 private fun NodeList.forEachInput(action: (HTMLInputElement) -> Unit) {
     repeat(length) { index ->

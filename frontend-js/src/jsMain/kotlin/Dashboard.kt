@@ -225,11 +225,19 @@ internal fun restoreRecentActivityState() {
     val root = recentActivityRoot() ?: return
     val sourceId = root.getAttribute(RecentActivityText.SOURCE_ID_ATTRIBUTE) ?: return
     val renderedItems = readRenderedRecentActivityItems(root)
-    if (recentActivityUiState.sourceId != sourceId) {
+    val sourceChanged = recentActivityUiState.sourceId != sourceId
+    val newActivityIds = if (sourceChanged) {
+        renderedItems.filter(::hasActivity).take(1).mapTo(mutableSetOf()) { it.cycleId }
+    } else {
+        val knownCycleIds = recentActivityUiState.items.mapTo(mutableSetOf()) { it.cycleId }
+        renderedItems.filter { it.cycleId !in knownCycleIds && hasActivity(it) }.mapTo(mutableSetOf()) { it.cycleId }
+    }
+    if (sourceChanged) {
         resetRecentActivitySource(sourceId, renderedItems)
     } else {
         recentActivityUiState.items = mergeRecentActivityItems(recentActivityUiState.items, renderedItems)
     }
+    recentActivityUiState.expandedCycleIds.addAll(newActivityIds)
     renderRecentActivity(root)
     if (recentActivityUiState.pageScrollY > 0.0) window.scrollTo(window.scrollX, recentActivityUiState.pageScrollY)
 }
@@ -405,6 +413,9 @@ private fun activityModeLabel(mode: String): String = when (mode.uppercase()) {
 
 private fun itemHasOrders(item: RecentActivityItem): Boolean =
     outcomeCode(item.outcome) in setOf("DRY_RUN_PLAN", "ORDERS_ATTEMPTED") || item.actions.any(::isOrderAction)
+
+private fun hasActivity(item: RecentActivityItem): Boolean =
+    item.actions.isNotEmpty() || outcomeCode(item.outcome) in setOf("DRY_RUN_PLAN", "ORDERS_ATTEMPTED", "PROBLEM")
 
 private fun itemProblem(item: RecentActivityItem): Boolean =
     outcomeCode(item.outcome) == "PROBLEM" || item.actions.any(::isProblemAction)

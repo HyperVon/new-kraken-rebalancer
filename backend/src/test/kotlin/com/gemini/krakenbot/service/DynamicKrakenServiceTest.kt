@@ -102,7 +102,6 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getRecentTradePage(12345L, null, null, 10)
             coVerify(exactly = 1) { simulatedService.getRecentTradePage(12345L, null, null, 10) }
             coVerify(exactly = 0) { realService.getRecentTradePage(any(), any(), any(), any()) }
-
         }
 
         "forwards cursor trade pages to the selected backend" {
@@ -216,7 +215,6 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getRecentTradePage(null, null, null, null)
             coVerify(exactly = 1) { realService.getRecentTradePage(null, null, null, null) }
             coVerify(exactly = 0) { simulatedService.getRecentTradePage(any(), any(), any(), any()) }
-
         }
 
         "withStableBackend keeps sell and buy on the backend pinned at entry despite mid-call flip" {

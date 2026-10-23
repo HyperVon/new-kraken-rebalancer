@@ -4842,7 +4842,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Docs / skill drift**: Documented zero-target → 100% `Deviation%` in
   [`docs/ALGORITHM.md`](docs/ALGORITHM.md) and
   [`portfolio-rebalancing-math`](.agents/skills/portfolio-rebalancing-math/SKILL.md);
-  corrected [`trade-history-sync`](.agents/skills/trade-history-sync/SKILL.md)
+  corrected `trade-history-sync`
   so full vs incremental sync follows `latestTradeTime` nullity (not
   `isHistorySeeded`) and OHLC fetch is 95 days vs `HISTORICAL_DAYS_BACK` 90.
 - **Documentation review**: Corrected README Exposed migration API and package

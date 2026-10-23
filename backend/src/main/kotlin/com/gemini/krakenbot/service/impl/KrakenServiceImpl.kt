@@ -377,7 +377,9 @@ class KrakenServiceImpl(
             "Trade page limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
         }
         if (!configService.getConfig().kraken.hasValidCredentials()) {
-            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for order fill confirmation.")
+            throw KrakenCredentialsUnavailableException(
+                "Kraken credentials are unavailable for order fill confirmation.",
+            )
         }
 
         val params = mutableMapOf<String, String>()

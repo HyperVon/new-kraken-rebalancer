@@ -90,6 +90,9 @@ that.
 
 ## Dashboard
 
+<a href="images/dashboard.png"><img src="images/dashboard.png" alt="Dashboard showing the latest current-cycle snapshot and recent activity" width="960"></a>
+*Dashboard overview — the latest completed cycle and its current allocation.*
+
 ### Portfolio overview
 
 The Dashboard displays the latest completed rebalance cycle: a hero portfolio
@@ -117,6 +120,9 @@ Dry Run, or Live Trading mode.
 
 ### Allocation & performance
 
+<a href="images/dashboard-performance.png"><img src="images/dashboard-performance.png" alt="Current asset performance and target deviation legend" width="960"></a>
+*Dashboard — current asset performance and over/under-target legend.*
+
 - **Portfolio Allocation (Top Assets)** — Horizontal bars for the largest
   holdings by USD value (and cash), showing up to the **top 15**. Bar lengths are
   relative to the largest holding (the biggest fills the track), with each bar
@@ -134,6 +140,9 @@ Dry Run, or Live Trading mode.
   capped at 120 cycles. Failed cycles without a portfolio snapshot remain
   visible:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
+
+<a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Recent cycle activity and outcomes" width="960"></a>
+*Dashboard — recent cycle activity and outcomes.*
 
 Use this page as your “is the bot healthy right now?” view.
 
@@ -170,6 +179,9 @@ view.
 ## Settings
 
 Open **Settings** from the shared top nav, or go to `/settings`.
+
+<a href="images/settings.png"><img src="images/settings.png" alt="Settings with active controls and safety modes" width="960"></a>
+*Settings — active controls, allocations, and safety mode cards.*
 
 ### Global parameters
 
@@ -211,6 +223,9 @@ values are active or pending the current execution cycle. Validation failures
 preserve the entered values so you can correct the form without re-entering it.
 
 ### Target allocations
+
+<a href="images/settings-allocations.png"><img src="images/settings-allocations.png" alt="Target allocations and quality-score preview controls" width="960"></a>
+*Settings — target allocations and optional quality-score preview.*
 
 Each allocation row carries a symbol, a color swatch, an optional **Quality
 score**, a **Target** percent, and **Remove**. On wider screens, rows sit in

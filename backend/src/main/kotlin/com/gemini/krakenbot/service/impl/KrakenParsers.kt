@@ -300,5 +300,4 @@ object KrakenParsers {
             KrakenAssetMetadata(assetId, assetClass.asText())
         }
     }
-
 }

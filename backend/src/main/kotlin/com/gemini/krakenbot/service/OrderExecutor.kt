@@ -9,11 +9,13 @@ import com.gemini.krakenbot.domain.RebalanceOrders
 /**
  * Structured execution result; callers never parse formatted action text to infer whether
  * a submission occurred. [liveSubmissionAttempted] is true only when a real-money AddOrder
- * reached the live exchange path in this cycle.
+ * reached the live exchange path in this cycle. [blockedByUnresolvedIntents] distinguishes a
+ * deliberately blocked live cycle from a normal no-trade cycle.
  */
 data class OrderExecutionOutcome(
     val liveSubmissionAttempted: Boolean = false,
     val exchangeOrderAttempted: Boolean = false,
+    val blockedByUnresolvedIntents: Boolean = false,
 )
 
 /**

@@ -447,10 +447,20 @@ class SimulatedKrakenServiceTest : StringSpec() {
             }
         }
 
-        "getRecentTradePage should paginate with cursor and reject invalid cursor" {
+        "getRecentTradePage should paginate generated order fills and reject invalid cursor" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns btcUsdConfig
             val simulatedService = SimulatedKrakenService(configService)
+
+            repeat(6) {
+                simulatedService.executeOrder(
+                    pair = TestFixtures.BTCUSD,
+                    type = TestFixtures.MARKET,
+                    side = TestFixtures.BUY,
+                    volume = BigDecimal("0.00001"),
+                    dryRun = false,
+                ).success shouldBe true
+            }
 
             val page1 = simulatedService.getRecentTradePage(limit = 5)
             page1.entries.size shouldBe 5
@@ -458,7 +468,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
             page1.valid shouldBe true
 
             val page2 = simulatedService.getRecentTradePage(cursor = page1.nextCursor, limit = 5)
-            page2.entries.size shouldBe 5
+            page2.entries.size shouldBe 1
             page2.valid shouldBe true
 
             val invalidCursorPage = simulatedService.getRecentTradePage(cursor = "non-existent-cursor", limit = 5)

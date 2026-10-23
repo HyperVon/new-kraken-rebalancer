@@ -336,24 +336,6 @@ only updates stream-chip timing; it never opens an EventSource.
   rethrow cancellation.
 ````
 
-### [SYNC-WATERMARK-1] Never `max(watermark, latestTradeTime)`
-
-- Skill: `.agents/skills/trade-history-sync/SKILL.md`
-- Gap: Skill prefers `latestTradeTime` but does not forbid merging the two.
-- Why: Shrinks the reconcile window and strands local estimates.
-
-````markdown
-### Effective sync watermark
-
-- `effectiveLatest = latestTradeTime ?: watermarkInstant` — **only**
-  null-coalesce, never `max()` the two.
-- `latestTradeTime` excludes `dryRun = true` rows (`getLatestTradeTime` filter).
-- `sync_watermark_epoch_sec` is written after every successful sync so
-  dry-run-only accounts still advance.
-- Anti-pattern: `max(latestTradeTime, watermark)` — shrinks overlap below the
-  latest fill and skips unreconciled local estimates.
-````
-
 ### [PORT-ZERO-1] Block zero/negative notional before AddOrder
 
 - Skill: `.agents/skills/portfolio-rebalancing-math/SKILL.md`
@@ -369,24 +351,6 @@ only updates stream-chip timing; it never opens an EventSource.
   99% cycle budget.
 - Anti-pattern: relying on Kraken to reject zero volume — the app would still
   persist a `TradeRecord`.
-````
-
-### [EXPOSED-IO-1] Standard helpers: `safeTransactionIO` / `readTransactionIO`
-
-- Skill: `.agents/skills/exposed-repository/SKILL.md`
-- Gap: Skill shows manual `withContext(Dispatchers.IO) { safeTransaction }`; production uses `RepositoryUtils.kt` wrappers.
-- Why: Inconsistent IO dispatch; easy to block the Default dispatcher.
-
-````markdown
-### Transaction helpers (`repository/impl/RepositoryUtils.kt`)
-
-- **Writes:** `database.safeTransactionIO(log, message) { … }` — combines
-  `withContext(Dispatchers.IO)` with `safeTransaction`.
-- **Reads:** `database.readTransactionIO { … }` — plain `transaction(database)` on IO.
-- `safeTransaction` wraps non-`IOException` failures as `IOException`; raw
-  `IOException` is rethrown.
-- Anti-pattern: `transaction { }` on `Dispatchers.Default` inside a suspend
-  repository method.
 ````
 
 ### [KOIN-PM-1] `PortfolioManager` must inject `KrakenService` explicitly
@@ -757,33 +721,6 @@ When moving packages:
   `IllegalArgumentException` message for UI display.
 ````
 
-### [SYNC-FP-1] In-sync API fill fingerprint
-
-- Skill: `.agents/skills/trade-history-sync/SKILL.md`
-
-````markdown
-- Within one sync pass, dedupe API rows with `apiFillIdentityKey`:
-  `timestamp|pair|side|volume|usdAmount|fee|orderTxid`.
-- Include economics **and** timestamp — one AddOrder can produce multiple fill
-  legs sharing an `orderTxid`.
-- Skip rows whose key is already in `seenApiFillKeys` (newest-first pagination
-  overlap).
-````
-
-### [SYNC-RECON-1] Auto snapshot reconstruction gate
-
-- Skill: `.agents/skills/trade-history-sync/SKILL.md`
-
-````markdown
-- After sync, when `!simulation && totalTrades > 0 && snapshots.size <= 1`, call
-  `TradeHistoryReconstructionService.reconstructHistoricalSnapshots()`
-  (OHLC ~95 days; prune span 90 days).
-- Simulation seeding is separate (~15 days of snapshots / ~15 fills) and only
-  when the DB is empty with `simulation = true`.
-- Reconcile updates preserve local `cycleId`, prefer API `orderTxid`, and retain
-  `expectedPrice` for slippage recompute.
-````
-
 ### [FLOW-SETTLE-1] Fill-confirm poll constants
 
 - Skill: `.agents/skills/coroutines-flows-sse/SKILL.md`
@@ -794,33 +731,6 @@ When moving packages:
 - `sumMatchedSellProceeds`: up to 5 pages × 50 rows; match sell `orderTxid`;
   net `usdAmount − fee`; keep scanning after the first sighting (multi-leg fills).
 - Cap fill-confirmed USD with `min(balancePeek, projectedCash)` when balance is visible.
-````
-
-### [EXPOSED-MEM-1] In-memory SQLite keepalive
-
-- Skill: `.agents/skills/exposed-repository/SKILL.md`
-
-````markdown
-- `DatabaseConfig`: `:memory:` becomes
-  `jdbc:sqlite:file:<uuid>?mode=memory&cache=shared&foreign_keys=true`, plus a
-  shutdown-hook keepalive `Connection` per URL.
-- Tests must use `:memory:` (or that shared URL) — never a file DB.
-- Schema boot: `createStatements` + `addMissingColumnsStatements` +
-  `checkMappingConsistence` in one transaction (Exposed 1.x — no deprecated
-  `createMissingTablesAndColumns`).
-````
-
-### [EXPOSED-UPD-1] `updateTrade` PK-first with narrow fallback
-
-- Skill: `.agents/skills/exposed-repository/SKILL.md`
-
-````markdown
-- Default: `TradeTable.update({ TradeTable.id eq oldTrade.id })`.
-- Fallback **only** when `oldTrade.id == null`: match timestamp + pair +
-  normalized side + volume.
-- Persist sides via `OrderSide.normalize()`.
-- `getLatestTradeTime()` filters `dryRun = false` — coordinates with the sync
-  watermark.
 ````
 
 ### [KRAKEN-RETRY-1] Separate lockout vs network retry budgets

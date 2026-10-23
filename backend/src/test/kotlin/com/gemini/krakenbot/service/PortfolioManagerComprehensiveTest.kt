@@ -6,7 +6,10 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.CurrentCycleOutcome
+import com.gemini.krakenbot.service.OrderIntentService
+import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -394,6 +397,35 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 fixture.currentPortfolioState.readDashboardView().recentActivities.single().outcome shouldBe
                     CurrentCycleOutcome.NO_TRADE
+            }
+        }
+
+        "live orders blocked by an unresolved intent are reported as a problem" {
+            runTest {
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
+                    allocations = listOf(Allocation(TestFixtures.A, 100.0), Allocation(Asset.USD, 0.0)),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0) }
+                krakenService.balanceSupplier = { mapOf(TestFixtures.A to 0.0, Asset.USD to 1000.0) }
+                val orderIntents = mockk<OrderIntentService>(relaxed = true)
+                coEvery { orderIntents.hasUnresolvedIntents() } returns true
+                val state = CurrentPortfolioState()
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    portfolioAnalyzer = fixture.portfolioAnalyzer,
+                    orderExecutor = OrderExecutorImpl(krakenService, orderIntents),
+                    krakenService = krakenService,
+                    currentPortfolioState = state,
+                )
+
+                manager.performRebalanceCycle()
+
+                val activity = state.readDashboardView().recentActivities.single()
+                activity.outcome shouldBe CurrentCycleOutcome.PROBLEM
+                activity.actions.joinToString().shouldContain(ViewText.ERROR_LIVE_ORDERS_BLOCKED)
+                krakenService.executedOrders.size shouldBe 0
             }
         }
 
