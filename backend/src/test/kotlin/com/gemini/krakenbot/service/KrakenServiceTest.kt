@@ -28,10 +28,12 @@ import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -292,6 +294,73 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     "/0/public/Assets?aclass=tokenized_asset",
                 )
                 publicRateLimiter.acquireCount shouldBe 2
+            }
+        }
+
+        "getAssetMetadata caches metadata across calls within TTL and falls back to cache on failure" {
+            runTest {
+                var callCount = 0
+                var cancelRequests = false
+                val publicRateLimiter = object : PublicRateLimiter(minIntervalMs = 0) {
+                    override suspend fun acquire() {
+                        if (cancelRequests) throw CancellationException("metadata refresh cancelled")
+                        super.acquire()
+                    }
+                }
+                val engine = MockEngine { request ->
+                    callCount++
+                    if (callCount <= 2) {
+                        val body = if (request.url.encodedPathAndQuery.contains("tokenized_asset")) {
+                            assetFixture("assets-tokenized-asset.json")
+                        } else {
+                            assetFixture("assets-currency.json")
+                        }
+                        respond(
+                            content = body,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    } else {
+                        respond(
+                            content = """{"error":["EService:Unavailable"]}""",
+                            status = HttpStatusCode.ServiceUnavailable,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    }
+                }
+                var currentInstant = Instant.parse("2026-04-01T12:00:00Z")
+                val service = KrakenServiceImpl(
+                    configService = mockk(relaxed = true),
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(engine),
+                    publicRateLimiter = publicRateLimiter,
+                    clock = { currentInstant },
+                    metadataCacheTtlSeconds = 900L,
+                )
+
+                // First call: fetches fresh
+                val first = service.getAssetMetadata()
+                first.size shouldBe 3
+                callCount shouldBe 2
+
+                // Second call within TTL: returns cache without network calls
+                currentInstant = currentInstant.plusSeconds(300)
+                val second = service.getAssetMetadata()
+                second shouldBe first
+                callCount shouldBe 2
+
+                // Third call after TTL expiration but network fails (retries exhaust 9 lockout attempts):
+                // falls back to cached metadata
+                currentInstant = currentInstant.plusSeconds(700)
+                val third = service.getAssetMetadata()
+                third shouldBe first
+                callCount shouldBe 11
+
+                shouldThrow<Exception> { service.getFreshAssetMetadata() }
+                callCount shouldBe 20
+
+                cancelRequests = true
+                shouldThrow<CancellationException> { service.getAssetMetadata() }
             }
         }
 

@@ -46,6 +46,50 @@ class BrowserFixtureSeedTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "24-hour full-account samples span a regular half-hour cadence and resolve exact holdings" {
+            val fixture = BrowserFixtureEnvironment.create(CoroutineScope(SupervisorJob() + Dispatchers.Default))
+            try {
+                testApplication {
+                    application {
+                        install(SSE)
+                        configureSerialization()
+                        routing { fixture.controller.registerRoutes(this) }
+                    }
+                    startApplication()
+                    val chartResponse = client.get("${Routes.API_HISTORY_CHARTS}?preset=24h")
+                    chartResponse.status shouldBe HttpStatusCode.OK
+                    val chart = jacksonObjectMapper().readTree(chartResponse.bodyAsText())
+                    chart["resolution"].asText() shouldBe "cycle"
+                    chart["fullRange"]["totalObservations"].asLong() shouldBe
+                        BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT.toLong()
+
+                    val portfolio = chart["series"].first { it["key"].asText() == "portfolio" }
+                    val points = portfolio["points"]
+                    points.size() shouldBe BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT
+                    val sampleTimes = points.map { Instant.parse(it["selectionTimeIso"].asText()) }
+                    sampleTimes.zipWithNext().forEach { (previous, current) ->
+                        Duration.between(previous, current) shouldBe Duration.ofMinutes(30)
+                    }
+                    Duration.between(sampleTimes.first(), sampleTimes.last()) shouldBe Duration.ofMinutes(1_410)
+
+                    val selectedPoint = points[24]
+                    val selectedAt = Instant.parse(selectedPoint["selectionTimeIso"].asText())
+                    val selectedDay = selectedAt.atZone(ZoneOffset.UTC).toLocalDate()
+                    val holdingsResponse = client.get(
+                        "${Routes.API_HISTORY_HOLDINGS}?date=$selectedDay&at=$selectedAt",
+                    )
+                    holdingsResponse.status shouldBe HttpStatusCode.OK
+                    val holdings = jacksonObjectMapper().readTree(holdingsResponse.bodyAsText())
+                    holdings["available"].asBoolean() shouldBe true
+                    holdings["sampleAtIso"].asText() shouldBe selectedAt.toString()
+                    BigDecimal(holdings["totalUsd"].asText()) shouldBeEqualComparingTo
+                        BigDecimal(selectedPoint["v"].asText())
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
         "account cycle values drive the 24-hour chart and exact-time holdings route" {
             val fixture = BrowserFixtureEnvironment.create(CoroutineScope(SupervisorJob() + Dispatchers.Default))
             try {
@@ -66,7 +110,9 @@ class BrowserFixtureSeedTest : StringSpec() {
                                 limit = HISTORY_MAX_PAGE_LIMIT,
                             ),
                         )
-                        page.items.lastOrNull()?.let { return@withTimeout it }
+                        page.items.filter { it.observedAt.isAfter(fixture.fixtureNow) }
+                            .maxByOrNull { it.observedAt }
+                            ?.let { return@withTimeout it }
                         delay(10)
                     }
                     error("Unreachable")
@@ -96,8 +142,10 @@ class BrowserFixtureSeedTest : StringSpec() {
                     chartResponse.status shouldBe HttpStatusCode.OK
                     val chart = jacksonObjectMapper().readTree(chartResponse.bodyAsText())
                     chart["resolution"].asText() shouldBe "cycle"
-                    chart["fullRange"]["totalObservations"].asLong() shouldBe 1L
-                    val point = chart["series"][0]["points"][0]
+                    chart["fullRange"]["totalObservations"].asLong() shouldBe
+                        (BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT + 1).toLong()
+                    val points = chart["series"][0]["points"]
+                    val point = points[points.size() - 1]
                     point["selectionTimeIso"].asText() shouldBe observation.observedAt.toString()
                     point["v"].decimalValue() shouldBeEqualComparingTo BigDecimal("10000")
 
@@ -143,10 +191,8 @@ class BrowserFixtureSeedTest : StringSpec() {
                                 val body = response.bodyAsText()
                                 body.contains("History") shouldBe true
                                 if (url.endsWith("range=24h")) {
-                                    body.contains(
-                                        "No full-account cycle values are available in this 24h window yet.",
-                                    ) shouldBe
-                                        true
+                                    body.contains("24h cycle values ·") shouldBe true
+                                    body.contains("data-history-at=") shouldBe true
                                     body.contains("Daily marks") shouldBe false
                                 }
                             }
@@ -176,7 +222,8 @@ class BrowserFixtureSeedTest : StringSpec() {
                                             json["range"]["preset"].asText() shouldBe "24h"
                                             if (endpoint == "charts") {
                                                 json["resolution"].asText() shouldBe "cycle"
-                                                json["fullRange"]["totalObservations"].asLong() shouldBe 0L
+                                                json["fullRange"]["totalObservations"].asLong() shouldBe
+                                                    BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT.toLong()
                                             }
                                         }
                                     }
@@ -265,7 +312,7 @@ class BrowserFixtureSeedTest : StringSpec() {
 
                 val recordedScopes = fixture.historyStore.listRecordedScopes(digest)
                 recordedScopes.all { it.mode == HistorySourceMode.ACCOUNT } shouldBe true
-                recordedScopes.size shouldBe 2
+                recordedScopes.size shouldBe 3
                 val alternate = recordedScopes.single {
                     it.managedScopeFingerprint == fixture.alternateScope.managedScopeFingerprint
                 }

@@ -219,7 +219,7 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
                                 asset.priceUsd?.toPlainString(),
                                 asset.valueUsd?.toPlainString(),
                                 asset.status.name,
-                                asset.reason,
+                                asset.reason.asCsvText(),
                             ),
                         ),
                     )

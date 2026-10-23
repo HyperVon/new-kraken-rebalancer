@@ -62,7 +62,7 @@ class PortfolioAnalyzerImpl(
             )
         }
 
-        val metadata = krakenService.getAssetMetadata()
+        val metadata = krakenService.getFreshAssetMetadata()
         ConfiguredAssetTradingEligibility.requireEligible(
             configuredSymbols = nonUsd.map { it.symbol.value },
             metadata = metadata,

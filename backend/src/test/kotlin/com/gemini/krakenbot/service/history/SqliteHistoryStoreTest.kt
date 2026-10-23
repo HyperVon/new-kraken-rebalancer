@@ -2522,6 +2522,89 @@ class SqliteHistoryStoreTest : StringSpec() {
                     setOf("cycle-2", "cycle-1", "cycle-0")
             }
         }
+
+        "queryKnownAssetClasses extracts classifications from ledgers and marks conflicts as ambiguous" {
+            withStore { store, _ ->
+                val now = Instant.parse("2026-04-01T12:00:00Z")
+                val start = now.minusSeconds(3600).epochSecond
+                val end = now.epochSecond
+                store.beginSyncWindow(
+                    HistorySyncWindow(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.LEDGERS,
+                        scanId = "scan-asset-class",
+                        startSec = start,
+                        endSec = end,
+                        purpose = HistorySyncPurpose.RECENT,
+                    ),
+                )
+                val request = HistoryPageRequest(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.LEDGERS,
+                    scanId = "scan-asset-class",
+                    startSec = start,
+                    endSec = end,
+                    requestedCursor = null,
+                    committedAt = now,
+                    purpose = HistorySyncPurpose.RECENT,
+                )
+                val entries = listOf(
+                    ledgerEntry("L1", now.minusSeconds(100), asset = "STRC").copy(assetClass = "equity"),
+                    ledgerEntry("L2", now.minusSeconds(50), asset = "XXBT").copy(assetClass = "currency"),
+                    ledgerEntry("L3", now.minusSeconds(20), asset = "ZUSD").copy(assetClass = "currency"),
+                    ledgerEntry("L5", now.minusSeconds(15), asset = "NOCLASS", assetClass = null),
+                    ledgerEntry("L6", now.minusSeconds(10), asset = "BLANK", assetClass = " "),
+                )
+                store.commitLedgerPage(
+                    request,
+                    ExchangeHistoryPage(
+                        entries,
+                        start,
+                        end,
+                        null,
+                        null,
+                        entries.size.toLong(),
+                        entries.size,
+                        true,
+                    ),
+                )
+
+                val classes = store.queryKnownAssetClasses(accountDigest)
+                classes["STRC"] shouldBe "equity"
+                classes["XXBT"] shouldBe "currency"
+                classes["BTC"] shouldBe "currency"
+                classes["ZUSD"] shouldBe "currency"
+                classes["USD"] shouldBe "currency"
+                classes.containsKey("NOCLASS") shouldBe false
+                classes.containsKey("BLANK") shouldBe false
+
+                // Now commit a conflicting entry for STRC where assetClass is currency
+                store.beginSyncWindow(
+                    HistorySyncWindow(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.LEDGERS,
+                        scanId = "scan-conflict",
+                        startSec = start,
+                        endSec = end,
+                        purpose = HistorySyncPurpose.RECENT,
+                    ),
+                )
+                val conflictRequest = request.copy(scanId = "scan-conflict")
+                val conflictEntries = listOf(
+                    ledgerEntry("L4", now.minusSeconds(10), asset = "STRC").copy(assetClass = "currency"),
+                )
+                store.commitLedgerPage(
+                    conflictRequest,
+                    ExchangeHistoryPage(conflictEntries, start, end, null, null, 1, 1, true),
+                )
+                val conflictClasses = store.queryKnownAssetClasses(accountDigest)
+                conflictClasses["STRC"] shouldBe "ambiguous"
+
+                store.queryKnownAssetClasses(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                ) shouldBe emptyMap()
+            }
+        }
     }
 
     private fun tradeEntry(
@@ -2560,26 +2643,31 @@ class SqliteHistoryStoreTest : StringSpec() {
         isValidRecord = true,
     )
 
-    private fun ledgerEntry(id: String, time: Instant, balance: String = "1.5", asset: String = "XXBT") =
-        ExchangeLedgerHistoryEntry(
-            ledgerId = id,
-            refid = "ref-$id",
-            time = time,
-            rawTime = time.epochSecond.toString(),
-            type = "trade",
-            subtype = null,
-            assetClass = "currency",
-            asset = asset,
-            amount = "0.5",
-            fee = "0.001",
-            balance = balance,
-            rawRecordJson = "{}",
-            hasValidTime = true,
-            hasValidAmount = true,
-            hasValidFee = true,
-            hasValidBalance = true,
-            isValidRecord = true,
-        )
+    private fun ledgerEntry(
+        id: String,
+        time: Instant,
+        balance: String = "1.5",
+        asset: String = "XXBT",
+        assetClass: String? = "currency",
+    ) = ExchangeLedgerHistoryEntry(
+        ledgerId = id,
+        refid = "ref-$id",
+        time = time,
+        rawTime = time.epochSecond.toString(),
+        type = "trade",
+        subtype = null,
+        assetClass = assetClass,
+        asset = asset,
+        amount = "0.5",
+        fee = "0.001",
+        balance = balance,
+        rawRecordJson = "{}",
+        hasValidTime = true,
+        hasValidAmount = true,
+        hasValidFee = true,
+        hasValidBalance = true,
+        isValidRecord = true,
+    )
 
     private fun withStore(
         maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,

@@ -2275,16 +2275,19 @@ private fun historyPortfolioSvg(
     }
     val markers = points.mapIndexedNotNull { index, point ->
         val dayAttribute = point.dayLabel?.let { " data-history-day=\"${historySvgEscape(it)}\"" }.orEmpty()
+        val sampleAttribute = point.selectionTimeIso
+            ?.let { " data-history-at=\"${historySvgEscape(it)}\"" }
+            .orEmpty()
         if (point.value == null) {
             "<circle class=\"${CssClass.History.GapMarker.value}\" data-time=\"${point.time}\" data-gap=\"true\" " +
-                "data-series=\"${historySvgEscape(seriesKey)}\"$dayAttribute " +
+                "data-series=\"${historySvgEscape(seriesKey)}\"$dayAttribute$sampleAttribute " +
                 "cx=\"${x(point.time)}\" cy=\"$bottom\" r=\"3\"/>"
         } else {
             val visible = index % visibleStep == 0 || index == points.lastIndex
             "<circle class=\"${CssClass.History.Point.value}\" data-time=\"${point.time}\" " +
                 "data-value=\"${point.value}\" data-series=\"${historySvgEscape(
                     seriesKey,
-                )}\"$dayAttribute cx=\"${x(point.time)}\" " +
+                )}\"$dayAttribute$sampleAttribute cx=\"${x(point.time)}\" " +
                 "cy=\"${y(point.value)}\" r=\"${if (visible) 3 else 0}\"><title>" +
                 "${historySvgEscape(
                     historyDateLabel(point.time),

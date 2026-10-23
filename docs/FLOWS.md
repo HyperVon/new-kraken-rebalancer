@@ -211,6 +211,18 @@ scope, managed-asset scope, observation time, request windows, and completeness
 status. Incomplete samples do not have a total value; the chart does not infer
 values across them.
 
+For account-cycle full-account observations, identity lookup has a separate
+3-second timeout and the evidence collection has a 15-second budget that
+includes account-scoped ledger classification, public asset metadata, and any
+additional direct USD ticker reads. A timeout or collection error persists an
+incomplete observation with no total; coroutine cancellation still propagates.
+Known ledger or balance-checkpoint asset classes help identify equity balances
+that Kraken's public asset metadata does not classify as equities. Conflicts
+remain incomplete instead of selecting one class. Public asset metadata is
+cached for 15 minutes, with the last successful result retained for History
+capture if a refresh fails. Trading eligibility accepts metadata cached within
+that freshness window but fails closed if an expired-cache refresh fails.
+
 **Exchange history path:** History page → CSRF-protected
 `POST /api/history/sync/start` → `HistorySynchronizer` → Kraken Trades or
 Ledgers page → `HistoryStore`

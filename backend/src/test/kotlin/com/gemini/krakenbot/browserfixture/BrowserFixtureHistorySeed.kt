@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.service.DirectBalanceCapture
 import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerCapture
@@ -43,6 +44,8 @@ internal const val BROWSER_FIXTURE_LEDGER_EVENT_COUNT = 106
 internal const val BROWSER_FIXTURE_LEDGER_EVENT_DAY_COUNT = 102
 private const val SECONDS_PER_DAY = 24L * 60 * 60
 private const val SAMPLE_INTERVAL_SECONDS = 60L * 60
+internal const val BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT = 48
+private const val FULL_ACCOUNT_INTRADAY_SAMPLE_INTERVAL_SECONDS = 30L * 60
 
 internal object BrowserFixtureHistorySeed {
     suspend fun seed(
@@ -131,6 +134,38 @@ internal object BrowserFixtureHistorySeed {
         seedTrades(store, accountScope, now)
         seedLedgers(store, accountScope, now)
         seedDailyAccountValues(store, accountScope, now)
+        seedFullAccountIntradayValues(store, accountScope, now)
+    }
+
+    private suspend fun seedFullAccountIntradayValues(
+        store: HistoryStore,
+        accountScope: HistorySourceScope,
+        now: Instant,
+    ) {
+        val digest = checkNotNull(accountScope.accountIdentityDigest)
+        val firstSampleAt = now.minusSeconds(
+            (BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT - 1) * FULL_ACCOUNT_INTRADAY_SAMPLE_INTERVAL_SECONDS,
+        )
+        repeat(BROWSER_FIXTURE_FULL_ACCOUNT_INTRADAY_SAMPLE_COUNT) { index ->
+            val at = firstSampleAt.plusSeconds(index * FULL_ACCOUNT_INTRADAY_SAMPLE_INTERVAL_SECONDS)
+            val cycleId = "fixture-full-account-cycle-${index.toString().padStart(2, '0')}"
+            store.appendObservation(
+                fullAccountDirectObservation(
+                    cycleId = cycleId,
+                    accountIdentityDigest = digest,
+                    at = at,
+                    balances = linkedMapOf(
+                        "XXBT" to BigDecimal("0.10"),
+                        "XETH" to BigDecimal("1.20"),
+                        "ZUSD" to BigDecimal("3000.00"),
+                    ),
+                    prices = mapOf(
+                        "BTC" to BigDecimal("40000").add(BigDecimal(index * 5)),
+                        "ETH" to BigDecimal("2500").add(BigDecimal(index)),
+                    ),
+                ),
+            )
+        }
     }
 
     /** Synthetic, production-shaped marks for the browser fixture; never sourced from an account. */
@@ -255,6 +290,49 @@ internal object BrowserFixtureHistorySeed {
                 )
             },
         ),
+        sampleSelection = HistorySampleSelection.FINAL,
+        now = at,
+    ).copy(
+        balanceSource = "FAKE_VERIFIED_ACCOUNT_BALANCES",
+        priceSource = "FAKE_VERIFIED_ACCOUNT_TICKERS",
+        persistedAt = at,
+    )
+
+    private fun fullAccountDirectObservation(
+        cycleId: String,
+        accountIdentityDigest: String,
+        at: Instant,
+        balances: Map<String, BigDecimal>,
+        prices: Map<String, BigDecimal>,
+    ) = HistoryObservationValuator.buildFullAccountDirect(
+        observationId = cycleId,
+        cycleId = cycleId,
+        accountIdentityDigest = accountIdentityDigest,
+        balances = DirectBalanceCapture(
+            requestStartedAt = at.minusSeconds(4),
+            responseEndedAt = at.minusSeconds(3),
+            resultShapeValid = true,
+            valuesByAssetId = balances.mapValues { (_, amount) -> amount.evidence() },
+        ),
+        prices = DirectTickerCapture(
+            requestStartedAt = at.minusSeconds(1),
+            responseEndedAt = at,
+            resultShapeValid = true,
+            marksBySymbol = prices.mapValues { (symbol, price) ->
+                val pair = if (symbol == "BTC") "XXBTZUSD" else "XETHZUSD"
+                DirectTickerMark(
+                    symbol = symbol,
+                    requestedPair = pair,
+                    responsePair = pair,
+                    candidateResponsePairs = listOf(pair),
+                    rawPrice = price.toPlainString(),
+                    price = price,
+                    status = DirectEvidenceStatus.VALID,
+                    candidateValuesByPair = mapOf(pair to price.evidence()),
+                )
+            },
+        ),
+        assetMetadata = balances.keys.map { key -> KrakenAssetMetadata(key, "currency") },
         sampleSelection = HistorySampleSelection.FINAL,
         now = at,
     ).copy(

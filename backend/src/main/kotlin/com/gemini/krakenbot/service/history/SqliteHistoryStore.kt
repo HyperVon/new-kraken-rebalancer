@@ -384,6 +384,54 @@ class SqliteHistoryStore(
         }
     }
 
+    override suspend fun queryKnownAssetClasses(accountIdentityDigest: String): Map<String, String> {
+        requireDigest(accountIdentityDigest)
+        return withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                val classesByAsset = mutableMapOf<String, MutableSet<String>>()
+                val ledgerSql = "SELECT DISTINCT asset, asset_class FROM history_ledgers " +
+                    "WHERE account_identity_digest = ? AND asset IS NOT NULL AND asset_class IS NOT NULL"
+                connection.prepareStatement(ledgerSql).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            val asset = rs.getString("asset")?.trim()?.uppercase(Locale.ROOT)
+                            val assetClass = rs.getString("asset_class")?.trim()?.lowercase(Locale.ROOT)
+                            if (!asset.isNullOrBlank() && !assetClass.isNullOrBlank()) {
+                                classesByAsset.computeIfAbsent(asset) { mutableSetOf() }.add(assetClass)
+                                val canonical = Asset.normalizeLedgerAsset(asset).uppercase(Locale.ROOT)
+                                if (canonical != asset) {
+                                    classesByAsset.computeIfAbsent(canonical) { mutableSetOf() }.add(assetClass)
+                                }
+                            }
+                        }
+                    }
+                }
+                val checkpointSql = "SELECT DISTINCT raw_asset_key, raw_asset_class FROM history_balance_checkpoints " +
+                    "WHERE account_identity_digest = ? AND raw_asset_key IS NOT NULL AND raw_asset_class IS NOT NULL"
+                connection.prepareStatement(checkpointSql).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            val asset = rs.getString("raw_asset_key")?.trim()?.uppercase(Locale.ROOT)
+                            val assetClass = rs.getString("raw_asset_class")?.trim()?.lowercase(Locale.ROOT)
+                            if (!asset.isNullOrBlank() && !assetClass.isNullOrBlank()) {
+                                classesByAsset.computeIfAbsent(asset) { mutableSetOf() }.add(assetClass)
+                                val canonical = Asset.normalizeLedgerAsset(asset).uppercase(Locale.ROOT)
+                                if (canonical != asset) {
+                                    classesByAsset.computeIfAbsent(canonical) { mutableSetOf() }.add(assetClass)
+                                }
+                            }
+                        }
+                    }
+                }
+                classesByAsset.mapValues { (_, classes) ->
+                    if (classes.size == 1) classes.single() else "ambiguous"
+                }
+            }
+        }
+    }
+
     override suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus = withContext(Dispatchers.IO) {
         requireDigest(window.accountIdentityDigest)
         require(window.startSec <= window.endSec)

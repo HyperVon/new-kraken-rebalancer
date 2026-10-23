@@ -125,6 +125,7 @@ class HistoryCsvExporterTest : StringSpec() {
                 quantity = BigDecimal.ONE,
                 priceUsd = BigDecimal("50000"),
                 valueUsd = BigDecimal("50000"),
+                reason = "=HYPERLINK(1)",
             )
             val available = intradayObservation("cycle-holdings", sampleAt, "50000", listOf(holding))
             val empty = available.copy(assets = emptyList())
@@ -151,6 +152,7 @@ class HistoryCsvExporterTest : StringSpec() {
             availableRow["asset"] shouldBe "BTC"
             availableRow["quantity"] shouldBe "1"
             availableRow["availability"] shouldBe "COMPLETE"
+            availableRow["reason"] shouldBe "'=HYPERLINK(1)"
             val missingRow = recordMaps(missingChunks.joinToString("")).single()
             missingRow["account_availability"] shouldBe "OUTSIDE_COVERAGE"
             missingRow["reason"] shouldBe "No account value is available at this time."

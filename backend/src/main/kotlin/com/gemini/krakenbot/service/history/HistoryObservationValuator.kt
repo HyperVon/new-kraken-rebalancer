@@ -203,6 +203,7 @@ object HistoryObservationValuator {
         balances: DirectBalanceCapture,
         prices: DirectTickerCapture,
         assetMetadata: List<KrakenAssetMetadata>,
+        authoritativeAssetClasses: Map<String, String> = emptyMap(),
         sampleSelection: HistorySampleSelection = HistorySampleSelection.FINAL,
         now: Instant = Instant.now(),
     ): HistoryObservation {
@@ -248,7 +249,13 @@ object HistoryObservationValuator {
             .groupBy(::canonicalLedgerAsset)
             .toSortedMap()
             .mapNotNull { (symbol, rawKeys) ->
-                val assetClass = resolveAssetClass(rawKeys, symbol, metadataByRawKey, metadataBySymbol)
+                val assetClass = resolveAssetClass(
+                    rawKeys = rawKeys,
+                    symbol = symbol,
+                    metadataByRawKey = metadataByRawKey,
+                    metadataBySymbol = metadataBySymbol,
+                    authoritativeAssetClasses = authoritativeAssetClasses,
+                )
                 if (assetClass.value == EQUITY_ASSET_CLASS) return@mapNotNull null
 
                 val evidence = rawKeys.map { rawKey -> rawKey to balances.valuesByAssetId.getValue(rawKey) }
@@ -362,6 +369,7 @@ object HistoryObservationValuator {
         balances: DirectBalanceCapture,
         prices: DirectTickerCapture?,
         assetMetadata: List<KrakenAssetMetadata>,
+        authoritativeAssetClasses: Map<String, String> = emptyMap(),
     ): List<String> {
         if (!balances.resultShapeValid) return emptyList()
         val metadataByRawKey = assetMetadata.groupBy { it.assetId.trim().uppercase(Locale.ROOT) }
@@ -374,8 +382,13 @@ object HistoryObservationValuator {
                     value.status == DirectEvidenceStatus.VALID && value.value != null && value.value.signum() >= 0
                 } && rawKeys.fold(BigDecimal.ZERO) { total, key ->
                     total.add(checkNotNull(balances.valuesByAssetId.getValue(key).value))
-                }.signum() > 0 && resolveAssetClass(rawKeys, symbol, metadataByRawKey, metadataBySymbol)
-                    .value in SUPPORTED_ACCOUNT_ASSET_CLASSES
+                }.signum() > 0 && resolveAssetClass(
+                    rawKeys = rawKeys,
+                    symbol = symbol,
+                    metadataByRawKey = metadataByRawKey,
+                    metadataBySymbol = metadataBySymbol,
+                    authoritativeAssetClasses = authoritativeAssetClasses,
+                ).value in SUPPORTED_ACCOUNT_ASSET_CLASSES
             }
             .keys
             .filter { symbol ->
@@ -384,6 +397,79 @@ object HistoryObservationValuator {
                 } != true
             }
             .sorted()
+    }
+
+    /** Builds an explicitly incomplete full-account observation when pricing evidence could not be completed. */
+    fun buildIncompleteFullAccountDirect(
+        observationId: String,
+        cycleId: String,
+        accountIdentityDigest: String,
+        balances: DirectBalanceCapture,
+        reason: String,
+        authoritativeAssetClasses: Map<String, String> = emptyMap(),
+        sampleSelection: HistorySampleSelection = HistorySampleSelection.FINAL,
+        now: Instant = Instant.now(),
+    ): HistoryObservation {
+        val sourceScope = fullAccountScope(accountIdentityDigest)
+        val assets = balances.valuesByAssetId.keys
+            .groupBy(::canonicalLedgerAsset)
+            .toSortedMap()
+            .mapNotNull { (symbol, rawKeys) ->
+                val isEquity = rawKeys.any { key ->
+                    authoritativeAssetClasses[key.trim().uppercase(Locale.ROOT)] == EQUITY_ASSET_CLASS
+                } || authoritativeAssetClasses[symbol.trim().uppercase(Locale.ROOT)] == EQUITY_ASSET_CLASS
+                if (isEquity) return@mapNotNull null
+
+                val evidence = rawKeys.map { rawKey -> rawKey to balances.valuesByAssetId.getValue(rawKey) }
+                val quantityValid = balances.resultShapeValid && evidence.all { (_, value) ->
+                    value.status == DirectEvidenceStatus.VALID && value.value != null && value.value.signum() >= 0
+                }
+                val quantity = if (quantityValid) {
+                    evidence.fold(BigDecimal.ZERO) { total, (_, value) -> total.add(checkNotNull(value.value)) }
+                } else {
+                    null
+                }
+                val isUsd = symbol == Asset.USD
+                val status = when {
+                    !quantityValid || quantity == null -> HistoryAssetValueStatus.INVALID_BALANCE
+                    isUsd -> HistoryAssetValueStatus.COMPLETE
+                    else -> HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+                }
+                HistoryAssetValue(
+                    symbol = symbol,
+                    status = status,
+                    rawBalanceKeys = rawKeys.sorted(),
+                    rawBalanceValues = evidence.associate { (k, v) -> k to v.rawValue },
+                    quantity = quantity,
+                    requestedPair = if (isUsd) "USD" else null,
+                    responsePair = if (isUsd) "USD" else null,
+                    rawPrice = if (isUsd) "1" else null,
+                    priceUsd = if (isUsd) BigDecimal.ONE else null,
+                    valueUsd = if (isUsd && quantityValid) quantity else null,
+                    reason = when {
+                        !quantityValid || quantity == null -> "Balance amount is invalid or negative."
+                        isUsd -> null
+                        else -> reason
+                    },
+                )
+            }
+        val observedAt = balances.responseEndedAt
+        require(now >= observedAt) { "History observation timestamps cannot be in the future." }
+        return HistoryObservation(
+            observationId = observationId,
+            cycleId = cycleId,
+            sourceScope = sourceScope,
+            sampleSelection = sampleSelection,
+            observedAt = observedAt,
+            balanceRequestStartedAt = balances.requestStartedAt,
+            balanceResponseEndedAt = balances.responseEndedAt,
+            priceRequestStartedAt = observedAt,
+            priceResponseEndedAt = observedAt,
+            status = HistoryObservationStatus.INCOMPLETE,
+            totalUsd = null,
+            incompleteReasons = listOf(reason),
+            assets = assets,
+        )
     }
 
     fun buildSimulation(
@@ -495,20 +581,53 @@ object HistoryObservationValuator {
         symbol: String,
         metadataByRawKey: Map<String, List<KrakenAssetMetadata>>,
         metadataBySymbol: Map<String, List<KrakenAssetMetadata>>,
+        authoritativeAssetClasses: Map<String, String> = emptyMap(),
     ): AssetClassResolution {
         val resolvedClasses = mutableSetOf<String>()
         rawKeys.forEach { rawKey ->
-            val candidates = metadataByRawKey[rawKey.uppercase(Locale.ROOT)]
+            val normalizedRawKey = rawKey.trim().uppercase(Locale.ROOT)
+            val candidates = metadataByRawKey[normalizedRawKey]
                 .takeUnless { it.isNullOrEmpty() }
                 ?: metadataBySymbol[symbol].orEmpty()
-            if (candidates.isEmpty()) {
-                return AssetClassResolution(null, "Kraken asset metadata is unavailable for this balance.")
+
+            val publicClass = if (candidates.isNotEmpty()) {
+                val classes = candidates.map { it.assetClass.trim().lowercase(Locale.ROOT) }.toSet()
+                if (classes.size != 1) {
+                    return AssetClassResolution(null, "Kraken asset metadata is ambiguous for this balance.")
+                }
+                classes.single()
+            } else {
+                null
             }
-            val classes = candidates.map { it.assetClass.trim().lowercase(Locale.ROOT) }.toSet()
-            if (classes.size != 1) {
-                return AssetClassResolution(null, "Kraken asset metadata is ambiguous for this balance.")
+
+            val ledgerClass = authoritativeAssetClasses[normalizedRawKey]?.trim()?.lowercase(Locale.ROOT)
+                ?: authoritativeAssetClasses[symbol.trim().uppercase(Locale.ROOT)]?.trim()?.lowercase(Locale.ROOT)
+
+            if (ledgerClass == "ambiguous") {
+                return AssetClassResolution(
+                    null,
+                    "Kraken account ledger history reports conflicting asset classes for this balance.",
+                )
             }
-            resolvedClasses += classes.single()
+
+            val resolved = when {
+                publicClass != null && ledgerClass != null -> {
+                    if (publicClass != ledgerClass) {
+                        return AssetClassResolution(
+                            null,
+                            "Kraken asset metadata conflicts with account ledger classification.",
+                        )
+                    }
+                    publicClass
+                }
+
+                publicClass != null -> publicClass
+
+                ledgerClass != null -> ledgerClass
+
+                else -> return AssetClassResolution(null, "Kraken asset metadata is unavailable for this balance.")
+            }
+            resolvedClasses += resolved
         }
         return if (resolvedClasses.size == 1) {
             AssetClassResolution(resolvedClasses.single(), null)

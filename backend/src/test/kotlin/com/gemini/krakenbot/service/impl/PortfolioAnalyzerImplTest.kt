@@ -211,7 +211,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     return TickerRead(mapOf("XXBTZUSD" to BigDecimal("50000.25")), capture)
                 }
             }
-            coEvery { krakenService.getAssetMetadata() } returns listOf(KrakenAssetMetadata("XXBT", "currency"))
+            coEvery { krakenService.getFreshAssetMetadata() } returns listOf(KrakenAssetMetadata("XXBT", "currency"))
             val analyzer = PortfolioAnalyzerImpl(directService, configService)
 
             val observed = analyzer.fetchObservedPrices()
@@ -227,7 +227,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 settings = TestFixtures.settings(),
                 allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
             )
-            coEvery { krakenService.getAssetMetadata() } returns listOf(
+            coEvery { krakenService.getFreshAssetMetadata() } returns listOf(
                 KrakenAssetMetadata("XXBT", "currency"),
                 KrakenAssetMetadata("AAPL", "equity"),
             )
@@ -235,7 +235,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
             analyzer.fetchObservedPrices()
 
-            coVerify(exactly = 1) { krakenService.getAssetMetadata() }
+            coVerify(exactly = 1) { krakenService.getFreshAssetMetadata() }
             coVerify(exactly = 1) { krakenService.getTickerPrices("XBTUSD") }
         }
 
@@ -275,7 +275,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 allocations = listOf(Allocation(Asset.BTC, 100.0)),
             )
             val metadataFailure = IllegalStateException("asset metadata unavailable")
-            coEvery { krakenService.getAssetMetadata() } throws metadataFailure
+            coEvery { krakenService.getAssetMetadata() } returns listOf(KrakenAssetMetadata("XXBT", "currency"))
+            coEvery { krakenService.getFreshAssetMetadata() } throws metadataFailure
             val analyzer = PortfolioAnalyzerImpl(krakenService, configService)
 
             shouldThrow<IllegalStateException> { analyzer.fetchObservedPrices() }.message shouldBe

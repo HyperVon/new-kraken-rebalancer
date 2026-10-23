@@ -347,6 +347,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val prices = mapOf(Asset.BTC_USD_PAIR to BigDecimal("50000.00"))
                 coEvery { simulatedBackend.getBalances() } returns balances
                 coEvery { simulatedBackend.getAssetMetadata() } returns listOf(KrakenAssetMetadata("XXBT", "currency"))
+                coEvery { simulatedBackend.getFreshAssetMetadata() } returns
+                    listOf(KrakenAssetMetadata("XXBT", "currency"))
                 coEvery { simulatedBackend.getTickerPrices(any()) } returns prices
 
                 val orderEntered = CompletableDeferred<Unit>()

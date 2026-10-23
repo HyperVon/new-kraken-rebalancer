@@ -31,6 +31,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
@@ -42,6 +43,8 @@ class KrakenServiceImpl(
     private val httpClient: HttpClient,
     private val rateLimiter: RateLimiter = RateLimiter(),
     private val publicRateLimiter: PublicRateLimiter = PublicRateLimiter(),
+    private val clock: () -> Instant = Instant::now,
+    private val metadataCacheTtlSeconds: Long = METADATA_CACHE_TTL_SECONDS,
 ) : KrakenService,
     DirectKrakenEvidenceService,
     SpendableBalanceService {
@@ -53,7 +56,11 @@ class KrakenServiceImpl(
     private companion object {
         const val MAX_ERROR_MESSAGE_LENGTH = 500
         const val MAX_TRADE_PAGE_LIMIT = 100
+        const val METADATA_CACHE_TTL_SECONDS = 900L
     }
+
+    @Volatile
+    private var cachedMetadata: Pair<Instant, List<KrakenAssetMetadata>>? = null
 
     private val transport = KrakenTransport(
         configService = configService,
@@ -245,12 +252,43 @@ class KrakenServiceImpl(
     private fun tickerPath(pairs: String): String =
         "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
 
-    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = listOf(
-        KrakenApiConstants.ASSET_CLASS_CURRENCY,
-        KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET,
-    ).flatMap { requestedClass ->
-        val path = "${KrakenApiConstants.PATH_ASSETS}?${KrakenApiConstants.PARAM_ACLASS}=$requestedClass"
-        KrakenParsers.parseAssetMetadata(queryPublic(path))
+    override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = getAssetMetadata(allowStaleFallback = true)
+
+    override suspend fun getFreshAssetMetadata(): List<KrakenAssetMetadata> =
+        getAssetMetadata(allowStaleFallback = false)
+
+    private suspend fun getAssetMetadata(allowStaleFallback: Boolean): List<KrakenAssetMetadata> {
+        val now = clock()
+        val cached = cachedMetadata
+        val cacheAge = cached?.let { Duration.between(it.first, now) }
+        if (cached != null && metadataCacheTtlSeconds > 0 &&
+            cacheAge != null && !cacheAge.isNegative && cacheAge < Duration.ofSeconds(metadataCacheTtlSeconds)
+        ) {
+            return cached.second
+        }
+        val fresh = try {
+            listOf(
+                KrakenApiConstants.ASSET_CLASS_CURRENCY,
+                KrakenApiConstants.ASSET_CLASS_TOKENIZED_ASSET,
+            ).flatMap { requestedClass ->
+                val path = "${KrakenApiConstants.PATH_ASSETS}?${KrakenApiConstants.PARAM_ACLASS}=$requestedClass"
+                KrakenParsers.parseAssetMetadata(queryPublic(path))
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (allowStaleFallback && cached != null) {
+                log.warn("Failed to refresh Kraken asset metadata; falling back to cached metadata.", error)
+                return cached.second
+            }
+            throw error
+        }
+        cachedMetadata = now to fresh
+        return fresh
+    }
+
+    fun clearAssetMetadataCache() {
+        cachedMetadata = null
     }
 
     override suspend fun executeOrder(

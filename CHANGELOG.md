@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.7] - 2026-10-22
+
+### Fixed
+
+- **Full-account cycle capture**: keep account ledger classification and direct
+  ticker collection within a 15-second evidence budget. Timeouts and capture
+  failures persist an explicitly incomplete sample without publishing a total.
+- **Full-account asset classification**: use account-scoped ledger and balance
+  checkpoint classes to exclude equities and fail closed on conflicting classes.
+- **Kraken asset metadata**: cache public metadata for 15 minutes and reuse the
+  last successful result for History capture when a refresh fails. Trading
+  eligibility rejects expired metadata if its refresh fails.
+- **Intraday holdings CSV**: neutralize formula-leading persisted reason text
+  before writing exported rows.
+- **24-hour chart fallback**: preserve each refreshed point's exact capture
+  time so SVG point selection loads the matching holdings sample.
+
 ## [6.20.6] - 2026-10-22
 
 ### Fixed

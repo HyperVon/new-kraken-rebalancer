@@ -54,6 +54,9 @@ interface HistoryStore {
 
     suspend fun queryFilterOptions(query: HistoryEventQuery): HistoryEventFilterOptions
 
+    /** Returns known asset classes from imported account ledgers and balance checkpoints, keyed by raw and canonical asset. */
+    suspend fun queryKnownAssetClasses(accountIdentityDigest: String): Map<String, String>
+
     suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus
 
     suspend fun syncStatus(accountIdentityDigest: String): List<HistorySyncStatus>

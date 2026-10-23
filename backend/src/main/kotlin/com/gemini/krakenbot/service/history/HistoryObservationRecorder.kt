@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,6 +42,7 @@ class HistoryObservationRecorder(
     private val dataDirectoryIdentity: DataDirectoryIdentity,
     private val nowProvider: () -> Instant = Instant::now,
     private val identityLookupTimeoutMs: Long = IDENTITY_LOOKUP_TIMEOUT_MS,
+    private val captureTimeoutMs: Long = CAPTURE_TIMEOUT_MS,
 ) {
     private val log = LoggerFactory.getLogger(HistoryObservationRecorder::class.java)
     private val queue = Channel<PendingCycle>(capacity = QUEUE_CAPACITY)
@@ -322,15 +325,23 @@ class HistoryObservationRecorder(
             if (scope.mode == HistorySourceMode.ACCOUNT) {
                 balances?.directCapture?.let { balanceCapture ->
                     val fullAccount = fullAccountObservation(pending, scope, balanceCapture)
-                    if (fullAccount != null) store.appendObservation(fullAccount)
+                    if (fullAccount != null) {
+                        store.appendObservation(fullAccount)
+                        verifiedAccountScope = VerifiedAccountScope(
+                            accountIdentityDigest = checkNotNull(scope.accountIdentityDigest),
+                            credentialScope = checkNotNull(pending.credentialScope),
+                            managedScopeFingerprint = scope.managedScopeFingerprint,
+                        )
+                    } else {
+                        verifiedAccountScope = null
+                    }
                 }
-                verifiedAccountScope = VerifiedAccountScope(
-                    accountIdentityDigest = checkNotNull(scope.accountIdentityDigest),
-                    credentialScope = checkNotNull(pending.credentialScope),
-                    managedScopeFingerprint = scope.managedScopeFingerprint,
-                )
             }
-            lastCaptureIssue.set(null)
+            if (lastCaptureIssue.get() in listOf(CAPTURE_TIMED_OUT, CAPTURE_FAILED)) {
+                // Keep capture issue for diagnostics
+            } else {
+                lastCaptureIssue.set(null)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -343,59 +354,130 @@ class HistoryObservationRecorder(
         pending: PendingCycle,
         managedScope: HistorySourceScope,
         balanceCapture: DirectBalanceCapture,
-    ): HistoryObservation? = withTimeoutOrNull(identityLookupTimeoutMs) {
-        configService.withExecutionSession {
+    ): HistoryObservation? {
+        val digest = checkNotNull(managedScope.accountIdentityDigest)
+        var knownAssetClasses = emptyMap<String, String>()
+        return configService.withExecutionSession {
             krakenService.withStableBackend { backend ->
-                val digest = checkNotNull(managedScope.accountIdentityDigest)
-                val before = authenticatedAccount(backend, pending.credentialScope) ?: return@withStableBackend null
-                if (before.accountIdentityDigest != digest) return@withStableBackend null
-
-                val metadata = pending.prices?.assetMetadata ?: runCatching { backend.getAssetMetadata() }
-                    .getOrElse { emptyList() }
-                val existingCapture = pending.prices?.directCapture
-                val missingPriceSymbols = HistoryObservationValuator.fullAccountTickerSymbols(
-                    balances = balanceCapture,
-                    prices = existingCapture,
-                    assetMetadata = metadata,
-                )
-                val extraRequests = missingPriceSymbols.map { symbol ->
-                    DirectTickerRequest(symbol = symbol, pair = Asset.tradingPair(symbol))
-                }
-                val extraCapture = if (extraRequests.isEmpty()) {
-                    null
-                } else {
-                    try {
-                        backend.readTickerPricesWithCapture(extraRequests).capture
-                            ?: unavailableTickerCapture(nowProvider(), extraRequests)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        unavailableTickerCapture(nowProvider(), extraRequests)
-                    }
-                }
-
-                val after = authenticatedAccount(backend, pending.credentialScope) ?: return@withStableBackend null
-                if (after.accountIdentityDigest != digest || after.credentialScope != before.credentialScope) {
+                val before = captureAuthenticatedAccount(backend, pending.credentialScope)
+                if (before == null || before.accountIdentityDigest != digest) {
+                    lastCaptureIssue.set(CAPTURE_FAILED)
+                    log.warn(
+                        "History full-account evidence was skipped because account identity could not be verified.",
+                    )
                     return@withStableBackend null
                 }
-                val mergedPrices = mergeAccountTickerCaptures(
-                    balanceCapture = balanceCapture,
-                    existing = existingCapture,
-                    extra = extraCapture,
-                    requestedSymbols = missingPriceSymbols,
-                )
-                HistoryObservationValuator.buildFullAccountDirect(
-                    observationId = "${pending.cycleId}:full-account-intraday-v1",
-                    cycleId = pending.cycleId,
-                    accountIdentityDigest = digest,
-                    balances = balanceCapture,
-                    prices = mergedPrices,
-                    assetMetadata = metadata,
-                    sampleSelection = pending.sampleSelection,
-                    now = nowProvider(),
-                )
+
+                var captureFailed = false
+                val result = try {
+                    withTimeout(captureTimeoutMs) {
+                        knownAssetClasses = store.queryKnownAssetClasses(digest)
+                        val metadata = pending.prices?.assetMetadata ?: backend.getAssetMetadata()
+                        val existingCapture = pending.prices?.directCapture
+                        val missingPriceSymbols = HistoryObservationValuator.fullAccountTickerSymbols(
+                            balances = balanceCapture,
+                            prices = existingCapture,
+                            assetMetadata = metadata,
+                            authoritativeAssetClasses = knownAssetClasses,
+                        )
+                        val extraRequests = missingPriceSymbols.map { symbol ->
+                            DirectTickerRequest(symbol = symbol, pair = Asset.tradingPair(symbol))
+                        }
+                        val extraCapture = if (extraRequests.isEmpty()) {
+                            null
+                        } else {
+                            try {
+                                backend.readTickerPricesWithCapture(extraRequests).capture
+                                    ?: unavailableTickerCapture(nowProvider(), extraRequests)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                unavailableTickerCapture(nowProvider(), extraRequests)
+                            }
+                        }
+
+                        val mergedPrices = mergeAccountTickerCaptures(
+                            balanceCapture = balanceCapture,
+                            existing = existingCapture,
+                            extra = extraCapture,
+                            requestedSymbols = missingPriceSymbols,
+                        )
+                        HistoryObservationValuator.buildFullAccountDirect(
+                            observationId = "${pending.cycleId}:full-account-intraday-v1",
+                            cycleId = pending.cycleId,
+                            accountIdentityDigest = digest,
+                            balances = balanceCapture,
+                            prices = mergedPrices,
+                            assetMetadata = metadata,
+                            authoritativeAssetClasses = knownAssetClasses,
+                            sampleSelection = pending.sampleSelection,
+                            now = nowProvider(),
+                        )
+                    }
+                } catch (timeout: TimeoutCancellationException) {
+                    currentCoroutineContext().ensureActive()
+                    captureFailed = true
+                    lastCaptureIssue.set(CAPTURE_TIMED_OUT)
+                    log.warn("History full-account evidence collection timed out; saving incomplete observation.")
+                    HistoryObservationValuator.buildIncompleteFullAccountDirect(
+                        observationId = "${pending.cycleId}:full-account-intraday-v1",
+                        cycleId = pending.cycleId,
+                        accountIdentityDigest = digest,
+                        balances = balanceCapture,
+                        reason = "Full-account evidence collection timed out.",
+                        authoritativeAssetClasses = knownAssetClasses,
+                        sampleSelection = pending.sampleSelection,
+                        now = nowProvider(),
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    captureFailed = true
+                    lastCaptureIssue.set(CAPTURE_FAILED)
+                    log.warn("History full-account evidence collection failed; saving incomplete observation.", error)
+                    HistoryObservationValuator.buildIncompleteFullAccountDirect(
+                        observationId = "${pending.cycleId}:full-account-intraday-v1",
+                        cycleId = pending.cycleId,
+                        accountIdentityDigest = digest,
+                        balances = balanceCapture,
+                        reason = "Full-account evidence collection failed: ${error.message ?: error::class.simpleName}",
+                        authoritativeAssetClasses = knownAssetClasses,
+                        sampleSelection = pending.sampleSelection,
+                        now = nowProvider(),
+                    )
+                }
+
+                val after = captureAuthenticatedAccount(backend, pending.credentialScope)
+                if (after == null || after.accountIdentityDigest != digest ||
+                    after.credentialScope != before.credentialScope
+                ) {
+                    verifiedAccountScope = null
+                    lastCaptureIssue.set(CAPTURE_FAILED)
+                    log.warn(
+                        "History full-account evidence was discarded because account identity changed during capture.",
+                    )
+                    return@withStableBackend null
+                }
+                if (!captureFailed && lastCaptureIssue.get() in listOf(CAPTURE_TIMED_OUT, CAPTURE_FAILED)) {
+                    lastCaptureIssue.set(null)
+                }
+                result
             }
         }
+    }
+
+    private suspend fun captureAuthenticatedAccount(
+        backend: KrakenService,
+        expectedCredentialScope: String?,
+    ): AuthenticatedAccount? = try {
+        withTimeoutOrNull(identityLookupTimeoutMs) {
+            authenticatedAccount(backend, expectedCredentialScope)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        log.warn("History account identity could not be verified during full-account capture.", error)
+        null
     }
 
     private fun mergeAccountTickerCaptures(
@@ -517,9 +599,12 @@ class HistoryObservationRecorder(
     private companion object {
         const val QUEUE_CAPACITY = 2
         const val IDENTITY_LOOKUP_TIMEOUT_MS = 3_000L
+        const val CAPTURE_TIMEOUT_MS = 15_000L
         const val ACCOUNT_SCOPE_UNAVAILABLE = "History account identity is unavailable or changed."
         const val QUEUE_FULL = "History sample skipped because the bounded writer queue is full."
         const val SAVE_FAILED = "History cycle sample could not be saved."
+        const val CAPTURE_TIMED_OUT = "History full-account evidence collection timed out."
+        const val CAPTURE_FAILED = "History full-account evidence collection failed."
     }
 }
 

@@ -156,6 +156,144 @@ class HistoryObservationRecorderTest : StringSpec() {
             }
         }
 
+        "full-account capture is discarded if authenticated account identity changes during evidence collection" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now.minusSeconds(1),
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                    "ZUSD" to DirectValueEvidence("100", BigDecimal("100"), DirectEvidenceStatus.VALID),
+                ),
+            )
+            val priceCapture = DirectTickerCapture(
+                requestStartedAt = now.minusSeconds(1),
+                responseEndedAt = now,
+                resultShapeValid = true,
+                marksBySymbol = mapOf("BTC" to directMark("BTC", "100")),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "identity-change-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returnsMany listOf(
+                "ACCOUNT_A",
+                "ACCOUNT_A",
+                "ACCOUNT_B",
+            )
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.queryKnownAssetClasses(any()) } returns emptyMap()
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureIncompleteCycle(
+                        cycleId = "identity-change-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(
+                            prices = emptyMap(),
+                            directCapture = priceCapture,
+                            observedAt = now,
+                            assetMetadata = metadata,
+                        ),
+                        reason = "The managed portfolio valuation did not finish.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify {
+                        store.appendCycle(
+                            match { it.cycleId == "identity-change-cycle" },
+                            match { it.cycleId == "identity-change-cycle" },
+                        )
+                    }
+                    coVerify(exactly = 0) {
+                        store.appendObservation(
+                            match { it.observationId == "identity-change-cycle:full-account-intraday-v1" },
+                        )
+                    }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
+        "full-account capture is skipped when final account identity verification fails" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now.minusSeconds(1),
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                    "ZUSD" to DirectValueEvidence("100", BigDecimal("100"), DirectEvidenceStatus.VALID),
+                ),
+            )
+            val priceCapture = DirectTickerCapture(
+                requestStartedAt = now.minusSeconds(1),
+                responseEndedAt = now,
+                resultShapeValid = true,
+                marksBySymbol = mapOf("BTC" to directMark("BTC", "100")),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "identity-error-credential"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returnsMany
+                listOf("ACCOUNT_A", "ACCOUNT_A") andThenThrows IllegalStateException("identity lookup failed")
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { krakenService.getAssetMetadata() } returns metadata
+            coEvery { store.queryKnownAssetClasses(any()) } returns emptyMap()
+
+            runTest {
+                recorder.start(this)
+                try {
+                    recorder.captureIncompleteCycle(
+                        cycleId = "identity-error-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(
+                            prices = emptyMap(),
+                            directCapture = priceCapture,
+                            observedAt = now,
+                            assetMetadata = metadata,
+                        ),
+                        reason = "The managed portfolio valuation did not finish.",
+                        dryRun = true,
+                    ) shouldBe true
+                    advanceUntilIdle()
+
+                    coVerify {
+                        store.appendCycle(
+                            match { it.cycleId == "identity-error-cycle" },
+                            match { it.cycleId == "identity-error-cycle" },
+                        )
+                    }
+                    coVerify(exactly = 0) {
+                        store.appendObservation(
+                            match { it.observationId == "identity-error-cycle:full-account-intraday-v1" },
+                        )
+                    }
+                } finally {
+                    recorder.stop()
+                }
+            }
+        }
+
         "currentSourceScope returns simulation scope when configured for simulation" {
             val config = TestFixtures.DEFAULT_TEST_CONFIG.let {
                 it.copy(settings = it.settings.copy(simulation = true))
@@ -979,6 +1117,266 @@ class HistoryObservationRecorderTest : StringSpec() {
                     coVerify(exactly = 0) { store.appendCycle(any(), any()) }
                 } finally {
                     stallRecorder.stop()
+                }
+            }
+        }
+
+        "asset classification lookup shares the full-account capture timeout" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                ),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-evidence"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "TIMEOUT_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { store.queryKnownAssetClasses(any()) } coAnswers { awaitCancellation() }
+
+            val shortTimeoutRecorder = HistoryObservationRecorder(
+                store = store,
+                krakenService = krakenService,
+                configService = configService,
+                dataDirectoryIdentity = dataDirectoryIdentity,
+                identityLookupTimeoutMs = 1_000,
+                captureTimeoutMs = 50,
+            )
+
+            runTest {
+                shortTimeoutRecorder.start(this)
+                try {
+                    val queued = shortTimeoutRecorder.captureIncompleteCycle(
+                        cycleId = "timeout-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(prices = emptyMap(), observedAt = now),
+                        reason = "Waiting for prices",
+                        dryRun = true,
+                    )
+                    queued shouldBe true
+                    advanceUntilIdle()
+
+                    shortTimeoutRecorder.captureIssue() shouldBe
+                        "History full-account evidence collection timed out."
+                    coVerify(exactly = 0) { krakenService.getAssetMetadata() }
+                    coVerify {
+                        store.appendObservation(
+                            match {
+                                it.observationId == "timeout-cycle:full-account-intraday-v1" &&
+                                    it.status == HistoryObservationStatus.INCOMPLETE &&
+                                    it.incompleteReasons.contains("Full-account evidence collection timed out.") &&
+                                    it.assets.any { asset -> asset.symbol == "BTC" }
+                            },
+                        )
+                    }
+                } finally {
+                    shortTimeoutRecorder.stop()
+                }
+            }
+        }
+
+        "metadata retrieval taking longer than identity lookup timeout succeeds within capture timeout" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "ZUSD" to DirectValueEvidence("500", BigDecimal("500"), DirectEvidenceStatus.VALID),
+                ),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-evidence"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "TIMING_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { krakenService.getAssetMetadata() } coAnswers {
+                kotlinx.coroutines.delay(150)
+                metadata
+            }
+
+            val timingRecorder = HistoryObservationRecorder(
+                store = store,
+                krakenService = krakenService,
+                configService = configService,
+                dataDirectoryIdentity = dataDirectoryIdentity,
+                identityLookupTimeoutMs = 50,
+                captureTimeoutMs = 500,
+            )
+
+            runTest {
+                timingRecorder.start(this)
+                try {
+                    val queued = timingRecorder.captureIncompleteCycle(
+                        cycleId = "timing-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(prices = emptyMap(), observedAt = now),
+                        reason = "Waiting for prices",
+                        dryRun = true,
+                    )
+                    queued shouldBe true
+                    advanceUntilIdle()
+
+                    timingRecorder.captureIssue() shouldBe null
+                    coVerify {
+                        store.appendObservation(
+                            match {
+                                it.observationId == "timing-cycle:full-account-intraday-v1" &&
+                                    it.status == HistoryObservationStatus.COMPLETE &&
+                                    it.totalUsd == BigDecimal("500")
+                            },
+                        )
+                    }
+                } finally {
+                    timingRecorder.stop()
+                }
+            }
+        }
+
+        "subsequent successful cycle clears previous capture timeout issue" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "ZUSD" to DirectValueEvidence("100", BigDecimal("100"), DirectEvidenceStatus.VALID),
+                ),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-evidence"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "RECOVERY_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+
+            var failFirst = true
+            coEvery { krakenService.getAssetMetadata() } coAnswers {
+                if (failFirst) {
+                    awaitCancellation()
+                } else {
+                    metadata
+                }
+            }
+
+            val recoveryRecorder = HistoryObservationRecorder(
+                store = store,
+                krakenService = krakenService,
+                configService = configService,
+                dataDirectoryIdentity = dataDirectoryIdentity,
+                identityLookupTimeoutMs = 500,
+                captureTimeoutMs = 50,
+            )
+
+            runTest {
+                recoveryRecorder.start(this)
+                try {
+                    recoveryRecorder.captureIncompleteCycle(
+                        cycleId = "cycle-fail",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(prices = emptyMap(), observedAt = now),
+                        reason = "Waiting for prices",
+                        dryRun = true,
+                    )
+                    advanceUntilIdle()
+                    recoveryRecorder.captureIssue() shouldBe
+                        "History full-account evidence collection timed out."
+
+                    failFirst = false
+                    recoveryRecorder.captureIncompleteCycle(
+                        cycleId = "cycle-ok",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(prices = emptyMap(), observedAt = now),
+                        reason = "Waiting for prices",
+                        dryRun = true,
+                    )
+                    advanceUntilIdle()
+                    recoveryRecorder.captureIssue() shouldBe null
+                } finally {
+                    recoveryRecorder.stop()
+                }
+            }
+        }
+
+        "fullAccountObservation saves incomplete observation when evidence capture throws exception" {
+            val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                settings = TestFixtures.settings(simulation = false, dryRun = true),
+            )
+            val now = Instant.now()
+            val balanceCapture = DirectBalanceCapture(
+                requestStartedAt = now,
+                responseEndedAt = now,
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to DirectValueEvidence("1", BigDecimal.ONE, DirectEvidenceStatus.VALID),
+                ),
+            )
+            coEvery { krakenService.getFundingEvidenceScope() } returns "scope-evidence"
+            coEvery { krakenService.getAuthenticatedAccountIdentity() } returns "FAIL_ACCOUNT"
+            coEvery { krakenService.withStableBackend<Any?>(any()) } coAnswers {
+                firstArg<suspend (KrakenService) -> Any?>()(krakenService)
+            }
+            coEvery { krakenService.getAssetMetadata() } throws java.io.IOException("Network unreachable")
+
+            val failRecorder = HistoryObservationRecorder(
+                store = store,
+                krakenService = krakenService,
+                configService = configService,
+                dataDirectoryIdentity = dataDirectoryIdentity,
+            )
+
+            runTest {
+                failRecorder.start(this)
+                try {
+                    val queued = failRecorder.captureIncompleteCycle(
+                        cycleId = "fail-cycle",
+                        config = config,
+                        balances = ObservedBalances(emptyMap(), now, balanceCapture),
+                        prices = ObservedPrices(prices = emptyMap(), observedAt = now),
+                        reason = "Waiting for prices",
+                        dryRun = true,
+                    )
+                    queued shouldBe true
+                    advanceUntilIdle()
+
+                    failRecorder.captureIssue() shouldBe
+                        "History full-account evidence collection failed."
+                    coVerify {
+                        store.appendObservation(
+                            match {
+                                it.observationId == "fail-cycle:full-account-intraday-v1" &&
+                                    it.status == HistoryObservationStatus.INCOMPLETE &&
+                                    it.incompleteReasons.any { reason ->
+                                        reason.contains("Full-account evidence collection failed")
+                                    } &&
+                                    it.assets.any { asset -> asset.symbol == "BTC" }
+                            },
+                        )
+                    }
+                } finally {
+                    failRecorder.stop()
                 }
             }
         }

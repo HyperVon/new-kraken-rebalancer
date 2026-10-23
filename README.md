@@ -311,8 +311,9 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
   volume and fees stay grouped by currency; funding and rewards stay in native
   asset units.
 - Account-value ranges default to 30 days and offer 24h, 7d, 30d, 90d, 1y, All,
-  and custom dates. Marks use completed UTC daily candles. The 24h range uses
-  available daily marks because a full-account intraday capture is not available.
+  and custom dates. Ranges beyond 24h use completed UTC daily candles. The 24h
+  view uses directly captured full-account cycle observations; missing evidence
+  stays visible as gaps, and point selection loads holdings at that capture time.
 - Save named views in your browser to recall favorite filters. Interactive
   charts support value/time tooltips, line/point views, zoom, earlier/later
   navigation, reset, and expansion.
@@ -648,7 +649,7 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/api/history/checkpoints` | Paginated ledger balance checkpoints (JSON) |
 | `GET` | `/api/history/sync-status` | Current account-history synchronization status (JSON) |
 | `GET` | `/api/history/charts` | Range- and scope-selected History chart series (JSON) |
-| `GET` | `/api/history/holdings?date=YYYY-MM-DD` | Account holdings and availability for a daily UTC mark (JSON) |
+| `GET` | `/api/history/holdings?date=YYYY-MM-DD[&at=ISO-8601]` | Account holdings and availability for a daily UTC mark, or an exact 24h observation when `at` is supplied (JSON) |
 | `GET` | `/api/history/summary` | Coverage and range-aware History statistics (JSON) |
 | `GET` | `/api/history/scopes` | Available recorded portfolio scopes (JSON) |
 | `GET` | `/api/history/activities` | Cursor-paginated bot-cycle activity (JSON) |
@@ -657,7 +658,7 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/api/history/export/ledgers` | CSV export of filtered ledger records |
 | `GET` | `/api/history/export/activity` | CSV export of scoped bot activity; event filters do not apply |
 | `GET` | `/api/history/export/account-values` | CSV export of daily account totals and missing-data reasons |
-| `GET` | `/api/history/export/account-holdings?date=YYYY-MM-DD` | CSV export of holdings for one UTC daily mark |
+| `GET` | `/api/history/export/account-holdings?date=YYYY-MM-DD[&at=ISO-8601]` | CSV export of holdings for one UTC daily mark or exact 24h observation |
 | `POST` | `/api/history/repair` | Queue a selected date/window repair (CSRF-protected) |
 | `POST` | `/api/history/sync/start` | Request or resume bounded trade and ledger synchronization (CSRF-protected) |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
