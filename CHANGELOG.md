@@ -14,7 +14,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ticker collection within a 15-second evidence budget. Timeouts and capture
   failures persist an explicitly incomplete sample without publishing a total.
 - **Full-account asset classification**: use account-scoped ledger and balance
-  checkpoint classes to exclude equities and fail closed on conflicting classes.
+  checkpoint classes to exclude equities and fail closed on conflicting
+  currency/equity classes for a normalized asset identity.
+- **Daily account summaries**: leave account-value change unavailable when a
+  selected range contains only one complete daily value.
 - **Kraken asset metadata**: cache public metadata for 15 minutes and reuse the
   last successful result for History capture when a refresh fails. Trading
   eligibility rejects expired metadata if its refresh fails.

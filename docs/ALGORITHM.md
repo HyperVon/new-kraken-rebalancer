@@ -222,10 +222,13 @@ account total. Direct USD markets are preferred, with same-day BTC then EUR
 conversion only when required. USD is valued at par. All equity-class share
 units are excluded from holdings and totals, while every USD ledger change,
 including stock-trade settlements and dividend credits, remains cash. Derivatives and
-unidentifiable wallet scopes are outside this release. The reported change in
-account value includes deposits and withdrawals and is not profit, performance,
-TWR, IRR, or Buy & Hold. These derived values are read-only reporting data and
-do not feed portfolio planning or order execution.
+unidentifiable wallet scopes are outside this release. Conflicting `currency`
+and `equity` classifications for the same normalized asset block the full daily
+account total. A change in account value requires two complete daily values;
+single-day ranges still show the available value and extrema. The reported
+change includes deposits and withdrawals and is not profit, performance, TWR,
+IRR, or Buy & Hold. These derived values are read-only reporting data and do not
+feed portfolio planning or order execution.
 
 An explicit Kraken `EQuery:Unknown asset pair` response marks only that market
 as unavailable and permits same-day BTC or EUR fallback. Rate-limit, network,

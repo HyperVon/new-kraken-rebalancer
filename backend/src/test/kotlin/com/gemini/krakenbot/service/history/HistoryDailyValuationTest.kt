@@ -63,6 +63,54 @@ class HistoryDailyValuationTest : StringSpec() {
             HistoryDailyBalanceBuilder.isIncludedAccountBucket("currency", "ZUSD") shouldBe true
         }
 
+        "blocks canonical assets classified as both currency and equity" {
+            val checkpoints = listOf(
+                checkpoint("crypto-checkpoint", "2026-03-31T09:00:00Z", "1", "0", "1", "1", rawAssetKey = "XETH"),
+                checkpoint(
+                    "equity-checkpoint",
+                    "2026-03-31T10:00:00Z",
+                    "1",
+                    "0",
+                    "1",
+                    "1",
+                    rawAssetClass = "equity",
+                    rawAssetKey = "ETH",
+                ),
+            )
+
+            val balances = build(checkpoints, coverage(dayEnd))
+
+            balances.map { it.status }.distinct() shouldBe listOf(HistoryDailyBalanceStatus.INVALID_CHECKPOINT)
+            balances.all { it.quantity == null } shouldBe true
+            balances.first { it.rawAssetKey == "XETH" }.reason shouldBe
+                "Ledger checkpoints report conflicting currency and equity classes for the same asset."
+        }
+
+        "does not apply future asset class conflicts to earlier daily balances" {
+            val checkpoints = listOf(
+                checkpoint("crypto-checkpoint", "2026-03-31T09:00:00Z", "1", "0", "1", "1", rawAssetKey = "XETH"),
+                checkpoint(
+                    "equity-checkpoint",
+                    "2026-04-01T09:00:00Z",
+                    "1",
+                    "0",
+                    "1",
+                    "1",
+                    rawAssetClass = "equity",
+                    rawAssetKey = "ETH",
+                ),
+            )
+
+            val balances = buildAcross(date, date.plusDays(1), checkpoints)
+
+            val beforeConflict = balances.first { it.dayLabel == date }
+            beforeConflict.status shouldBe HistoryDailyBalanceStatus.VALID
+            beforeConflict.quantity shouldBe BigDecimal("1")
+            val afterConflict = balances.first { it.dayLabel == date.plusDays(1) }
+            afterConflict.status shouldBe HistoryDailyBalanceStatus.INVALID_CHECKPOINT
+            afterConflict.quantity shouldBe null
+        }
+
         "orders same-time ledger transitions only when one balance path reconciles" {
             val checkpoints = listOf(
                 checkpoint("second", "2026-03-31T12:00:00Z", "5", "0", "15", "15"),

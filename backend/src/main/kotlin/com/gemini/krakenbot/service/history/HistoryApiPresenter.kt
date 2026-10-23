@@ -507,8 +507,15 @@ class HistoryApiPresenter(
         val minValue = complete.minByOrNull { it.totalUsd!! }
         val maxValue = complete.maxByOrNull { it.totalUsd!! }
         val allComplete = values.isNotEmpty() && complete.size == values.size
+        val hasCompleteChange = allComplete && complete.size >= 2
         val incompleteReason = values.firstOrNull { it.status != HistoryDailyValueStatus.COMPLETE }
             ?.let { "Daily value is unavailable on ${it.dayLabel}: ${it.status.name.lowercase()}." }
+        val changeIncompleteReason = when {
+            hasCompleteChange -> null
+            incompleteReason != null -> incompleteReason
+            allComplete -> "At least two complete daily values are needed to calculate the change."
+            else -> "No daily account values are available."
+        }
         return base.copy(
             latestObservedValue = LatestObservedValue(
                 valueUsd = last?.totalUsd?.takeIf { last.status == HistoryDailyValueStatus.COMPLETE },
@@ -518,7 +525,7 @@ class HistoryApiPresenter(
                 incompleteReason = if (last?.status == HistoryDailyValueStatus.COMPLETE) null else incompleteReason,
             ),
             observedValueChange = ObservedValueChange(
-                changeUsd = if (allComplete && firstComplete != null && lastComplete != null) {
+                changeUsd = if (hasCompleteChange && firstComplete != null && lastComplete != null) {
                     lastComplete.totalUsd!!.subtract(firstComplete.totalUsd!!)
                 } else {
                     null
@@ -528,13 +535,8 @@ class HistoryApiPresenter(
                 lastValueUsd = lastComplete?.totalUsd,
                 lastObservedAt = lastComplete?.dayEnd,
                 includesFlowsNotice = "Deposits and withdrawals affect this change in account value.",
-                complete = allComplete,
-                incompleteReason = if (allComplete) {
-                    null
-                } else {
-                    incompleteReason
-                        ?: "No daily account values are available."
-                },
+                complete = hasCompleteChange,
+                incompleteReason = changeIncompleteReason,
             ),
             rangeExtrema = RangeExtrema(
                 high = maxValue?.let { RangeExtremum("high", it.totalUsd!!, it.dayEnd) },

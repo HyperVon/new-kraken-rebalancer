@@ -1420,6 +1420,30 @@ class HistoryApiPresenterTest : StringSpec() {
             statistics.rangeExtrema.complete shouldBe true
         }
 
+        "daily summary leaves change unavailable for a one-day custom range" {
+            val day = LocalDate.parse("2026-03-09")
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(listOf(dailyValue(day, "150")), 1L)
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "custom", start = day.toString(), end = day.toString()),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.latestObservedValue.complete shouldBe true
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.complete shouldBe false
+            statistics.observedValueChange.incompleteReason shouldBe
+                "At least two complete daily values are needed to calculate the change."
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.complete shouldBe true
+        }
+
         "daily summary reports explicit absence when no account-value rows exist" {
             coEvery {
                 historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())

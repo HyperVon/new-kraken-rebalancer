@@ -125,9 +125,10 @@ object BrowserFixtureRunner {
                     .atTime(23, 59, 59)
                     .toInstant(ZoneOffset.UTC)
                 fixture.publishLateExchangeEvents(eventAt)
+                val lateEventsPublishedAt = Instant.now()
                 fixture.historySyncCoordinator.requestRecentRefresh()
                 println(
-                    "Out-of-band fake rows published: " +
+                    "Out-of-band fake rows published at=$lateEventsPublishedAt: " +
                         "fixture-post-start-trade-${eventAt.epochSecond}, " +
                         "fixture-post-start-ledger-${eventAt.epochSecond - 1}-first, " +
                         "fixture-post-start-ledger-${eventAt.epochSecond}-second.",
@@ -144,8 +145,12 @@ object BrowserFixtureRunner {
                 )
                 delay(BROWSER_FIXTURE_INCOMPLETE_EVENT_DELAY.toMillis())
                 fixture.publishIncompleteEvidence(eventAt.minusSeconds(2))
+                val incompleteEvidencePublishedAt = Instant.now()
                 fixture.historySyncCoordinator.requestRecentRefresh()
-                println("Out-of-band incomplete ledger evidence published after the successful rebuild.")
+                println(
+                    "Out-of-band incomplete ledger evidence published at=$incompleteEvidencePublishedAt " +
+                        "after the successful rebuild.",
+                )
                 val incomplete = waitForTerminalIncompleteGeneration(
                     fixture,
                     accountDigest,

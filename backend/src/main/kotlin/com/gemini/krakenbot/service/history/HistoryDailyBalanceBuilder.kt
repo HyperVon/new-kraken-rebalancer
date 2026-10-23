@@ -1,9 +1,11 @@
 package com.gemini.krakenbot.service.history
 
+import com.gemini.krakenbot.model.Asset
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.util.Locale
 
 /** Pure ledger-checkpoint replay for account-wide end-of-UTC-day quantities. */
 class HistoryDailyBalanceBuilder {
@@ -30,14 +32,31 @@ class HistoryDailyBalanceBuilder {
             while (date <= endDay) {
                 val boundary = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
                 val boundaryLastSecond = boundary.epochSecond - 1
-                val visibleUnknownEvidence = checkpoints.filter { checkpoint ->
-                    !isExcludedEquityBucket(checkpoint.rawAssetClass, checkpoint.rawAssetKey) &&
+                val visibleCheckpoints = checkpoints.filter { checkpoint ->
+                    checkpoint.observedAt == null || checkpoint.observedAt < boundary
+                }
+                val classConflictAssets = visibleCheckpoints
+                    .asSequence()
+                    .filter { it.rawAssetKey?.isNotBlank() == true }
+                    .groupBy { canonicalAsset(it.rawAssetKey!!) }
+                    .filterValues { assetCheckpoints ->
+                        val classes = assetCheckpoints
+                            .mapNotNull { it.rawAssetClass?.trim()?.lowercase(Locale.ROOT) }
+                            .toSet()
+                        "currency" in classes && "equity" in classes
+                    }
+                    .keys
+                val visibleUnknownEvidence = visibleCheckpoints.filter { checkpoint ->
+                    val conflictingClassEvidence = checkpoint.rawAssetKey?.let(::canonicalAsset)
+                        ?.let { it in classConflictAssets } == true
+                    conflictingClassEvidence ||
                         (
-                            checkpoint.rawAssetKey.isNullOrBlank() || !isSupportedAccountBucket(
-                                checkpoint.rawAssetClass,
+                            !isExcludedEquityBucket(checkpoint.rawAssetClass, checkpoint.rawAssetKey) &&
+                                (
+                                    checkpoint.rawAssetKey.isNullOrBlank() ||
+                                        !isSupportedAccountBucket(checkpoint.rawAssetClass)
+                                    )
                             )
-                            ) &&
-                        (checkpoint.observedAt == null || checkpoint.observedAt < boundary)
                 }
                 val unknownAssetEvidence = visibleUnknownEvidence.isNotEmpty()
                 streams.forEach { (key, events) ->
@@ -61,7 +80,7 @@ class HistoryDailyBalanceBuilder {
                                 replay.status
                             },
                             reason = if (unknownAssetEvidence) {
-                                unresolvedEvidenceReason(visibleUnknownEvidence)
+                                unresolvedEvidenceReason(visibleUnknownEvidence, classConflictAssets)
                             } else {
                                 replay.reason
                             },
@@ -91,7 +110,7 @@ class HistoryDailyBalanceBuilder {
                                 HistoryDailyBalanceStatus.NO_OPENING_ANCHOR
                             },
                             reason = if (unknownAssetEvidence) {
-                                unresolvedEvidenceReason(visibleUnknownEvidence)
+                                unresolvedEvidenceReason(visibleUnknownEvidence, classConflictAssets)
                             } else if (!emptyAccountCovered) {
                                 NO_ANCHOR_REASON
                             } else {
@@ -270,6 +289,8 @@ class HistoryDailyBalanceBuilder {
             "A ledger checkpoint has no asset identity, so the full account total is incomplete."
         private const val UNSUPPORTED_SCOPE_REASON =
             "Ledger history contains an unsupported wallet or asset class for account totals."
+        private const val CONFLICTING_CLASS_REASON =
+            "Ledger checkpoints report conflicting currency and equity classes for the same asset."
 
         /** Equity-class share units are outside the account-value and crypto rebalancer scope. */
         fun isIncludedAccountBucket(assetClass: String?, assetKey: String): Boolean =
@@ -281,7 +302,20 @@ class HistoryDailyBalanceBuilder {
         private fun isExcludedEquityBucket(assetClass: String?, assetKey: String?): Boolean =
             assetClass.equals("equity", ignoreCase = true)
 
-        private fun unresolvedEvidenceReason(checkpoints: List<HistoryBalanceCheckpoint>): String =
-            if (checkpoints.any { it.rawAssetKey.isNullOrBlank() }) UNIDENTIFIED_REASON else UNSUPPORTED_SCOPE_REASON
+        private fun canonicalAsset(rawAssetKey: String): String =
+            Asset.normalizeLedgerAsset(rawAssetKey).uppercase(Locale.ROOT)
+
+        private fun unresolvedEvidenceReason(
+            checkpoints: List<HistoryBalanceCheckpoint>,
+            classConflictAssets: Set<String>,
+        ): String = when {
+            checkpoints.any { checkpoint ->
+                checkpoint.rawAssetKey?.let(::canonicalAsset)?.let { it in classConflictAssets } == true
+            } -> CONFLICTING_CLASS_REASON
+
+            checkpoints.any { it.rawAssetKey.isNullOrBlank() } -> UNIDENTIFIED_REASON
+
+            else -> UNSUPPORTED_SCOPE_REASON
+        }
     }
 }
