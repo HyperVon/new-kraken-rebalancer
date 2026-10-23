@@ -873,6 +873,94 @@ class HistorySyncCoordinatorTest : StringSpec() {
             }
         }
 
+        "a refresh requested during recent sync yields before backfill" {
+            withFixture { fixture ->
+                val synchronizer = mockk<HistorySynchronizer>()
+                coEvery { synchronizer.verifiedAccount() } returns VerifiedHistoryAccount(
+                    digest = fixture.digest,
+                    queryFromSec = null,
+                    queryToSec = null,
+                )
+                lateinit var coordinator: HistorySyncCoordinator
+                var requestSent = false
+                coEvery { synchronizer.syncWindow(any(), any(), any(), any()) } coAnswers {
+                    if (!requestSent) {
+                        requestSent = true
+                        coordinator.requestRecentRefresh()
+                    }
+                    HistorySyncStatus(
+                        accountIdentityDigest = fixture.digest,
+                        feed = firstArg(),
+                        scanId = "recent-scan",
+                        state = HistorySyncState.COMPLETE,
+                        windowStart = null,
+                        windowEnd = null,
+                        nextCursor = null,
+                        fetchedCount = 0,
+                        storedCount = 0,
+                        knownTotal = null,
+                        lastPageAt = null,
+                        lastError = null,
+                    )
+                }
+                coEvery { synchronizer.syncWindow(any(), any(), any(), any(), any(), any()) } coAnswers {
+                    if (!requestSent) {
+                        requestSent = true
+                        coordinator.requestRecentRefresh()
+                    }
+                    HistorySyncStatus(
+                        accountIdentityDigest = fixture.digest,
+                        feed = firstArg(),
+                        scanId = "recent-scan",
+                        state = HistorySyncState.COMPLETE,
+                        windowStart = null,
+                        windowEnd = null,
+                        nextCursor = null,
+                        fetchedCount = 0,
+                        storedCount = 0,
+                        knownTotal = null,
+                        lastPageAt = null,
+                        lastError = null,
+                    )
+                }
+                coordinator = HistorySyncCoordinator(
+                    applicationScope = fixture.applicationScope,
+                    synchronizer = synchronizer,
+                    store = fixture.store,
+                    settingsProvider = { fixture.settings },
+                    nowProvider = { fixture.clock.now },
+                    delayFn = { fixture.delays.add(it) },
+                    retryPolicy = HistorySyncRetryPolicy(jitter = { it }),
+                    periodicTicks = fixture.periodicTicks.receiveAsFlow(),
+                )
+
+                coordinator.runCoalescedPass()
+
+                requestSent shouldBe true
+                fixture.store.loadSyncJobs(fixture.digest)
+                    .filter { it.purpose == HistorySyncPurpose.BACKFILL }
+                    .map { it.state }
+                    .distinct() shouldBe listOf(HistorySyncJobState.PENDING)
+            }
+        }
+
+        "an account failure during a recent feed stops backfill and records an account retry" {
+            withFixture { fixture ->
+                val coordinator = fixture.coordinatorWithFailingSynchronizer(
+                    HistoryAccountUnavailableException("Authenticated account history is unavailable."),
+                )
+
+                coordinator.runCoalescedPass()
+
+                coordinator.lastFailure() shouldBe "Authenticated account history is unavailable."
+                coordinator.nextRetryAt() shouldBe fixture.clock.now.plus(Duration.ofMinutes(1))
+                fixture.store.loadSyncJobs(fixture.digest)
+                    .filter { it.purpose == HistorySyncPurpose.BACKFILL }
+                    .map { it.state }
+                    .distinct() shouldBe listOf(HistorySyncJobState.PENDING)
+            }
+        }
+
         "an unavailable account stops the pass and reports the failure without a retry job" {
             withFixture { fixture ->
                 fixture.kraken.authenticatedAccountIdentitySupplier = { null }
