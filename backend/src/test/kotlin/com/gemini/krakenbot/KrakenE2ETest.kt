@@ -66,6 +66,19 @@ class KrakenE2ETest : StringSpec() {
                                 )
                             }
 
+                            "/0/public/Assets" -> {
+                                val response = if (request.url.parameters["aclass"] == "currency") {
+                                    """{"error":[],"result":{"XXBT":{"aclass":"currency"}}}"""
+                                } else {
+                                    """{"error":[],"result":{}}"""
+                                }
+                                respond(
+                                    content = response,
+                                    status = HttpStatusCode.OK,
+                                    headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                                )
+                            }
+
                             "/0/public/Ticker" -> {
                                 respond(
                                     content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
@@ -171,6 +184,19 @@ class KrakenE2ETest : StringSpec() {
                                         HttpHeaders.ContentType,
                                         TestFixtures.APPLICATION_JSON,
                                     ),
+                                )
+                            }
+
+                            "/0/public/Assets" -> {
+                                val response = if (request.url.parameters["aclass"] == "currency") {
+                                    """{"error":[],"result":{"XXBT":{"aclass":"currency"}}}"""
+                                } else {
+                                    """{"error":[],"result":{}}"""
+                                }
+                                respond(
+                                    content = response,
+                                    status = HttpStatusCode.OK,
+                                    headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                                 )
                             }
 

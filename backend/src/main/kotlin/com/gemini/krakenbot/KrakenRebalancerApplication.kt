@@ -19,6 +19,7 @@ import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -83,6 +84,7 @@ fun main(args: Array<String>) {
     val orderIntentService = koin.get<OrderIntentService>()
     val historyObservationRecorder = koin.get<HistoryObservationRecorder>()
     val historySyncCoordinator = koin.get<HistorySyncCoordinator>()
+    val historyValuationCoordinator = koin.get<HistoryValuationCoordinator>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
 
@@ -90,6 +92,7 @@ fun main(args: Array<String>) {
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
     historyObservationRecorder.start(applicationScope)
+    historyValuationCoordinator.start(applicationScope)
     historySyncCoordinator.start(applicationScope)
     // Catch up the recent history window right away; the periodic ticker keeps it current afterwards.
     historySyncCoordinator.requestRecentRefresh()
@@ -114,6 +117,7 @@ fun main(args: Array<String>) {
             // Keep the coordinator alive until the worker is drained so it can service a History
             // refresh requested before shutdown finishes.
             historySyncCoordinator.stop()
+            historyValuationCoordinator.stop()
             applicationScope.cancel()
             httpClient.close()
             stopKoin()

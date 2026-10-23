@@ -460,6 +460,25 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 1) { realService.getAssetMetadata() }
         }
 
+        "getFreshAssetMetadata follows the stable backend selection" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            val simulatedMetadata = listOf(KrakenAssetMetadata("SIM_ASSET", "currency"))
+            val liveMetadata = listOf(KrakenAssetMetadata("LIVE_ASSET", "currency"))
+            coEvery { simulatedService.getFreshAssetMetadata() } returns simulatedMetadata
+            coEvery { realService.getFreshAssetMetadata() } returns liveMetadata
+            val dynamicService = createService()
+
+            dynamicService.withStableBackend {
+                every { configService.getConfig() } returns appConfig(simulation = false)
+                dynamicService.getFreshAssetMetadata() shouldBe simulatedMetadata
+            }
+            coVerify(exactly = 1) { simulatedService.getFreshAssetMetadata() }
+            coVerify(exactly = 0) { realService.getFreshAssetMetadata() }
+
+            dynamicService.getFreshAssetMetadata() shouldBe liveMetadata
+            coVerify(exactly = 1) { realService.getFreshAssetMetadata() }
+        }
+
         "delegates cursor ledger pages to the selected backend" {
             every { configService.getConfig() } returns appConfig(simulation = false)
             val dynamicService = createService()

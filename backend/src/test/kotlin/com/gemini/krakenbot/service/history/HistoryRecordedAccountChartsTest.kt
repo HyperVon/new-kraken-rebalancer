@@ -3,13 +3,14 @@ package com.gemini.krakenbot.service.history
 import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 class HistoryRecordedAccountChartsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -20,99 +21,104 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
     private val earlier = accountScope("c", listOf("BTC", "USD"))
 
     init {
-        "default portfolio automatically shows earlier disjoint asset sets with direct provenance and a break" {
+        "default account chart uses imported daily totals instead of stitching managed-only observations" {
             withPresenter { store, api ->
                 store.appendObservation(sample(earlier, 3600, "100.00"))
-                store.appendObservation(sample(earlier, 3000, null))
                 store.appendObservation(sample(current, 1200, "200.00"))
-                store.appendObservation(sample(current, 600, "210.00"))
+                val firstDay = LocalDate.parse("2026-03-08")
+                val secondDay = firstDay.plusDays(1)
+                store.saveDailyValues(
+                    listOf(
+                        dailyValue(firstDay, "300.00"),
+                        dailyValue(secondDay, "340.00"),
+                    ),
+                )
 
                 val response = charts(api)
 
-                response.scopeSelection shouldBe HistoryApiScopeSelection.ACCOUNT_RECORDED
-                response.series.map { it.key }.toSet() shouldBe setOf(earlier.sourceKey, current.sourceKey)
-                response.fullRange.totalObservations shouldBe 4L
-                val old = response.series.single { it.key == earlier.sourceKey }
-                old.label shouldBe "BTC + USD | 2026-03-10T11:00:00Z .. 2026-03-10T11:10:00Z"
-                old.points.first().v!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
-                old.points.last().v.shouldBeNull()
-                old.points.last().complete shouldBe false
-                old.provenance!!.scope.current shouldBe false
-                old.provenance.balanceSources shouldContainExactly listOf("KRAKEN_PRIVATE_BALANCE")
-                old.provenance.priceSources shouldContainExactly listOf("KRAKEN_PUBLIC_TICKER_LAST_TRADE_C0")
-                old.provenance.walletScopes shouldContainExactly listOf("KRAKEN_DEFAULT_WALLET")
-                response.boundaries shouldBe listOf(
-                    HistoryApiBoundary(
-                        HistoryApiBoundaryKind.ASSET_SET_CHANGE,
-                        "2026-03-10T11:10:00Z",
-                        "2026-03-10T11:40:00Z",
-                        listOf(earlier.sourceKey, current.sourceKey),
-                    ),
+                response.scopeSelection shouldBe HistoryApiScopeSelection.CURRENT_SCOPE
+                response.scope.id shouldBe current.sourceKey
+                response.series.single().key shouldBe HISTORY_API_PORTFOLIO_KEY
+                response.series.single().points.map { it.v } shouldBe listOf(
+                    BigDecimal("300.00"),
+                    BigDecimal("340.00"),
                 )
-                response.coverage.valuesFirstIso shouldBe "2026-03-10T11:00:00Z"
-                response.coverage.gapCount shouldBe 1
+                response.fullRange.totalObservations shouldBe 2L
+                response.resolution shouldBe "1d"
+                response.valuationBasis shouldBe "Daily value · historical closing prices"
+                response.recordedScopes shouldBe emptyList()
+                response.boundaries shouldBe emptyList()
+                response.availableValueFromIso shouldBe "2026-03-08T00:00:00Z"
             }
         }
 
-        "chronological scope episodes keep both totals and break the line between episodes" {
+        "asset filter normalizes symbols excludes equities and uses zero only for complete absent holdings" {
             withPresenter { store, api ->
-                store.appendObservation(sample(current, 3600, "100.00"))
-                store.appendObservation(sample(current, 600, "200.00"))
-                store.appendObservation(sample(earlier, 2400, "300.00"))
-                store.appendObservation(sample(earlier, 1800, "400.00"))
-
-                val response = charts(api, maxPoints = 2)
-
-                response.boundaries.map { it.kind } shouldContainExactly listOf(
-                    HistoryApiBoundaryKind.ASSET_SET_CHANGE,
-                    HistoryApiBoundaryKind.ASSET_SET_CHANGE,
+                val firstDay = LocalDate.parse("2026-03-08")
+                val secondDay = firstDay.plusDays(1)
+                store.saveDailyValues(
+                    listOf(
+                        dailyValue(
+                            firstDay,
+                            "150.00",
+                            listOf(
+                                asset(firstDay, "currency", "XXBT", "100.00"),
+                                asset(firstDay, "currency", "ZUSD", "50.00"),
+                                asset(firstDay, "equity", "AAPL", "900.00"),
+                            ),
+                        ),
+                        dailyValue(
+                            secondDay,
+                            "50.00",
+                            listOf(asset(secondDay, "currency", "ZUSD", "50.00")),
+                        ),
+                    ),
                 )
-                response.boundaries.map { it.fromIso } shouldContainExactly listOf(
-                    "2026-03-10T11:00:00Z",
-                    "2026-03-10T11:30:00Z",
-                )
-                val earlierSeries = response.series.single { it.key == earlier.sourceKey }
-                earlierSeries.points.map { it.complete } shouldContainExactly listOf(true, true)
-                earlierSeries.points.first().v!!.shouldBeEqualComparingTo(BigDecimal("300.00"))
-                earlierSeries.points.last().v!!.shouldBeEqualComparingTo(BigDecimal("400.00"))
-                val currentSeries = response.series.single { it.key == current.sourceKey }
-                currentSeries.points.map { it.complete } shouldContainExactly listOf(true, false, true)
-                currentSeries.points.first().v!!.shouldBeEqualComparingTo(BigDecimal("100.00"))
-                currentSeries.points.last().v!!.shouldBeEqualComparingTo(BigDecimal("200.00"))
-                response.fullRange.totalObservations shouldBe 4L
-                response.coverage.incomplete shouldBe true
 
-                val zoomed = charts(
+                val response = charts(
                     api,
-                    params = HistoryApiRangeParams(
-                        preset = "all",
-                        from = "2026-03-10T10:50:00Z",
-                        to = "2026-03-10T11:25:00Z",
-                    ),
+                    params = HistoryApiRangeParams(preset = "all", valueAsset = "XXBT"),
                 )
-                zoomed.boundaries.single().kind shouldBe HistoryApiBoundaryKind.ASSET_SET_CHANGE
-                zoomed.boundaries.single().fromIso shouldBe "2026-03-10T11:00:00Z"
-                zoomed.boundaries.single().toIso shouldBe "2026-03-10T11:20:00Z"
-                zoomed.series.single { it.key == earlier.sourceKey }.points.single()
-                    .v!!.shouldBeEqualComparingTo(BigDecimal("300.00"))
+
+                response.selectedValueAsset shouldBe "BTC"
+                response.availableValueAssets shouldBe listOf("BTC", "USD")
+                response.series.single().key shouldBe "asset:BTC"
+                response.series.single().points.map { it.v } shouldBe listOf(BigDecimal("100.00"), BigDecimal.ZERO)
+                response.series.single().points.all { it.complete } shouldBe true
             }
         }
 
-        "two scopes observed at the same instant withhold both totals" {
+        "an incomplete daily account total remains a gap instead of exposing a known subtotal" {
             withPresenter { store, api ->
-                store.appendObservation(sample(current, 1800, "100.00"))
-                store.appendObservation(sample(earlier, 1800, "300.00"))
+                val day = LocalDate.parse("2026-03-09")
+                store.saveDailyValues(
+                    listOf(
+                        dailyValue(
+                            day,
+                            totalUsd = null,
+                            assets = listOf(
+                                asset(day, "currency", "XBT", "100.00"),
+                                asset(
+                                    day,
+                                    "currency",
+                                    "ETH",
+                                    null,
+                                    HistoryDailyValueStatus.NO_PRICE,
+                                    "Historical USD price unavailable.",
+                                ),
+                            ),
+                            status = HistoryDailyValueStatus.NO_PRICE,
+                        ),
+                    ),
+                )
 
                 val response = charts(api)
 
-                response.boundaries.single().kind shouldBe HistoryApiBoundaryKind.OVERLAPPING_SCOPES
-                response.boundaries.single().fromIso shouldBe "2026-03-10T11:30:00Z"
-                response.series.forEach { series ->
-                    series.points.forEach { point ->
-                        point.v.shouldBeNull()
-                        point.complete shouldBe false
-                    }
-                }
+                response.series.single().points.single().v.shouldBeNull()
+                response.series.single().points.single().complete shouldBe false
+                response.series.single().points.single().reasons shouldBe
+                    listOf("ETH: Historical USD price unavailable.")
+                response.coverage.incomplete shouldBe true
             }
         }
 
@@ -131,17 +137,24 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
             }
         }
 
-        "automatic account history excludes other accounts and simulation evidence" {
+        "daily account chart excludes other account values and all managed-only observations" {
             withPresenter { store, api ->
                 val foreign = current.copy(accountIdentityDigest = "d".repeat(64))
                 val simulated = simulationScope("other-process")
                 store.appendObservation(sample(current, 600, "200.00"))
                 store.appendObservation(sample(foreign, 600, "900.00"))
                 store.appendObservation(sample(simulated, 600, "800.00"))
+                val day = LocalDate.parse("2026-03-09")
+                store.saveDailyValues(
+                    listOf(
+                        dailyValue(day, "200.00"),
+                        dailyValue(day, "900.00", accountIdentityDigest = foreign.accountIdentityDigest!!),
+                    ),
+                )
 
                 val response = charts(api)
 
-                response.recordedScopes.map { it.id } shouldContainExactly listOf(current.sourceKey)
+                response.scopeSelection shouldBe HistoryApiScopeSelection.CURRENT_SCOPE
                 response.series.single().points.single().v!!.shouldBeEqualComparingTo(BigDecimal("200.00"))
                 rejectsScope { charts(api, scopeId = foreign.sourceKey) }
                 rejectsScope { charts(api, scopeId = simulated.sourceKey) }
@@ -222,6 +235,53 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
         )
     }
 
+    private fun dailyValue(
+        day: LocalDate,
+        totalUsd: String?,
+        assets: List<HistoryDailyAssetValue> = emptyList(),
+        accountIdentityDigest: String = digest,
+        status: HistoryDailyValueStatus = if (totalUsd ==
+            null
+        ) {
+            HistoryDailyValueStatus.INCOMPLETE
+        } else {
+            HistoryDailyValueStatus.COMPLETE
+        },
+    ) = HistoryDailyValue(
+        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+        accountIdentityDigest = accountIdentityDigest,
+        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+        totalUsd = totalUsd?.let(::BigDecimal),
+        status = status,
+        assets = assets,
+        dayLabel = day,
+        generationId = "daily-chart-test",
+        calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+        sourceRevision = 1,
+    )
+
+    private fun asset(
+        day: LocalDate,
+        assetClass: String,
+        key: String,
+        valueUsd: String?,
+        status: HistoryDailyValueStatus = HistoryDailyValueStatus.COMPLETE,
+        reason: String? = null,
+    ) = HistoryDailyAssetValue(
+        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+        accountIdentityDigest = digest,
+        rawAssetClass = assetClass,
+        rawAssetKey = key,
+        quantity = BigDecimal.ONE,
+        priceUsd = valueUsd?.let(::BigDecimal),
+        valueUsd = valueUsd?.let(::BigDecimal),
+        pricePair = null,
+        priceCandleOpen = null,
+        priceSource = null,
+        status = status,
+        reason = reason,
+    )
+
     private suspend fun charts(
         api: HistoryApiPresenter,
         currentScope: HistorySourceScope = current,
@@ -237,7 +297,7 @@ class HistoryRecordedAccountChartsTest : StringSpec() {
         } catch (error: HistoryApiRequestException) {
             error.message
         }
-        error shouldBe "Unknown recorded portfolio scope."
+        error shouldBe "Unknown portfolio scope."
     }
 
     private suspend fun withPresenter(block: suspend (HistoryStore, HistoryApiPresenter) -> Unit) {

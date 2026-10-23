@@ -10,6 +10,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.browser.document
+import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.events.Event
@@ -77,6 +78,163 @@ class HistoryInteractionTest :
             historyChartSelectionFor(HtmlIds.HISTORY_ASSET_CHART) shouldBe HistoryChartSelections.CHECKPOINTS
         }
 
+        "only the latest holdings request can render data or an error" {
+            val pending = mutableListOf<Triple<String, (dynamic) -> Unit, () -> Unit>>()
+            val cancelled = mutableListOf<String>()
+            val rendered = mutableListOf<String>()
+            val errors = mutableListOf<String>()
+            var selected = "A"
+            val request = HistorySelectionRequest(
+                request = { url, success, failure ->
+                    pending.add(Triple(url, success, failure))
+                    val cancel: () -> Unit = { cancelled += url }
+                    cancel
+                },
+                currentSelection = { selected },
+                onSuccess = { response -> rendered += response.day as String },
+                onFailure = { errors += selected },
+            )
+
+            request.load("/holdings?date=A", "A")
+            selected = "B"
+            request.load("/holdings?date=B", "B")
+            pending[1].second(json("day" to "B"))
+            pending[0].third()
+
+            rendered shouldBe listOf("B")
+            errors shouldBe emptyList()
+            cancelled shouldBe listOf("/holdings?date=A")
+
+            selected = "A"
+            request.load("/holdings?date=A", "A")
+            selected = "B"
+            request.load("/holdings?date=B", "B")
+            pending[3].third()
+            pending[2].second(json("day" to "A"))
+
+            rendered shouldBe listOf("B")
+            errors shouldBe listOf("B")
+        }
+
+        "holdings response and failure labels use the latest selected date" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <input id="history-holdings-date">
+                <input id="history-holdings-at" type="hidden">
+                <section id="history-account-holdings"><h2></h2></section>
+                <p id="history-holdings-total"></p>
+                <table><tbody id="history-holdings-rows"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+            val date = root.querySelector("#history-holdings-date") as org.w3c.dom.HTMLInputElement
+            val sampleAt = root.querySelector("#history-holdings-at") as org.w3c.dom.HTMLInputElement
+            val pending = mutableListOf<Triple<String, (dynamic) -> Unit, () -> Unit>>()
+            val request = newHistoryHoldingsSelectionRequest(
+                request = { url, success, failure ->
+                    pending.add(Triple(url, success, failure))
+                    val cancel: () -> Unit = {}
+                    cancel
+                },
+                currentDay = { date.value.takeIf(String::isNotBlank) },
+            )
+
+            fun select(day: String) {
+                date.value = day
+                sampleAt.value = ""
+                request.load("/holdings?date=$day", "$day||${window.location.search}")
+            }
+
+            try {
+                select("A")
+                select("B")
+                pending[1].second(json("available" to true, "holdings" to emptyArray<Any>()))
+                pending[0].second(json("available" to true, "holdings" to emptyArray<Any>()))
+                root.querySelector("#history-account-holdings h2")?.textContent shouldBe "Holdings at B"
+
+                select("A")
+                select("B")
+                pending[3].third()
+                pending[2].third()
+                root.querySelector("#history-holdings-total")?.textContent shouldBe "Could not load holdings for B."
+            } finally {
+                root.remove()
+            }
+        }
+
+        "holdings responses for another sample on the same day are obsolete" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <input id="history-holdings-date" value="2026-10-22">
+                <input id="history-holdings-at" type="hidden" value="2026-10-22T10:00:00Z">
+                <section id="history-account-holdings"><h2></h2></section>
+                <p id="history-holdings-total"></p>
+                <table><tbody id="history-holdings-rows"></tbody></table>
+            """.trimIndent()
+            document.body?.appendChild(root)
+            val pending = mutableListOf<Pair<(dynamic) -> Unit, () -> Unit>>()
+            val request = newHistoryHoldingsSelectionRequest(
+                request = { _, success, failure ->
+                    pending.add(success to failure)
+                    val cancel: () -> Unit = {}
+                    cancel
+                },
+                currentDay = {
+                    (document.getElementById("history-holdings-date") as? org.w3c.dom.HTMLInputElement)
+                        ?.value?.takeIf(String::isNotBlank)
+                },
+            )
+
+            try {
+                request.load(
+                    "/holdings?date=2026-10-22&at=2026-10-22T10:00:00Z",
+                    "2026-10-22|2026-10-22T10:00:00Z|${window.location.search}",
+                )
+                (document.getElementById("history-holdings-at") as org.w3c.dom.HTMLInputElement).value =
+                    "2026-10-22T11:00:00Z"
+                pending.single().first(json("sampleAtIso" to "2026-10-22T10:00:00Z"))
+
+                root.querySelector("#history-account-holdings h2")?.textContent shouldBe ""
+                root.querySelector("#history-holdings-total")?.textContent shouldBe ""
+            } finally {
+                root.remove()
+            }
+        }
+
+        "rapid holdings navigation and scope changes reject every obsolete callback" {
+            val pending = mutableListOf<Pair<(dynamic) -> Unit, () -> Unit>>()
+            val rendered = mutableListOf<String>()
+            val errors = mutableListOf<Unit>()
+            var selected = "A|account-1"
+            val request = HistorySelectionRequest(
+                request = { _, success, failure ->
+                    pending.add(success to failure)
+                    val cancel: () -> Unit = {}
+                    cancel
+                },
+                currentSelection = { selected },
+                onSuccess = { response -> rendered += response.day as String },
+                onFailure = { errors += Unit },
+            )
+
+            request.load("/holdings?date=A", "A|account-1")
+            selected = "B|account-1"
+            request.load("/holdings?date=B", "B|account-1")
+            selected = "C|account-1"
+            request.load("/holdings?date=C", "C|account-1")
+            pending[1].second()
+            pending[0].first(json("day" to "A"))
+            pending[2].first(json("day" to "C"))
+
+            selected = "C|account-1"
+            request.load("/holdings?date=C&scope=one", "C|account-1")
+            selected = "C|account-2"
+            pending[3].first(json("day" to "C-old-scope"))
+            pending[3].second()
+
+            rendered shouldBe listOf("C")
+            errors shouldBe emptyList()
+        }
+
         "the single analysis selector changes one panel and does not register duplicate listeners" {
             val root: HTMLElement = document.createElement("div") as HTMLElement
             root.innerHTML = """
@@ -111,7 +269,13 @@ class HistoryInteractionTest :
                         "label" to "Portfolio value",
                         "unit" to "USD",
                         "points" to arrayOf(
-                            json("t" to 1000.0, "v" to 10.0, "complete" to true),
+                            json(
+                                "t" to 1000.0,
+                                "v" to 10.0,
+                                "complete" to true,
+                                "dayLabel" to "2026-03-10",
+                                "selectionTimeIso" to "2026-03-10T12:30:00Z",
+                            ),
                             json("t" to 2000.0, "v" to 20.0, "complete" to true),
                         ),
                     ),
@@ -129,6 +293,8 @@ class HistoryInteractionTest :
             series.size shouldBe 2
             series[0].first shouldBe "Portfolio value"
             series[0].second.size shouldBe 2
+            series[0].second.first().dayLabel shouldBe "2026-03-10"
+            series[0].second.first().selectionTimeIso shouldBe "2026-03-10T12:30:00Z"
             series[1].first shouldBe "BTC"
             series[1].second.single().value shouldBe 0.5
         }
@@ -136,6 +302,65 @@ class HistoryInteractionTest :
         "a response without series has none" {
             historyApiSeries(json()) shouldBe emptyList()
             historyApiSeries(json("series" to arrayOf<dynamic>())) shouldBe emptyList()
+        }
+
+        "historical holdings keep missing prices explicit and distinguish an empty portfolio from a missing mark" {
+            val root: HTMLElement = document.createElement("div") as HTMLElement
+            root.innerHTML = """
+                <section id="history-account-holdings">
+                  <h2></h2>
+                  <p id="history-holdings-total"></p>
+                  <table><tbody id="history-holdings-rows"></tbody></table>
+                </section>
+            """.trimIndent()
+            document.body?.appendChild(root)
+            try {
+                renderHistoryHoldings(
+                    json(
+                        "totalStatus" to "PARTIAL",
+                        "totalUsd" to null,
+                        "holdings" to arrayOf(
+                            json(
+                                "asset" to "BTC",
+                                "quantity" to "1.5",
+                                "priceUsd" to "100",
+                                "valueUsd" to "150",
+                                "availability" to "VALUED",
+                            ),
+                            json(
+                                "asset" to "ETH",
+                                "quantity" to "2",
+                                "priceUsd" to null,
+                                "valueUsd" to null,
+                                "reason" to "historical price unavailable",
+                            ),
+                        ),
+                    ),
+                    "2026-03-09",
+                )
+
+                root.querySelector("h2")!!.textContent shouldBe "Holdings at 2026-03-09"
+                root.querySelector("#history-holdings-total")!!.textContent shouldBe "PARTIAL: unavailable USD"
+                val rows = root.querySelectorAll("#history-holdings-rows tr")
+                rows.length shouldBe 2
+                rows.item(0)?.textContent shouldBe "BTC1.5100150VALUED"
+                rows.item(1)?.textContent shouldBe "ETH2Unavailable: historical price unavailable"
+
+                renderHistoryHoldings(
+                    json("available" to true, "holdings" to emptyArray<Any>()),
+                    "2026-03-10",
+                )
+                root.querySelector("#history-holdings-rows")!!.textContent shouldBe "No held assets for this date."
+
+                renderHistoryHoldings(
+                    json("available" to false, "holdings" to emptyArray<Any>()),
+                    "2026-03-11",
+                )
+                root.querySelector("#history-holdings-rows")!!.textContent shouldBe
+                    "No daily mark is available for this date."
+            } finally {
+                root.remove()
+            }
         }
 
         "a point without a value stays an explicit break" {

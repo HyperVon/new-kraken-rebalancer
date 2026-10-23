@@ -18,10 +18,10 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.OrderIntentService
-import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.history.HistoryApiPresenter
 import com.gemini.krakenbot.service.history.HistoryCsvExporter
 import com.gemini.krakenbot.service.history.HistoryCycleGate
+import com.gemini.krakenbot.service.history.HistoryDailyPriceResolver
 import com.gemini.krakenbot.service.history.HistoryDatabase
 import com.gemini.krakenbot.service.history.HistoryObservationRecorder
 import com.gemini.krakenbot.service.history.HistoryObservationValuator
@@ -32,6 +32,7 @@ import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistoryStore
 import com.gemini.krakenbot.service.history.HistorySyncCoordinator
 import com.gemini.krakenbot.service.history.HistorySynchronizer
+import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
 import com.gemini.krakenbot.service.history.SqliteHistoryStore
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
@@ -67,6 +68,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal const val BROWSER_FIXTURE_ACCOUNT_IDENTITY = "AA00 TEST TEST TEST"
 internal val BROWSER_FIXTURE_PERIODIC_SYNC_INTERVAL: Duration = Duration.ofSeconds(20)
 internal val BROWSER_FIXTURE_LATE_EVENT_DELAY: Duration = Duration.ofSeconds(15)
+internal val BROWSER_FIXTURE_INCOMPLETE_EVENT_DELAY: Duration = Duration.ofSeconds(60)
 
 internal class BrowserFixtureEnvironment private constructor(
     val applicationScope: CoroutineScope,
@@ -81,8 +83,9 @@ internal class BrowserFixtureEnvironment private constructor(
     val historyService: HistoryService,
     val historyObservationRecorder: HistoryObservationRecorder,
     val historySyncCoordinator: HistorySyncCoordinator,
+    val historyValuationCoordinator: HistoryValuationCoordinator,
     val portfolioState: CurrentPortfolioState,
-    val portfolioManager: PortfolioManager,
+    val portfolioManager: PortfolioManagerImpl,
     val controller: DashboardController,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
@@ -92,10 +95,14 @@ internal class BrowserFixtureEnvironment private constructor(
 
     fun publishLateExchangeEvents(at: Instant) = exchangeFeed.publish(at)
 
+    fun publishIncompleteEvidence(at: Instant) = exchangeFeed.publishIncompleteEvidence(at)
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         try {
             historySyncCoordinator.stop()
+            historyValuationCoordinator.stop()
+            historyObservationRecorder.stop()
             val stoppedWorker = portfolioManager.stopRebalancingLoop()
             val scopeJob = applicationScope.coroutineContext[Job]
             applicationScope.cancel()
@@ -128,7 +135,7 @@ internal class BrowserFixtureEnvironment private constructor(
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("", ""),
                     settings = Settings(
-                        loopDelaySeconds = 30,
+                        loopDelaySeconds = 2,
                         deviationTriggerPercent = 2.0,
                         minimumOrderSizeUSD = 5.0,
                         dryRun = true,
@@ -156,7 +163,11 @@ internal class BrowserFixtureEnvironment private constructor(
                     fundingEvidenceScopeSupplier = { "browser-fixture-account-v1" }
                     authenticatedAccountIdentitySupplier = { BROWSER_FIXTURE_ACCOUNT_IDENTITY }
                     authenticatedAccountInfoFactory = { identity ->
-                        AuthenticatedAccountInfo(identity = identity, queryBoundsVerified = true)
+                        AuthenticatedAccountInfo(
+                            identity = identity,
+                            queryFromSec = fixtureNow.minusSeconds(401L * 24 * 60 * 60).epochSecond,
+                            queryBoundsVerified = true,
+                        )
                     }
                     tradePageSupplier = { startSec, endSec, cursor, _ ->
                         exchangeFeed.tradePage(startSec, endSec, cursor)
@@ -166,12 +177,13 @@ internal class BrowserFixtureEnvironment private constructor(
                     }
                 }
                 val directoryIdentity = DataDirectoryIdentity(tempDirectory) { historyDatabase.hasAccountEvidence() }
+                val accountKraken = BrowserFixtureKrakenService(fakeKraken)
                 val historyObservationRecorder = HistoryObservationRecorder(
                     store = historyStore,
-                    krakenService = fakeKraken,
+                    krakenService = accountKraken,
                     configService = configService,
                     dataDirectoryIdentity = directoryIdentity,
-                    nowProvider = { fixtureNow },
+                    nowProvider = Instant::now,
                 )
                 val accountScope = checkNotNull(historyObservationRecorder.currentSourceScope(appConfig)) {
                     "The explicit browser fixture account did not verify."
@@ -189,11 +201,13 @@ internal class BrowserFixtureEnvironment private constructor(
                 val orderIntentService = BrowserFixtureOrderIntentService()
                 val portfolioManager = PortfolioManagerImpl(
                     configService = configService,
-                    portfolioAnalyzer = PortfolioAnalyzerImpl(fakeKraken, configService),
+                    portfolioAnalyzer = PortfolioAnalyzerImpl(accountKraken, configService),
                     orderExecutor = OrderExecutorImpl(fakeKraken, orderIntentService),
-                    krakenService = fakeKraken,
+                    krakenService = accountKraken,
                     currentPortfolioState = portfolioState,
+                    historyObservationRecorder = historyObservationRecorder,
                 )
+                lateinit var valuationCoordinator: HistoryValuationCoordinator
                 val synchronizer = HistorySynchronizer(
                     applicationScope = applicationScope,
                     krakenService = fakeKraken,
@@ -201,6 +215,16 @@ internal class BrowserFixtureEnvironment private constructor(
                     dataDirectoryIdentity = directoryIdentity,
                     store = historyStore,
                     cycleGate = HistoryCycleGate { block -> portfolioManager.runHistoryPageIfAdmitted(block) },
+                    onLedgerPageCommitted = {
+                        println("LEDGER_PAGE_COMMITTED at=${Instant.now()}")
+                        valuationCoordinator.requestRebuild()
+                    },
+                )
+                valuationCoordinator = HistoryValuationCoordinator(
+                    applicationScope = applicationScope,
+                    synchronizer = synchronizer,
+                    store = historyStore,
+                    priceResolver = HistoryDailyPriceResolver(fakeKraken),
                 )
                 val historySyncCoordinator = HistorySyncCoordinator(
                     applicationScope = applicationScope,
@@ -260,6 +284,7 @@ internal class BrowserFixtureEnvironment private constructor(
                     historyService = historyService,
                     historyObservationRecorder = historyObservationRecorder,
                     historySyncCoordinator = historySyncCoordinator,
+                    historyValuationCoordinator = valuationCoordinator,
                     portfolioState = portfolioState,
                     portfolioManager = portfolioManager,
                     controller = controller,

@@ -364,6 +364,7 @@ object HistoryStyles {
             fontFamily = CssTheme.fontSans
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorSurface2.value
+            put("color-scheme", "dark")
             solidBorder(CssTheme.colorSurface2Border)
             borderRadius = CssTheme.radiusMd
         }

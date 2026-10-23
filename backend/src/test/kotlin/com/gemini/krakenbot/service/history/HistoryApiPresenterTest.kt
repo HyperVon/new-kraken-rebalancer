@@ -15,6 +15,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.Base64
 
@@ -46,6 +47,152 @@ class HistoryApiPresenterTest : StringSpec() {
 
     init {
         stubEmptyReads()
+
+        "24h portfolio chart and summary use full-account cycle values" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val first = observation(
+                id = "full-first",
+                time = fixedNow.minusSeconds(7_200),
+                totalUsd = "100",
+                scope = fullScope,
+            )
+            val last = observation(
+                id = "full-last",
+                time = fixedNow.minusSeconds(3_600),
+                totalUsd = "150",
+                scope = fullScope,
+            )
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(listOf(first, last))
+
+            val chart = charts(HistoryApiRangeParams(preset = "24h"))
+            chart.resolution shouldBe "cycle"
+            chart.valuationBasis shouldBe "Full account balances · direct USD ticker prices"
+            chart.series.single().points.map { it.v } shouldBe listOf(BigDecimal("100"), BigDecimal("150"))
+            chart.series.single().points.all { it.selectionTimeIso != null } shouldBe true
+            coVerify(exactly = 0) { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) }
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.observedValueChange.changeUsd shouldBe BigDecimal("50")
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("100")
+            coVerify(exactly = 0) { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) }
+        }
+
+        "24h account chart stays empty when no full-account cycle samples exist" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(emptyList())
+
+            val chart = charts(HistoryApiRangeParams(preset = "24h"))
+            chart.resolution shouldBe "cycle"
+            chart.series.single().points shouldBe emptyList()
+            chart.coverage.incomplete shouldBe true
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+            statistics.latestObservedValue.valueUsd.shouldBeNull()
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe
+                "No full-account cycle values are available for this range."
+            coVerify(exactly = 0) { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) }
+        }
+
+        "24h summary keeps one complete value while leaving change unavailable" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val only = observation(
+                id = "full-only",
+                time = fixedNow.minusSeconds(60),
+                totalUsd = "150",
+                scope = fullScope,
+            )
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(listOf(only))
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.latestObservedValue.incompleteReason.shouldBeNull()
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe
+                "At least two full-account cycle values are needed to calculate the change."
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+        }
+
+        "24h asset selection preserves missing marks and zeroes absent complete holdings" {
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val first = observation(
+                id = "asset-present",
+                time = fixedNow.minusSeconds(120),
+                totalUsd = "50",
+                assets = listOf(asset("BTC", "40"), asset("ETH", "10")),
+                scope = fullScope,
+            )
+            val absent = observation(
+                id = "asset-absent",
+                time = fixedNow.minusSeconds(60),
+                totalUsd = "60",
+                assets = listOf(asset("BTC", "60")),
+                scope = fullScope,
+            )
+            val missing = observation(
+                id = "asset-unpriced",
+                time = fixedNow.minusSeconds(30),
+                totalUsd = null,
+                assets = listOf(asset("ETH", null)),
+                scope = fullScope,
+            )
+            val samples = listOf(first, absent, missing)
+            coEvery {
+                historyStore.queryObservationChartSnapshot(match { it.sourceScope == fullScope }, any())
+            } returns observationChartSnapshot(samples)
+
+            val filtered = charts(HistoryApiRangeParams(preset = "24h", valueAsset = "ETH"))
+
+            filtered.selectedValueAsset shouldBe "ETH"
+            filtered.availableValueAssets shouldBe listOf("BTC", "ETH")
+            filtered.series.single().points.map { it.v } shouldBe
+                listOf(BigDecimal("10"), BigDecimal.ZERO, null)
+            filtered.series.single().points.last().status shouldBe HistoryAssetValueStatus.MISSING_PRICE.name
+            filtered.series.single().points.last().reasons shouldBe listOf("missing-price")
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "24h"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+            statistics.latestObservedValue.valueUsd.shouldBeNull()
+            statistics.latestObservedValue.incompleteReason shouldBe "missing-price"
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe "missing-price"
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("60")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("50")
+
+            val unfiltered = charts(HistoryApiRangeParams(preset = "24h", valueAsset = "DOGE"))
+            unfiltered.selectedValueAsset shouldBe null
+            unfiltered.series.single().key shouldBe HISTORY_API_PORTFOLIO_KEY
+            unfiltered.series.single().points.map { it.v } shouldBe
+                listOf(BigDecimal("50"), BigDecimal("60"), null)
+        }
 
         "rejects an unknown range preset with the API error contract" {
             expectRequestError("Unknown history range preset.") {
@@ -107,13 +254,152 @@ class HistoryApiPresenterTest : StringSpec() {
             }
         }
 
-        "all range keeps its lower bound unbounded" {
+        "all range requests daily values without a lower bound" {
             val response = charts(HistoryApiRangeParams(preset = "all"))
 
             response.range.fromIso.shouldBeNull()
             response.fullRange.fromIso.shouldBeNull()
             response.range.toIso shouldBe "2026-03-10T12:00:00Z"
-            coVerify { historyService.queryChartObservations(accountScope, null, fixedNow, any()) }
+            response.resolution shouldBe "1d"
+            coVerify {
+                historyStore.queryDailyValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    null,
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
+        }
+
+        "asset filter plots one USD component and keeps incomplete days as gaps" {
+            val days = (7..9).map { LocalDate.of(2026, 3, it) }
+            fun assetValue(day: LocalDate, key: String, amount: String, assetClass: String = "currency") =
+                HistoryDailyAssetValue(
+                    dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    accountIdentityDigest = accountDigest,
+                    rawAssetClass = assetClass,
+                    rawAssetKey = key,
+                    quantity = BigDecimal.ONE,
+                    priceUsd = BigDecimal(amount),
+                    valueUsd = BigDecimal(amount),
+                    pricePair = "${key}USD",
+                    priceCandleOpen = day.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    priceSource = "fixture",
+                    status = HistoryDailyValueStatus.COMPLETE,
+                )
+            val completeDays = listOf(
+                HistoryDailyValue(
+                    dayEnd = days[0].plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    accountIdentityDigest = accountDigest,
+                    sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                    totalUsd = BigDecimal("160"),
+                    status = HistoryDailyValueStatus.COMPLETE,
+                    assets = listOf(assetValue(days[0], "XXBT", "100"), assetValue(days[0], "ZUSD", "60")),
+                    dayLabel = days[0],
+                ),
+                HistoryDailyValue(
+                    dayEnd = days[1].plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    accountIdentityDigest = accountDigest,
+                    sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                    totalUsd = BigDecimal("75"),
+                    status = HistoryDailyValueStatus.COMPLETE,
+                    assets = listOf(assetValue(days[1], "ZUSD", "75")),
+                    dayLabel = days[1],
+                ),
+                HistoryDailyValue(
+                    dayEnd = days[2].plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    accountIdentityDigest = accountDigest,
+                    sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                    totalUsd = null,
+                    status = HistoryDailyValueStatus.INCOMPLETE,
+                    assets = listOf(assetValue(days[2], "STRC", "900", "equity")),
+                    dayLabel = days[2],
+                ),
+            )
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(completeDays, total = 3L)
+
+            val response = charts(HistoryApiRangeParams(preset = "all", valueAsset = "BTC"))
+
+            response.availableValueAssets shouldContainExactly listOf("BTC", "USD")
+            response.selectedValueAsset shouldBe "BTC"
+            response.series.single().points.map { it.v } shouldBe
+                listOf(BigDecimal("100"), BigDecimal.ZERO, null)
+            response.series.single().points.map { it.complete } shouldBe listOf(true, true, false)
+        }
+
+        "asset chart filters equity rows and explains a missing selected close" {
+            val days = listOf(
+                LocalDate.parse("2026-03-07"),
+                LocalDate.parse("2026-03-08"),
+                LocalDate.parse("2026-03-09"),
+            )
+            fun assetValue(
+                day: LocalDate,
+                key: String,
+                assetClass: String = "currency",
+                value: String? = null,
+                status: HistoryDailyValueStatus = HistoryDailyValueStatus.COMPLETE,
+                reason: String? = null,
+            ) = HistoryDailyAssetValue(
+                dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                accountIdentityDigest = accountDigest,
+                rawAssetClass = assetClass,
+                rawAssetKey = key,
+                quantity = value?.let(::BigDecimal),
+                priceUsd = value?.let(::BigDecimal),
+                valueUsd = value?.let(::BigDecimal),
+                pricePair = value?.let { "${key}USD" },
+                priceCandleOpen = value?.let { day.atStartOfDay(ZoneOffset.UTC).toInstant() },
+                priceSource = value?.let { "TEST" },
+                status = status,
+                reason = reason,
+            )
+            val values = listOf(
+                dailyValue(days[0], "100").copy(
+                    assets = listOf(
+                        assetValue(days[0], "BTC", value = "100"),
+                        assetValue(days[0], "AAPL", assetClass = "equity", value = "10"),
+                    ),
+                ),
+                dailyValue(days[1], "100").copy(
+                    totalUsd = null,
+                    status = HistoryDailyValueStatus.NO_PRICE,
+                    assets = listOf(
+                        assetValue(
+                            days[1],
+                            "XBT",
+                            status = HistoryDailyValueStatus.NO_PRICE,
+                            reason = "No same-day close.",
+                        ),
+                        assetValue(
+                            days[1],
+                            "AAPL",
+                            assetClass = "equity",
+                            status = HistoryDailyValueStatus.NO_PRICE,
+                        ),
+                    ),
+                ),
+                dailyValue(days[2], "100").copy(totalUsd = null, status = HistoryDailyValueStatus.INCOMPLETE),
+            )
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(values, 3L)
+
+            val filtered = charts(HistoryApiRangeParams(preset = "all", valueAsset = "BTC"))
+            val invalidFilter = charts(HistoryApiRangeParams(preset = "all", valueAsset = "DOGE"))
+
+            filtered.availableValueAssets shouldContainExactly listOf("BTC")
+            filtered.series.single().key shouldBe "asset:BTC"
+            filtered.series.single().points.map { it.v } shouldContainExactly listOf(BigDecimal("100"), null, null)
+            filtered.series.single().points[1].reasons shouldBe listOf("BTC: No same-day close.")
+            filtered.series.single().points[2].reasons shouldBe listOf("INCOMPLETE")
+            invalidFilter.selectedValueAsset shouldBe null
+            invalidFilter.series.single().key shouldBe HISTORY_API_PORTFOLIO_KEY
+            invalidFilter.series.single().points.first().v shouldBe BigDecimal("100")
         }
 
         "accepts epoch seconds, ISO instants, and inclusive local date upper bounds" {
@@ -154,7 +440,7 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "rejects scope identifiers not recorded for the verified account" {
-            expectRequestError("Unknown recorded portfolio scope.") {
+            expectRequestError("Unknown portfolio scope.") {
                 charts(scopeId = "ACCOUNT:$accountDigest:unrecorded")
             }
         }
@@ -217,7 +503,7 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "rejects a requested activity mode that differs from the selected scope" {
-            expectRequestError("Recorded portfolio scope does not match the requested mode.") {
+            expectRequestError("Portfolio scope does not match the requested mode.") {
                 presenter.activities(
                     params = HistoryApiRangeParams(),
                     currentScope = accountScope,
@@ -587,6 +873,28 @@ class HistoryApiPresenterTest : StringSpec() {
             response.series.last().points.single().v!!.shouldBeEqualComparingTo(BigDecimal("-10.00"))
         }
 
+        "cash dividends from stock holdings are USD funding deposits rather than rewards" {
+            val rows = listOf(
+                ledger(
+                    "usd-cash-dividend",
+                    type = " DIVIDEND ",
+                    subtype = " CashDividend ",
+                    asset = "ZUSD",
+                    amount = "3.25",
+                ),
+                ledger("stock-dividend", type = "dividend", subtype = "cashdividend", asset = "STRC", amount = "1"),
+            )
+            coEvery { historyService.queryLedgers(match { query -> query.limit == HISTORY_MAX_PAGE_LIMIT }) } returns
+                page(rows, rows.size.toLong(), HISTORY_MAX_PAGE_LIMIT)
+
+            val funding = charts(params = HistoryApiRangeParams(preset = "all"), selection = "deposits")
+            val rewards = charts(params = HistoryApiRangeParams(preset = "all"), selection = "rewards")
+
+            funding.series.map { it.key } shouldContainExactly listOf("ZUSD")
+            funding.series.single().points.single().v!!.shouldBeEqualComparingTo(BigDecimal("3.25"))
+            rewards.series shouldBe emptyList()
+        }
+
         "a withdrawal reduces the cumulative funding balance of its asset" {
             val rows = listOf(
                 ledger(
@@ -726,7 +1034,7 @@ class HistoryApiPresenterTest : StringSpec() {
             val response = charts(params = HistoryApiRangeParams(preset = "all"), selection = "rewards")
 
             response.series.map { series -> series.key } shouldContainExactly
-                listOf("STAKING", "DIVIDEND", "REWARD", "EARN", "AIRDROP", "TRANSFER")
+                listOf("STAKING", "REWARD", "EARN", "AIRDROP", "TRANSFER")
         }
 
         "invalid and missing checkpoint quantities are incomplete and withheld" {
@@ -784,10 +1092,441 @@ class HistoryApiPresenterTest : StringSpec() {
             status.coverage.gapCount shouldBe 0
         }
 
+        "data status reports the first and last durable daily values" {
+            val day = LocalDate.parse("2026-03-09")
+            val value = dailyValue(day, "125.50")
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(listOf(value), null)
+
+            val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
+
+            status.availableValueFromIso shouldBe "2026-03-09T00:00:00Z"
+            status.availableValueToIso shouldBe "2026-03-09T00:00:00Z"
+            status.availableValueDays shouldBe 1L
+            status.coverage.valuesFirstIso shouldBe "2026-03-09T00:00:00Z"
+            status.coverage.valuesLastIso shouldBe "2026-03-09T00:00:00Z"
+            status.coverage.incomplete shouldBe false
+            status.publishedValueGenerationId shouldBe value.generationId
+            status.publishedValueSourceRevision shouldBe value.sourceRevision
+        }
+
+        "data status counts durable incomplete daily rows when no valuation job exists" {
+            val day = LocalDate.parse("2026-03-09")
+            val incompleteValue = dailyValue(day, "0").copy(
+                totalUsd = null,
+                status = HistoryDailyValueStatus.NO_PRICE,
+            )
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(listOf(incompleteValue), null)
+
+            val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
+
+            status.valuation shouldBe null
+            status.coverage.incomplete shouldBe true
+            status.coverage.gapCount shouldBe 1
+        }
+
+        "import readiness checks gaps only inside the frozen valuation target" {
+            val targetStart = LocalDate.parse("2025-10-21")
+            val targetEnd = LocalDate.parse("2026-10-20")
+            val targetStartSec = targetStart.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+            val targetThroughSec = targetEnd.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond() - 1
+            val job = HistoryValuationJob(
+                accountIdentityDigest = accountDigest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                generationId = "generation",
+                state = HistoryValuationJobState.COMPLETE,
+                stage = HistoryValuationStage.PRICE_AND_VALUE,
+                targetStartDay = targetStart,
+                targetEndDay = targetEnd,
+                nextDay = null,
+                targetDays = 365,
+                balancesProcessed = 365,
+                balancesValid = 365,
+                balancesBlocked = 0,
+                requiredPriceTasks = 1,
+                completedPriceTasks = 1,
+                completeValueDays = 365,
+                blockedValueDays = 0,
+                sourceRevision = 1,
+                calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+                lastProgressAt = fixedNow,
+                nextRetryAt = null,
+                lastSuccessAt = fixedNow,
+                lastError = null,
+                updatedAt = fixedNow,
+            )
+            fun progress(feed: HistoryFeed, windows: List<HistorySyncCoverageWindow>) = HistorySyncProgressSummary(
+                accountIdentityDigest = accountDigest,
+                feed = feed,
+                recentWindowStartSec = null,
+                recentCompletedThroughSec = null,
+                recentLastSuccessAt = null,
+                backfillState = HistorySyncJobState.COMPLETE,
+                backfillCompletedThroughSec = targetThroughSec,
+                backfillCursor = null,
+                repairLastRunAt = null,
+                lastError = null,
+                nextRetryAt = null,
+                coveredWindows = windows,
+            )
+            coEvery { historyStore.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns job
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(emptyList(), job)
+            coEvery { historyStore.syncProgress(accountDigest) } returns listOf(
+                progress(
+                    HistoryFeed.TRADES,
+                    listOf(
+                        HistorySyncCoverageWindow(0, targetStartSec - 2),
+                        HistorySyncCoverageWindow(targetStartSec, targetThroughSec),
+                    ),
+                ),
+                progress(HistoryFeed.LEDGERS, listOf(HistorySyncCoverageWindow(targetStartSec, targetThroughSec - 1))),
+            )
+
+            val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
+
+            status.progress.first { it.feed == "TRADES" }.coveredGapCount shouldBe 1
+            status.progress.first { it.feed == "TRADES" }.targetCoverageComplete shouldBe true
+            status.progress.first { it.feed == "LEDGERS" }.targetCoverageComplete shouldBe false
+        }
+
+        "data status reports durable per-asset reasons for blocked daily values" {
+            val targetStart = LocalDate.parse("2025-03-10")
+            val targetEnd = targetStart.plusDays(364)
+            val firstDay = dailyValue(targetStart, "0").copy(
+                totalUsd = null,
+                status = HistoryDailyValueStatus.NO_PRICE,
+                assets = listOf(
+                    HistoryDailyAssetValue(
+                        dayEnd = targetStart.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        accountIdentityDigest = accountDigest,
+                        rawAssetClass = "currency",
+                        rawAssetKey = "XXBT",
+                        quantity = BigDecimal.ONE,
+                        priceUsd = null,
+                        valueUsd = null,
+                        pricePair = null,
+                        priceCandleOpen = null,
+                        priceSource = null,
+                        status = HistoryDailyValueStatus.NO_PRICE,
+                        reason = "No completed USD close.",
+                    ),
+                ),
+            )
+            val secondDay = dailyValue(targetStart.plusDays(1), "0").copy(
+                totalUsd = null,
+                status = HistoryDailyValueStatus.NO_BALANCE,
+            )
+            val dailyRows = listOf(firstDay, secondDay)
+            coEvery {
+                historyStore.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+            } returns valuationJob(targetStart, targetEnd)
+            coEvery { historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE) } returns
+                statusSnapshot(dailyRows, valuationJob(targetStart, targetEnd))
+
+            val status = presenter.dataStatus(HistoryApiRangeParams(preset = "all"), accountScope)
+
+            status.valuation?.blockedValueReasons shouldContainExactly listOf(
+                "$targetStart UTC · BTC: No completed USD close.",
+                "${targetStart.plusDays(1)} UTC · no_balance",
+            )
+            status.valuation?.state shouldBe "NEEDS_ATTENTION"
+            status.valuation?.blockedValueDays shouldBe 2
+            status.coverage.gapCount shouldBe 2
+        }
+
+        "holdings at a date preserve cash and never expose equity-class shares" {
+            val day = LocalDate.parse("2026-03-09")
+            val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            val total = HistoryDailyValue(
+                dayEnd = dayEnd,
+                accountIdentityDigest = accountDigest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                totalUsd = BigDecimal("100"),
+                status = HistoryDailyValueStatus.INCOMPLETE,
+                assets = emptyList(),
+                dayLabel = day,
+                generationId = "generation",
+                calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+                sourceRevision = 1,
+            )
+            val cash = HistoryDailyAssetValue(
+                dayEnd = dayEnd,
+                accountIdentityDigest = accountDigest,
+                rawAssetClass = "currency",
+                rawAssetKey = "ZUSD",
+                quantity = BigDecimal("90"),
+                priceUsd = BigDecimal.ONE,
+                valueUsd = BigDecimal("90"),
+                pricePair = "USD",
+                priceCandleOpen = day.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                priceSource = "USD_AT_PAR",
+                status = HistoryDailyValueStatus.COMPLETE,
+            )
+            val equityShares = cash.copy(
+                rawAssetClass = "equity",
+                rawAssetKey = "AAPL",
+                quantity = BigDecimal.ONE,
+                priceUsd = BigDecimal("10"),
+                valueUsd = BigDecimal("10"),
+            )
+            coEvery {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            } returns HistoryDailyValueSnapshot(listOf(total.copy(assets = listOf(cash, equityShares))), null)
+
+            val response = presenter.holdingsAtDate(accountScope, day.toString())
+
+            response.available shouldBe true
+            response.totalUsd shouldBe "100"
+            response.holdings.map { it.asset } shouldContainExactly listOf("USD")
+            response.holdings.single().quantity shouldBe "90"
+        }
+
+        "holdings at a date report outside coverage without manufacturing an empty balance" {
+            val day = LocalDate.parse("2026-03-09")
+            val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            coEvery {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            } returns HistoryDailyValueSnapshot(emptyList(), null)
+
+            val response = presenter.holdingsAtDate(accountScope, day.toString())
+
+            response.available shouldBe false
+            response.totalUsd.shouldBeNull()
+            response.totalStatus shouldBe "OUTSIDE_COVERAGE"
+            response.holdings shouldBe emptyList()
+        }
+
+        "intraday holdings lookup requires and returns the exact cycle timestamp" {
+            val sampleAt = Instant.parse("2026-03-09T22:15:00Z")
+            val fullScope = HistoryObservationValuator.fullAccountScope(accountDigest)
+            val sample = observation(
+                id = "exact-time-holdings",
+                time = sampleAt,
+                totalUsd = "100",
+                assets = listOf(asset("BTC", "100")),
+                scope = fullScope,
+            )
+            coEvery {
+                historyStore.queryObservationsSnapshot(
+                    match {
+                        it.sourceScope == fullScope && it.from == sampleAt && it.until == sampleAt.plusNanos(1)
+                    },
+                )
+            } returns listOf(sample)
+
+            val holdings = presenter.holdingsAtDate(accountScope, "2026-03-09", sampleAt.toString())
+
+            holdings.available shouldBe true
+            holdings.sampleAtIso shouldBe sampleAt.toString()
+            holdings.totalUsd shouldBe "100"
+            holdings.holdings.single().asset shouldBe "BTC"
+            coVerify {
+                historyStore.queryObservationsSnapshot(
+                    match {
+                        it.sourceScope == fullScope && it.from == sampleAt && it.until == sampleAt.plusNanos(1)
+                    },
+                )
+            }
+
+            coEvery {
+                historyStore.queryObservationsSnapshot(match { it.sourceScope == fullScope })
+            } returns emptyList()
+            val missing = presenter.holdingsAtDate(accountScope, "2026-03-09", sampleAt.plusSeconds(1).toString())
+            missing.available shouldBe false
+            missing.totalStatus shouldBe HistoryDailyValueStatus.OUTSIDE_COVERAGE.name
+            missing.sampleAtIso shouldBe sampleAt.plusSeconds(1).toString()
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.holdingsAtDate(accountScope, "2026-03-10", sampleAt.toString())
+            }
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.holdingsAtDate(accountScope, "2026-03-09", "not-an-instant")
+            }
+        }
+
+        "daily summary keeps observed value change unavailable across a missing day" {
+            val first = dailyValue(LocalDate.parse("2026-03-07"), "100")
+            val last = dailyValue(LocalDate.parse("2026-03-09"), "125").copy(
+                totalUsd = null,
+                status = HistoryDailyValueStatus.NO_PRICE,
+                assets = listOf(
+                    HistoryDailyAssetValue(
+                        dayEnd = LocalDate.parse("2026-03-10").atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        accountIdentityDigest = accountDigest,
+                        rawAssetClass = "currency",
+                        rawAssetKey = "XXBT",
+                        quantity = BigDecimal.ONE,
+                        priceUsd = null,
+                        valueUsd = null,
+                        pricePair = null,
+                        priceCandleOpen = null,
+                        priceSource = null,
+                        status = HistoryDailyValueStatus.NO_PRICE,
+                        reason = "No close is available.",
+                    ),
+                ),
+            )
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(listOf(first, last), 2L)
+
+            val response = presenter.summary(
+                params = HistoryApiRangeParams(preset = "all"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            )
+
+            response.statistics.latestObservedValue.complete shouldBe false
+            response.statistics.latestObservedValue.valueUsd.shouldBeNull()
+            response.statistics.observedValueChange.complete shouldBe false
+            response.statistics.observedValueChange.changeUsd.shouldBeNull()
+            response.statistics.rangeExtrema.complete shouldBe false
+            response.statistics.observedValueChange.incompleteReason shouldBe
+                "Daily value is unavailable on 2026-03-09: no_price."
+        }
+
+        "daily summary computes change and extrema only across an entirely complete range" {
+            val first = dailyValue(LocalDate.parse("2026-03-07"), "100")
+            val second = dailyValue(LocalDate.parse("2026-03-08"), "150")
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(listOf(first, second), 2L)
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "all"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.latestObservedValue.complete shouldBe true
+            statistics.observedValueChange.changeUsd shouldBe BigDecimal("50")
+            statistics.observedValueChange.complete shouldBe true
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("100")
+            statistics.rangeExtrema.complete shouldBe true
+        }
+
+        "daily summary leaves change unavailable for a one-day custom range" {
+            val day = LocalDate.parse("2026-03-09")
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(listOf(dailyValue(day, "150")), 1L)
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "custom", start = day.toString(), end = day.toString()),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+
+            statistics.latestObservedValue.valueUsd shouldBe BigDecimal("150")
+            statistics.latestObservedValue.complete shouldBe true
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.complete shouldBe false
+            statistics.observedValueChange.incompleteReason shouldBe
+                "At least two complete daily values are needed to calculate the change."
+            statistics.rangeExtrema.high?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.low?.valueUsd shouldBe BigDecimal("150")
+            statistics.rangeExtrema.complete shouldBe true
+        }
+
+        "daily summary reports explicit absence when no account-value rows exist" {
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(emptyList(), 0L)
+
+            val statistics = presenter.summary(
+                params = HistoryApiRangeParams(preset = "all"),
+                currentScope = accountScope,
+                scopeId = null,
+                targetAllocations = emptyList(),
+            ).statistics
+
+            statistics.latestObservedValue.valueUsd.shouldBeNull()
+            statistics.latestObservedValue.complete shouldBe false
+            statistics.observedValueChange.changeUsd.shouldBeNull()
+            statistics.observedValueChange.incompleteReason shouldBe "No daily account values are available."
+            statistics.rangeExtrema.high.shouldBeNull()
+            statistics.rangeExtrema.low.shouldBeNull()
+        }
+
+        "daily export queries preserve UTC day labels and reject invalid account dates" {
+            val values = presenter.dailyValueExportQuery(
+                HistoryApiRangeParams(
+                    preset = "custom",
+                    start = "2026-03-07",
+                    end = "2026-03-09",
+                    tz = "America/Los_Angeles",
+                ),
+                accountScope,
+            )
+            values.query.accountIdentityDigest shouldBe accountDigest
+            values.query.from shouldBe Instant.parse("2026-03-08T00:00:00Z")
+            values.query.until shouldBe Instant.parse("2026-03-11T00:00:00Z")
+            values.zone.id shouldBe "America/Los_Angeles"
+
+            val holdings = presenter.dailyHoldingsExportQuery("2026-03-09", accountScope)
+            holdings.query.day shouldBe LocalDate.parse("2026-03-09")
+            holdings.zone shouldBe ZoneOffset.UTC
+            val intradayValues = presenter.dailyValueExportQuery(
+                HistoryApiRangeParams(preset = "24h"),
+                accountScope,
+            )
+            intradayValues.query.intraday shouldBe true
+            val intradayHoldings = presenter.dailyHoldingsExportQuery(
+                "2026-03-09",
+                accountScope,
+                "2026-03-09T12:00:00Z",
+            )
+            intradayHoldings.query.sampleAt shouldBe Instant.parse("2026-03-09T12:00:00Z")
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.dailyHoldingsExportQuery("2026-03-09", accountScope, "not-an-instant")
+            }
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.dailyHoldingsExportQuery("2026-03-09", accountScope, "2026-03-10T00:00:00Z")
+            }
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.dailyHoldingsExportQuery("2026-02-30", accountScope)
+            }
+            expectRequestError(
+                "Kraken account identity is not verified yet; imported history appears after the first successful authentication.",
+            ) {
+                presenter.dailyValueExportQuery(HistoryApiRangeParams(preset = "all"), simulationScope)
+            }
+            expectRequestError(
+                "Kraken account identity is not verified yet; imported history appears after the first successful authentication.",
+            ) {
+                presenter.dailyHoldingsExportQuery("2026-03-09", simulationScope)
+            }
+            expectRequestError(
+                "Kraken account identity is not verified yet; imported history appears after the first successful authentication.",
+            ) {
+                presenter.holdingsAtDate(simulationScope, "2026-03-09")
+            }
+            expectRequestError("History range dates must use the YYYY-MM-DD format.") {
+                presenter.holdingsAtDate(accountScope, "2026-02-30")
+            }
+        }
+
         "unknown stored interval totals fall back to returned point count" {
-            val sample = observation("sample", fixedNow.minusSeconds(60), "10.00")
-            coEvery { historyService.queryChartObservations(any(), any(), any(), any()) } returns listOf(sample)
-            coEvery { historyService.queryValues(any()) } returns page(listOf(sample), total = null)
+            val sample = dailyValue(LocalDate.parse("2026-03-09"), "10.00")
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(listOf(sample), total = null)
 
             val response = charts(HistoryApiRangeParams(preset = "all"))
 
@@ -797,17 +1536,85 @@ class HistoryApiPresenterTest : StringSpec() {
         }
 
         "representative chart points retain the stored observation count" {
-            val samples = (0..2).map { index ->
-                observation("sample-$index", fixedNow.minusSeconds(index * 60L), "10.00")
+            val firstDay = LocalDate.parse("2020-01-01")
+            val samples = (0 until 2403).map { index ->
+                dailyValue(firstDay.plusDays(index.toLong()), "10.00")
             }
-            coEvery { historyService.queryChartObservations(any(), any(), any(), any()) } returns samples
-            coEvery { historyService.queryValues(any()) } returns page(listOf(samples.first()), total = 2403L)
+            coEvery {
+                historyStore.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any())
+            } returns HistoryDailyValueSnapshot(samples, null)
 
             val response = charts(HistoryApiRangeParams(preset = "all"))
 
-            response.fullRange.pointCount shouldBe 3
+            (response.fullRange.pointCount < 2403) shouldBe true
             response.fullRange.totalObservations shouldBe 2403L
             response.fullRange.representative shouldBe true
+        }
+
+        "daily downsampling retains every incomplete day even when gaps exceed the point cap" {
+            val start = LocalDate.parse("2024-07-01")
+            val gapIndices = setOf(100, 250, 450)
+            val values = (0 until 600).map { index ->
+                val value = dailyValue(start.plusDays(index.toLong()), "10.00")
+                if (index in gapIndices) {
+                    value.copy(totalUsd = null, status = HistoryDailyValueStatus.NO_PRICE)
+                } else {
+                    value
+                }
+            }
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } coAnswers {
+                val offset = arg<Int>(5)
+                val pageItems = values.drop(offset).take(HISTORY_PAGE_LIMIT)
+                page(
+                    pageItems,
+                    total = values.size.toLong(),
+                    limit = HISTORY_PAGE_LIMIT,
+                    offset = offset,
+                    hasMore =
+                    offset + pageItems.size < values.size,
+                )
+            }
+
+            val response = charts(HistoryApiRangeParams(preset = "all"), maxPoints = 2)
+
+            response.series.single().points.size shouldBe 5
+            response.series.single().points.mapNotNull { it.dayLabel } shouldContainExactly listOf(
+                start.toString(),
+                start.plusDays(100).toString(),
+                start.plusDays(250).toString(),
+                start.plusDays(450).toString(),
+                start.plusDays(599).toString(),
+            )
+            response.series.single().points.count { !it.complete } shouldBe 3
+            response.coverage.gapCount shouldBe 3
+            response.fullRange.totalObservations shouldBe 600L
+            response.fullRange.representative shouldBe true
+            coVerify(exactly = 2) {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            }
+        }
+
+        "daily downsampling chooses a middle representative when one chart slot remains" {
+            val start = LocalDate.parse("2026-03-06")
+            val samples = (0..3).map { index -> dailyValue(start.plusDays(index.toLong()), (10 + index).toString()) }
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns page(samples, total = 4L)
+
+            val response = charts(HistoryApiRangeParams(preset = "all"), maxPoints = 3)
+
+            response.series.single().points.mapNotNull { it.dayLabel } shouldContainExactly listOf(
+                start.toString(),
+                start.plusDays(1).toString(),
+                start.plusDays(3).toString(),
+            )
+            response.series.single().points.map { it.v } shouldContainExactly listOf(
+                BigDecimal("10"),
+                BigDecimal("11"),
+                BigDecimal("13"),
+            )
         }
 
         "derived charts do not imply observation sampling when no asset series exists" {
@@ -829,6 +1636,40 @@ class HistoryApiPresenterTest : StringSpec() {
     }
 
     private fun stubEmptyReads() {
+        coEvery { historyStore.queryObservationChartSnapshot(any(), any()) } returns
+            observationChartSnapshot(emptyList())
+        coEvery { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) } answers {
+            val limit = arg<Int>(4)
+            val offset = arg<Int>(5)
+            page(emptyList(), 0L, limit, offset)
+        }
+        coEvery { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) } coAnswers {
+            val digest = firstArg<String>()
+            val sourceAssetScope = secondArg<String>()
+            val from = thirdArg<Instant?>()
+            val until = arg<Instant?>(3)
+            val values = mutableListOf<HistoryDailyValue>()
+            var offset = 0
+            while (true) {
+                val result = historyStore.queryDailyValues(
+                    digest,
+                    sourceAssetScope,
+                    from,
+                    until,
+                    HISTORY_PAGE_LIMIT,
+                    offset,
+                )
+                values += result.items
+                if (!result.hasMore || result.items.isEmpty()) break
+                offset += result.items.size
+            }
+            HistoryDailyValueSnapshot(
+                values = values,
+                valuationJob = historyStore.loadValuationJob(digest, sourceAssetScope),
+            )
+        }
+        coEvery { historyStore.queryDailyValueStatusSnapshot(any(), any()) } returns
+            HistoryDailyValueStatusSnapshot(null, null, 0, 0, null, emptyList())
         coEvery { historyService.queryValues(any()) } returns page(emptyList(), 0L)
         coEvery { historyService.queryChartObservations(any(), any(), any(), any()) } returns emptyList()
         coEvery { historyService.queryTrades(any()) } returns page(emptyList(), 0L)
@@ -843,7 +1684,30 @@ class HistoryApiPresenterTest : StringSpec() {
         coEvery { historyStore.currentDataRevision() } returns 0L
         coEvery { historyStore.loadSyncJobs(any()) } returns emptyList()
         coEvery { historyStore.syncProgress(any()) } returns emptyList()
+        coEvery { historyStore.loadValuationJob(any(), any()) } returns null
         every { syncCoordinator.blockedReason() } returns null
+    }
+
+    private fun observationChartSnapshot(observations: List<HistoryObservation>): HistoryObservationChartSnapshot {
+        val ordered = observations.sortedWith(
+            compareBy(HistoryObservation::observedAt, HistoryObservation::observationId),
+        )
+        val complete = ordered.filter { it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null }
+        val incomplete = ordered.filterNot { it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null }
+        return HistoryObservationChartSnapshot(
+            chartObservations = ordered,
+            totalObservations = ordered.size.toLong(),
+            firstObservation = ordered.firstOrNull(),
+            lastObservation = ordered.lastOrNull(),
+            incompleteObservations = incomplete.size.toLong(),
+            firstIncompleteReason = incomplete.firstOrNull()?.incompleteReasons?.firstOrNull(),
+            availableAssetSymbols = ordered.flatMap { it.assets }.map { it.symbol }.distinct().sorted(),
+            completeObservations = complete.size.toLong(),
+            firstCompleteObservation = complete.firstOrNull(),
+            lastCompleteObservation = complete.lastOrNull(),
+            minimumCompleteObservation = complete.minByOrNull { it.totalUsd!! },
+            maximumCompleteObservation = complete.maxByOrNull { it.totalUsd!! },
+        )
     }
 
     private fun newPresenter(store: HistoryStore = historyStore, nowProvider: () -> Instant = { fixedNow }) =
@@ -861,7 +1725,8 @@ class HistoryApiPresenterTest : StringSpec() {
         selection: String? = null,
         scopeId: String? = null,
         api: HistoryApiPresenter = presenter,
-    ) = api.charts(params, currentScope, selection, scopeId, null)
+        maxPoints: Int? = null,
+    ) = api.charts(params, currentScope, selection, scopeId, maxPoints)
 
     private suspend fun activities(cursor: String) = presenter.activities(
         params = HistoryApiRangeParams(),
@@ -901,6 +1766,78 @@ class HistoryApiPresenterTest : StringSpec() {
         totalUsd = totalUsd?.let(::BigDecimal),
         incompleteReasons = if (totalUsd == null) listOf("missing-price") else emptyList(),
         assets = assets,
+    )
+
+    private fun dailyValue(day: LocalDate, totalUsd: String) = HistoryDailyValue(
+        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+        accountIdentityDigest = accountDigest,
+        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+        totalUsd = BigDecimal(totalUsd),
+        status = HistoryDailyValueStatus.COMPLETE,
+        assets = emptyList(),
+        dayLabel = day,
+        generationId = "test-generation",
+        calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+        sourceRevision = 1,
+    )
+
+    private fun statusSnapshot(
+        values: List<HistoryDailyValue>,
+        job: HistoryValuationJob?,
+    ): HistoryDailyValueStatusSnapshot {
+        val targetValues = values.filter { value ->
+            job != null && value.dayLabel >= job.targetStartDay && value.dayLabel <= job.targetEndDay
+        }
+        val reasons = targetValues.asSequence()
+            .filter { it.status != HistoryDailyValueStatus.COMPLETE }
+            .flatMap { value ->
+                value.assets.asSequence()
+                    .filter { it.status != HistoryDailyValueStatus.COMPLETE }
+                    .map { asset ->
+                        HistoryDailyValueStatusReason(value.dayLabel, asset.status, asset.rawAssetKey, asset.reason)
+                    }
+                    .ifEmpty {
+                        sequenceOf(HistoryDailyValueStatusReason(value.dayLabel, value.status, null, null))
+                    }
+            }
+            .take(50)
+            .toList()
+        return HistoryDailyValueStatusSnapshot(
+            firstDayLabel = values.minOfOrNull { it.dayLabel },
+            lastDayLabel = values.maxOfOrNull { it.dayLabel },
+            availableDays = values.size.toLong(),
+            incompleteDays = values.count { it.status != HistoryDailyValueStatus.COMPLETE }.toLong(),
+            valuationJob = job,
+            blockedReasons = reasons,
+            publishedGenerationId = values.map { it.generationId }.distinct().singleOrNull(),
+            publishedSourceRevision = values.map { it.sourceRevision }.distinct().singleOrNull(),
+        )
+    }
+
+    private fun valuationJob(start: LocalDate, end: LocalDate) = HistoryValuationJob(
+        accountIdentityDigest = accountDigest,
+        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+        generationId = "blocked-generation",
+        state = HistoryValuationJobState.NEEDS_ATTENTION,
+        stage = HistoryValuationStage.PRICE_AND_VALUE,
+        targetStartDay = start,
+        targetEndDay = end,
+        nextDay = null,
+        targetDays = 365,
+        balancesProcessed = 365,
+        balancesValid = 365,
+        balancesBlocked = 0,
+        requiredPriceTasks = 1,
+        completedPriceTasks = 0,
+        completeValueDays = 0,
+        blockedValueDays = 2,
+        sourceRevision = 1,
+        calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+        lastProgressAt = fixedNow,
+        nextRetryAt = null,
+        lastSuccessAt = null,
+        lastError = "Historical daily prices could not be fetched.",
+        updatedAt = fixedNow,
     )
 
     private fun asset(symbol: String, valueUsd: String?) = HistoryAssetValue(

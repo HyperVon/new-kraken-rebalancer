@@ -17,6 +17,9 @@ interface KrakenService {
     /** Returns exchange-reported asset IDs and classes; backends without metadata return none. */
     suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = emptyList()
 
+    /** Returns current exchange metadata without stale-cache fallback for trading eligibility. */
+    suspend fun getFreshAssetMetadata(): List<KrakenAssetMetadata> = getAssetMetadata()
+
     /**
      * @param dryRun is required and captured by the caller for this order so a mid-cycle settings
      * flip cannot change dry-run vs live placement.

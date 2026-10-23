@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.Event
 import kotlin.js.js
 import kotlin.js.json
@@ -273,6 +274,7 @@ class HistoryRefreshTest : StringSpec() {
             val tradeTargets = historyRefreshTargets(previous, tradeProgressOnly)
             tradeTargets.charts shouldBe false
             tradeTargets.summary shouldBe true
+            tradeTargets.holdings shouldBe false
             tradeTargets.trades shouldBe true
             tradeTargets.ledgers shouldBe false
             tradeTargets.activity shouldBe true
@@ -285,9 +287,51 @@ class HistoryRefreshTest : StringSpec() {
             val fallbackTargets = historyRefreshTargets(noFeedEvidence, noFeedEvidence)
             fallbackTargets.charts shouldBe true
             fallbackTargets.summary shouldBe true
+            fallbackTargets.holdings shouldBe false
             fallbackTargets.trades shouldBe false
             fallbackTargets.ledgers shouldBe false
             fallbackTargets.activity shouldBe false
+        }
+
+        "published value generations refresh charts when date coverage stays the same" {
+            val previous = historyRefreshStatus(revision = 1.0)
+            previous.publishedValueGenerationId = "generation-old"
+            previous.publishedValueSourceRevision = 4
+            val published = historyRefreshStatus(revision = 2.0)
+            published.publishedValueGenerationId = "generation-new"
+            published.publishedValueSourceRevision = 5
+
+            val targets = historyRefreshTargets(previous, published)
+
+            targets.charts shouldBe true
+            targets.summary shouldBe true
+            targets.holdings shouldBe true
+            targets.activity shouldBe true
+        }
+
+        "selected holdings refresh retains the selected day and intraday sample" {
+            val root = historyRefreshFixture()
+            val dayInput = root.querySelector("#history-holdings-date") as HTMLInputElement
+            val sampleAtInput = root.querySelector("#history-holdings-at") as HTMLInputElement
+            val selections = mutableListOf<Pair<String, String?>>()
+            try {
+                refreshSelectedHistoryHoldings { day, sampleAt -> selections += day to sampleAt }
+                selections shouldBe listOf("2026-10-18" to "2026-10-18T12:00:00Z")
+
+                sampleAtInput.value = ""
+                refreshSelectedHistoryHoldings { day, sampleAt -> selections += day to sampleAt }
+                selections.last() shouldBe ("2026-10-18" to null)
+
+                dayInput.value = ""
+                refreshSelectedHistoryHoldings { day, sampleAt -> selections += day to sampleAt }
+                selections.size shouldBe 2
+
+                dayInput.remove()
+                refreshSelectedHistoryHoldings { day, sampleAt -> selections += day to sampleAt }
+                selections.size shouldBe 2
+            } finally {
+                root.remove()
+            }
         }
 
         "status and chart queries preserve custom ranges and freeze rolling ranges while zoomed" {
@@ -437,6 +481,14 @@ class HistoryRefreshTest : StringSpec() {
             window.asDynamic().clearInterval = { _: dynamic -> Unit }
             val statusRequests = mutableListOf<PendingHistoryStatus>()
             val panelRequests = mutableListOf<String>()
+            val holdingsRequests = mutableListOf<String>()
+            val oldFetch = window.asDynamic().fetch
+            window.asDynamic().fetch = { url: String, _: dynamic ->
+                holdingsRequests += url
+                js(
+                    "Promise.resolve({ok: true, json: () => Promise.resolve({totalStatus: 'COMPLETE', totalUsd: '1', holdings: []})})",
+                )
+            }
             var chartInstances = 0
             val defaultChart = historyRefreshChart()
             val latestChart = historyRefreshChart(
@@ -492,6 +544,8 @@ class HistoryRefreshTest : StringSpec() {
                     statusRequest = statusRequest,
                     panelRequest = panelRequest,
                 )
+                (root.querySelector("#history-holdings-date") as HTMLInputElement).value = "2026-10-19"
+                (root.querySelector("#history-holdings-at") as HTMLInputElement).value = "2026-10-19T14:30:00Z"
                 val session = historyChartSessions[HtmlIds.HISTORY_VALUE_CHART]!!
                 val full = session.viewport.full
                 val visible = ChartRange(full.min + full.span * 0.2, full.min + full.span * 0.45)
@@ -511,6 +565,7 @@ class HistoryRefreshTest : StringSpec() {
                 statusRequests.size shouldBe 2
                 statusRequests[1].success(historyRefreshStatus(revision = 1.0))
                 panelRequests shouldBe emptyList()
+                holdingsRequests shouldBe emptyList()
                 historyChartSessions[HtmlIds.HISTORY_VALUE_CHART] shouldBe session
                 session.viewport.visible shouldBe visible
                 historyLegendHidden[HtmlIds.HISTORY_VALUE_CHART] shouldBe hiddenSeries
@@ -531,6 +586,10 @@ class HistoryRefreshTest : StringSpec() {
                 panelRequests.any { it.startsWith("/api/history/summary?") } shouldBe true
                 panelRequests.any { it.startsWith("/api/history/trades?") } shouldBe false
                 panelRequests.any { it.startsWith("/api/history/ledgers?") } shouldBe false
+                holdingsRequests.size shouldBe 1
+                val holdingsParams = historyTestParams(holdingsRequests.single().substringAfter('?'))
+                holdingsParams.get("date") as? String shouldBe "2026-10-19"
+                holdingsParams.get("at") as? String shouldBe "2026-10-19T14:30:00Z"
                 val chartParams = historyTestParams(
                     panelRequests.first { it.startsWith("/api/history/charts?") }
                         .substringAfter('?'),
@@ -572,6 +631,7 @@ class HistoryRefreshTest : StringSpec() {
                 disposeHistoryAutoRefresh()
                 root.remove()
                 disposeDetachedHistoryCharts()
+                window.asDynamic().fetch = oldFetch
                 window.asDynamic().setInterval = oldSetInterval
                 window.asDynamic().clearInterval = oldClearInterval
                 if (previousLegendState == null) {
@@ -838,6 +898,8 @@ private fun historyRefreshStatus(
             "tz" to "UTC",
         ),
         "dataRevision" to revision,
+        "publishedValueGenerationId" to "generation-1",
+        "publishedValueSourceRevision" to 4,
         "blockedReason" to null,
         "coverage" to json(
             "valuesFirstIso" to "2026-09-20T00:00:00Z",
@@ -977,6 +1039,8 @@ private fun historyRefreshFixture(): HTMLElement {
         <input id="history-filter-tz" type="hidden">
         <input id="history-filter-tab" type="hidden">
         <input id="history-filter-activity" type="hidden">
+        <input id="history-holdings-date" type="date" value="2026-10-18">
+        <input id="history-holdings-at" type="hidden" value="2026-10-18T12:00:00Z">
         <div id="history-panel-portfolio" data-history-panel="portfolio">
         <div class="glass-panel">
           <div data-history-controls hidden>

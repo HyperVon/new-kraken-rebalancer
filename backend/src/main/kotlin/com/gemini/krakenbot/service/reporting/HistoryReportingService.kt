@@ -16,6 +16,7 @@ import com.gemini.krakenbot.service.history.HistoryService
 import com.gemini.krakenbot.service.history.HistorySourceScope
 import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
 import com.gemini.krakenbot.service.history.HistoryTrade
+import com.gemini.krakenbot.service.history.isUsdCashDividendDeposit
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
@@ -257,7 +258,9 @@ class HistoryReportingService(
                 ),
             )
         }
-        val deposits = ledgers.filter { it.normalizedType() == KrakenApiConstants.LEDGER_TYPE_DEPOSIT }
+        val deposits = ledgers.filter {
+            it.normalizedType() == KrakenApiConstants.LEDGER_TYPE_DEPOSIT || it.isUsdCashDividendDeposit()
+        }
         val withdrawals = ledgers.filter { it.normalizedType() == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL }
         fun gated(total: NativeAssetQuantities): NativeAssetQuantities {
             val complete = total.complete && coverage.ledgersCovered
@@ -302,7 +305,7 @@ class HistoryReportingService(
                     offset = offset,
                 ),
             )
-        }.filter { it.isRewardLedger() }
+        }.filter { it.isRewardLedger() && !it.isUsdCashDividendDeposit() }
         val totals = sumNativeQuantities(rewardLedgers)
         if (totals.complete && !coverage.ledgersCovered) {
             return totals.copy(
@@ -320,12 +323,13 @@ class HistoryReportingService(
             when (ledger.normalizedType()) {
                 KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> amount.abs()
                 KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> amount.abs().negate()
+                KrakenApiConstants.LEDGER_TYPE_DIVIDEND -> amount.abs().takeIf { ledger.isUsdCashDividendDeposit() }
                 else -> null
             }
         }
 
     fun rewardQuantitySeries(ledgers: List<HistoryLedger>): List<NativeQuantitySeries> =
-        nativeQuantitySeries(ledgers.filter { it.isRewardLedger() }) { ledger ->
+        nativeQuantitySeries(ledgers.filter { it.isRewardLedger() && !it.isUsdCashDividendDeposit() }) { ledger ->
             ledger.amount?.toBigDecimalOrNull()?.takeIf { ledger.hasValidAmount }
         }
 
@@ -489,6 +493,7 @@ private fun HistoryTrade.normalizedFeeCurrency(costCurrency: String?): String? =
 private fun HistoryLedger.normalizedType(): String = type?.trim()?.lowercase().orEmpty()
 
 private fun HistoryLedger.isRewardLedger(): Boolean {
+    if (isUsdCashDividendDeposit()) return false
     val type = normalizedType()
     if (type in LedgerEvent.REWARD_TYPES) return true
     val subtype = subtype?.trim()?.lowercase().orEmpty()

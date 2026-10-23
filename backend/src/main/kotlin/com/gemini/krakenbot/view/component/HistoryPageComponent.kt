@@ -6,6 +6,9 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.history.HistoryApiBoundaryKind
 import com.gemini.krakenbot.service.history.HistoryApiChartsResponse
+import com.gemini.krakenbot.service.history.HistoryApiDataStatusResponse
+import com.gemini.krakenbot.service.history.HistoryApiHoldingsAtDate
+import com.gemini.krakenbot.service.history.HistoryApiPoint
 import com.gemini.krakenbot.service.history.HistoryApiScopeSelection
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
@@ -81,6 +84,7 @@ import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.input
 import kotlinx.html.label
+import kotlinx.html.li
 import kotlinx.html.nav
 import kotlinx.html.option
 import kotlinx.html.script
@@ -90,11 +94,14 @@ import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.thead
 import kotlinx.html.title
+import kotlinx.html.ul
 import kotlinx.html.unsafe
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -116,6 +123,8 @@ data class HistoryPageData(
     val rewardSeries: List<NativeQuantitySeries> = emptyList(),
     val allocations: List<Allocation> = emptyList(),
     val portfolioChart: HistoryApiChartsResponse? = null,
+    val dataStatus: HistoryApiDataStatusResponse? = null,
+    val accountHoldings: HistoryApiHoldingsAtDate? = null,
 )
 
 class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefault()) {
@@ -151,6 +160,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     id = HistoryRangeIds.PANEL_PORTFOLIO
                     attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_PORTFOLIO
                     renderValueChart(data)
+                    renderAccountHoldings(data.accountHoldings)
                     details(CssClass.History.Disclosure.value) {
                         summary { +ViewText.HISTORY_EXPLORE_ANALYSIS }
                         div {
@@ -167,7 +177,6 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     id = HistoryRangeIds.PANEL_ACTIVITY
                     attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_ACTIVITY
                     attributes["hidden"] = "hidden"
-                    renderActivityNav()
                     renderFilters(data)
                     renderNewRecordsNotice()
                     renderBotActivity()
@@ -178,12 +187,18 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     id = HistoryRangeIds.PANEL_DATA_STATUS
                     attributes[HtmlAttrs.DATA_HISTORY_PANEL] = HistoryRangeQuery.TAB_DATA_STATUS
                     attributes["hidden"] = "hidden"
-                    renderSync(data, csrfToken)
+                    renderAccountHistoryProgress(data, csrfToken)
                     renderRefreshStatus()
-                    renderCoverage()
-                    renderRecordedSources(data)
-                    renderSavedViews()
-                    renderRepairForm(csrfToken)
+                    details(CssClass.History.Disclosure.value) {
+                        summary { +"Technical details" }
+                        div {
+                            renderSync(data)
+                            renderCoverage()
+                            renderRecordedSources(data)
+                            renderSavedViews()
+                            renderRepairForm(csrfToken)
+                        }
+                    }
                 }
             }
             script(src = rebalancerJsSrc()) {}
@@ -226,7 +241,14 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             pageTab(
                 id = HistoryRangeIds.TAB_ACTIVITY,
                 tab = HistoryRangeQuery.TAB_ACTIVITY,
-                label = HistoryRangeText.TAB_ACTIVITY,
+                label = HistoryRangeText.ACTIVITY_TRADES,
+                activity = HistoryRangeQuery.ACTIVITY_TRADES,
+            )
+            pageTab(
+                id = HistoryRangeIds.ACTIVITY_TRANSACTIONS,
+                tab = HistoryRangeQuery.TAB_ACTIVITY,
+                label = HistoryRangeText.ACTIVITY_TRANSACTIONS,
+                activity = HistoryRangeQuery.ACTIVITY_TRANSACTIONS,
             )
             pageTab(
                 id = HistoryRangeIds.TAB_DATA_STATUS,
@@ -236,7 +258,13 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         }
     }
 
-    private fun NAV.pageTab(id: String, tab: String, label: String, active: Boolean = false) {
+    private fun NAV.pageTab(
+        id: String,
+        tab: String,
+        label: String,
+        active: Boolean = false,
+        activity: String? = null,
+    ) {
         a(
             href = Routes.HISTORY.withQuery(HistoryRangeQuery.PARAM_TAB, tab),
             classes = if (active) {
@@ -247,6 +275,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         ) {
             this.id = id
             attributes[HtmlAttrs.DATA_HISTORY_TAB] = tab
+            activity?.let { attributes[HtmlAttrs.DATA_HISTORY_ACTIVITY_TAB] = it }
             +label
         }
     }
@@ -328,22 +357,276 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         }
     }
 
-    private fun DIV.renderSync(data: HistoryPageData, csrfToken: String?) {
+    private fun DIV.renderAccountHistoryProgress(data: HistoryPageData, csrfToken: String?) {
+        val status = data.dataStatus
+        val valuation = status?.valuation
+        val progress = status?.progress.orEmpty()
+        val tradeProgress = progress.firstOrNull { it.feed.equals("TRADES", ignoreCase = true) }
+        val ledgerProgress = progress.firstOrNull { it.feed.equals("LEDGERS", ignoreCase = true) }
+        val importStates = listOfNotNull(tradeProgress?.backfillState, ledgerProgress?.backfillState)
+        val importCoverageComplete = if (valuation == null) {
+            listOfNotNull(tradeProgress, ledgerProgress).size == 2 &&
+                listOfNotNull(tradeProgress, ledgerProgress).all {
+                    it.coveredFromIso != null && it.coveredToIso != null && it.coveredGapCount == 0
+                }
+        } else {
+            tradeProgress?.targetCoverageComplete == true && ledgerProgress?.targetCoverageComplete == true
+        }
+        val importState = when {
+            !data.accountAvailable -> "Unavailable"
+
+            importStates.any { it == "FAILED" || it == "BLOCKED" } -> "Needs attention"
+
+            importStates.size == 2 && importStates.all { it == "COMPLETE" } && importCoverageComplete ->
+                "Historical import complete"
+
+            importStates.size == 2 && importStates.all { it == "COMPLETE" } -> "Needs attention"
+
+            importStates.any { it == "RUNNING" } -> "Importing records"
+
+            importStates.any { it == "PENDING" } -> "Waiting to import records"
+
+            else -> "History import has not started"
+        }
+        val importedTrades = status?.tradeRecordsImported?.toString() ?: "—"
+        val importedLedgers = status?.ledgerRecordsImported?.toString() ?: "—"
+        val tradeCoverage = tradeProgress?.let(::progressCoverageLabel) ?: "coverage not established"
+        val ledgerCoverage = ledgerProgress?.let(::progressCoverageLabel) ?: "coverage not established"
+        val runningBackfill = status?.jobs.orEmpty().firstOrNull { it.purpose == "BACKFILL" && it.state == "RUNNING" }
+        val currentWindow = runningBackfill?.let { job ->
+            " Current scan window: ${job.windowStartIso?.substringBefore('T') ?: "?"} – " +
+                "${job.windowEndIso?.substringBefore('T') ?: "?"} (UTC)."
+        }.orEmpty()
+        val lastImportProgress = status?.jobs.orEmpty()
+            .filter { it.purpose == "BACKFILL" }
+            .maxByOrNull { it.updatedAtIso.orEmpty() }
+            ?.updatedAtIso
+            ?.let { " Last progress saved ${formatStatusTimeUtc(it)}." }
+            .orEmpty()
+        val importErrors = listOfNotNull(
+            tradeProgress?.lastError?.let { "Trades: $it" },
+            ledgerProgress?.lastError?.let { "Transactions: $it" },
+        ).ifEmpty {
+            status?.jobs.orEmpty().mapNotNull { job ->
+                job.lastError?.let { "${job.feed}: $it" }
+            }
+        }
+        val importRetryAt = listOfNotNull(tradeProgress?.nextRetryAtIso, ledgerProgress?.nextRetryAtIso)
+            .firstOrNull() ?: status?.jobs.orEmpty().firstNotNullOfOrNull { it.nextRetryAtIso }
+        val importIssueDetail = buildList {
+            if (importErrors.isNotEmpty()) add(importErrors.joinToString("; "))
+            importRetryAt?.let { add("Retry scheduled for ${formatStatusTimeUtc(it)}") }
+        }.joinToString(" · ").let { detail -> if (detail.isEmpty()) "" else " $detail." }
+        val importDetail =
+            "Trades: $importedTrades records · $tradeCoverage; transactions: $importedLedgers records · " +
+                "$ledgerCoverage. Total not provided by Kraken.$currentWindow$lastImportProgress$importIssueDetail"
+        val balanceDetail = if (valuation == null) {
+            "Waiting for imported ledger records."
+        } else {
+            "${valuation.balancesProcessed} / ${valuation.targetDays} days evaluated · " +
+                "${valuation.balancesValid} valid · ${valuation.balancesBlocked} need balance evidence."
+        }
+        val valueProgressDetail = when {
+            valuation == null -> "Waiting for daily balances."
+
+            valuation.requiredPriceTasks == null -> "Determining required prices."
+
+            else ->
+                "${valuation.completedPriceTasks} / ${valuation.requiredPriceTasks} required asset-days priced · " +
+                    "${valuation.completeValueDays} / ${valuation.targetDays} complete totals · " +
+                    "${valuation.blockedValueDays} dates blocked."
+        }
+        val timing = valuation?.let(::valuationTimingLabel).orEmpty()
+        val valueDetail = listOf(valueProgressDetail, timing).filter(String::isNotBlank).joinToString(" · ")
+        val summary = historyReadySummary(data.accountAvailable, valuation, importState)
+        div(CssClass.Layout.GlassPanel + CssClass.History.SyncBanner) {
+            id = "history-account-progress"
+            h2(CssClass.History.SyncTitle) { +"Account value history" }
+            p(CssClass.History.SyncText) {
+                id = "history-account-history-summary"
+                +summary
+            }
+            dl {
+                dt { +"Requested value period" }
+                dd {
+                    id = "history-value-period"
+                    +(valuation?.let { "${it.targetStartDay} – ${it.targetEndDay} (UTC)" } ?: "Not started")
+                }
+                dt { +"Account values available" }
+                dd {
+                    id = "history-values-available"
+                    +when {
+                        (status?.availableValueDays ?: 0L) <= 0L -> "No daily values published"
+
+                        else -> {
+                            val from = status?.availableValueFromIso?.substringBefore('T') ?: "?"
+                            val to = status?.availableValueToIso?.substringBefore('T') ?: "?"
+                            val days = status?.availableValueDays ?: 0L
+                            "$from – $to · $days days (UTC)"
+                        }
+                    }
+                }
+                dt { +"Last successful update" }
+                dd {
+                    id = "history-value-last-success"
+                    +(valuation?.lastSuccessAtIso?.let(::formatStatusTime) ?: "—")
+                }
+            }
+            progressStage("history-import-stage", "1. Import exchange records", importState, importDetail)
+            progressStage(
+                "history-balance-stage",
+                "2. Establish daily balances",
+                valuation?.let(::balanceStageLabel) ?: "Not started",
+                balanceDetail,
+            )
+            progressStage(
+                "history-value-stage",
+                "3. Obtain prices and calculate values",
+                valuation?.let(::valuationStageLabel) ?: "Not started",
+                valueDetail,
+            )
+            details {
+                id = "history-incomplete-details"
+                attributes["hidden"] =
+                    if (!valuation?.blockedValueReasons.isNullOrEmpty() ||
+                        valuation?.state == "NEEDS_ATTENTION"
+                    ) {
+                        ""
+                    } else {
+                        "hidden"
+                    }
+                summary { +"Why is this incomplete?" }
+                ul {
+                    id = "history-incomplete-reasons"
+                    valuation?.blockedValueReasons.orEmpty().forEach { reason -> li { +reason } }
+                    if (valuation?.state == "NEEDS_ATTENTION" && valuation.blockedValueReasons.isEmpty()) {
+                        li {
+                            +(
+                                valuation.lastError
+                                    ?: "Historical exchange evidence is incomplete for one or more dates."
+                                )
+                        }
+                    }
+                }
+            }
+            val hasFailedWork = importState == "Needs attention" ||
+                valuation?.state == "NEEDS_ATTENTION" ||
+                data.syncStatuses.any { it.state == HistorySyncState.FAILED }
+            val historyNotStarted = importState == "History import has not started"
+            if (data.accountAvailable && (hasFailedWork || historyNotStarted)) {
+                form(action = Routes.API_HISTORY_SYNC_START, method = FormMethod.post) {
+                    input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) { value = csrfToken.orEmpty() }
+                    button(type = ButtonType.submit, classes = CssClass.Button.Secondary.value) {
+                        id = HtmlIds.HISTORY_SYNC_BUTTON
+                        +if (hasFailedWork) "Retry failed work" else "Start account history"
+                    }
+                }
+            }
+            p(CssClass.History.SyncText) {
+                id = "history-value-next-retry"
+                val retryAt = valuation?.nextRetryAtIso ?: importRetryAt
+                attributes["hidden"] = if (retryAt != null) "" else "hidden"
+                retryAt?.let { +"Retry scheduled for ${formatStatusTime(it)}" }
+            }
+        }
+    }
+
+    private fun DIV.progressStage(idValue: String, title: String, state: String, detail: String) {
+        div(CssClass.History.SyncFeed) {
+            id = idValue
+            span(CssClass.History.SyncTitle) { +title }
+            span(CssClass.Badge.Info) {
+                attributes["data-history-stage-state"] = "true"
+                +state
+            }
+            p(CssClass.History.SyncText) {
+                attributes["data-history-stage-detail"] = "true"
+                +detail
+            }
+        }
+    }
+
+    private fun historyReadySummary(
+        accountAvailable: Boolean,
+        valuation: com.gemini.krakenbot.service.history.HistoryApiValuationProgress?,
+        importState: String,
+    ): String {
+        if (!accountAvailable) return "Account history is unavailable until the Kraken account can be verified."
+        if (valuation == null) {
+            return when (importState) {
+                "Historical import complete" -> "Preparing account history — establishing daily balances."
+                "Needs attention" -> "History partially available · exchange record import needs attention."
+                else -> "Preparing account history — importing older transactions."
+            }
+        }
+        return when (valuation.state) {
+            "COMPLETE" -> "History ready through ${valuation.targetEndDay} · checking for new activity automatically."
+
+            "NEEDS_ATTENTION" -> {
+                val datesNeed = if (valuation.blockedValueDays == 1) "date needs" else "dates need"
+                "History partially available · ${valuation.blockedValueDays} $datesNeed attention."
+            }
+
+            "WAITING" -> "History paused · waiting to retry historical work."
+
+            else -> when (valuation.stage) {
+                "ESTABLISH_BALANCES" -> "Preparing account history — establishing daily balances."
+                else -> "Preparing account history — calculating daily values."
+            }
+        }
+    }
+
+    private fun valuationStageLabel(
+        valuation: com.gemini.krakenbot.service.history.HistoryApiValuationProgress,
+    ): String = when (valuation.state) {
+        "COMPLETE" -> "Complete"
+        "NEEDS_ATTENTION" -> "Needs attention"
+        "WAITING" -> "Waiting to retry"
+        else -> if (valuation.stage == "ESTABLISH_BALANCES") "Computing balances" else "Calculating values"
+    }
+
+    private fun balanceStageLabel(valuation: com.gemini.krakenbot.service.history.HistoryApiValuationProgress): String =
+        when {
+            valuation.balancesProcessed >= valuation.targetDays && valuation.balancesBlocked == 0 -> "Complete"
+            valuation.state == "NEEDS_ATTENTION" -> "Needs attention"
+            valuation.state == "WAITING" -> "Waiting to retry"
+            valuation.stage == "ESTABLISH_BALANCES" -> "Establishing balances"
+            else -> "Computing balances"
+        }
+
+    private fun formatStatusTime(value: String): String =
+        runCatching { timeFormatter.format(Instant.parse(value)) }.getOrDefault(value)
+
+    private fun formatStatusTimeUtc(value: String): String = runCatching {
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'").withZone(ZoneOffset.UTC).format(Instant.parse(value))
+    }.getOrDefault(value)
+
+    private fun progressCoverageLabel(progress: com.gemini.krakenbot.service.history.HistoryApiSyncProgress): String {
+        val from = progress.coveredFromIso?.substringBefore('T')
+        val to = progress.coveredToIso?.substringBefore('T')
+        if (from == null || to == null) return "coverage not established"
+        return if (progress.coveredGapCount == 0) {
+            "$from – $to (UTC) covered continuously"
+        } else {
+            "$from – $to (UTC) scanned with ${progress.coveredGapCount} interior gaps"
+        }
+    }
+
+    private fun valuationTimingLabel(
+        progress: com.gemini.krakenbot.service.history.HistoryApiValuationProgress,
+    ): String {
+        val startedAt = progress.startedAtIso?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return ""
+        val elapsedSeconds = Duration.between(startedAt, Instant.now()).seconds.coerceAtLeast(0)
+        val elapsed = "%dh %02dm".format(Locale.US, elapsedSeconds / 3600, (elapsedSeconds % 3600) / 60)
+        val lastProgress = progress.lastProgressAtIso?.let { formatStatusTimeUtc(it) } ?: "no progress checkpoint yet"
+        return "Started ${formatStatusTimeUtc(startedAt.toString())} · elapsed $elapsed · last progress $lastProgress"
+    }
+
+    private fun DIV.renderSync(data: HistoryPageData) {
         div(CssClass.Layout.GlassPanel + CssClass.History.SyncBanner) {
             id = HtmlIds.HISTORY_SYNC_BANNER
             div(CssClass.History.SyncHeader) {
                 h2(CssClass.History.SyncTitle) { +ViewText.HISTORY_SYNC_TITLE }
-                if (data.accountAvailable) {
-                    form(action = Routes.API_HISTORY_SYNC_START, method = FormMethod.post) {
-                        input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
-                            value = csrfToken.orEmpty()
-                        }
-                        button(type = ButtonType.submit, classes = CssClass.Button.Secondary.value) {
-                            id = HtmlIds.HISTORY_SYNC_BUTTON
-                            +ViewText.HISTORY_SYNC_BUTTON
-                        }
-                    }
-                }
             }
             if (!data.accountAvailable) {
                 p(CssClass.History.SyncText) {
@@ -717,12 +1000,12 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             div(CssClass.History.FilterRow) {
                 label {
                     htmlFor = "history-scope-select"
-                    +"Recorded portfolio"
+                    +HistoryRangeText.SCOPE_LABEL
                     select(classes = CssClass.History.FilterInput.value) {
                         id = "history-scope-select"
                         option {
                             value = ""
-                            +"Loading recorded portfolios"
+                            +"Loading portfolio periods"
                         }
                     }
                 }
@@ -732,7 +1015,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 ) {
                     id = "history-scope-link"
                     attributes["hidden"] = "hidden"
-                    +"Earlier recorded portfolios available"
+                    +HistoryRangeText.EARLIER_SCOPES
                 }
             }
             div(CssClass.History.MutedSmallText) {
@@ -831,14 +1114,14 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         val statistics = data.statistics
         div(CssClass.History.StatsGrid) {
             statusCard(
-                ViewText.HISTORY_LATEST_OBSERVED_VALUE,
+                ViewText.HISTORY_LATEST_ACCOUNT_VALUE,
                 Icons.WALLET,
                 statistics?.latestObservedValue?.let { reportUsd(it.valueUsd, it.complete) }
                     ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
                 HtmlIds.HISTORY_STAT_LATEST_VALUE,
             )
             statusCard(
-                ViewText.HISTORY_OBSERVED_VALUE_CHANGE,
+                ViewText.HISTORY_ACCOUNT_VALUE_CHANGE,
                 Icons.CHART,
                 statistics?.observedValueChange?.let { reportUsd(it.changeUsd, it.complete) }
                     ?: ViewText.HISTORY_REPORT_UNAVAILABLE,
@@ -867,7 +1150,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                         HtmlIds.HISTORY_STAT_RANGE_LOW,
                     )
                     reportRow(
-                        ViewText.HISTORY_OBSERVED_AT,
+                        ViewText.HISTORY_LATEST_VALUE_DETAILS,
                         latestValueDetails(statistics),
                         HtmlIds.HISTORY_STAT_LATEST_META,
                     )
@@ -877,7 +1160,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                         HtmlIds.HISTORY_STAT_CHANGE_ENDPOINTS,
                     )
                     reportRow(
-                        ViewText.HISTORY_OBSERVED_VALUE_CHANGE,
+                        ViewText.HISTORY_ACCOUNT_VALUE_CHANGE,
                         statistics?.observedValueChange?.includesFlowsNotice ?: ViewText.HISTORY_VALUE_CHANGE_NOTICE,
                         HtmlIds.HISTORY_STAT_CHANGE_NOTICE,
                     )
@@ -1036,19 +1319,31 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
 
     private fun DIV.renderValueChart(data: HistoryPageData) {
         val observations = data.observations.sortedBy { it.observedAt }
+        val dailyChart = data.portfolioChart?.takeIf { it.resolution == "1d" }
+        val intradayChart = data.portfolioChart?.takeIf { it.resolution == "cycle" }
         val recordedChart = data.portfolioChart?.takeIf {
             it.scopeSelection == HistoryApiScopeSelection.ACCOUNT_RECORDED
         }
-        val hasCompleteValue = observations.any {
-            it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null
-        }
+        val valueChart = dailyChart ?: intradayChart ?: recordedChart
+        val hasCompleteValue = valueChart?.series?.any { series -> series.points.any { it.complete && it.v != null } }
+            ?: observations.any { it.status == HistoryObservationStatus.COMPLETE && it.totalUsd != null }
+        val hasChartValues = valueChart != null
         div(CssClass.Layout.GlassPanel) {
             id = HtmlIds.HISTORY_PORTFOLIO_SECTION
             div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
                     +ViewText.HISTORY_PORTFOLIO_VALUE
                 }
+                button(type = ButtonType.button, classes = CssClass.History.PaginationBtn.value) {
+                    attributes[HtmlAttrs.DATA_HISTORY_FOLLOW_LATEST] = "true"
+                    attributes["hidden"] = "hidden"
+                    +HistoryRangeText.FOLLOW_LATEST
+                }
                 chartControls()
+                exportButton("account-values", Routes.API_HISTORY_EXPORT_ACCOUNT_VALUES)
+            }
+            if (valueChart != null && valueChart.availableValueAssets.isNotEmpty()) {
+                renderValueAssetFilter(valueChart)
             }
             renderStatsGrid(data)
             if (recordedChart != null) {
@@ -1063,45 +1358,73 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     p(CssClass.Utility.TextDanger) { +ViewText.HISTORY_SCOPE_CONFLICT }
                 }
             }
-            if (observations.isNotEmpty() && !hasCompleteValue) {
-                p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
+            if (dailyChart != null) {
+                p(CssClass.History.ChartCaption) {
+                    +"Daily marks · ${dailyChart.resolution} UTC · "
+                    +(dailyChart.valuationBasis ?: "historical closing prices")
+                }
+            } else if (intradayChart != null) {
+                p(CssClass.History.ChartCaption) {
+                    +"24h cycle values · "
+                    +(intradayChart.valuationBasis ?: "full account balances and direct USD ticker prices")
+                }
             }
-            val recordedSeries = recordedChart?.series?.map { series ->
+            if ((observations.isNotEmpty() || valueChart != null) && !hasCompleteValue) {
+                p(CssClass.History.MutedSmallText) {
+                    +if (intradayChart !=
+                        null
+                    ) {
+                        ViewText.HISTORY_INTRADAY_VALUE_NO_DATA
+                    } else {
+                        ViewText.HISTORY_VALUE_NO_DATA
+                    }
+                }
+            }
+            val chartSeries = (intradayChart ?: recordedChart)?.series?.map { series ->
                 series.legendLabel to series.points.mapNotNull { point ->
                     point.v?.takeIf { point.complete }?.let {
-                        HistorySeriesPoint(Instant.ofEpochMilli(point.t), it)
+                        HistorySeriesPoint(
+                            time = Instant.ofEpochMilli(point.t),
+                            value = it,
+                            dayLabel = point.dayLabel,
+                            selectionTimeIso = point.selectionTimeIso,
+                        )
                     }
                 }
             }?.filter { it.second.isNotEmpty() }.orEmpty()
             div(CssClass.History.ChartContainer) {
                 id = HtmlIds.HISTORY_VALUE_CHART
-                if (recordedChart != null) {
-                    attributes[HtmlAttrs.DATA_HISTORY_SCOPE_SELECTION] = recordedChart.scopeSelection.name
-                    recordedChart.fullRange.fromIso?.let { attributes[HtmlAttrs.DATA_FULL_FROM] = it }
-                    recordedChart.fullRange.toIso?.let { attributes[HtmlAttrs.DATA_FULL_TO] = it }
-                    recordedChart.series.forEach { series ->
+                val primaryChart = valueChart
+                if (primaryChart != null) {
+                    attributes[HtmlAttrs.DATA_HISTORY_SCOPE_SELECTION] = primaryChart.scopeSelection.name
+                    primaryChart.fullRange.fromIso?.let { attributes[HtmlAttrs.DATA_FULL_FROM] = it }
+                    primaryChart.fullRange.toIso?.let { attributes[HtmlAttrs.DATA_FULL_TO] = it }
+                    primaryChart.series.forEach { series ->
                         div {
                             attributes["hidden"] = "hidden"
                             attributes[HtmlAttrs.DATA_HISTORY_SOURCE_KEY] = series.key
                             attributes[HtmlAttrs.DATA_HISTORY_SOURCE_LABEL] = series.label
                         }
                     }
-                    val series = recordedSeries
-                    if (series.isEmpty()) {
-                        p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
-                    } else {
-                        val times = recordedChart.series.flatMap { it.points }.map { Instant.ofEpochMilli(it.t) } +
-                            listOfNotNull(recordedChart.fullRange.fromIso, recordedChart.fullRange.toIso)
+                    val series = chartSeries
+                    if (dailyChart != null) {
+                        val points = dailyChart.series.firstOrNull()?.points.orEmpty()
+                        if (points.isNotEmpty()) {
+                            unsafe { +dailyValueSvg(points) }
+                        }
+                    } else if (series.isNotEmpty()) {
+                        val times = primaryChart.series.flatMap { it.points }.map { Instant.ofEpochMilli(it.t) } +
+                            listOfNotNull(primaryChart.fullRange.fromIso, primaryChart.fullRange.toIso)
                                 .map(Instant::parse)
                         unsafe { +multiSeriesSvg(series, zeroLine = false, sampleTimes = times) }
                     }
-                } else if (observations.isEmpty()) {
+                } else if (observations.isEmpty() || hasChartValues) {
                     p(CssClass.History.MutedSmallText) { +ViewText.HISTORY_VALUE_NO_DATA }
                 } else {
                     unsafe { +valuePointSvg(observations) }
                 }
             }
-            if (recordedSeries.size > 1) renderSeriesLegend(recordedSeries)
+            if (chartSeries.size > 1) renderSeriesLegend(chartSeries)
             div {
                 attributes["class"] = HistoryRangeCss.BANNER
                 id = HistoryRangeIds.NEW_DATA_BANNER
@@ -1112,13 +1435,206 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     +HistoryRangeText.NEW_DATA_ACTION
                 }
             }
-            if (hasCompleteValue && observations.any { it.status != HistoryObservationStatus.COMPLETE }) {
+            if (hasCompleteValue && dailyChart == null && intradayChart == null &&
+                observations.any { it.status != HistoryObservationStatus.COMPLETE }
+            ) {
                 p(CssClass.History.SyncText) { +ViewText.HISTORY_VALUE_PARTIAL }
             }
             renderChartScrubber(HtmlIds.HISTORY_VALUE_CHART)
-            p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
+            if (dailyChart == null && intradayChart == null) {
+                p(CssClass.History.ChartCaption) { +ViewText.HISTORY_VALUE_CAPTION }
+            }
             renderPeriodDetails(data)
         }
+    }
+
+    private fun DIV.renderValueAssetFilter(chart: HistoryApiChartsResponse) {
+        div(CssClass.History.FilterRow) {
+            label {
+                htmlFor = HtmlIds.HISTORY_VALUE_ASSET_FILTER
+                +"Asset filter"
+                select(classes = CssClass.History.FilterInput.value) {
+                    id = HtmlIds.HISTORY_VALUE_ASSET_FILTER
+                    attributes[HtmlAttrs.DATA_HISTORY_VALUE_ASSET] = "true"
+                    option {
+                        value = ""
+                        selected = chart.selectedValueAsset == null
+                        +"Account total"
+                    }
+                    chart.availableValueAssets.forEach { asset ->
+                        option {
+                            value = asset
+                            selected = chart.selectedValueAsset == asset
+                            +asset
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderAccountHoldings(holdings: HistoryApiHoldingsAtDate?) {
+        val day = holdings?.day.orEmpty()
+        div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
+            id = "history-account-holdings"
+            h2(CssClass.Utility.GlassPanelTitle) {
+                +holdings?.sampleAtIso?.let { "Holdings at ${formatStatusTimeUtc(it)}" }.orEmpty()
+                    .ifEmpty { "Holdings at $day" }
+            }
+            div(CssClass.History.ChartControls) {
+                label {
+                    htmlFor = "history-holdings-date"
+                    +"Date (UTC)"
+                }
+                input(type = InputType.date, classes = CssClass.History.FilterInput.value) {
+                    id = "history-holdings-date"
+                    value = day
+                    attributes["data-history-holdings-date"] = "true"
+                }
+                input(type = InputType.hidden) {
+                    id = "history-holdings-at"
+                    value = holdings?.sampleAtIso.orEmpty()
+                }
+                a(href = Routes.API_HISTORY_EXPORT_ACCOUNT_HOLDINGS, classes = CssClass.History.PaginationBtn.value) {
+                    attributes["data-history-export"] = "account-holdings"
+                    attributes["data-history-holdings-export"] = "true"
+                    +HistoryRangeText.EXPORT_CSV
+                }
+            }
+            p(CssClass.History.MutedSmallText) {
+                id = "history-holdings-total"
+                +(
+                    holdings?.let { "${it.totalStatus}: ${it.totalUsd ?: "unavailable"} USD" }
+                        ?: "No account value selected."
+                    )
+            }
+            div(CssClass.Table.Wrapper) {
+                table {
+                    thead {
+                        tr {
+                            listOf(
+                                "Asset",
+                                "Quantity",
+                                if (holdings?.sampleAtIso != null) "USD price" else "Historical USD price",
+                                "USD value",
+                                "Availability",
+                            ).forEach {
+                                th { +it }
+                            }
+                        }
+                    }
+                    tbody {
+                        id = "history-holdings-rows"
+                        holdings?.holdings.orEmpty().forEach { holding ->
+                            tr {
+                                td { +holding.asset }
+                                td(CssClass.Table.MonoCol) { +holding.quantity.orEmpty() }
+                                td(CssClass.Table.MonoCol) { +holding.priceUsd.orEmpty() }
+                                td(CssClass.Table.MonoCol) { +holding.valueUsd.orEmpty() }
+                                td {
+                                    +(holding.reason?.let { "${holding.availability}: $it" } ?: holding.availability)
+                                }
+                            }
+                        }
+                        if (holdings?.holdings.isNullOrEmpty()) {
+                            tr {
+                                td {
+                                    colSpan = "5"
+                                    +"No held assets for this date."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Renders daily account values and leaves an explicit break for every blocked UTC mark. */
+    private fun dailyValueSvg(points: List<HistoryApiPoint>): String {
+        val sorted = points.sortedBy { it.t }
+        val complete = sorted.mapNotNull { point ->
+            if (point.complete) point.v?.let { Instant.ofEpochMilli(point.t) to it } else null
+        }
+        val minT = sorted.minOf { it.t } / 1_000L
+        val maxT = sorted.maxOf { it.t } / 1_000L
+        val spanT = (maxT - minT).coerceAtLeast(1).toDouble()
+        val minV = complete.minOfOrNull { it.second }
+        val maxV = complete.maxOfOrNull { it.second }
+        val spanV = if (minV != null && maxV != null) {
+            maxV.subtract(minV).takeIf { it.signum() != 0 } ?: BigDecimal.ONE
+        } else {
+            BigDecimal.ONE
+        }
+        val plotWidth = (SVG_WIDTH - SVG_LABEL_GUTTER - SVG_PAD).toDouble()
+        fun xCoordinate(point: HistoryApiPoint): Double =
+            (point.t / 1_000.0 - minT) / spanT * plotWidth + SVG_LABEL_GUTTER
+
+        fun coordinate(point: HistoryApiPoint, value: BigDecimal): Pair<Double, Double> {
+            val x = xCoordinate(point)
+            val ratio = value.subtract(minV!!).divide(spanV, 6, RoundingMode.HALF_UP).toDouble()
+            val y = SVG_HEIGHT - SVG_PAD - ratio * (SVG_HEIGHT - 2 * SVG_PAD)
+            return x to y
+        }
+
+        val segments = mutableListOf<List<Pair<Double, Double>>>()
+        var current = mutableListOf<Pair<Double, Double>>()
+        sorted.forEach { point ->
+            val value = point.v.takeIf { point.complete }
+            if (value == null) {
+                if (current.size > 1) segments += current
+                current = mutableListOf()
+            } else {
+                current += coordinate(point, value)
+            }
+        }
+        if (current.size > 1) segments += current
+        val lines = segments.joinToString("") { segment ->
+            val coordinates = segment.joinToString(" ") { (x, y) -> "%.2f,%.2f".format(Locale.US, x, y) }
+            """<polyline class="${CssClass.History.Line.value}" points="$coordinates"/>"""
+        }
+        val markerSamples = sorted.mapNotNull { point ->
+            val value = point.v?.takeIf { point.complete } ?: return@mapNotNull null
+            val (x, y) = coordinate(point, value)
+            val time = Instant.ofEpochMilli(point.t)
+            SvgSample(
+                x = x,
+                y = y,
+                title = "${point.dayLabel ?: timeFormatter.format(time)} UTC · ${Formatter.formatSignedUsd(value)}",
+                timeMillis = point.t,
+                valueAttr = value.toPlainString(),
+                dayLabel = point.dayLabel,
+            )
+        }
+        val markers = svgSampleMarkers(
+            samples = markerSamples,
+            visibleEvery = maxOf(1, (markerSamples.size + 15) / 16),
+            visibleRadius = 3,
+            color = null,
+        )
+        val gaps = sorted.filterNot { it.complete && it.v != null }.joinToString("") { point ->
+            val time = Instant.ofEpochMilli(point.t)
+            val x = xCoordinate(point)
+            val reason = point.reasons.firstOrNull() ?: point.status ?: "Daily value unavailable"
+            (
+                """<circle class="${CssClass.History.GapMarker.value}" cx="%.2f" """ +
+                    """cy="${SVG_HEIGHT - SVG_PAD + 8}" r="4" ${HtmlAttrs.DATA_TIME}="${point.t}" """ +
+                    """data-history-day="${point.dayLabel.orEmpty()}" """ +
+                    """${HtmlAttrs.DATA_GAP}="true"><title>${timeFormatter.format(
+                        time,
+                    )} · ${escapeSvgText(reason)}</title></circle>"""
+                ).format(Locale.US, x)
+        }
+        val axisLabels = if (minV != null && maxV != null) {
+            valueAxisLabels(Formatter.formatSignedUsd(maxV), Formatter.formatSignedUsd(minV))
+        } else {
+            ""
+        }
+        return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
+            """preserveAspectRatio="none"><title>Daily account values; gaps mark unavailable dates</title>""" +
+            svgGrid() + lines + markers + gaps + axisLabels +
+            dailyTimeAxis(sorted.first().dayLabel, sorted.last().dayLabel) +
+            "</svg>"
     }
 
     private fun DIV.chartControls(pointsOnly: Boolean = false) {
@@ -1763,7 +2279,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             color = null,
         )
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
-            """preserveAspectRatio="none"><title>Exchange-reported balance checkpoints</title>${svgGrid()}$markers""" +
+            """preserveAspectRatio="none"><title>Balances at ledger events</title>${svgGrid()}$markers""" +
             valueAxisLabels(
                 minV.max(maxV).stripTrailingZeros().toPlainString(),
                 minV.stripTrailingZeros().toPlainString(),
@@ -1842,7 +2358,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                 ).format(Locale.US, x) +
                 """<title>${timeFormatter.format(
                     it.observedAt,
-                )} · Incomplete observation; no portfolio value is plotted</title></circle>"""
+                )} · Incomplete cycle; no portfolio value is plotted</title></circle>"""
         }
         val axisLabels = if (minV != null && maxV != null) {
             valueAxisLabels(Formatter.formatSignedUsd(maxV), Formatter.formatSignedUsd(minV))
@@ -1850,7 +2366,7 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
             ""
         }
         return """<svg class="${CssClass.History.ChartSvg.value}" viewBox="0 0 $SVG_WIDTH $SVG_HEIGHT" """ +
-            """preserveAspectRatio="none"><title>Portfolio samples; gaps mark incomplete cycles</title>""" +
+            """preserveAspectRatio="none"><title>Portfolio values; gaps mark incomplete cycles</title>""" +
             svgGrid() + lines + markers + gapMarkers + axisLabels + timeAxis(minT, maxT) + "</svg>"
     }
 
@@ -1900,6 +2416,8 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
                     timeMillis = point.time.toEpochMilli(),
                     valueAttr = point.value.toPlainString(),
                     series = symbol,
+                    dayLabel = point.dayLabel,
+                    selectionTimeIso = point.selectionTimeIso,
                 )
             }
             line + gapMarkers +
@@ -1935,6 +2453,22 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         """<text class="${CssClass.History.AxisLabel.value}" x="$x" y="${SVG_HEIGHT - 4}" text-anchor="$anchor">$label</text>"""
     }.joinToString("")
 
+    private fun dailyTimeAxis(firstDay: String?, lastDay: String?): String {
+        val first = firstDay ?: return ""
+        val last = lastDay ?: first
+        if (first == last) {
+            val centerX = (SVG_LABEL_GUTTER + SVG_PLOT_RIGHT) / 2
+            return """<text class="${CssClass.History.AxisLabel.value}" x="$centerX" """ +
+                """y="${SVG_HEIGHT - 4}" text-anchor="middle">$first UTC</text>"""
+        }
+        return listOf(first to "start", last to "end").mapIndexed { index, (label, anchor) ->
+            val x = if (index == 0) SVG_LABEL_GUTTER else SVG_PLOT_RIGHT
+            """<text class="${CssClass.History.AxisLabel.value}" x="$x" y="${SVG_HEIGHT - 4}" text-anchor="$anchor">${escapeSvgText(
+                label,
+            )}</text>"""
+        }.joinToString("")
+    }
+
     /** Extreme-value labels sit in the left gutter, clear of the plot band. */
     private fun valueAxisLabels(maxLabel: String, minLabel: String): String {
         val x = SVG_LABEL_GUTTER - 10
@@ -1958,18 +2492,21 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         color: String?,
     ): String = samples.mapIndexed { index, sample ->
         val seriesAttr = sample.series?.let { " ${HtmlAttrs.DATA_SERIES}=\"${escapeSvgText(it)}\"" } ?: ""
+        val selectionTimeAttr = sample.selectionTimeIso?.let { " data-history-at=\"${escapeSvgText(it)}\"" }.orEmpty()
         val hit =
             (
                 """<circle cx="%.2f" cy="%.2f" r="7" fill="transparent" """ +
                     "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
-                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
+                    "data-history-day=\"${escapeSvgText(sample.dayLabel.orEmpty())}\" " +
+                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr$selectionTimeAttr>"
                 ).format(Locale.US, sample.x, sample.y) + "<title>${escapeSvgText(sample.title)}</title></circle>"
         val visible = if (index % visibleEvery == 0 || index == samples.lastIndex) {
             val fill = color?.let { """ style="fill:$it"""" } ?: ""
             (
                 """<circle class="${CssClass.History.Point.value}" cx="%.2f" cy="%.2f" r="$visibleRadius"$fill """ +
                     "${HtmlAttrs.DATA_TIME}=\"${sample.timeMillis}\" " +
-                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr>"
+                    "data-history-day=\"${escapeSvgText(sample.dayLabel.orEmpty())}\" " +
+                    "${HtmlAttrs.DATA_VALUE}=\"${sample.valueAttr}\"$seriesAttr$selectionTimeAttr>"
                 ).format(Locale.US, sample.x, sample.y) + "<title>${escapeSvgText(sample.title)}</title></circle>"
         } else {
             ""
@@ -1991,6 +2528,8 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
         val timeMillis: Long,
         val valueAttr: String,
         val series: String? = null,
+        val dayLabel: String? = null,
+        val selectionTimeIso: String? = null,
     )
 
     private companion object {
@@ -2012,7 +2551,12 @@ class HistoryPageComponent(private val displayZone: ZoneId = ZoneId.systemDefaul
     }
 }
 
-internal data class HistorySeriesPoint(val time: Instant, val value: BigDecimal)
+internal data class HistorySeriesPoint(
+    val time: Instant,
+    val value: BigDecimal,
+    val dayLabel: String? = null,
+    val selectionTimeIso: String? = null,
+)
 
 internal fun assetValueSeries(observations: List<HistoryObservation>): List<Pair<String, List<HistorySeriesPoint>>> =
     observations

@@ -3,10 +3,16 @@ package com.gemini.krakenbot.controller
 import com.fasterxml.jackson.databind.JsonNode
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.service.history.HISTORY_ACCOUNT_DAILY_SCOPE
 import com.gemini.krakenbot.service.history.HistoryAssetValue
 import com.gemini.krakenbot.service.history.HistoryAssetValueStatus
 import com.gemini.krakenbot.service.history.HistoryBalanceCheckpoint
 import com.gemini.krakenbot.service.history.HistoryBalanceStatus
+import com.gemini.krakenbot.service.history.HistoryDailyAssetValue
+import com.gemini.krakenbot.service.history.HistoryDailyValue
+import com.gemini.krakenbot.service.history.HistoryDailyValueStatus
+import com.gemini.krakenbot.service.history.HistoryDailyValueStatusReason
+import com.gemini.krakenbot.service.history.HistoryDailyValueStatusSnapshot
 import com.gemini.krakenbot.service.history.HistoryFeed
 import com.gemini.krakenbot.service.history.HistoryLedger
 import com.gemini.krakenbot.service.history.HistoryObservation
@@ -20,6 +26,9 @@ import com.gemini.krakenbot.service.history.HistorySyncJob
 import com.gemini.krakenbot.service.history.HistorySyncJobState
 import com.gemini.krakenbot.service.history.HistorySyncProgressSummary
 import com.gemini.krakenbot.service.history.HistorySyncPurpose
+import com.gemini.krakenbot.service.history.HistoryValuationJob
+import com.gemini.krakenbot.service.history.HistoryValuationJobState
+import com.gemini.krakenbot.service.history.HistoryValuationStage
 import com.gemini.krakenbot.service.history.HistoryValuesCoverage
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.Routes
@@ -47,6 +56,7 @@ import io.mockk.every
 import io.mockk.verify
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 
 class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -182,7 +192,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
-                val response = client.get(Routes.API_HISTORY_CHARTS)
+                val response = client.get("${Routes.API_HISTORY_CHARTS}?scope=${accountScope.sourceKey}")
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
                 json.keys() shouldBe setOf(
@@ -195,6 +205,14 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     "scopeSelection",
                     "recordedScopes",
                     "boundaries",
+                    "resolution",
+                    "valuationBasis",
+                    "generationId",
+                    "sourceRevision",
+                    "availableValueFromIso",
+                    "availableValueToIso",
+                    "availableValueAssets",
+                    "selectedValueAsset",
                 )
                 json["range"].keys() shouldBe setOf("fromIso", "toIso", "tz", "preset")
                 json["scope"].keys() shouldBe setOf("id", "symbols", "earliestIso", "latestIso", "current")
@@ -213,7 +231,8 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     setOf("fromIso", "toIso", "pointCount", "totalObservations", "representative", "baselineFromIso")
                 json["series"][0].keys() shouldBe
                     setOf("key", "label", "legendLabel", "unit", "points", "provenance")
-                json["series"][0]["points"][0].keys() shouldBe setOf("t", "tIso", "v", "complete")
+                json["series"][0]["points"][0].keys() shouldBe
+                    setOf("t", "tIso", "v", "complete", "status", "reasons", "dayLabel", "selectionTimeIso")
                 (json["generationMs"].asLong() >= 0) shouldBe true
             }
         }
@@ -293,7 +312,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
             testApplication {
                 application { configureTestEnv() }
                 val response = client.get(
-                    "${Routes.API_HISTORY_CHARTS}?preset=30d&from=2026-03-01T00:00:00Z&to=2026-03-05T00:00:00Z",
+                    "${Routes.API_HISTORY_CHARTS}?preset=30d&from=2026-03-01T00:00:00Z&to=2026-03-05T00:00:00Z&scope=${accountScope.sourceKey}",
                 )
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
@@ -324,7 +343,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
-                val response = client.get("${Routes.API_HISTORY_CHARTS}?preset=all")
+                val response = client.get("${Routes.API_HISTORY_CHARTS}?preset=all&scope=${accountScope.sourceKey}")
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
                 json["range"]["fromIso"].isNull shouldBe true
@@ -346,7 +365,9 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
-                val response = client.get("${Routes.API_HISTORY_CHARTS}?preset=30d&maxPoints=4")
+                val response = client.get(
+                    "${Routes.API_HISTORY_CHARTS}?preset=30d&maxPoints=4&scope=${accountScope.sourceKey}",
+                )
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
                 json["fullRange"]["representative"].asBoolean() shouldBe true
@@ -558,7 +579,7 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
-                val response = client.get(Routes.API_HISTORY_SUMMARY)
+                val response = client.get("${Routes.API_HISTORY_SUMMARY}?scope=${accountScope.sourceKey}")
                 response.status shouldBe HttpStatusCode.OK
                 val json = body(response.bodyAsText())
                 json.keys() shouldBe setOf("range", "scope", "coverage", "statistics", "generationMs", "scopeSelection")
@@ -616,6 +637,51 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
         "data status reports jobs per feed and purpose with revision and blocked reason" {
             stubReads()
             coEvery { historyStore.currentDataRevision() } returns 42L
+            val targetStart = LocalDate.parse("2025-10-21")
+            val targetEnd = LocalDate.parse("2026-10-20")
+            val blockedDay = LocalDate.parse("2026-03-09")
+            val valuationJob = HistoryValuationJob(
+                accountIdentityDigest = accountDigest,
+                sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                generationId = "daily-generation",
+                state = HistoryValuationJobState.NEEDS_ATTENTION,
+                stage = HistoryValuationStage.PRICE_AND_VALUE,
+                targetStartDay = targetStart,
+                targetEndDay = targetEnd,
+                nextDay = blockedDay,
+                targetDays = 365,
+                balancesProcessed = 365,
+                balancesValid = 365,
+                balancesBlocked = 0,
+                requiredPriceTasks = 12,
+                completedPriceTasks = 11,
+                completeValueDays = 364,
+                blockedValueDays = 1,
+                sourceRevision = 7,
+                calculationPolicyVersion = "v1",
+                lastProgressAt = fixedNow.minusSeconds(60),
+                nextRetryAt = null,
+                lastSuccessAt = null,
+                lastError = "No completed XBT/USD candle for this date.",
+                updatedAt = fixedNow,
+            )
+            coEvery {
+                historyStore.queryDailyValueStatusSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+            } returns HistoryDailyValueStatusSnapshot(
+                firstDayLabel = blockedDay,
+                lastDayLabel = blockedDay,
+                availableDays = 1,
+                incompleteDays = 1,
+                valuationJob = valuationJob,
+                blockedReasons = listOf(
+                    HistoryDailyValueStatusReason(
+                        dayLabel = blockedDay,
+                        status = HistoryDailyValueStatus.NO_PRICE,
+                        rawAssetKey = "XXBT",
+                        reason = "No completed XBT/USD candle for this date.",
+                    ),
+                ),
+            )
             coEvery { historyStore.loadSyncJobs(any()) } returns listOf(
                 HistorySyncJob(
                     accountIdentityDigest = accountDigest,
@@ -696,6 +762,14 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     "coverage",
                     "jobs",
                     "progress",
+                    "valuation",
+                    "tradeRecordsImported",
+                    "ledgerRecordsImported",
+                    "availableValueFromIso",
+                    "availableValueToIso",
+                    "availableValueDays",
+                    "publishedValueGenerationId",
+                    "publishedValueSourceRevision",
                 )
                 json["dataRevision"].asLong() shouldBe 42L
                 json["blockedReason"].asText() shouldBe "operator-blocked"
@@ -717,6 +791,18 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                 json["progress"][0]["nextRetryAtIso"].asText() shouldBe "2026-03-10T13:05:00Z"
                 json["progress"][0]["coveredFromIso"].asText() shouldBe "2023-11-14T22:13:20Z"
                 json["progress"][0]["coveredToIso"].asText() shouldBe "2023-11-14T23:13:20Z"
+                json["progress"][0]["coveredGapCount"].asInt() shouldBe 0
+                json["valuation"]["state"].asText() shouldBe "NEEDS_ATTENTION"
+                json["valuation"]["stage"].asText() shouldBe "PRICE_AND_VALUE"
+                json["valuation"]["targetStartDay"].asText() shouldBe "2025-10-21"
+                json["valuation"]["targetEndDay"].asText() shouldBe "2026-10-20"
+                json["valuation"]["balancesProcessed"].asInt() shouldBe 365
+                json["valuation"]["completedPriceTasks"].asInt() shouldBe 11
+                json["valuation"]["completeValueDays"].asInt() shouldBe 364
+                json["valuation"]["blockedValueDays"].asInt() shouldBe 1
+                json["valuation"]["lastError"].asText() shouldContain "No completed XBT/USD candle"
+                json["valuation"]["blockedValueReasons"][0].asText() shouldContain "2026-03-09 UTC"
+                json["valuation"]["blockedValueReasons"][0].asText() shouldContain "BTC"
             }
         }
 
@@ -734,6 +820,21 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Origin, "http://localhost")
                 }
                 rejected.status shouldBe HttpStatusCode.Forbidden
+
+                val invalidDate = client.post(Routes.API_HISTORY_REPAIR) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            "date" to listOf("2026-02-30"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    header(HttpHeaders.Origin, "http://localhost")
+                }
+                invalidDate.status shouldBe HttpStatusCode.BadRequest
+                body(invalidDate.bodyAsText())["error"].asText() shouldBe
+                    "History range dates must use the YYYY-MM-DD format."
 
                 val accepted = client.post(Routes.API_HISTORY_REPAIR) {
                     setBody(
@@ -771,6 +872,42 @@ class HistoryReadApiRoutesTest : DashboardControllerTestBase() {
                     HistorySyncPurpose.REPAIR,
                     null,
                 )
+            }
+            verify(exactly = 2) {
+                historySynchronizer.startSync(any(), any(), any(), any(), any())
+            }
+        }
+
+        "daily holdings and account-value exports keep missing marks explicit" {
+            stubReads()
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), any(), any())
+            } returns HistoryPage(emptyList(), 0L, 50, 0, false)
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val holdings = client.get("${Routes.API_HISTORY_HOLDINGS}?date=2026-03-09")
+                holdings.status shouldBe HttpStatusCode.OK
+                val holdingsJson = body(holdings.bodyAsText())
+                holdingsJson["available"].asBoolean() shouldBe false
+                holdingsJson["totalStatus"].asText() shouldBe "OUTSIDE_COVERAGE"
+                holdingsJson["holdings"].size() shouldBe 0
+
+                val valuesCsv = client.get(Routes.API_HISTORY_EXPORT_ACCOUNT_VALUES)
+                valuesCsv.status shouldBe HttpStatusCode.OK
+                valuesCsv.headers[HttpHeaders.ContentDisposition] shouldContain "history-account-values.csv"
+                valuesCsv.bodyAsText() shouldContain
+                    "\"day_utc\",\"account_value_usd\",\"availability\",\"generation_id\",\"source_revision\",\"missing_asset_reasons\""
+
+                val holdingsCsv = client.get("${Routes.API_HISTORY_EXPORT_ACCOUNT_HOLDINGS}?date=2026-03-09")
+                holdingsCsv.status shouldBe HttpStatusCode.OK
+                holdingsCsv.headers[HttpHeaders.ContentDisposition] shouldContain "history-account-holdings.csv"
+                holdingsCsv.bodyAsText() shouldContain "OUTSIDE_COVERAGE"
+                holdingsCsv.bodyAsText() shouldContain "No daily mark is available."
+
+                val invalidDate = client.get("${Routes.API_HISTORY_HOLDINGS}?date=not-a-date")
+                invalidDate.status shouldBe HttpStatusCode.BadRequest
             }
         }
 

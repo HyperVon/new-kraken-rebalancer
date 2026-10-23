@@ -5,8 +5,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
 import kotlinx.browser.window
+import org.w3c.dom.Element
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLOptionElement
 import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.events.Event
@@ -28,6 +30,152 @@ class HistoryChartRefreshTest : StringSpec() {
                 historyDomRange(wrapper) shouldBe ChartRange(from, to - 1.0)
             } finally {
                 wrapper.remove()
+            }
+        }
+
+        "daily refresh retains UTC day labels on complete and gap markers" {
+            val root = chartRefreshRoot("history-value-chart")
+            val session = chartRefreshSession(root, root.id)
+            val series = json(
+                "key" to "portfolio",
+                "label" to "Account value",
+                "unit" to "USD",
+                "points" to arrayOf(
+                    json(
+                        "t" to 1000.0,
+                        "v" to 1.0,
+                        "complete" to true,
+                        "dayLabel" to "2026-03-10",
+                        "selectionTimeIso" to "2026-03-10T12:30:00Z",
+                    ),
+                    json("t" to 2000.0, "v" to null, "complete" to false, "dayLabel" to "2026-03-11"),
+                ),
+            )
+            try {
+                applyHistoryChartSeries(root.id, chartRefreshResponse(series))
+
+                root.querySelector("circle[data-time='1000']")?.getAttribute("data-history-day") shouldBe "2026-03-10"
+                root.querySelector("circle[data-gap='true']")?.getAttribute("data-history-day") shouldBe "2026-03-11"
+                session.selectionTimes[1000.0] shouldBe "2026-03-10T12:30:00Z"
+                historyChartSessions[root.id] shouldBe session
+            } finally {
+                root.remove()
+                disposeDetachedHistoryCharts()
+            }
+        }
+
+        "refreshed SVG fallback selects the exact intraday holdings sample" {
+            val wrapper = document.createElement("div") as HTMLElement
+            wrapper.innerHTML = """
+                <input id="history-holdings-date">
+                <input id="history-holdings-at" type="hidden">
+                <section class="glass-panel">
+                    <div id="history-value-chart" class="chart-container">
+                        <svg data-full-from="1970-01-01T00:00:01Z" data-full-to="1970-01-01T00:00:03Z">
+                            <circle data-time="1000" data-value="9" data-history-day="2026-03-10"></circle>
+                        </svg>
+                    </div>
+                </section>
+                <section id="history-account-holdings"><h2></h2></section>
+                <p id="history-holdings-total"></p>
+                <table><tbody id="history-holdings-rows"></tbody></table>
+            """.trimIndent()
+            document.body!!.appendChild(wrapper)
+            val root = wrapper.querySelector("#history-value-chart") as HTMLElement
+            val oldChart = window.asDynamic().Chart
+            val oldFetch = window.asDynamic().fetch
+            val requests = mutableListOf<String>()
+            window.asDynamic().Chart = undefined
+            window.asDynamic().fetch = { url: String, _: dynamic ->
+                requests += url
+                js("Promise.resolve({ok: true, json: () => Promise.resolve({})})")
+            }
+            try {
+                initHistoryDataActions()
+                applyHistoryChartSeries(
+                    root.id,
+                    chartRefreshResponse(
+                        json(
+                            "key" to "portfolio",
+                            "label" to "Account value",
+                            "unit" to "USD",
+                            "points" to arrayOf(
+                                json(
+                                    "t" to 1000.0,
+                                    "v" to 10.0,
+                                    "complete" to true,
+                                    "dayLabel" to "2026-03-10",
+                                    "selectionTimeIso" to "2026-03-10T12:30:00Z",
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+
+                val marker = root.querySelector("circle[data-time='1000']") as Element
+                marker.getAttribute("data-history-at") shouldBe "2026-03-10T12:30:00Z"
+                marker.dispatchEvent(js("new MouseEvent('click', {bubbles: true})") as Event)
+
+                (wrapper.querySelector("#history-holdings-date") as HTMLInputElement).value shouldBe "2026-03-10"
+                (wrapper.querySelector("#history-holdings-at") as HTMLInputElement).value shouldBe
+                    "2026-03-10T12:30:00Z"
+                requests.single().contains("date=2026-03-10") shouldBe true
+                requests.single().contains("at=2026-03-10T12%3A30%3A00Z") shouldBe true
+            } finally {
+                window.asDynamic().Chart = oldChart
+                window.asDynamic().fetch = oldFetch
+                wrapper.remove()
+                disposeDetachedHistoryCharts()
+            }
+        }
+
+        "clicking a refreshed account value point selects its exact intraday holdings sample" {
+            val wrapper = document.createElement("div") as HTMLElement
+            wrapper.innerHTML = """
+                <input id="history-holdings-date">
+                <input id="history-holdings-at" type="hidden">
+                <section class="glass-panel">
+                    <div id="history-value-chart" class="chart-container">
+                        <svg data-full-from="1970-01-01T00:00:01Z" data-full-to="1970-01-01T00:00:03Z">
+                            <circle data-time="1000" data-value="10" data-history-day="2026-03-10"
+                                data-history-at="2026-03-10T12:30:00Z"></circle>
+                        </svg>
+                    </div>
+                </section>
+            """.trimIndent()
+            document.body!!.appendChild(wrapper)
+            val root = wrapper.querySelector("#history-value-chart") as HTMLElement
+            val oldFetch = window.asDynamic().fetch
+            val requests = mutableListOf<String>()
+            window.asDynamic().fetch = { url: String, _: dynamic ->
+                requests += url
+                js("Promise.resolve({ok: true, json: () => Promise.resolve({})})")
+            }
+            try {
+                initHistoryCharts { canvas, config ->
+                    json(
+                        "canvas" to canvas,
+                        "data" to config.data,
+                        "options" to config.options,
+                        "update" to { _: dynamic -> Unit },
+                        "getElementsAtEventForMode" to { _: dynamic, _: String, _: dynamic, _: Boolean ->
+                            arrayOf(json("datasetIndex" to 0, "index" to 0))
+                        },
+                    )
+                }
+
+                (root.querySelector("canvas") as HTMLCanvasElement).dispatchEvent(Event("click"))
+
+                (wrapper.querySelector("#history-holdings-date") as HTMLInputElement).value shouldBe
+                    "2026-03-10"
+                (wrapper.querySelector("#history-holdings-at") as HTMLInputElement).value shouldBe
+                    "2026-03-10T12:30:00Z"
+                requests.single().contains("date=2026-03-10") shouldBe true
+                requests.single().contains("at=2026-03-10T12%3A30%3A00Z") shouldBe true
+            } finally {
+                window.asDynamic().fetch = oldFetch
+                wrapper.remove()
+                disposeDetachedHistoryCharts()
             }
         }
 

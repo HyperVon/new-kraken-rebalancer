@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.DirectBalanceCapture
 import com.gemini.krakenbot.service.DirectEvidenceStatus
@@ -10,6 +11,7 @@ import com.gemini.krakenbot.service.DirectValueEvidence
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import java.math.BigDecimal
@@ -45,6 +47,610 @@ class HistoryObservationValuatorTest : StringSpec() {
             val sim = HistoryObservationValuator.simulationScope(config, "sim-1")
             sim.mode shouldBe HistorySourceMode.SIMULATION
             sim.simulationSessionId shouldBe "sim-1"
+        }
+
+        "full-account direct valuation aggregates raw partitions independently of managed scope" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("1.0"),
+                    "XBT.M" to directBalance("0.5"),
+                    "XETH" to directBalance("2"),
+                    "ZUSD" to directBalance("100"),
+                    "USD" to directBalance("50"),
+                    "STRC" to directBalance("3"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf(
+                    "BTC" to directTicker("BTC", "50000"),
+                    "ETH" to directTicker("ETH", "3000"),
+                    "STRC" to directTicker("STRC", "4"),
+                ),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("XETH", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+                KrakenAssetMetadata("USD", "currency"),
+                KrakenAssetMetadata("STRC", "tokenized_asset"),
+            )
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "full-account-sample",
+                cycleId = "cycle-full-account-sample",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                now = now,
+            )
+
+            observation.sourceScope shouldBe HistoryObservationValuator.fullAccountScope(accountDigest)
+            observation.sourceScope shouldNotBe HistoryObservationValuator.accountScope(config, accountDigest)
+            observation.status shouldBe HistoryObservationStatus.COMPLETE
+            observation.totalUsd shouldBe BigDecimal("81162.0")
+            observation.assets.single { it.symbol == "BTC" }.quantity shouldBe BigDecimal("1.5")
+            observation.assets.single { it.symbol == "BTC" }.rawBalanceKeys shouldBe listOf("XBT.M", "XXBT")
+            observation.assets.single { it.symbol == "USD" }.quantity shouldBe BigDecimal("150")
+            observation.assets.single { it.symbol == "USD" }.priceUsd shouldBe BigDecimal.ONE
+            observation.assets.single { it.symbol == "USD" }.valueUsd shouldBe BigDecimal("150")
+            observation.assets.single { it.symbol == "STRC" }.valueUsd shouldBe BigDecimal("12")
+            HistoryObservationValuator.fullAccountTickerSymbols(balances, prices, metadata) shouldBe emptyList()
+        }
+
+        "full-account valuation handles zero balances, equity, unsupported classes, and bad marks" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("0"),
+                    "XETH" to directBalance("2"),
+                    "ZUSD" to directBalance("100"),
+                    "ADA" to directBalance("1"),
+                    "XLM" to directBalance("1"),
+                    "XMR" to directBalance("1"),
+                    "AAPL" to directBalance("1"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf(
+                    "ETH" to directTicker("ETH", "3000"),
+                    "XLM" to directTicker("XLM", "0").copy(status = DirectEvidenceStatus.MALFORMED),
+                ),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("XETH", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+                KrakenAssetMetadata("ADA", "currency"),
+                KrakenAssetMetadata("XLM", "currency"),
+                KrakenAssetMetadata("XMR", "margin"),
+                KrakenAssetMetadata("AAPL", "equity"),
+            )
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "mixed-direct-evidence",
+                cycleId = "cycle-mixed-direct-evidence",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd.shouldBeNull()
+            observation.assets.map { it.symbol } shouldBe listOf("ADA", "BTC", "ETH", "USD", "XLM", "XMR")
+            observation.assets.single { it.symbol == "BTC" }.valueUsd shouldBe BigDecimal.ZERO
+            observation.assets.single { it.symbol == "ADA" }.status shouldBe HistoryAssetValueStatus.MISSING_PRICE
+            observation.assets.single { it.symbol == "XLM" }.status shouldBe HistoryAssetValueStatus.INVALID_PRICE
+            observation.assets.single { it.symbol == "XMR" }.status shouldBe
+                HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+            HistoryObservationValuator.fullAccountTickerSymbols(balances, prices, metadata) shouldBe
+                listOf("ADA", "XLM")
+        }
+
+        "full-account direct valuation leaves missing metadata and ticker evidence incomplete" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                now.minusMillis(400),
+                now.minusMillis(200),
+                true,
+                mapOf("XLM" to directBalance("2")),
+            )
+            val prices = DirectTickerCapture(now.minusMillis(200), now.minusMillis(100), true, emptyMap())
+            val unknownMetadata = HistoryObservationValuator.buildFullAccountDirect(
+                "unknown-metadata",
+                "cycle-unknown-metadata",
+                accountDigest,
+                balances,
+                prices,
+                emptyList(),
+                now = now,
+            )
+            unknownMetadata.status shouldBe HistoryObservationStatus.INCOMPLETE
+            unknownMetadata.totalUsd.shouldBeNull()
+            unknownMetadata.assets.single().status shouldBe HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+
+            val missingTicker = HistoryObservationValuator.buildFullAccountDirect(
+                "missing-ticker",
+                "cycle-missing-ticker",
+                accountDigest,
+                balances,
+                prices,
+                listOf(KrakenAssetMetadata("XLM", "currency")),
+                now = now,
+            )
+            missingTicker.status shouldBe HistoryObservationStatus.INCOMPLETE
+            missingTicker.totalUsd.shouldBeNull()
+            missingTicker.assets.single().status shouldBe HistoryAssetValueStatus.MISSING_PRICE
+            HistoryObservationValuator.fullAccountTickerSymbols(
+                balances,
+                prices,
+                listOf(KrakenAssetMetadata("XLM", "currency")),
+            ) shouldBe listOf("XLM")
+        }
+
+        "full-account direct valuation fails closed for valid-status balances without parsed values" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                now.minusMillis(400),
+                now.minusMillis(200),
+                true,
+                mapOf(
+                    "XXLM" to
+                        DirectValueEvidence(
+                            rawValue = "not-a-number",
+                            value = null,
+                            status = DirectEvidenceStatus.VALID,
+                        ),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                now.minusMillis(200),
+                now.minusMillis(100),
+                true,
+                mapOf("XLM" to directTicker("XLM", "0.25")),
+            )
+            val metadata = listOf(KrakenAssetMetadata("XXLM", "currency"))
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                "null-balance-value",
+                "cycle-null-balance-value",
+                accountDigest,
+                balances,
+                prices,
+                metadata,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.single().status shouldBe HistoryAssetValueStatus.INVALID_BALANCE
+            HistoryObservationValuator.fullAccountTickerSymbols(balances, null, metadata) shouldBe emptyList()
+        }
+
+        "full-account direct valuation excludes known equity asset from ledger and produces complete total" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("0.5"),
+                    "XETH" to directBalance("2.0"),
+                    "ZUSD" to directBalance("100.0"),
+                    "STRC" to directBalance("10.0"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf(
+                    "BTC" to directTicker("BTC", "50000"),
+                    "ETH" to directTicker("ETH", "3000"),
+                ),
+            )
+            // Production metadata does NOT contain STRC (public Assets does not return equities)
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("XETH", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            // Authoritative ledger classes supply the equity classification
+            val ledgerClasses = mapOf("STRC" to "equity")
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "full-account-equity-exclusion",
+                cycleId = "cycle-equity-exclusion",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = ledgerClasses,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.COMPLETE
+            observation.totalUsd shouldBe BigDecimal("31100.0")
+            // STRC is excluded from the valuation assets
+            observation.assets.map { it.symbol } shouldBe listOf("BTC", "ETH", "USD")
+            observation.assets.single { it.symbol == "BTC" }.valueUsd shouldBe BigDecimal("25000.0")
+            observation.assets.single { it.symbol == "ETH" }.valueUsd shouldBe BigDecimal("6000.0")
+            observation.assets.single { it.symbol == "USD" }.valueUsd shouldBe BigDecimal("100.0")
+
+            // STRC is not requested for ticker marks
+            HistoryObservationValuator.fullAccountTickerSymbols(
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = ledgerClasses,
+            ) shouldBe emptyList()
+        }
+
+        "full-account direct valuation excludes multiple equity holdings and preserves USD cash" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("1.0"),
+                    "ZUSD" to directBalance("500.0"),
+                    "STRC" to directBalance("25.0"),
+                    "AAPL" to directBalance("10.0"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf("BTC" to directTicker("BTC", "60000")),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            val ledgerClasses = mapOf("STRC" to "equity", "AAPL" to "equity")
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "multi-equity",
+                cycleId = "cycle-multi-equity",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = ledgerClasses,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.COMPLETE
+            observation.totalUsd shouldBe BigDecimal("60500.0")
+            observation.assets.map { it.symbol } shouldBe listOf("BTC", "USD")
+        }
+
+        "full-account direct valuation fails closed when metadata and ledger asset class conflict" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "CONFLICT" to directBalance("10.0"),
+                    "ZUSD" to directBalance("100.0"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf("CONFLICT" to directTicker("CONFLICT", "10")),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("CONFLICT", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            val ledgerClasses = mapOf("CONFLICT" to "equity")
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "conflict",
+                cycleId = "cycle-conflict",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = ledgerClasses,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.single { it.symbol == "CONFLICT" }.status shouldBe
+                HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+            observation.assets.single { it.symbol == "CONFLICT" }.reason shouldBe
+                "Kraken asset metadata conflicts with account ledger classification."
+        }
+
+        "full-account direct valuation handles all-cash account without ticker requests" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf("ZUSD" to directBalance("12345.67")),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = emptyMap(),
+            )
+            val metadata = listOf(KrakenAssetMetadata("ZUSD", "currency"))
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "all-cash",
+                cycleId = "cycle-all-cash",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.COMPLETE
+            observation.totalUsd shouldBe BigDecimal("12345.67")
+            observation.assets.single().symbol shouldBe "USD"
+            observation.assets.single().valueUsd shouldBe BigDecimal("12345.67")
+            HistoryObservationValuator.fullAccountTickerSymbols(balances, prices, metadata) shouldBe emptyList()
+        }
+
+        "full-account direct valuation includes unconfigured crypto holdings via ticker requests" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("1.0"),
+                    "SOL" to directBalance("50.0"),
+                    "ZUSD" to directBalance("200.0"),
+                ),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("SOL", "currency"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            val missing = HistoryObservationValuator.fullAccountTickerSymbols(
+                balances = balances,
+                prices = DirectTickerCapture(now, now, true, mapOf("BTC" to directTicker("BTC", "50000"))),
+                assetMetadata = metadata,
+            )
+            missing shouldBe listOf("SOL")
+
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf(
+                    "BTC" to directTicker("BTC", "50000"),
+                    "SOL" to directTicker("SOL", "150"),
+                ),
+            )
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "unconfigured-crypto",
+                cycleId = "cycle-unconfigured-crypto",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.COMPLETE
+            observation.totalUsd shouldBe BigDecimal("57700.0")
+            observation.assets.map { it.symbol } shouldBe listOf("BTC", "SOL", "USD")
+        }
+
+        "buildIncompleteFullAccountDirect preserves balances and honest reasons while excluding equities" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("1.0"),
+                    "ZUSD" to directBalance("500.0"),
+                    "STRC" to directBalance("15.0"),
+                ),
+            )
+            val ledgerClasses = mapOf("STRC" to "equity")
+
+            val observation = HistoryObservationValuator.buildIncompleteFullAccountDirect(
+                observationId = "incomplete-evidence",
+                cycleId = "cycle-incomplete",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                reason = "Full-account evidence collection timed out.",
+                authoritativeAssetClasses = ledgerClasses,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.incompleteReasons shouldBe listOf("Full-account evidence collection timed out.")
+            observation.assets.map { it.symbol } shouldBe listOf("BTC", "USD")
+            observation.assets.single { it.symbol == "USD" }.let {
+                it.status shouldBe HistoryAssetValueStatus.COMPLETE
+                it.valueUsd shouldBe BigDecimal("500.0")
+            }
+            observation.assets.single { it.symbol == "BTC" }.let {
+                it.status shouldBe HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+                it.valueUsd shouldBe null
+                it.reason shouldBe "Full-account evidence collection timed out."
+            }
+        }
+
+        "full-account valuation uses ledger classes and rejects ambiguous public or ledger classes" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "ALT" to directBalance("2"),
+                    "TOKEN" to directBalance("3"),
+                    "AMBIG" to directBalance("4"),
+                    "CONFLICT" to directBalance("5"),
+                    "PUBLIC_AMBIG" to directBalance("6"),
+                    "ZUSD" to directBalance("100"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = emptyMap(),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("TOKEN", "tokenized_asset"),
+                KrakenAssetMetadata("AMBIG", "currency"),
+                KrakenAssetMetadata("CONFLICT", "tokenized_asset"),
+                KrakenAssetMetadata("PUBLIC_AMBIG", "currency"),
+                KrakenAssetMetadata("PUBLIC_AMBIG", "tokenized_asset"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            val classes = mapOf(
+                "ALT" to "currency",
+                "TOKEN" to "tokenized_asset",
+                "AMBIG" to "ambiguous",
+                "CONFLICT" to "currency",
+            )
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "asset-class-resolution",
+                cycleId = "cycle-asset-class-resolution",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = classes,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.single { it.symbol == "ALT" }.status shouldBe HistoryAssetValueStatus.MISSING_PRICE
+            observation.assets.single { it.symbol == "TOKEN" }.status shouldBe HistoryAssetValueStatus.MISSING_PRICE
+            observation.assets.single { it.symbol == "AMBIG" }.reason shouldBe
+                "Kraken account ledger history reports conflicting asset classes for this balance."
+            observation.assets.single { it.symbol == "CONFLICT" }.reason shouldBe
+                "Kraken asset metadata conflicts with account ledger classification."
+            observation.assets.single { it.symbol == "PUBLIC_AMBIG" }.reason shouldBe
+                "Kraken asset metadata is ambiguous for this balance."
+            HistoryObservationValuator.fullAccountTickerSymbols(
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = classes,
+            ) shouldBe listOf("ALT", "TOKEN")
+        }
+
+        "full-account valuation fails closed when raw balance partitions disagree on class" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("1"),
+                    "XBT.M" to directBalance("0.5"),
+                    "ZUSD" to directBalance("100"),
+                ),
+            )
+            val prices = DirectTickerCapture(
+                requestStartedAt = now.minusMillis(300),
+                responseEndedAt = now.minusMillis(100),
+                resultShapeValid = true,
+                marksBySymbol = mapOf("BTC" to directTicker("BTC", "50000")),
+            )
+            val metadata = listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("XBT.M", "tokenized_asset"),
+                KrakenAssetMetadata("ZUSD", "currency"),
+            )
+            val classes = mapOf("XXBT" to "currency", "XBT.M" to "tokenized_asset")
+
+            val observation = HistoryObservationValuator.buildFullAccountDirect(
+                observationId = "partition-class-conflict",
+                cycleId = "cycle-partition-class-conflict",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                prices = prices,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = classes,
+                now = now,
+            )
+
+            observation.status shouldBe HistoryObservationStatus.INCOMPLETE
+            observation.totalUsd shouldBe null
+            observation.assets.single { it.symbol == "BTC" }.reason shouldBe
+                "Kraken asset metadata conflicts across balance partitions."
+            HistoryObservationValuator.fullAccountTickerSymbols(
+                balances = balances,
+                prices = null,
+                assetMetadata = metadata,
+                authoritativeAssetClasses = classes,
+            ) shouldBe emptyList()
+        }
+
+        "incomplete full-account observations retain invalid balance status without valuing it" {
+            val now = Instant.now()
+            val balances = DirectBalanceCapture(
+                requestStartedAt = now.minusMillis(500),
+                responseEndedAt = now.minusMillis(300),
+                resultShapeValid = true,
+                valuesByAssetId = mapOf(
+                    "XXBT" to directBalance("1"),
+                    "XETH" to DirectValueEvidence("-2", BigDecimal("-2"), DirectEvidenceStatus.VALID),
+                    "ZUSD" to DirectValueEvidence("invalid", null, DirectEvidenceStatus.MALFORMED),
+                    "STRC" to directBalance("15"),
+                ),
+            )
+
+            val observation = HistoryObservationValuator.buildIncompleteFullAccountDirect(
+                observationId = "invalid-incomplete-balances",
+                cycleId = "cycle-invalid-incomplete-balances",
+                accountIdentityDigest = accountDigest,
+                balances = balances,
+                reason = "Price evidence timed out.",
+                authoritativeAssetClasses = mapOf("STRC" to "equity"),
+                now = now,
+            )
+
+            observation.totalUsd shouldBe null
+            observation.assets.map { it.symbol } shouldBe listOf("BTC", "ETH", "USD")
+            observation.assets.single { it.symbol == "BTC" }.status shouldBe
+                HistoryAssetValueStatus.UNAVAILABLE_CYCLE_EVIDENCE
+            observation.assets.single { it.symbol == "ETH" }.status shouldBe HistoryAssetValueStatus.INVALID_BALANCE
+            observation.assets.single { it.symbol == "USD" }.let {
+                it.status shouldBe HistoryAssetValueStatus.INVALID_BALANCE
+                it.valueUsd shouldBe null
+                it.reason shouldBe "Balance amount is invalid or negative."
+            }
         }
 
         "buildDirect constructs complete observation from valid balances and tickers" {
@@ -691,3 +1297,18 @@ class HistoryObservationValuatorTest : StringSpec() {
         }
     }
 }
+
+private fun directBalance(value: String) = DirectValueEvidence(value, BigDecimal(value), DirectEvidenceStatus.VALID)
+
+private fun directTicker(symbol: String, value: String) = DirectTickerMark(
+    symbol = symbol,
+    requestedPair = "${symbol}USD",
+    responsePair = "${symbol}USD",
+    candidateResponsePairs = listOf("${symbol}USD"),
+    rawPrice = value,
+    price = BigDecimal(value),
+    status = DirectEvidenceStatus.VALID,
+    candidateValuesByPair = mapOf(
+        "${symbol}USD" to DirectValueEvidence(value, BigDecimal(value), DirectEvidenceStatus.VALID),
+    ),
+)

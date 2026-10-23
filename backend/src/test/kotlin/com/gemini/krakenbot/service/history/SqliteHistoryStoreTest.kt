@@ -14,6 +14,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 class SqliteHistoryStoreTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -57,7 +59,107 @@ class SqliteHistoryStoreTest : StringSpec() {
         ),
     )
 
+    private fun dailyBalance(
+        day: LocalDate,
+        assetKey: String,
+        quantity: String,
+        generation: String,
+        revision: Long = 1,
+    ) = HistoryDailyBalance(
+        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+        dayLabel = day,
+        accountIdentityDigest = accountDigest,
+        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+        rawAssetClass = "currency",
+        rawAssetKey = assetKey,
+        quantity = BigDecimal(quantity),
+        sourceLedgerId = "ledger-$assetKey",
+        sourceObservedAt = day.atStartOfDay(ZoneOffset.UTC).toInstant(),
+        sourceRevision = revision,
+        generationId = generation,
+        status = HistoryDailyBalanceStatus.VALID,
+    )
+
+    private fun valuationJob(
+        start: LocalDate,
+        end: LocalDate,
+        generation: String,
+        sourceRevision: Long,
+    ): HistoryValuationJob {
+        val days = java.time.temporal.ChronoUnit.DAYS.between(start, end).toInt() + 1
+        val now = Instant.parse("2026-03-12T00:00:00Z")
+        return HistoryValuationJob(
+            accountIdentityDigest = accountDigest,
+            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+            generationId = generation,
+            state = HistoryValuationJobState.COMPLETE,
+            stage = HistoryValuationStage.PRICE_AND_VALUE,
+            targetStartDay = start,
+            targetEndDay = end,
+            nextDay = null,
+            targetDays = days,
+            balancesProcessed = days,
+            balancesValid = days,
+            balancesBlocked = 0,
+            requiredPriceTasks = days,
+            completedPriceTasks = days,
+            completeValueDays = days,
+            blockedValueDays = 0,
+            sourceRevision = sourceRevision,
+            calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+            lastProgressAt = now,
+            nextRetryAt = null,
+            lastSuccessAt = now,
+            lastError = null,
+            updatedAt = now,
+        )
+    }
+
     init {
+        "ledger revision advances when verified ledger coverage expands without new records" {
+            withStore { store, _ ->
+                suspend fun commitCoverageOnly(scanId: String, startSec: Long, endSec: Long) {
+                    store.beginSyncWindow(
+                        HistorySyncWindow(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.LEDGERS,
+                            scanId = scanId,
+                            startSec = startSec,
+                            endSec = endSec,
+                        ),
+                    )
+                    store.commitLedgerPage(
+                        request = HistoryPageRequest(
+                            accountIdentityDigest = accountDigest,
+                            feed = HistoryFeed.LEDGERS,
+                            scanId = scanId,
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = null,
+                            committedAt = Instant.ofEpochSecond(endSec),
+                        ),
+                        page = ExchangeHistoryPage(
+                            entries = emptyList(),
+                            startSec = startSec,
+                            endSec = endSec,
+                            requestedCursor = null,
+                            nextCursor = null,
+                            count = 0,
+                            rawSize = 0,
+                            valid = true,
+                        ),
+                    )
+                }
+
+                commitCoverageOnly("covered-initial", 0, 99)
+                store.currentLedgerRevision(accountDigest) shouldBe 1L
+                commitCoverageOnly("covered-again", 10, 90)
+                store.currentLedgerRevision(accountDigest) shouldBe 1L
+                commitCoverageOnly("covered-extension", 100, 199)
+                store.currentLedgerRevision(accountDigest) shouldBe 2L
+            }
+        }
+
         "appends observations and queries with time range and pagination" {
             withStore { store, _ ->
                 val now = Instant.ofEpochSecond(1_700_000_000)
@@ -351,6 +453,9 @@ class SqliteHistoryStoreTest : StringSpec() {
                     candleOpen = dayEnd.minusSeconds(86400),
                     candleEnd = dayEnd,
                     closeUsd = BigDecimal("50000.00"),
+                    legs = listOf(
+                        HistoryDailyPriceLeg("XXBTZUSD", BigDecimal("50000.00"), "USD"),
+                    ),
                 )
                 store.saveDailyPrices(listOf(price))
 
@@ -362,6 +467,9 @@ class SqliteHistoryStoreTest : StringSpec() {
                 )
                 prices.size shouldBe 1
                 prices.single().closeUsd shouldBe BigDecimal("50000.00")
+                prices.single().legs shouldBe listOf(
+                    HistoryDailyPriceLeg("XXBTZUSD", BigDecimal("50000.00"), "USD"),
+                )
 
                 val dailyValue = HistoryDailyValue(
                     dayEnd = dayEnd,
@@ -393,6 +501,20 @@ class SqliteHistoryStoreTest : StringSpec() {
                 )
                 values.total shouldBe 1L
                 values.items.single().totalUsd shouldBe BigDecimal("75000.00")
+                store.countIncompleteDailyValues(accountDigest, "BTC+USD") shouldBe 0L
+
+                store.saveDailyValues(
+                    listOf(
+                        dailyValue.copy(
+                            dayEnd = dayEnd.plusSeconds(86_400),
+                            totalUsd = null,
+                            status = HistoryDailyValueStatus.NO_PRICE,
+                            assets = emptyList(),
+                            dayLabel = dailyValue.dayLabel.plusDays(1),
+                        ),
+                    ),
+                )
+                store.countIncompleteDailyValues(accountDigest, "BTC+USD") shouldBe 1L
 
                 val dailyAssets = store.queryDailyAssetValues(
                     accountIdentityDigest = accountDigest,
@@ -407,6 +529,289 @@ class SqliteHistoryStoreTest : StringSpec() {
                     throughSec = 1_701_000_000,
                 )
                 checkpointInputs shouldNotBe null
+            }
+        }
+
+        "pages daily valuation checkpoints in stable order through the requested source time" {
+            withStore { store, _ ->
+                val firstAt = Instant.parse("2026-03-01T10:00:00Z")
+                val secondAt = firstAt.plusSeconds(60)
+                val windowStart = firstAt.minusSeconds(1).epochSecond
+                val windowEnd = secondAt.plusSeconds(1).epochSecond
+                val window = HistorySyncWindow(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.LEDGERS,
+                    scanId = "daily-input-page",
+                    startSec = windowStart,
+                    endSec = windowEnd,
+                )
+                store.beginSyncWindow(window)
+                val request = HistoryPageRequest(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.LEDGERS,
+                    scanId = window.scanId,
+                    startSec = windowStart,
+                    endSec = windowEnd,
+                    requestedCursor = null,
+                    committedAt = secondAt,
+                )
+                val page = ExchangeHistoryPage(
+                    entries = listOf(
+                        ledgerEntry("later", secondAt, balance = "2"),
+                        ledgerEntry("earlier", firstAt, balance = "1"),
+                    ),
+                    startSec = windowStart,
+                    endSec = windowEnd,
+                    requestedCursor = null,
+                    nextCursor = null,
+                    count = 2,
+                    rawSize = 2,
+                    valid = true,
+                )
+                store.commitLedgerPage(request, page)
+
+                val firstPage = store.queryDailyCheckpointInputPage(
+                    accountIdentityDigest = accountDigest,
+                    throughSec = firstAt.epochSecond,
+                    limit = 1,
+                    offset = 0,
+                )
+                val pagedFirst = store.queryDailyCheckpointInputPage(
+                    accountIdentityDigest = accountDigest,
+                    throughSec = windowEnd,
+                    limit = 1,
+                    offset = 0,
+                )
+                val secondPage = store.queryDailyCheckpointInputPage(
+                    accountIdentityDigest = accountDigest,
+                    throughSec = windowEnd,
+                    limit = 1,
+                    offset = 1,
+                )
+
+                firstPage.total shouldBe 1L
+                firstPage.items.single().ledgerId shouldBe "earlier"
+                firstPage.hasMore shouldBe false
+                pagedFirst.items.single().ledgerId shouldBe "earlier"
+                pagedFirst.hasMore shouldBe true
+                secondPage.total shouldBe 2L
+                secondPage.items.single().ledgerId shouldBe "later"
+                secondPage.hasMore shouldBe false
+                shouldThrow<IllegalArgumentException> {
+                    store.queryDailyCheckpointInputPage("bad-digest", windowEnd, 1, 0)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.queryDailyCheckpointInputPage(accountDigest, windowEnd, 0, 0)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.queryDailyCheckpointInputPage(accountDigest, windowEnd, 1, -1)
+                }
+            }
+        }
+
+        "replaces one daily balance day and keeps query ranges account and scope isolated" {
+            withStore { store, _ ->
+                val day = LocalDate.parse("2026-03-09")
+                val usd = dailyBalance(day, "ZUSD", "100", generation = "first")
+                val btc = dailyBalance(day, "XXBT", "2", generation = "first")
+                store.replaceDailyBalanceDay(listOf(usd, btc))
+                store.queryDailyBalances(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).size shouldBe 2
+
+                val replacement = dailyBalance(day, "ZUSD", "90", generation = "second", revision = 2)
+                store.replaceDailyBalanceDay(listOf(replacement))
+
+                val queryEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+                val rows = store.queryDailyBalances(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    from = queryEnd,
+                    until = queryEnd.plusSeconds(1),
+                )
+                rows.size shouldBe 1
+                rows.single().rawAssetKey shouldBe "ZUSD"
+                rows.single().quantity shouldBe BigDecimal("90")
+                rows.single().generationId shouldBe "second"
+                store.queryDailyBalances(
+                    "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                )
+                    .shouldBe(emptyList())
+                store.queryDailyBalances(accountDigest, "another-scope").shouldBe(emptyList())
+                store.queryDailyBalances(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    until = queryEnd,
+                ).shouldBe(emptyList())
+
+                shouldThrow<IllegalArgumentException> { store.replaceDailyBalanceDay(emptyList()) }
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(
+                        listOf(replacement, replacement.copy(sourceAssetScope = "other-scope")),
+                    )
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(
+                        listOf(replacement.copy(status = HistoryDailyBalanceStatus.NO_OPENING_ANCHOR)),
+                    )
+                }
+            }
+        }
+
+        "validates daily balance write identity and single-day generation consistency" {
+            withStore { store, _ ->
+                val day = LocalDate.parse("2026-03-09")
+                val first = dailyBalance(day, "ZUSD", "100", generation = "daily-balance-validation")
+
+                store.saveDailyBalances(emptyList())
+                store.saveDailyBalances(listOf(first))
+                store.queryDailyBalances(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).single() shouldBe first
+
+                shouldThrow<IllegalArgumentException> {
+                    store.saveDailyBalances(listOf(first.copy(accountIdentityDigest = "bad-digest")))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.saveDailyBalances(listOf(first.copy(sourceAssetScope = " ")))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.saveDailyBalances(listOf(first.copy(rawAssetKey = "")))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.saveDailyBalances(listOf(first.copy(status = HistoryDailyBalanceStatus.NO_OPENING_ANCHOR)))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.saveDailyBalances(listOf(first.copy(quantity = null)))
+                }
+
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(listOf(first, first.copy(accountIdentityDigest = fingerprint)))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(listOf(first, first.copy(sourceAssetScope = "other")))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(listOf(first, first.copy(dayEnd = first.dayEnd.plusSeconds(1))))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(listOf(first, first.copy(generationId = "other-generation")))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.replaceDailyBalanceDay(listOf(first, first.copy(sourceRevision = first.sourceRevision + 1)))
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.queryDailyBalances("bad-digest", HISTORY_ACCOUNT_DAILY_SCOPE)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.queryDailyBalances(accountDigest, " ")
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.queryDailyBalances(
+                        accountDigest,
+                        HISTORY_ACCOUNT_DAILY_SCOPE,
+                        from = first.dayEnd.plusSeconds(1),
+                        until = first.dayEnd,
+                    )
+                }
+            }
+        }
+
+        "publishes daily values and terminal valuation state atomically for the complete target" {
+            withStore { store, _ ->
+                val start = LocalDate.parse("2026-03-08")
+                val end = start.plusDays(1)
+                val generation = "publish-generation"
+                val job =
+                    valuationJob(start, end, generation, sourceRevision = store.currentLedgerRevision(accountDigest))
+                val values = listOf(start, end).map { day ->
+                    val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+                    HistoryDailyValue(
+                        dayEnd = dayEnd,
+                        accountIdentityDigest = accountDigest,
+                        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+                        totalUsd = BigDecimal("100"),
+                        status = HistoryDailyValueStatus.COMPLETE,
+                        assets = listOf(
+                            HistoryDailyAssetValue(
+                                dayEnd = dayEnd,
+                                accountIdentityDigest = accountDigest,
+                                rawAssetClass = "currency",
+                                rawAssetKey = "ZUSD",
+                                quantity = BigDecimal("100"),
+                                priceUsd = BigDecimal.ONE,
+                                valueUsd = BigDecimal("100"),
+                                pricePair = "USD",
+                                priceCandleOpen = null,
+                                priceSource = "EXACT_USD_UNIT",
+                                status = HistoryDailyValueStatus.COMPLETE,
+                            ),
+                        ),
+                        dayLabel = day,
+                        generationId = generation,
+                        calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+                        sourceRevision = job.sourceRevision,
+                    )
+                }
+                store.saveDailyValues(
+                    listOf(
+                        values.first().copy(
+                            dayEnd = start.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                            dayLabel = start.plusDays(1),
+                            generationId = "old-generation",
+                        ),
+                    ),
+                )
+
+                store.publishDailyValues(job, values)
+
+                val snapshot = store.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                snapshot.values.size shouldBe 2
+                snapshot.values.map { it.generationId }.distinct() shouldBe listOf(generation)
+                snapshot.values.flatMap { it.assets }.map { it.rawAssetKey }.distinct() shouldBe listOf("ZUSD")
+                snapshot.valuationJob?.generationId shouldBe generation
+                snapshot.valuationJob?.state shouldBe HistoryValuationJobState.COMPLETE
+
+                val published = store.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                published.total shouldBe 2L
+                published.items.map { it.generationId }.distinct() shouldBe listOf(generation)
+                published.items.map { it.dayLabel } shouldBe listOf(start, end)
+                val assets = store.queryDailyAssetValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)
+                assets.total shouldBe 2L
+                assets.items.all { it.rawAssetKey == "ZUSD" } shouldBe true
+                store.loadValuationJob(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE)?.state shouldBe
+                    HistoryValuationJobState.COMPLETE
+
+                shouldThrow<IllegalArgumentException> { store.publishDailyValues(job, values.dropLast(1)) }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(job.copy(state = HistoryValuationJobState.RUNNING), values)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(job.copy(targetDays = 3), values)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(job, values.map { it.copy(dayLabel = it.dayLabel.plusDays(1)) })
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(job, values.map { it.copy(accountIdentityDigest = fingerprint) })
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(job, values.map { it.copy(sourceAssetScope = "other-scope") })
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(job, values.map { it.copy(generationId = "other-generation") })
+                }
+                shouldThrow<IllegalArgumentException> {
+                    store.publishDailyValues(
+                        job,
+                        values.map { it.copy(calculationPolicyVersion = "other-policy") },
+                    )
+                }
+                val staleJob = job.copy(sourceRevision = job.sourceRevision + 1)
+                shouldThrow<IllegalStateException> {
+                    store.publishDailyValues(staleJob, values.map { it.copy(sourceRevision = staleJob.sourceRevision) })
+                }
+                store.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE).items.map {
+                    it.generationId
+                }.distinct() shouldBe
+                    listOf(generation)
             }
         }
 
@@ -2117,6 +2522,89 @@ class SqliteHistoryStoreTest : StringSpec() {
                     setOf("cycle-2", "cycle-1", "cycle-0")
             }
         }
+
+        "queryKnownAssetClasses extracts classifications from ledgers and marks conflicts as ambiguous" {
+            withStore { store, _ ->
+                val now = Instant.parse("2026-04-01T12:00:00Z")
+                val start = now.minusSeconds(3600).epochSecond
+                val end = now.epochSecond
+                store.beginSyncWindow(
+                    HistorySyncWindow(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.LEDGERS,
+                        scanId = "scan-asset-class",
+                        startSec = start,
+                        endSec = end,
+                        purpose = HistorySyncPurpose.RECENT,
+                    ),
+                )
+                val request = HistoryPageRequest(
+                    accountIdentityDigest = accountDigest,
+                    feed = HistoryFeed.LEDGERS,
+                    scanId = "scan-asset-class",
+                    startSec = start,
+                    endSec = end,
+                    requestedCursor = null,
+                    committedAt = now,
+                    purpose = HistorySyncPurpose.RECENT,
+                )
+                val entries = listOf(
+                    ledgerEntry("L1", now.minusSeconds(100), asset = "STRC").copy(assetClass = "equity"),
+                    ledgerEntry("L2", now.minusSeconds(50), asset = "XXBT").copy(assetClass = "currency"),
+                    ledgerEntry("L3", now.minusSeconds(20), asset = "ZUSD").copy(assetClass = "currency"),
+                    ledgerEntry("L5", now.minusSeconds(15), asset = "NOCLASS", assetClass = null),
+                    ledgerEntry("L6", now.minusSeconds(10), asset = "BLANK", assetClass = " "),
+                )
+                store.commitLedgerPage(
+                    request,
+                    ExchangeHistoryPage(
+                        entries,
+                        start,
+                        end,
+                        null,
+                        null,
+                        entries.size.toLong(),
+                        entries.size,
+                        true,
+                    ),
+                )
+
+                val classes = store.queryKnownAssetClasses(accountDigest)
+                classes["STRC"] shouldBe "equity"
+                classes["XXBT"] shouldBe "currency"
+                classes["BTC"] shouldBe "currency"
+                classes["ZUSD"] shouldBe "currency"
+                classes["USD"] shouldBe "currency"
+                classes.containsKey("NOCLASS") shouldBe false
+                classes.containsKey("BLANK") shouldBe false
+
+                // Now commit a conflicting entry for STRC where assetClass is currency
+                store.beginSyncWindow(
+                    HistorySyncWindow(
+                        accountIdentityDigest = accountDigest,
+                        feed = HistoryFeed.LEDGERS,
+                        scanId = "scan-conflict",
+                        startSec = start,
+                        endSec = end,
+                        purpose = HistorySyncPurpose.RECENT,
+                    ),
+                )
+                val conflictRequest = request.copy(scanId = "scan-conflict")
+                val conflictEntries = listOf(
+                    ledgerEntry("L4", now.minusSeconds(10), asset = "STRC").copy(assetClass = "currency"),
+                )
+                store.commitLedgerPage(
+                    conflictRequest,
+                    ExchangeHistoryPage(conflictEntries, start, end, null, null, 1, 1, true),
+                )
+                val conflictClasses = store.queryKnownAssetClasses(accountDigest)
+                conflictClasses["STRC"] shouldBe "ambiguous"
+
+                store.queryKnownAssetClasses(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                ) shouldBe emptyMap()
+            }
+        }
     }
 
     private fun tradeEntry(
@@ -2155,26 +2643,31 @@ class SqliteHistoryStoreTest : StringSpec() {
         isValidRecord = true,
     )
 
-    private fun ledgerEntry(id: String, time: Instant, balance: String = "1.5", asset: String = "XXBT") =
-        ExchangeLedgerHistoryEntry(
-            ledgerId = id,
-            refid = "ref-$id",
-            time = time,
-            rawTime = time.epochSecond.toString(),
-            type = "trade",
-            subtype = null,
-            assetClass = "currency",
-            asset = asset,
-            amount = "0.5",
-            fee = "0.001",
-            balance = balance,
-            rawRecordJson = "{}",
-            hasValidTime = true,
-            hasValidAmount = true,
-            hasValidFee = true,
-            hasValidBalance = true,
-            isValidRecord = true,
-        )
+    private fun ledgerEntry(
+        id: String,
+        time: Instant,
+        balance: String = "1.5",
+        asset: String = "XXBT",
+        assetClass: String? = "currency",
+    ) = ExchangeLedgerHistoryEntry(
+        ledgerId = id,
+        refid = "ref-$id",
+        time = time,
+        rawTime = time.epochSecond.toString(),
+        type = "trade",
+        subtype = null,
+        assetClass = assetClass,
+        asset = asset,
+        amount = "0.5",
+        fee = "0.001",
+        balance = balance,
+        rawRecordJson = "{}",
+        hasValidTime = true,
+        hasValidAmount = true,
+        hasValidFee = true,
+        hasValidBalance = true,
+        isValidRecord = true,
+    )
 
     private fun withStore(
         maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,

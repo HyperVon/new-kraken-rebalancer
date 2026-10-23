@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.history
 
 import com.gemini.krakenbot.model.ExchangeHistoryPage
+import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
 /** Persistence boundary for the one active History database. */
@@ -12,6 +13,18 @@ interface HistoryStore {
     suspend fun appendCycle(observation: HistoryObservation?, activity: HistoryCycleActivity): Boolean
 
     suspend fun queryObservations(query: HistoryRangeQuery): HistoryPage<HistoryObservation>
+
+    /** All matching observations paged inside one read snapshot; [HistoryRangeQuery.limit] is the page size. */
+    suspend fun queryObservationsSnapshot(query: HistoryRangeQuery): List<HistoryObservation>
+
+    /** Bounded observation pages streamed from one pinned read snapshot. */
+    fun queryObservationSnapshotPages(query: HistoryRangeQuery): Flow<List<HistoryObservation>>
+
+    /** Range summary and representative chart samples from the same pinned read snapshot. */
+    suspend fun queryObservationChartSnapshot(
+        query: HistoryRangeQuery,
+        maxPoints: Int,
+    ): HistoryObservationChartSnapshot
 
     /** Bounded representative samples from the complete selected time range, oldest to newest. */
     suspend fun queryChartObservations(
@@ -40,6 +53,9 @@ interface HistoryStore {
     suspend fun queryBalanceCheckpoints(query: HistoryEventQuery): HistoryPage<HistoryBalanceCheckpoint>
 
     suspend fun queryFilterOptions(query: HistoryEventQuery): HistoryEventFilterOptions
+
+    /** Returns known asset classes from imported account ledgers and balance checkpoints, keyed by raw and canonical asset. */
+    suspend fun queryKnownAssetClasses(accountIdentityDigest: String): Map<String, String>
 
     suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus
 
@@ -100,6 +116,32 @@ interface HistoryStore {
         limit: Int = MAX_DAILY_SOURCE_CHECKPOINTS,
     ): List<HistoryBalanceCheckpoint>
 
+    /** Stable paged source read for valuation; unlike a bounded list, this never truncates history. */
+    suspend fun queryDailyCheckpointInputPage(
+        accountIdentityDigest: String,
+        throughSec: Long,
+        limit: Int = HISTORY_MAX_PAGE_LIMIT,
+        offset: Int = 0,
+    ): HistoryPage<HistoryBalanceCheckpoint>
+
+    suspend fun currentLedgerRevision(accountIdentityDigest: String): Long
+
+    suspend fun loadValuationJob(accountIdentityDigest: String, sourceAssetScope: String): HistoryValuationJob?
+
+    suspend fun upsertValuationJob(job: HistoryValuationJob)
+
+    suspend fun saveDailyBalances(balances: List<HistoryDailyBalance>)
+
+    /** Replace one marked UTC day atomically so obsolete partitions do not survive a rebuild. */
+    suspend fun replaceDailyBalanceDay(balances: List<HistoryDailyBalance>)
+
+    suspend fun queryDailyBalances(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant? = null,
+        until: Instant? = null,
+    ): List<HistoryDailyBalance>
+
     suspend fun saveDailyPrices(prices: List<HistoryDailyPrice>)
 
     suspend fun queryDailyPrices(
@@ -111,6 +153,9 @@ interface HistoryStore {
 
     suspend fun saveDailyValues(values: List<HistoryDailyValue>)
 
+    /** Publishes one complete bounded generation and its terminal durable progress atomically. */
+    suspend fun publishDailyValues(job: HistoryValuationJob, values: List<HistoryDailyValue>)
+
     suspend fun queryDailyValues(
         accountIdentityDigest: String,
         sourceAssetScope: String,
@@ -119,6 +164,22 @@ interface HistoryStore {
         limit: Int = HISTORY_PAGE_LIMIT,
         offset: Int = 0,
     ): HistoryPage<HistoryDailyValue>
+
+    /** Materializes one bounded date range, including each day's asset rows, from one SQLite snapshot. */
+    suspend fun queryDailyValueSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant? = null,
+        until: Instant? = null,
+    ): HistoryDailyValueSnapshot
+
+    /** Compact status summary from one read snapshot without materializing every daily asset row. */
+    suspend fun queryDailyValueStatusSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+    ): HistoryDailyValueStatusSnapshot
+
+    suspend fun countIncompleteDailyValues(accountIdentityDigest: String, sourceAssetScope: String): Long
 
     suspend fun queryDailyAssetValues(
         accountIdentityDigest: String,

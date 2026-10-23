@@ -6,6 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.7] - 2026-10-22
+
+### Fixed
+
+- **Full-account cycle capture**: keep account ledger classification and direct
+  ticker collection within a 15-second evidence budget. Timeouts and capture
+  failures persist an explicitly incomplete sample without publishing a total.
+- **Full-account asset classification**: use account-scoped ledger and balance
+  checkpoint classes to exclude equities and fail closed on conflicting
+  currency/equity classes for a normalized asset identity.
+- **Daily account summaries**: leave account-value change unavailable when a
+  selected range contains only one complete daily value.
+- **Kraken asset metadata**: cache public metadata for 15 minutes and reuse the
+  last successful result for History capture when a refresh fails. Trading
+  eligibility rejects expired metadata if its refresh fails.
+- **Intraday holdings CSV**: neutralize formula-leading persisted reason text
+  before writing exported rows.
+- **24-hour chart fallback**: preserve each refreshed point's exact capture
+  time so SVG point selection loads the matching holdings sample.
+
+## [6.20.6] - 2026-10-22
+
+### Fixed
+
+- **Historical price fallback**: treat Kraken's explicit unknown-pair response
+  as an unavailable market and try same-day conversion markets; network,
+  rate-limit, and malformed-response failures keep their retry/error behavior.
+- **History read consistency**: charts, holdings, status, and daily CSV exports
+  now read selected daily values and their asset details from one bounded SQLite
+  snapshot, so a concurrent publication cannot mix generations or counts.
+- **Historical evidence handling**: reject cached USD closes away from par and
+  keep future unsupported ledger evidence from invalidating earlier daily marks.
+- **Holdings selection**: discard stale async responses after the selected date
+  or account scope changes, and label accepted results and failures with the
+  current selection.
+- **History labels**: use account-value wording for summary cards and point
+  counts, and simplify captions and period labels.
+- **24h account values**: chart directly captured full-account cycle values,
+  keep missing direct evidence incomplete, and resolve point selection and CSV
+  exports to the exact capture time from a single consistent SQLite read
+  snapshot. Longer ranges continue to use daily closes.
+- **Incomplete account replay**: when unsupported ledger evidence blocks a UTC
+  day, clear known-balance quantities in that invalid day so persisted status
+  and quantity remain consistent. Negative spot balances now block daily
+  account values and trigger a policy-versioned rebuild of persisted values.
+
+### Changed
+
+- **Rebalancer asset eligibility**: require explicit Kraken `currency` metadata
+  for configured non-USD assets before price analysis. Missing or non-currency
+  metadata blocks the cycle instead of guessing from ticker names.
+
+## [6.20.5] - 2026-10-21
+
+### Added
+
+- **Historical account values**: reuse imported account ledgers to establish daily
+  balances and calculate historical USD totals with durable progress, explicit
+  evidence gaps, and daily holdings/value exports.
+
+### Changed
+
+- **History**: make Account value, Trades, Transactions, and Data status the
+  primary views; exclude all equity-class share units while retaining every
+  USD ledger balance change, including stock settlement and dividend cash.
+
 ## [6.20.4] - 2026-10-21
 
 ### Security

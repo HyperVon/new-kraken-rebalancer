@@ -3,10 +3,11 @@
 This document describes the active rebalance cycle and the current portfolio
 surfaces. The cycle uses the configured allocation directly, including its
 configured USD percentage target. Its dollar target scales with the current
-portfolio total. The History page reports direct cycle samples and synchronized
-Kraken trade and ledger records; it does not reconstruct historical portfolio
-values or calculate Buy & Hold performance. Current planning does not use
-ATH/drawdown deployment.
+portfolio total. The History page reports direct cycle samples, synchronized
+Kraken trade and ledger records, and a separate daily account-value estimate
+derived from imported balances and historical prices. Historical reporting does
+not change rebalancing math or calculate Buy & Hold performance. Current
+planning does not use ATH/drawdown deployment.
 
 ## Overview
 
@@ -40,6 +41,19 @@ USD. For each cycle, the analyzer reads current account balances and USD marks
 for the configured non-USD assets. USD is valued at one dollar. A missing or
 zero non-USD ticker mark fails valuation and prevents order generation for that
 cycle.
+
+Before ticker analysis, each configured non-USD asset must have explicit Kraken
+asset metadata with class `currency`. Missing metadata, an unknown class, or a
+non-currency class stops the cycle before prices or orders are evaluated. The
+private balance response supplies asset amounts but does not attach the generic
+ledger `assetClass`; the public asset-info contract currently distinguishes
+`currency` and `tokenized_asset` (xStocks). The rebalancer therefore fails
+closed for tokenized or unclassified configured assets and does not infer an
+asset class from its ticker. See Kraken's [Get Account Balance](https://docs.kraken.com/api-reference/account-data/get-account-balance)
+and [Get Asset Info](https://docs.kraken.com/api-reference/market-data/get-asset-info)
+contracts. This active-trading eligibility check is separate from History's
+ledger evidence: History excludes rows explicitly classified as `equity`,
+retains USD cash changes, and never guesses equity from a symbol.
 
 For portfolio value `V` and asset `i`:
 
@@ -196,9 +210,39 @@ credential scope around each page and verifies the active data-directory
 account binding before storing data. A changed account or managed-asset scope
 cannot be joined to another value series. The History page provides time
 ranges, event filters, paginated trade and ledger tables, and exchange-reported
-balance checkpoints. It displays evidence; it does not reconstruct a complete
-historical portfolio value from those events or compute retrospective
-performance.
+balance checkpoints.
+
+`HistoryValuationCoordinator` runs outside the portfolio cycle and reuses those
+committed records. It derives the latest 365 completed UTC daily balance marks
+from ledger post-balances and verified coverage, obtains same-day completed
+Kraken daily candles for nonzero holdings, and atomically publishes a generation
+with per-asset evidence. Missing checkpoints, coverage, or prices remain
+unavailable with a dated reason; a partial subtotal is never presented as the
+account total. Direct USD markets are preferred, with same-day BTC then EUR
+conversion only when required. USD is valued at par. All equity-class share
+units are excluded from holdings and totals, while every USD ledger change,
+including stock-trade settlements and dividend credits, remains cash. Derivatives and
+unidentifiable wallet scopes are outside this release. Conflicting `currency`
+and `equity` classifications for the same normalized asset block the full daily
+account total. A change in account value requires two complete daily values;
+single-day ranges still show the available value and extrema. The reported
+change includes deposits and withdrawals and is not profit, performance, TWR,
+IRR, or Buy & Hold. These derived values are read-only reporting data and do not
+feed portfolio planning or order execution.
+
+An explicit Kraken `EQuery:Unknown asset pair` response marks only that market
+as unavailable and permits same-day BTC or EUR fallback. Rate-limit, network,
+and malformed-response failures retain their error and retry behavior; they are
+not treated as evidence that a market is absent. Every conversion leg must use
+the requested UTC day's completed candle. Cached USD prices are valid only at
+exactly 1 USD and are repaired to par when stale or off-par.
+
+Daily chart, holdings, status, and export reads materialize the selected values
+and their asset details in one deferred SQLite read transaction. The bounded
+snapshot is capped at 20,000 daily rows and fails explicitly above that limit.
+CSV chunks are emitted after the read transaction closes. A browser holdings
+response is applied only while its requested date and account/scope selection
+remain current.
 
 See the [History section in the User Guide](USER_GUIDE.md#history) for the
 operator-facing behavior and limitations.

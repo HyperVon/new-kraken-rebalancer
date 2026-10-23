@@ -7,6 +7,11 @@ import com.gemini.krakenbot.model.ExchangeHistoryPage
 import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import org.sqlite.SQLiteConfig
 import org.sqlite.SQLiteConnection
@@ -16,13 +21,37 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.Locale
+
+internal enum class DailyValueSnapshotReadPoint {
+    AFTER_COUNT,
+    AFTER_HEADERS,
+    AFTER_STATUS_SUMMARY,
+}
+
+internal enum class ObservationSnapshotReadPoint {
+    AFTER_PAGE,
+}
+
+private data class DailyValueStatusCounts(
+    val availableDays: Long,
+    val firstDayLabel: LocalDate?,
+    val lastDayLabel: LocalDate?,
+    val incompleteDays: Long,
+    val publishedGenerationId: String?,
+    val publishedSourceRevision: Long?,
+)
 
 class SqliteHistoryStore(
     private val database: HistoryDatabase,
     private val nowProvider: () -> Instant = Instant::now,
     private val maxPagesPerScan: Int = HISTORY_MAX_SYNC_PAGES,
 ) : HistoryStore {
+    internal var dailyValueSnapshotReadHookForTest: ((DailyValueSnapshotReadPoint, String) -> Unit)? = null
+    internal var observationSnapshotReadHookForTest: ((ObservationSnapshotReadPoint, Int) -> Unit)? = null
+
     init {
         require(maxPagesPerScan > 0)
     }
@@ -65,6 +94,116 @@ class SqliteHistoryStore(
             database.connect().use { connection -> queryObservations(connection, query) }
         }
 
+    override suspend fun queryObservationsSnapshot(query: HistoryRangeQuery): List<HistoryObservation> {
+        require(query.offset == 0) { "An observation snapshot must start at offset zero." }
+        val observations = mutableListOf<HistoryObservation>()
+        queryObservationSnapshotPages(query).collect { observations += it }
+        return observations.asReversed()
+    }
+
+    override fun queryObservationSnapshotPages(query: HistoryRangeQuery): Flow<List<HistoryObservation>> = channelFlow {
+        require(query.offset == 0) { "An observation snapshot must start at offset zero." }
+        val output = this
+        withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                connection.inReadTransactionSuspending {
+                    val total = countRows(connection, "history_observations", observationFilter(query))
+                    var offset = 0
+                    while (offset.toLong() < total) {
+                        val items =
+                            queryObservationItems(connection, query.copy(offset = offset), oldestFirst = true)
+                        check(items.isNotEmpty()) {
+                            "The observation snapshot did not return its complete row set."
+                        }
+                        offset += items.size
+                        output.send(items)
+                        observationSnapshotReadHookForTest?.invoke(ObservationSnapshotReadPoint.AFTER_PAGE, offset)
+                    }
+                    check(offset.toLong() == total) {
+                        "The observation snapshot did not return its complete row set."
+                    }
+                }
+            }
+        }
+    }.buffer(Channel.RENDEZVOUS)
+
+    override suspend fun queryObservationChartSnapshot(
+        query: HistoryRangeQuery,
+        maxPoints: Int,
+    ): HistoryObservationChartSnapshot = withContext(Dispatchers.IO) {
+        require(query.offset == 0) { "An observation snapshot must start at offset zero." }
+        require(maxPoints in 2..HISTORY_MAX_CHART_POINTS)
+        val sourceScope = requireNotNull(query.sourceScope) { "A chart snapshot requires a source scope." }
+        database.connect().use { connection ->
+            connection.inReadTransaction {
+                val total = countRows(connection, "history_observations", observationFilter(query))
+                var offset = 0
+                var first: HistoryObservation? = null
+                var last: HistoryObservation? = null
+                var incompleteCount = 0L
+                var firstIncompleteObservation: HistoryObservation? = null
+                var firstIncompleteReason: String? = null
+                var completeCount = 0L
+                var firstComplete: HistoryObservation? = null
+                var lastComplete: HistoryObservation? = null
+                var minimumComplete: HistoryObservation? = null
+                var maximumComplete: HistoryObservation? = null
+                val assetSymbols = sortedSetOf<String>()
+                while (offset < total) {
+                    val observations = queryObservationItems(connection, query.copy(offset = offset))
+                    check(observations.isNotEmpty()) {
+                        "The observation snapshot did not return its complete row set."
+                    }
+                    observations.forEach { observation ->
+                        first = earlierObservation(first, observation)
+                        last = laterObservation(last, observation)
+                        assetSymbols += observation.assets.map { it.symbol }
+                        if (observation.status == HistoryObservationStatus.COMPLETE && observation.totalUsd != null) {
+                            completeCount++
+                            firstComplete = earlierObservation(firstComplete, observation)
+                            lastComplete = laterObservation(lastComplete, observation)
+                            minimumComplete = extremeObservation(minimumComplete, observation, minimum = true)
+                            maximumComplete = extremeObservation(maximumComplete, observation, minimum = false)
+                        } else {
+                            incompleteCount++
+                            if (firstIncompleteObservation == null ||
+                                isEarlierObservation(observation, firstIncompleteObservation)
+                            ) {
+                                firstIncompleteObservation = observation
+                                firstIncompleteReason = observation.incompleteReasons.firstOrNull()
+                            }
+                        }
+                    }
+                    offset += observations.size
+                    observationSnapshotReadHookForTest?.invoke(ObservationSnapshotReadPoint.AFTER_PAGE, offset)
+                }
+                check(offset.toLong() == total) {
+                    "The observation snapshot did not return its complete row set."
+                }
+                HistoryObservationChartSnapshot(
+                    chartObservations = queryChartObservations(
+                        connection,
+                        sourceScope,
+                        query.from,
+                        query.until,
+                        maxPoints,
+                    ),
+                    totalObservations = total,
+                    firstObservation = first,
+                    lastObservation = last,
+                    incompleteObservations = incompleteCount,
+                    firstIncompleteReason = firstIncompleteReason,
+                    availableAssetSymbols = assetSymbols.toList(),
+                    completeObservations = completeCount,
+                    firstCompleteObservation = firstComplete,
+                    lastCompleteObservation = lastComplete,
+                    minimumCompleteObservation = minimumComplete,
+                    maximumCompleteObservation = maximumComplete,
+                )
+            }
+        }
+    }
+
     override suspend fun queryChartObservations(
         sourceScope: HistorySourceScope,
         from: Instant?,
@@ -73,6 +212,16 @@ class SqliteHistoryStore(
     ): List<HistoryObservation> = withContext(Dispatchers.IO) {
         require(from == null || until == null || from <= until)
         require(maxPoints in 2..HISTORY_MAX_CHART_POINTS)
+        database.connect().use { connection -> queryChartObservations(connection, sourceScope, from, until, maxPoints) }
+    }
+
+    private fun queryChartObservations(
+        connection: Connection,
+        sourceScope: HistorySourceScope,
+        from: Instant?,
+        until: Instant?,
+        maxPoints: Int,
+    ): List<HistoryObservation> {
         val perBucketSamples = if (maxPoints >= 6) 6 else 5
         val bucketCount = (maxPoints / perBucketSamples).coerceAtLeast(1)
         val includeIncompleteSamples = maxPoints >= 3
@@ -96,49 +245,47 @@ class SqliteHistoryStore(
         val filter = observationFilter(
             HistoryRangeQuery(from = from, until = until, sourceScope = sourceScope, limit = HISTORY_MAX_PAGE_LIMIT),
         )
-        database.connect().use { connection ->
-            connection.prepareStatement(
-                "WITH filtered AS (" +
-                    "SELECT history_observations.*, ROW_NUMBER() OVER " +
-                    "(ORDER BY observed_at_ns, observation_id) AS sample_order, COUNT(*) OVER () AS row_count, " +
-                    "MIN(observed_at_ns) OVER () AS first_time_ns, MAX(observed_at_ns) OVER () AS last_time_ns " +
-                    "FROM history_observations ${filter.where}" +
-                    "), bucketed AS (" +
-                    "SELECT filtered.*, CASE WHEN row_count <= ? THEN sample_order " +
-                    "WHEN last_time_ns = first_time_ns THEN " +
-                    "CAST((sample_order - 1) * ? / row_count AS INTEGER) ELSE " +
-                    "CAST((observed_at_ns - first_time_ns) * 1.0 * ? / " +
-                    "(last_time_ns - first_time_ns + 1) AS INTEGER) END AS bucket_id " +
-                    "FROM filtered WHERE row_count > 0" +
-                    "), ranked AS (" +
-                    "SELECT bucketed.*, ROW_NUMBER() OVER (PARTITION BY bucket_id " +
-                    "ORDER BY sample_order) AS first_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY sample_order DESC) AS last_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, sample_order) AS first_incomplete_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, " +
-                    "sample_order DESC) AS last_incomplete_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
-                    "CAST(total_usd AS NUMERIC), sample_order) AS min_value_in_bucket, " +
-                    "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
-                    "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
-                    "CAST(total_usd AS NUMERIC) DESC, sample_order) AS max_value_in_bucket " +
-                    "FROM bucketed" +
-                    ") SELECT * FROM ranked WHERE first_in_bucket = 1 OR last_in_bucket = 1 " +
-                    incompleteClause + extremaClause +
-                    "ORDER BY observed_at_ns, observation_id",
-            ).use { statement ->
-                bindValues(statement, filter.values)
-                statement.setInt(filter.values.size + 1, maxPoints)
-                statement.setInt(filter.values.size + 2, bucketCount)
-                statement.setInt(filter.values.size + 3, bucketCount)
-                val headers = statement.executeQuery().use { resultSet ->
-                    buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
-                }
-                headers.loadObservationAssets(connection)
+        return connection.prepareStatement(
+            "WITH filtered AS (" +
+                "SELECT history_observations.*, ROW_NUMBER() OVER " +
+                "(ORDER BY observed_at_ns, observation_id) AS sample_order, COUNT(*) OVER () AS row_count, " +
+                "MIN(observed_at_ns) OVER () AS first_time_ns, MAX(observed_at_ns) OVER () AS last_time_ns " +
+                "FROM history_observations ${filter.where}" +
+                "), bucketed AS (" +
+                "SELECT filtered.*, CASE WHEN row_count <= ? THEN sample_order " +
+                "WHEN last_time_ns = first_time_ns THEN " +
+                "CAST((sample_order - 1) * ? / row_count AS INTEGER) ELSE " +
+                "CAST((observed_at_ns - first_time_ns) * 1.0 * ? / " +
+                "(last_time_ns - first_time_ns + 1) AS INTEGER) END AS bucket_id " +
+                "FROM filtered WHERE row_count > 0" +
+                "), ranked AS (" +
+                "SELECT bucketed.*, ROW_NUMBER() OVER (PARTITION BY bucket_id " +
+                "ORDER BY sample_order) AS first_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY sample_order DESC) AS last_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, sample_order) AS first_incomplete_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN status = 'INCOMPLETE' THEN 0 ELSE 1 END, " +
+                "sample_order DESC) AS last_incomplete_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
+                "CAST(total_usd AS NUMERIC), sample_order) AS min_value_in_bucket, " +
+                "ROW_NUMBER() OVER (PARTITION BY bucket_id ORDER BY " +
+                "CASE WHEN total_usd IS NULL THEN 1 ELSE 0 END, " +
+                "CAST(total_usd AS NUMERIC) DESC, sample_order) AS max_value_in_bucket " +
+                "FROM bucketed" +
+                ") SELECT * FROM ranked WHERE first_in_bucket = 1 OR last_in_bucket = 1 " +
+                incompleteClause + extremaClause +
+                "ORDER BY observed_at_ns, observation_id",
+        ).use { statement ->
+            bindValues(statement, filter.values)
+            statement.setInt(filter.values.size + 1, maxPoints)
+            statement.setInt(filter.values.size + 2, bucketCount)
+            statement.setInt(filter.values.size + 3, bucketCount)
+            val headers = statement.executeQuery().use { resultSet ->
+                buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
             }
+            headers.loadObservationAssets(connection)
         }
     }
 
@@ -237,6 +384,54 @@ class SqliteHistoryStore(
         }
     }
 
+    override suspend fun queryKnownAssetClasses(accountIdentityDigest: String): Map<String, String> {
+        requireDigest(accountIdentityDigest)
+        return withContext(Dispatchers.IO) {
+            database.connect().use { connection ->
+                val classesByAsset = mutableMapOf<String, MutableSet<String>>()
+                val ledgerSql = "SELECT DISTINCT asset, asset_class FROM history_ledgers " +
+                    "WHERE account_identity_digest = ? AND asset IS NOT NULL AND asset_class IS NOT NULL"
+                connection.prepareStatement(ledgerSql).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            val asset = rs.getString("asset")?.trim()?.uppercase(Locale.ROOT)
+                            val assetClass = rs.getString("asset_class")?.trim()?.lowercase(Locale.ROOT)
+                            if (!asset.isNullOrBlank() && !assetClass.isNullOrBlank()) {
+                                classesByAsset.computeIfAbsent(asset) { mutableSetOf() }.add(assetClass)
+                                val canonical = Asset.normalizeLedgerAsset(asset).uppercase(Locale.ROOT)
+                                if (canonical != asset) {
+                                    classesByAsset.computeIfAbsent(canonical) { mutableSetOf() }.add(assetClass)
+                                }
+                            }
+                        }
+                    }
+                }
+                val checkpointSql = "SELECT DISTINCT raw_asset_key, raw_asset_class FROM history_balance_checkpoints " +
+                    "WHERE account_identity_digest = ? AND raw_asset_key IS NOT NULL AND raw_asset_class IS NOT NULL"
+                connection.prepareStatement(checkpointSql).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            val asset = rs.getString("raw_asset_key")?.trim()?.uppercase(Locale.ROOT)
+                            val assetClass = rs.getString("raw_asset_class")?.trim()?.lowercase(Locale.ROOT)
+                            if (!asset.isNullOrBlank() && !assetClass.isNullOrBlank()) {
+                                classesByAsset.computeIfAbsent(asset) { mutableSetOf() }.add(assetClass)
+                                val canonical = Asset.normalizeLedgerAsset(asset).uppercase(Locale.ROOT)
+                                if (canonical != asset) {
+                                    classesByAsset.computeIfAbsent(canonical) { mutableSetOf() }.add(assetClass)
+                                }
+                            }
+                        }
+                    }
+                }
+                classesByAsset.mapValues { (_, classes) ->
+                    if (classes.size == 1) classes.single() else "ambiguous"
+                }
+            }
+        }
+    }
+
     override suspend fun beginSyncWindow(window: HistorySyncWindow): HistorySyncStatus = withContext(Dispatchers.IO) {
         requireDigest(window.accountIdentityDigest)
         require(window.startSec <= window.endSec)
@@ -331,7 +526,6 @@ class SqliteHistoryStore(
                 page.entries.forEach { entry ->
                     if (insertTrade(connection, entry.toHistoryTrade(request.accountIdentityDigest))) inserted++
                 }
-                if (inserted > 0) bumpDataRevision(connection)
                 updatePageStatus(connection, request, page.nextCursor, page.rawSize, inserted, page.count)
             }
         }
@@ -360,7 +554,6 @@ class SqliteHistoryStore(
                 page.entries.forEach { entry ->
                     if (insertLedger(connection, entry.toHistoryLedger(request.accountIdentityDigest))) inserted++
                 }
-                if (inserted > 0) bumpDataRevision(connection)
                 updatePageStatus(connection, request, page.nextCursor, page.rawSize, inserted, page.count)
             }
         }
@@ -394,6 +587,29 @@ class SqliteHistoryStore(
                     resultSet.getLong(1)
                 }
             }
+        }
+    }
+
+    override suspend fun currentLedgerRevision(accountIdentityDigest: String): Long = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        database.connect().use { connection -> currentLedgerRevision(connection, accountIdentityDigest) }
+    }
+
+    override suspend fun loadValuationJob(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+    ): HistoryValuationJob? = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        require(sourceAssetScope.isNotBlank())
+        database.connect().use { connection -> loadValuationJob(connection, accountIdentityDigest, sourceAssetScope) }
+    }
+
+    override suspend fun upsertValuationJob(job: HistoryValuationJob) = withContext(Dispatchers.IO) {
+        requireDigest(job.accountIdentityDigest)
+        require(job.sourceAssetScope.isNotBlank())
+        require(job.targetDays > 0)
+        database.connect().use { connection ->
+            connection.inTransaction { upsertValuationJob(connection, job) }
         }
     }
 
@@ -755,12 +971,186 @@ class SqliteHistoryStore(
         }
     }
 
+    override suspend fun queryDailyCheckpointInputPage(
+        accountIdentityDigest: String,
+        throughSec: Long,
+        limit: Int,
+        offset: Int,
+    ): HistoryPage<HistoryBalanceCheckpoint> = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        require(limit in 1..HISTORY_MAX_PAGE_LIMIT)
+        require(offset >= 0)
+        database.connect().use { connection ->
+            val where = "WHERE account_identity_digest = ? AND (observed_at_ns IS NULL OR observed_at_ns <= ?)"
+            val total = connection.prepareStatement(
+                "SELECT COUNT(*) FROM history_balance_checkpoints $where",
+            ).use { statement ->
+                statement.setString(1, accountIdentityDigest)
+                statement.setLong(2, epochSecondEndNanos(throughSec))
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.getLong(1)
+                }
+            }
+            val items = connection.prepareStatement(
+                "SELECT * FROM history_balance_checkpoints $where ORDER BY observed_at_ns, raw_asset_class, " +
+                    "raw_asset_key, ledger_id LIMIT ? OFFSET ?",
+            ).use { statement ->
+                statement.setString(1, accountIdentityDigest)
+                statement.setLong(2, epochSecondEndNanos(throughSec))
+                statement.setInt(3, limit)
+                statement.setInt(4, offset)
+                statement.executeQuery().use { resultSet ->
+                    buildList { while (resultSet.next()) add(resultSet.toBalanceCheckpoint()) }
+                }
+            }
+            HistoryPage(items, total, limit, offset, offset + items.size < total)
+        }
+    }
+
+    override suspend fun saveDailyBalances(balances: List<HistoryDailyBalance>): Unit = withContext(Dispatchers.IO) {
+        if (balances.isEmpty()) return@withContext
+        balances.forEach { balance ->
+            requireDigest(balance.accountIdentityDigest)
+            require(balance.sourceAssetScope.isNotBlank())
+            require(balance.rawAssetKey.isNotBlank())
+            require((balance.status == HistoryDailyBalanceStatus.VALID) == (balance.quantity != null))
+        }
+        database.connect().use { connection ->
+            connection.inTransaction {
+                connection.prepareStatement(
+                    "INSERT INTO history_daily_balances(account_identity_digest, source_asset_scope, day_end_sec, " +
+                        "day_label, partition_key, raw_asset_class, raw_asset_key, quantity, source_ledger_id, " +
+                        "source_observed_at_ns, source_revision, generation_id, status, reason) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT(account_identity_digest, source_asset_scope, day_end_sec, partition_key) " +
+                        "DO UPDATE SET day_label = excluded.day_label, raw_asset_class = excluded.raw_asset_class, " +
+                        "raw_asset_key = excluded.raw_asset_key, quantity = excluded.quantity, " +
+                        "source_ledger_id = excluded.source_ledger_id, " +
+                        "source_observed_at_ns = excluded.source_observed_at_ns, " +
+                        "source_revision = excluded.source_revision, generation_id = excluded.generation_id, " +
+                        "status = excluded.status, reason = excluded.reason",
+                ).use { statement ->
+                    balances.forEach { balance ->
+                        statement.setString(1, balance.accountIdentityDigest)
+                        statement.setString(2, balance.sourceAssetScope)
+                        statement.setLong(3, balance.dayEnd.epochSecond)
+                        statement.setString(4, balance.dayLabel.toString())
+                        statement.setString(5, encodeHistoryAssetPartition(balance.rawAssetClass, balance.rawAssetKey))
+                        statement.setString(6, balance.rawAssetClass)
+                        statement.setString(7, balance.rawAssetKey)
+                        statement.setString(8, balance.quantity?.toPlainString())
+                        statement.setString(9, balance.sourceLedgerId)
+                        setInstant(statement, 10, balance.sourceObservedAt)
+                        statement.setLong(11, balance.sourceRevision)
+                        statement.setString(12, balance.generationId)
+                        statement.setString(13, balance.status.name)
+                        statement.setString(14, balance.reason)
+                        statement.addBatch()
+                    }
+                    statement.executeBatch()
+                }
+            }
+        }
+    }
+
+    override suspend fun replaceDailyBalanceDay(balances: List<HistoryDailyBalance>): Unit =
+        withContext(Dispatchers.IO) {
+            require(balances.isNotEmpty())
+            val first = balances.first()
+            balances.forEach { balance ->
+                requireDigest(balance.accountIdentityDigest)
+                require(balance.accountIdentityDigest == first.accountIdentityDigest)
+                require(balance.sourceAssetScope == first.sourceAssetScope)
+                require(balance.dayEnd == first.dayEnd)
+                require(balance.generationId == first.generationId)
+                require(balance.sourceRevision == first.sourceRevision)
+                require((balance.status == HistoryDailyBalanceStatus.VALID) == (balance.quantity != null))
+            }
+            database.connect().use { connection ->
+                connection.inTransaction {
+                    connection.prepareStatement(
+                        "DELETE FROM history_daily_balances WHERE account_identity_digest = ? " +
+                            "AND source_asset_scope = ? AND day_end_sec = ?",
+                    ).use { statement ->
+                        statement.setString(1, first.accountIdentityDigest)
+                        statement.setString(2, first.sourceAssetScope)
+                        statement.setLong(3, first.dayEnd.epochSecond)
+                        statement.executeUpdate()
+                    }
+                    connection.prepareStatement(
+                        "INSERT INTO history_daily_balances(" +
+                            "account_identity_digest, source_asset_scope, day_end_sec, " +
+                            "day_label, partition_key, raw_asset_class, raw_asset_key, " +
+                            "quantity, source_ledger_id, source_observed_at_ns, " +
+                            "source_revision, generation_id, status, reason) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ).use { statement ->
+                        balances.forEach { balance ->
+                            statement.setString(1, balance.accountIdentityDigest)
+                            statement.setString(2, balance.sourceAssetScope)
+                            statement.setLong(3, balance.dayEnd.epochSecond)
+                            statement.setString(4, balance.dayLabel.toString())
+                            statement.setString(
+                                5,
+                                encodeHistoryAssetPartition(balance.rawAssetClass, balance.rawAssetKey),
+                            )
+                            statement.setString(6, balance.rawAssetClass)
+                            statement.setString(7, balance.rawAssetKey)
+                            statement.setString(8, balance.quantity?.toPlainString())
+                            statement.setString(9, balance.sourceLedgerId)
+                            setInstant(statement, 10, balance.sourceObservedAt)
+                            statement.setLong(11, balance.sourceRevision)
+                            statement.setString(12, balance.generationId)
+                            statement.setString(13, balance.status.name)
+                            statement.setString(14, balance.reason)
+                            statement.addBatch()
+                        }
+                        statement.executeBatch()
+                    }
+                }
+            }
+        }
+
+    override suspend fun queryDailyBalances(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant?,
+        until: Instant?,
+    ): List<HistoryDailyBalance> = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        require(sourceAssetScope.isNotBlank())
+        require(from == null || until == null || from <= until)
+        database.connect().use { connection ->
+            val conditions = mutableListOf("account_identity_digest = ?", "source_asset_scope = ?")
+            val parameters = mutableListOf<Any>(accountIdentityDigest, sourceAssetScope)
+            from?.let {
+                conditions += "day_end_sec >= ?"
+                parameters += it.epochSecond
+            }
+            until?.let {
+                conditions += "day_end_sec < ?"
+                parameters += it.epochSecond
+            }
+            connection.prepareStatement(
+                "SELECT * FROM history_daily_balances WHERE ${conditions.joinToString(" AND ")} " +
+                    "ORDER BY day_end_sec, raw_asset_class, raw_asset_key",
+            ).use { statement ->
+                parameters.forEachIndexed { index, value -> statement.setObject(index + 1, value) }
+                statement.executeQuery().use { resultSet ->
+                    buildList { while (resultSet.next()) add(resultSet.toDailyBalance()) }
+                }
+            }
+        }
+    }
+
     override suspend fun saveDailyPrices(prices: List<HistoryDailyPrice>): Unit = withContext(Dispatchers.IO) {
         if (prices.isEmpty()) return@withContext
         prices.forEach { price ->
             requireDigest(price.accountIdentityDigest)
             require(price.closeUsd.signum() > 0)
             require(price.candleOpen < price.candleEnd)
+            require(price.legs.all { it.pair.isNotBlank() && it.quoteAsset.isNotBlank() && it.close.signum() > 0 })
         }
         database.connect().use { connection ->
             connection.inTransaction {
@@ -782,6 +1172,34 @@ class SqliteHistoryStore(
                         statement.addBatch()
                     }
                     statement.executeBatch()
+                }
+                connection.prepareStatement(
+                    "DELETE FROM history_daily_price_legs WHERE account_identity_digest = ? AND raw_asset_key = ? " +
+                        "AND candle_open_sec = ?",
+                ).use { deleteLegs ->
+                    connection.prepareStatement(
+                        "INSERT INTO history_daily_price_legs(account_identity_digest, raw_asset_key, " +
+                            "candle_open_sec, leg_index, pair, close, quote_asset) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ).use { insertLeg ->
+                        prices.forEach { price ->
+                            deleteLegs.setString(1, price.accountIdentityDigest)
+                            deleteLegs.setString(2, price.rawAssetKey)
+                            deleteLegs.setLong(3, price.candleOpen.epochSecond)
+                            deleteLegs.addBatch()
+                            price.legs.forEachIndexed { index, leg ->
+                                insertLeg.setString(1, price.accountIdentityDigest)
+                                insertLeg.setString(2, price.rawAssetKey)
+                                insertLeg.setLong(3, price.candleOpen.epochSecond)
+                                insertLeg.setInt(4, index)
+                                insertLeg.setString(5, leg.pair)
+                                insertLeg.setString(6, leg.close.toPlainString())
+                                insertLeg.setString(7, leg.quoteAsset)
+                                insertLeg.addBatch()
+                            }
+                        }
+                        deleteLegs.executeBatch()
+                        insertLeg.executeBatch()
+                    }
                 }
             }
         }
@@ -805,7 +1223,7 @@ class SqliteHistoryStore(
                 statement.setLong(3, fromSec)
                 statement.setLong(4, throughSec)
                 statement.executeQuery().use { resultSet ->
-                    buildList { while (resultSet.next()) add(resultSet.toDailyPrice()) }
+                    buildList { while (resultSet.next()) add(resultSet.toDailyPrice(connection)) }
                 }
             }
         }
@@ -830,6 +1248,50 @@ class SqliteHistoryStore(
         }
     }
 
+    override suspend fun publishDailyValues(job: HistoryValuationJob, values: List<HistoryDailyValue>) =
+        withContext(Dispatchers.IO) {
+            requireDigest(job.accountIdentityDigest)
+            require(job.sourceAssetScope.isNotBlank())
+            require(job.state in setOf(HistoryValuationJobState.COMPLETE, HistoryValuationJobState.NEEDS_ATTENTION))
+            require(values.size == job.targetDays) { "A published generation must include every target day." }
+            val ordered = values.sortedBy { it.dayLabel }
+            require(ordered.map { it.dayLabel }.distinct().size == job.targetDays)
+            require(ordered.firstOrNull()?.dayLabel == job.targetStartDay)
+            require(ordered.lastOrNull()?.dayLabel == job.targetEndDay)
+            ordered.forEachIndexed { index, value ->
+                require(value.dayLabel == job.targetStartDay.plusDays(index.toLong()))
+                require(value.accountIdentityDigest == job.accountIdentityDigest)
+                require(value.sourceAssetScope == job.sourceAssetScope)
+                require(value.generationId == job.generationId)
+                require(value.sourceRevision == job.sourceRevision)
+                require(value.calculationPolicyVersion == job.calculationPolicyVersion)
+            }
+            database.connect().use { connection ->
+                connection.inTransaction {
+                    check(currentLedgerRevision(connection, job.accountIdentityDigest) == job.sourceRevision) {
+                        "Ledger evidence changed while this valuation generation was being calculated."
+                    }
+                    connection.prepareStatement(
+                        "DELETE FROM history_daily_assets WHERE account_identity_digest = ? AND source_asset_scope = ?",
+                    ).use { statement ->
+                        statement.setString(1, job.accountIdentityDigest)
+                        statement.setString(2, job.sourceAssetScope)
+                        statement.executeUpdate()
+                    }
+                    connection.prepareStatement(
+                        "DELETE FROM history_daily_values WHERE account_identity_digest = ? AND source_asset_scope = ?",
+                    ).use { statement ->
+                        statement.setString(1, job.accountIdentityDigest)
+                        statement.setString(2, job.sourceAssetScope)
+                        statement.executeUpdate()
+                    }
+                    ordered.forEach { insertDailyValue(connection, it) }
+                    upsertValuationJob(connection, job)
+                    bumpDataRevision(connection)
+                }
+            }
+        }
+
     override suspend fun queryDailyValues(
         accountIdentityDigest: String,
         sourceAssetScope: String,
@@ -840,9 +1302,192 @@ class SqliteHistoryStore(
     ): HistoryPage<HistoryDailyValue> = withContext(Dispatchers.IO) {
         validateDailyQuery(accountIdentityDigest, from, until, limit, offset)
         database.connect().use { connection ->
-            queryDailyValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            connection.inReadTransaction {
+                queryDailyValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            }
         }
     }
+
+    override suspend fun queryDailyValueSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        from: Instant?,
+        until: Instant?,
+    ): HistoryDailyValueSnapshot = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        require(from == null || until == null || from <= until)
+        database.connect().use { connection ->
+            connection.inReadTransaction {
+                val filter = dailyFilter(accountIdentityDigest, sourceAssetScope, from, until)
+                val count = countRows(connection, "history_daily_values", filter)
+                dailyValueSnapshotReadHookForTest?.invoke(
+                    DailyValueSnapshotReadPoint.AFTER_COUNT,
+                    accountIdentityDigest,
+                )
+                check(count <= HISTORY_MAX_DAILY_SNAPSHOT_ROWS) {
+                    "The selected daily account-value range is too large to read as one consistent snapshot."
+                }
+                val limit = count.toInt().coerceAtLeast(1)
+                val page = queryDailyValues(
+                    connection,
+                    accountIdentityDigest,
+                    sourceAssetScope,
+                    from,
+                    until,
+                    limit,
+                    0,
+                    afterHeaders = {
+                        dailyValueSnapshotReadHookForTest?.invoke(
+                            DailyValueSnapshotReadPoint.AFTER_HEADERS,
+                            accountIdentityDigest,
+                        )
+                    },
+                )
+                check(!page.hasMore && page.items.size.toLong() == count) {
+                    "The daily account-value snapshot did not return its complete row set."
+                }
+                HistoryDailyValueSnapshot(
+                    values = page.items,
+                    valuationJob = loadValuationJob(connection, accountIdentityDigest, sourceAssetScope),
+                )
+            }
+        }
+    }
+
+    override suspend fun queryDailyValueStatusSnapshot(
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+    ): HistoryDailyValueStatusSnapshot = withContext(Dispatchers.IO) {
+        requireDigest(accountIdentityDigest)
+        database.connect().use { connection ->
+            connection.inReadTransaction {
+                val summary = connection.prepareStatement(
+                    "SELECT COUNT(*), MIN(day_label), MAX(day_label), " +
+                        "SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), " +
+                        "CASE WHEN COUNT(DISTINCT generation_id) = 1 THEN MIN(generation_id) END, " +
+                        "CASE WHEN COUNT(DISTINCT source_revision) = 1 THEN MIN(source_revision) END " +
+                        "FROM history_daily_values WHERE account_identity_digest = ? AND source_asset_scope = ?",
+                ).use { statement ->
+                    statement.setString(1, HistoryDailyValueStatus.COMPLETE.name)
+                    statement.setString(2, accountIdentityDigest)
+                    statement.setString(3, sourceAssetScope)
+                    statement.executeQuery().use { resultSet ->
+                        check(resultSet.next())
+                        DailyValueStatusCounts(
+                            availableDays = resultSet.getLong(1),
+                            firstDayLabel = resultSet.getString(2)?.let(LocalDate::parse),
+                            lastDayLabel = resultSet.getString(3)?.let(LocalDate::parse),
+                            incompleteDays = resultSet.getLong(4),
+                            publishedGenerationId = resultSet.getString(5),
+                            publishedSourceRevision = resultSet.getLong(6).let { value ->
+                                if (resultSet.wasNull()) null else value
+                            },
+                        )
+                    }
+                }
+                dailyValueSnapshotReadHookForTest?.invoke(
+                    DailyValueSnapshotReadPoint.AFTER_STATUS_SUMMARY,
+                    accountIdentityDigest,
+                )
+                val job = loadValuationJob(connection, accountIdentityDigest, sourceAssetScope)
+                HistoryDailyValueStatusSnapshot(
+                    firstDayLabel = summary.firstDayLabel,
+                    lastDayLabel = summary.lastDayLabel,
+                    availableDays = summary.availableDays,
+                    incompleteDays = summary.incompleteDays,
+                    valuationJob = job,
+                    blockedReasons = job?.let {
+                        queryDailyValueStatusReasons(connection, accountIdentityDigest, sourceAssetScope, it)
+                    }.orEmpty(),
+                    publishedGenerationId = summary.publishedGenerationId,
+                    publishedSourceRevision = summary.publishedSourceRevision,
+                )
+            }
+        }
+    }
+
+    private fun queryDailyValueStatusReasons(
+        connection: Connection,
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+        job: HistoryValuationJob,
+    ): List<HistoryDailyValueStatusReason> {
+        val startDayEnd = job.targetStartDay.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+        val endExclusive = job.targetEndDay.plusDays(2).atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+        return connection.prepareStatement(
+            "WITH blocked_days AS (" +
+                "SELECT d.account_identity_digest, d.source_asset_scope, d.day_end_sec, d.day_label, " +
+                "d.status AS value_status " +
+                "FROM history_daily_values d " +
+                "WHERE d.account_identity_digest = ? AND d.source_asset_scope = ? " +
+                "AND d.day_end_sec >= ? AND d.day_end_sec < ? " +
+                "AND (d.status <> ? OR EXISTS (" +
+                "SELECT 1 FROM history_daily_assets a " +
+                "WHERE a.account_identity_digest = d.account_identity_digest " +
+                "AND a.source_asset_scope = d.source_asset_scope " +
+                "AND a.day_end_sec = d.day_end_sec AND a.status <> ?" +
+                ")) " +
+                "ORDER BY d.day_end_sec LIMIT ?" +
+                ") " +
+                "SELECT b.day_label, b.value_status, a.raw_asset_key, a.status AS asset_status, " +
+                "a.reason AS asset_reason " +
+                "FROM blocked_days b LEFT JOIN history_daily_assets a " +
+                "ON a.account_identity_digest = b.account_identity_digest " +
+                "AND a.source_asset_scope = b.source_asset_scope AND a.day_end_sec = b.day_end_sec " +
+                "AND a.status <> ? " +
+                "ORDER BY b.day_end_sec, a.raw_asset_key LIMIT ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.setString(2, sourceAssetScope)
+            statement.setLong(3, startDayEnd)
+            statement.setLong(4, endExclusive)
+            statement.setString(5, HistoryDailyValueStatus.COMPLETE.name)
+            statement.setString(6, HistoryDailyValueStatus.COMPLETE.name)
+            statement.setInt(7, HISTORY_DAILY_STATUS_REASON_DAY_LIMIT)
+            statement.setString(8, HistoryDailyValueStatus.COMPLETE.name)
+            statement.setInt(9, HISTORY_DAILY_STATUS_REASON_LIMIT)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        val rawAssetKey = resultSet.getString("raw_asset_key")
+                        val valueStatus = HistoryDailyValueStatus.valueOf(resultSet.getString("value_status"))
+                        add(
+                            HistoryDailyValueStatusReason(
+                                dayLabel = LocalDate.parse(resultSet.getString("day_label")),
+                                status = resultSet.getString("asset_status")
+                                    ?.let(HistoryDailyValueStatus::valueOf) ?: valueStatus,
+                                rawAssetKey = rawAssetKey,
+                                reason = if (rawAssetKey == null) {
+                                    null
+                                } else {
+                                    resultSet.getString("asset_reason")
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun countIncompleteDailyValues(accountIdentityDigest: String, sourceAssetScope: String): Long =
+        withContext(Dispatchers.IO) {
+            requireDigest(accountIdentityDigest)
+            database.connect().use { connection ->
+                connection.prepareStatement(
+                    "SELECT COUNT(*) FROM history_daily_values " +
+                        "WHERE account_identity_digest = ? AND source_asset_scope = ? AND status <> ?",
+                ).use { statement ->
+                    statement.setString(1, accountIdentityDigest)
+                    statement.setString(2, sourceAssetScope)
+                    statement.setString(3, HistoryDailyValueStatus.COMPLETE.name)
+                    statement.executeQuery().use { resultSet ->
+                        resultSet.next()
+                        resultSet.getLong(1)
+                    }
+                }
+            }
+        }
 
     override suspend fun queryDailyAssetValues(
         accountIdentityDigest: String,
@@ -854,7 +1499,9 @@ class SqliteHistoryStore(
     ): HistoryPage<HistoryDailyAssetValue> = withContext(Dispatchers.IO) {
         validateDailyQuery(accountIdentityDigest, from, until, limit, offset)
         database.connect().use { connection ->
-            queryDailyAssetValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            connection.inReadTransaction {
+                queryDailyAssetValues(connection, accountIdentityDigest, sourceAssetScope, from, until, limit, offset)
+            }
         }
     }
 
@@ -984,9 +1631,20 @@ class SqliteHistoryStore(
     private fun queryObservations(connection: Connection, query: HistoryRangeQuery): HistoryPage<HistoryObservation> {
         val filter = observationFilter(query)
         val total = countRows(connection, "history_observations", filter)
+        val observations = queryObservationItems(connection, query)
+        return HistoryPage(observations, total, query.limit, query.offset, query.offset + observations.size < total)
+    }
+
+    private fun queryObservationItems(
+        connection: Connection,
+        query: HistoryRangeQuery,
+        oldestFirst: Boolean = false,
+    ): List<HistoryObservation> {
+        val filter = observationFilter(query)
+        val direction = if (oldestFirst) "ASC" else "DESC"
         val headers = connection.prepareStatement(
-            "SELECT * FROM history_observations ${filter.where} ORDER BY observed_at_ns DESC, observation_id " +
-                "DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM history_observations ${filter.where} ORDER BY observed_at_ns $direction, " +
+                "observation_id $direction LIMIT ? OFFSET ?",
         ).use { statement ->
             bindValues(statement, filter.values)
             statement.setInt(filter.values.size + 1, query.limit)
@@ -995,8 +1653,7 @@ class SqliteHistoryStore(
                 buildList { while (resultSet.next()) add(resultSet.toObservationHeader()) }
             }
         }
-        val observations = headers.loadObservationAssets(connection)
-        return HistoryPage(observations, total, query.limit, query.offset, query.offset + observations.size < total)
+        return headers.loadObservationAssets(connection)
     }
 
     private fun queryAssetValues(connection: Connection, query: HistoryRangeQuery): HistoryPage<HistoryAssetValue> {
@@ -1441,10 +2098,11 @@ class SqliteHistoryStore(
             statement.setString(5, request.feed.name)
             check(statement.executeUpdate() == 1) { "History sync window disappeared before page commit." }
         }
+        var coverageChanged = false
         if (state == HistorySyncState.COMPLETE) {
             // A finished window is verified coverage; the union with earlier windows is kept durable
             // so a rolling refresh never makes an already covered period look unsynchronized.
-            mergeCoverageSegment(
+            coverageChanged = mergeCoverageSegment(
                 connection = connection,
                 accountIdentityDigest = request.accountIdentityDigest,
                 feed = request.feed,
@@ -1452,6 +2110,10 @@ class SqliteHistoryStore(
                 endSec = request.endSec,
                 updatedAtNs = request.committedAt.toEpochNanos(),
             )
+        }
+        if (insertedCount > 0) bumpDataRevision(connection)
+        if (request.feed == HistoryFeed.LEDGERS && (insertedCount > 0 || coverageChanged)) {
+            bumpLedgerRevision(connection, request.accountIdentityDigest)
         }
         persistJobProgress(
             connection = connection,
@@ -1750,6 +2412,7 @@ class SqliteHistoryStore(
         until: Instant?,
         limit: Int,
         offset: Int,
+        afterHeaders: (() -> Unit)? = null,
     ): HistoryPage<HistoryDailyValue> {
         val filter = dailyFilter(accountIdentityDigest, sourceAssetScope, from, until)
         val total = countRows(connection, "history_daily_values", filter)
@@ -1763,6 +2426,7 @@ class SqliteHistoryStore(
                 buildList { while (resultSet.next()) add(resultSet.toDailyHeader()) }
             }
         }
+        afterHeaders?.invoke()
         val assetsByDay = readDailyAssets(connection, accountIdentityDigest, sourceAssetScope, headers)
         val values = headers.map { header -> header.copy(assets = assetsByDay[header.dayEnd.epochSecond].orEmpty()) }
         return HistoryPage(values, total, limit, offset, offset + values.size < total)
@@ -1827,9 +2491,15 @@ class SqliteHistoryStore(
         }
         connection.prepareStatement(
             "INSERT INTO history_daily_values(account_identity_digest, source_asset_scope, day_end_sec, total_usd, " +
-                "status, source) VALUES (?, ?, ?, ?, ?, ?) " +
+                "status, source, day_label, generation_id, calculation_policy_version, " +
+                "source_revision, updated_at_ns) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT(account_identity_digest, source_asset_scope, day_end_sec) DO UPDATE SET " +
-                "total_usd = excluded.total_usd, status = excluded.status, source = excluded.source",
+                "total_usd = excluded.total_usd, status = excluded.status, " +
+                "source = excluded.source, " +
+                "day_label = excluded.day_label, generation_id = excluded.generation_id, " +
+                "calculation_policy_version = excluded.calculation_policy_version, " +
+                "source_revision = excluded.source_revision, updated_at_ns = excluded.updated_at_ns",
         ).use { statement ->
             statement.setString(1, value.accountIdentityDigest)
             statement.setString(2, value.sourceAssetScope)
@@ -1837,6 +2507,11 @@ class SqliteHistoryStore(
             statement.setString(4, value.totalUsd?.toPlainString())
             statement.setString(5, value.status.name)
             statement.setString(6, value.source)
+            statement.setString(7, value.dayLabel.toString())
+            statement.setString(8, value.generationId)
+            statement.setString(9, value.calculationPolicyVersion)
+            statement.setLong(10, value.sourceRevision)
+            statement.setLong(11, nowProvider().toEpochNanos())
             statement.executeUpdate()
         }
         connection.prepareStatement(
@@ -1852,7 +2527,8 @@ class SqliteHistoryStore(
             connection.prepareStatement(
                 "INSERT INTO history_daily_assets(account_identity_digest, source_asset_scope, day_end_sec, " +
                     "partition_key, raw_asset_class, raw_asset_key, quantity, price_usd, value_usd, price_pair, " +
-                    "price_candle_open_sec, price_source, status, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "price_candle_open_sec, price_source, status, reason) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ).use { statement ->
                 value.assets.forEach { asset ->
                     statement.setString(1, value.accountIdentityDigest)
@@ -1929,12 +2605,104 @@ class SqliteHistoryStore(
         require(value.matches(HEX_DIGEST)) { "History account scope must be a SHA-256 identity digest." }
     }
 
+    private fun currentLedgerRevision(connection: Connection, accountIdentityDigest: String): Long =
+        connection.prepareStatement(
+            "SELECT revision FROM history_ledger_revisions WHERE account_identity_digest = ?",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getLong("revision") else 0L
+            }
+        }
+
+    private fun loadValuationJob(
+        connection: Connection,
+        accountIdentityDigest: String,
+        sourceAssetScope: String,
+    ): HistoryValuationJob? = connection.prepareStatement(
+        "SELECT * FROM history_valuation_jobs WHERE account_identity_digest = ? AND source_asset_scope = ?",
+    ).use { statement ->
+        statement.setString(1, accountIdentityDigest)
+        statement.setString(2, sourceAssetScope)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) resultSet.toValuationJob() else null
+        }
+    }
+
+    private fun upsertValuationJob(connection: Connection, job: HistoryValuationJob) {
+        connection.prepareStatement(
+            "INSERT INTO history_valuation_jobs(account_identity_digest, source_asset_scope, generation_id, state, " +
+                "stage, target_start_day, target_end_day, next_day, target_days, balances_processed, balances_valid, " +
+                "balances_blocked, required_price_tasks, completed_price_tasks, " +
+                "complete_value_days, blocked_value_days, " +
+                "source_revision, calculation_policy_version, last_progress_at_ns, next_retry_at_ns, " +
+                "last_success_at_ns, last_error, retry_attempt, " +
+                "started_at_ns, updated_at_ns) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "ON CONFLICT(account_identity_digest, source_asset_scope) DO UPDATE SET " +
+                "generation_id = excluded.generation_id, state = excluded.state, stage = excluded.stage, " +
+                "target_start_day = excluded.target_start_day, target_end_day = excluded.target_end_day, " +
+                "next_day = excluded.next_day, target_days = excluded.target_days, " +
+                "balances_processed = excluded.balances_processed, balances_valid = excluded.balances_valid, " +
+                "balances_blocked = excluded.balances_blocked, required_price_tasks = excluded.required_price_tasks, " +
+                "completed_price_tasks = excluded.completed_price_tasks, " +
+                "complete_value_days = excluded.complete_value_days, " +
+                "blocked_value_days = excluded.blocked_value_days, source_revision = excluded.source_revision, " +
+                "calculation_policy_version = excluded.calculation_policy_version, " +
+                "last_progress_at_ns = excluded.last_progress_at_ns, next_retry_at_ns = excluded.next_retry_at_ns, " +
+                "last_success_at_ns = excluded.last_success_at_ns, last_error = excluded.last_error, " +
+                "retry_attempt = excluded.retry_attempt, started_at_ns = excluded.started_at_ns, " +
+                "updated_at_ns = excluded.updated_at_ns",
+        ).use { statement ->
+            statement.setString(1, job.accountIdentityDigest)
+            statement.setString(2, job.sourceAssetScope)
+            statement.setString(3, job.generationId)
+            statement.setString(4, job.state.name)
+            statement.setString(5, job.stage.name)
+            statement.setString(6, job.targetStartDay.toString())
+            statement.setString(7, job.targetEndDay.toString())
+            statement.setString(8, job.nextDay?.toString())
+            statement.setInt(9, job.targetDays)
+            statement.setInt(10, job.balancesProcessed)
+            statement.setInt(11, job.balancesValid)
+            statement.setInt(12, job.balancesBlocked)
+            statement.setNullableInt(13, job.requiredPriceTasks)
+            statement.setInt(14, job.completedPriceTasks)
+            statement.setInt(15, job.completeValueDays)
+            statement.setInt(16, job.blockedValueDays)
+            statement.setLong(17, job.sourceRevision)
+            statement.setString(18, job.calculationPolicyVersion)
+            setInstant(statement, 19, job.lastProgressAt)
+            setInstant(statement, 20, job.nextRetryAt)
+            setInstant(statement, 21, job.lastSuccessAt)
+            statement.setString(22, job.lastError)
+            statement.setInt(23, job.retryAttempt)
+            statement.setLong(24, job.startedAt.toEpochNanos())
+            statement.setLong(25, job.updatedAt.toEpochNanos())
+            statement.executeUpdate()
+        }
+    }
+
+    private fun bumpLedgerRevision(connection: Connection, accountIdentityDigest: String) {
+        connection.prepareStatement(
+            "INSERT INTO history_ledger_revisions(account_identity_digest, revision) VALUES (?, 1) " +
+                "ON CONFLICT(account_identity_digest) DO UPDATE SET revision = revision + 1",
+        ).use { statement ->
+            statement.setString(1, accountIdentityDigest)
+            check(statement.executeUpdate() == 1)
+        }
+    }
+
     private fun setInstant(statement: PreparedStatement, index: Int, value: Instant?) {
         if (value == null) statement.setObject(index, null) else statement.setLong(index, value.toEpochNanos())
     }
 
     private fun PreparedStatement.setNullableLong(index: Int, value: Long?) {
         if (value == null) setObject(index, null) else setLong(index, value)
+    }
+
+    private fun PreparedStatement.setNullableInt(index: Int, value: Int?) {
+        if (value == null) setObject(index, null) else setInt(index, value)
     }
 
     private fun bumpDataRevision(connection: Connection) {
@@ -2037,6 +2805,34 @@ class SqliteHistoryStore(
         updatedAt = getLong("updated_at_ns").toInstantNanos(),
     )
 
+    private fun ResultSet.toValuationJob() = HistoryValuationJob(
+        accountIdentityDigest = getString("account_identity_digest"),
+        sourceAssetScope = getString("source_asset_scope"),
+        generationId = getString("generation_id"),
+        state = HistoryValuationJobState.valueOf(getString("state")),
+        stage = HistoryValuationStage.valueOf(getString("stage")),
+        targetStartDay = java.time.LocalDate.parse(getString("target_start_day")),
+        targetEndDay = java.time.LocalDate.parse(getString("target_end_day")),
+        nextDay = getString("next_day")?.let(java.time.LocalDate::parse),
+        targetDays = getInt("target_days"),
+        balancesProcessed = getInt("balances_processed"),
+        balancesValid = getInt("balances_valid"),
+        balancesBlocked = getInt("balances_blocked"),
+        requiredPriceTasks = getNullableInt("required_price_tasks"),
+        completedPriceTasks = getInt("completed_price_tasks"),
+        completeValueDays = getInt("complete_value_days"),
+        blockedValueDays = getInt("blocked_value_days"),
+        sourceRevision = getLong("source_revision"),
+        calculationPolicyVersion = getString("calculation_policy_version"),
+        lastProgressAt = getNullableLong("last_progress_at_ns")?.toInstantNanos(),
+        nextRetryAt = getNullableLong("next_retry_at_ns")?.toInstantNanos(),
+        lastSuccessAt = getNullableLong("last_success_at_ns")?.toInstantNanos(),
+        lastError = getString("last_error"),
+        updatedAt = getLong("updated_at_ns").toInstantNanos(),
+        retryAttempt = getInt("retry_attempt"),
+        startedAt = getLong("started_at_ns").toInstantNanos(),
+    )
+
     private fun <T> Connection.inTransaction(block: () -> T): T = transaction(block)
 
     private fun <T> Connection.inReadTransaction(block: () -> T): T {
@@ -2051,16 +2847,53 @@ class SqliteHistoryStore(
         }
     }
 
-    private fun <T> Connection.transaction(block: () -> T): T {
-        val originalAutoCommit = autoCommit
+    private suspend fun <T> Connection.inReadTransactionSuspending(block: suspend () -> T): T {
+        val config = unwrap(SQLiteConnection::class.java).connectionConfig
+        val originalMode = config.transactionMode
+        config.transactionMode = SQLiteConfig.TransactionMode.DEFERRED
         autoCommit = false
         return try {
             block().also { commit() }
-        } catch (error: Exception) {
-            rollback()
+        } catch (error: Throwable) {
+            runCatching { rollback() }.exceptionOrNull()?.let(error::addSuppressed)
             throw error
         } finally {
-            autoCommit = originalAutoCommit
+            config.transactionMode = originalMode
+        }
+    }
+
+    private fun earlierObservation(current: HistoryObservation?, candidate: HistoryObservation): HistoryObservation =
+        if (current == null || isEarlierObservation(candidate, current)) candidate else current
+
+    private fun laterObservation(current: HistoryObservation?, candidate: HistoryObservation): HistoryObservation =
+        if (current == null || isEarlierObservation(current, candidate)) candidate else current
+
+    private fun isEarlierObservation(first: HistoryObservation, second: HistoryObservation): Boolean =
+        compareValuesBy(first, second, HistoryObservation::observedAt, HistoryObservation::observationId) < 0
+
+    private fun extremeObservation(
+        current: HistoryObservation?,
+        candidate: HistoryObservation,
+        minimum: Boolean,
+    ): HistoryObservation {
+        if (current == null) return candidate
+        val comparison = candidate.totalUsd!!.compareTo(current.totalUsd!!)
+        return when {
+            minimum && comparison < 0 -> candidate
+            !minimum && comparison > 0 -> candidate
+            comparison == 0 && isEarlierObservation(candidate, current) -> candidate
+            else -> current
+        }
+    }
+
+    private fun <T> Connection.transaction(block: () -> T): T {
+        // This connection closes with the store operation; resetting autoCommit after rollback could commit.
+        autoCommit = false
+        return try {
+            block().also { commit() }
+        } catch (error: Throwable) {
+            runCatching { rollback() }.exceptionOrNull()?.let(error::addSuppressed)
+            throw error
         }
     }
 
@@ -2250,6 +3083,22 @@ class SqliteHistoryStore(
         reason = getString("reason"),
     )
 
+    private fun ResultSet.toDailyBalance() = HistoryDailyBalance(
+        dayEnd = Instant.ofEpochSecond(getLong("day_end_sec")),
+        dayLabel = java.time.LocalDate.parse(getString("day_label")),
+        accountIdentityDigest = getString("account_identity_digest"),
+        sourceAssetScope = getString("source_asset_scope"),
+        rawAssetClass = getString("raw_asset_class"),
+        rawAssetKey = getString("raw_asset_key"),
+        quantity = getString("quantity")?.toBigDecimalOrNull(),
+        sourceLedgerId = getString("source_ledger_id"),
+        sourceObservedAt = getNullableLong("source_observed_at_ns")?.toInstantNanos(),
+        sourceRevision = getLong("source_revision"),
+        generationId = getString("generation_id"),
+        status = HistoryDailyBalanceStatus.valueOf(getString("status")),
+        reason = getString("reason"),
+    )
+
     private fun ResultSet.toSyncStatus() = HistorySyncStatus(
         accountIdentityDigest = getString("account_identity_digest"),
         feed = HistoryFeed.valueOf(getString("feed")),
@@ -2265,7 +3114,7 @@ class SqliteHistoryStore(
         lastError = getString("last_error"),
     )
 
-    private fun ResultSet.toDailyPrice() = HistoryDailyPrice(
+    private fun ResultSet.toDailyPrice(connection: Connection) = HistoryDailyPrice(
         accountIdentityDigest = getString("account_identity_digest"),
         rawAssetKey = getString("raw_asset_key"),
         pair = getString("pair"),
@@ -2273,6 +3122,27 @@ class SqliteHistoryStore(
         candleEnd = Instant.ofEpochSecond(getLong("candle_end_sec")),
         closeUsd = getString("close_usd").toBigDecimal(),
         source = getString("source"),
+        legs = connection.prepareStatement(
+            "SELECT pair, close, quote_asset FROM history_daily_price_legs " +
+                "WHERE account_identity_digest = ? AND raw_asset_key = ? AND candle_open_sec = ? ORDER BY leg_index",
+        ).use { statement ->
+            statement.setString(1, getString("account_identity_digest"))
+            statement.setString(2, getString("raw_asset_key"))
+            statement.setLong(3, getLong("candle_open_sec"))
+            statement.executeQuery().use { legs ->
+                buildList {
+                    while (legs.next()) {
+                        add(
+                            HistoryDailyPriceLeg(
+                                pair = legs.getString("pair"),
+                                close = legs.getString("close").toBigDecimal(),
+                                quoteAsset = legs.getString("quote_asset"),
+                            ),
+                        )
+                    }
+                }
+            }
+        },
     )
 
     private fun ResultSet.toDailyHeader() = HistoryDailyValue(
@@ -2283,6 +3153,10 @@ class SqliteHistoryStore(
         status = HistoryDailyValueStatus.valueOf(getString("status")),
         source = getString("source"),
         assets = emptyList(),
+        dayLabel = java.time.LocalDate.parse(getString("day_label")),
+        generationId = getString("generation_id"),
+        calculationPolicyVersion = getString("calculation_policy_version"),
+        sourceRevision = getLong("source_revision"),
     )
 
     private fun ResultSet.toDailyAssetValue() = HistoryDailyAssetValue(
@@ -2306,6 +3180,8 @@ class SqliteHistoryStore(
 
     private companion object {
         const val MAX_CYCLE_ACTIVITY_LIMIT = 100
+        const val HISTORY_DAILY_STATUS_REASON_DAY_LIMIT = 50
+        const val HISTORY_DAILY_STATUS_REASON_LIMIT = 50
         val HEX_DIGEST = Regex("[0-9a-f]{64}")
     }
 }

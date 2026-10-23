@@ -1,10 +1,249 @@
 package com.gemini.krakenbot.service.history
 
+import com.gemini.krakenbot.model.Asset
+import kotlinx.coroutines.flow.collect
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class HistoryCsvExporter(private val historyService: HistoryService, private val historyStore: HistoryStore) {
+    suspend fun exportDailyValues(query: HistoryDailyValueExportRange, writeChunk: suspend (String) -> Unit): Long {
+        if (query.intraday) return exportIntradayValues(query, writeChunk)
+        val values = historyStore.queryDailyValueSnapshot(
+            accountIdentityDigest = query.accountIdentityDigest,
+            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+            from = query.from,
+            until = query.until,
+        ).values
+        writeChunk(csvRow(DAILY_VALUE_HEADERS))
+        values.chunked(EXPORT_PAGE_SIZE).forEach { chunk ->
+            writeChunk(
+                buildString {
+                    chunk.forEach { value ->
+                        append(
+                            csvRow(
+                                listOf(
+                                    value.dayLabel.toString(),
+                                    value.totalUsd?.toPlainString(),
+                                    value.status.name,
+                                    value.generationId.asCsvText(),
+                                    value.sourceRevision.toString(),
+                                    value.assets.filter {
+                                        it.status != HistoryDailyValueStatus.COMPLETE &&
+                                            !it.rawAssetClass.equals("equity", ignoreCase = true)
+                                    }
+                                        .joinToString("; ") { asset ->
+                                            "${Asset.normalizeLedgerAsset(
+                                                asset.rawAssetKey,
+                                            )}: ${asset.reason ?: asset.status.name}"
+                                        }.asCsvText(),
+                                ),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+        return values.size.toLong()
+    }
+
+    suspend fun exportDailyHoldings(
+        query: HistoryDailyHoldingsExportQuery,
+        writeChunk: suspend (String) -> Unit,
+    ): Long {
+        query.sampleAt?.let { return exportIntradayHoldings(query, it, writeChunk) }
+        val dayEnd = query.day.plusDays(1).atStartOfDay(ZoneId.of("UTC")).toInstant()
+        val total = historyStore.queryDailyValueSnapshot(
+            accountIdentityDigest = query.accountIdentityDigest,
+            sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+            from = dayEnd,
+            until = dayEnd.plusSeconds(1),
+        ).values.firstOrNull()
+        writeChunk(csvRow(DAILY_HOLDING_HEADERS))
+        if (total == null) {
+            writeChunk(
+                csvRow(
+                    listOf(
+                        query.day.toString(),
+                        null,
+                        "OUTSIDE_COVERAGE",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "No daily mark is available.",
+                    ),
+                ),
+            )
+            return 1
+        }
+        var rowsWritten = 0L
+        val includedAssets = total.assets.filterNot { asset ->
+            asset.rawAssetClass.equals("equity", ignoreCase = true)
+        }
+        if (includedAssets.isNotEmpty()) {
+            writeChunk(
+                buildString {
+                    includedAssets.forEach { asset ->
+                        append(
+                            csvRow(
+                                listOf(
+                                    query.day.toString(),
+                                    total.totalUsd?.toPlainString(),
+                                    total.status.name,
+                                    Asset.normalizeLedgerAsset(asset.rawAssetKey).asCsvText(),
+                                    asset.quantity?.toPlainString(),
+                                    asset.priceUsd?.toPlainString(),
+                                    asset.valueUsd?.toPlainString(),
+                                    asset.status.name,
+                                    asset.reason.asCsvText(),
+                                ),
+                            ),
+                        )
+                    }
+                },
+            )
+            rowsWritten += includedAssets.size
+        }
+        if (rowsWritten == 0L) {
+            writeChunk(
+                csvRow(
+                    listOf(
+                        query.day.toString(),
+                        total.totalUsd?.toPlainString(),
+                        total.status.name,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "No held assets.",
+                    ),
+                ),
+            )
+            return 1
+        }
+        return rowsWritten
+    }
+
+    private suspend fun exportIntradayValues(
+        query: HistoryDailyValueExportRange,
+        writeChunk: suspend (String) -> Unit,
+    ): Long {
+        writeChunk(csvRow(INTRADAY_VALUE_HEADERS))
+        var rowsWritten = 0L
+        historyStore.queryObservationSnapshotPages(intradayQuery(query.accountIdentityDigest, query.from, query.until))
+            .collect { observations ->
+                writeChunk(
+                    buildString {
+                        observations.forEach { observation ->
+                            append(
+                                csvRow(
+                                    listOf(
+                                        observation.observedAt.toString(),
+                                        observation.totalUsd?.toPlainString(),
+                                        observation.status.name,
+                                        observation.cycleId.asCsvText(),
+                                        observation.incompleteReasons.joinToString("; ").asCsvText(),
+                                    ),
+                                ),
+                            )
+                        }
+                    },
+                )
+                rowsWritten += observations.size
+            }
+        return rowsWritten
+    }
+
+    private suspend fun exportIntradayHoldings(
+        query: HistoryDailyHoldingsExportQuery,
+        sampleAt: Instant,
+        writeChunk: suspend (String) -> Unit,
+    ): Long {
+        val observation = queryIntradayObservations(
+            accountIdentityDigest = query.accountIdentityDigest,
+            from = sampleAt,
+            until = sampleAt.plusNanos(1),
+        ).singleOrNull { it.observedAt == sampleAt }
+        writeChunk(csvRow(INTRADAY_HOLDING_HEADERS))
+        if (observation == null) {
+            writeChunk(
+                csvRow(
+                    listOf(
+                        sampleAt.toString(),
+                        null,
+                        "OUTSIDE_COVERAGE",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "No account value is available at this time.",
+                    ),
+                ),
+            )
+            return 1
+        }
+        val holdings = observation.assets
+        if (holdings.isEmpty()) {
+            writeChunk(
+                csvRow(
+                    listOf(
+                        observation.observedAt.toString(),
+                        observation.totalUsd?.toPlainString(),
+                        observation.status.name,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "No held assets.",
+                    ),
+                ),
+            )
+            return 1
+        }
+        writeChunk(
+            buildString {
+                holdings.forEach { asset ->
+                    append(
+                        csvRow(
+                            listOf(
+                                observation.observedAt.toString(),
+                                observation.totalUsd?.toPlainString(),
+                                observation.status.name,
+                                Asset.normalizeLedgerAsset(asset.symbol).asCsvText(),
+                                asset.quantity?.toPlainString(),
+                                asset.priceUsd?.toPlainString(),
+                                asset.valueUsd?.toPlainString(),
+                                asset.status.name,
+                                asset.reason.asCsvText(),
+                            ),
+                        ),
+                    )
+                }
+            },
+        )
+        return holdings.size.toLong()
+    }
+
+    private suspend fun queryIntradayObservations(
+        accountIdentityDigest: String,
+        from: Instant?,
+        until: Instant,
+    ): List<HistoryObservation> =
+        historyStore.queryObservationsSnapshot(intradayQuery(accountIdentityDigest, from, until))
+            .sortedBy { it.observedAt }
+
+    private fun intradayQuery(accountIdentityDigest: String, from: Instant?, until: Instant) = HistoryRangeQuery(
+        from = from,
+        until = until,
+        sourceScope = HistoryObservationValuator.fullAccountScope(accountIdentityDigest),
+        limit = HISTORY_MAX_PAGE_LIMIT,
+    )
+
     suspend fun exportTrades(query: HistoryEventQuery, zone: ZoneId, writeChunk: suspend (String) -> Unit): Long =
         stream(
             headers = TRADE_HEADERS,
@@ -250,6 +489,47 @@ class HistoryCsvExporter(private val historyService: HistoryService, private val
             "local_timestamp",
             "display_timezone",
             "source_linkage",
+        )
+
+        val DAILY_VALUE_HEADERS = listOf(
+            "day_utc",
+            "account_value_usd",
+            "availability",
+            "generation_id",
+            "source_revision",
+            "missing_asset_reasons",
+        )
+
+        val DAILY_HOLDING_HEADERS = listOf(
+            "day_utc",
+            "account_value_usd",
+            "account_availability",
+            "asset",
+            "quantity",
+            "historical_price_usd",
+            "value_usd",
+            "availability",
+            "reason",
+        )
+
+        val INTRADAY_VALUE_HEADERS = listOf(
+            "timestamp_utc",
+            "account_value_usd",
+            "availability",
+            "cycle_id",
+            "missing_asset_reasons",
+        )
+
+        val INTRADAY_HOLDING_HEADERS = listOf(
+            "timestamp_utc",
+            "account_value_usd",
+            "account_availability",
+            "asset",
+            "quantity",
+            "price_usd",
+            "value_usd",
+            "availability",
+            "reason",
         )
     }
 }

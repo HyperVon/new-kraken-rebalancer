@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.HtmlIds
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -46,6 +47,75 @@ class HistoryRangeTest : StringSpec() {
 
                 bitcoin.hidden shouldBe true
                 ethereum.hidden shouldBe false
+            } finally {
+                root.remove()
+            }
+        }
+
+        "account value asset filter follows chart options and refreshes only the selected series" {
+            val root = historyRangeFixture()
+            val assetFilter = document.createElement("select") as HTMLSelectElement
+            assetFilter.id = HtmlIds.HISTORY_VALUE_ASSET_FILTER
+            root.appendChild(assetFilter)
+            val requests = mutableListOf<String>()
+            val destinations = mutableListOf<String>()
+            val fetch: (String, (dynamic) -> Unit, () -> Unit) -> Unit = { url, success, _ ->
+                requests += url
+                when {
+                    url == "/api/history/scopes" -> success(historyScopes())
+
+                    url.startsWith("/api/history/charts?") -> {
+                        val response = historyApiCharts(
+                            preset = "30d",
+                            from = "2026-02-08T00:00:00Z",
+                            to = "2026-03-10T00:00:00Z",
+                            timezone = "UTC",
+                            points = listOf("2026-03-09T12:00:00Z" to 100.0),
+                        )
+                        response.availableValueAssets = arrayOf("BTC", "USD")
+                        response.selectedValueAsset = historyQuery(url).get("valueAsset")
+                        success(response)
+                    }
+
+                    url.startsWith("/api/history/summary?") -> {
+                        val chart = historyApiCharts(
+                            preset = "30d",
+                            from = "2026-02-08T00:00:00Z",
+                            to = "2026-03-10T00:00:00Z",
+                            timezone = "UTC",
+                            points = listOf("2026-03-09T12:00:00Z" to 100.0),
+                        )
+                        success(historyApiSummary(chart))
+                    }
+                }
+            }
+
+            try {
+                initHistoryRangeControls(
+                    currentQuery = "?range=30d&valueAsset=BTC",
+                    fetchJson = fetch,
+                    pushState = destinations::add,
+                    timezone = { "UTC" },
+                )
+
+                assetFilter.value shouldBe "BTC"
+                assetFilter.options.length shouldBe 3
+                historyQuery(requests.first { it.startsWith("/api/history/charts?") })
+                    .get("valueAsset") as? String shouldBe "BTC"
+
+                assetFilter.value = "USD"
+                assetFilter.dispatchEvent(Event("change"))
+                historyQuery(destinations.last()).get("valueAsset") as? String shouldBe "USD"
+                historyQuery(requests.last { it.startsWith("/api/history/charts?") })
+                    .get("valueAsset") as? String shouldBe "USD"
+                assetFilter.value shouldBe "USD"
+
+                assetFilter.value = ""
+                assetFilter.dispatchEvent(Event("change"))
+                historyQuery(destinations.last()).get("valueAsset") as? String shouldBe null
+                historyQuery(requests.last { it.startsWith("/api/history/charts?") })
+                    .get("valueAsset") as? String shouldBe null
+                assetFilter.value shouldBe ""
             } finally {
                 root.remove()
             }
@@ -423,10 +493,10 @@ class HistoryRangeTest : StringSpec() {
                 val sparse = root.querySelector("#history-coverage-sparse") as HTMLElement
                 sparse.hidden shouldBe false
                 sparse.textContent shouldBe
-                    "Portfolio values have been recorded since 2026-03-09. " +
+                    "Portfolio history starts on 2026-03-09. " +
                     "Older trades and transactions are available separately."
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 1 · Incomplete · Gaps: 2"
+                    "Account value points: 1 · Incomplete · Gaps: 2"
                 (root.querySelector("#history-scope-link") as HTMLElement).hidden shouldBe false
 
                 val svg = root.querySelector("#history-value-chart svg")!!
@@ -470,10 +540,10 @@ class HistoryRangeTest : StringSpec() {
                 val sparse = root.querySelector("#history-coverage-sparse") as HTMLElement
                 sparse.hidden shouldBe false
                 sparse.textContent shouldBe
-                    "Portfolio values have been recorded since 2026-03-09. " +
+                    "Portfolio history starts on 2026-03-09. " +
                     "Older trades and transactions are available separately."
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 2 · Complete · Gaps: 0"
+                    "Account value points: 2 · Complete · Gaps: 0"
 
                 val svg = root.querySelector("#history-value-chart svg")!!
                 svg.getAttribute("data-full-from") shouldBe "2026-02-08T00:00:00Z"
@@ -526,11 +596,12 @@ class HistoryRangeTest : StringSpec() {
                 initHistoryRangeControls(currentQuery = "?range=all", fetchJson = fetch, timezone = { "UTC" })
 
                 (root.querySelector("#history-coverage-selected") as HTMLElement).textContent shouldBe
-                    "All recorded data – 2026-03-10"
-                (root.querySelector("#history-coverage-trades") as HTMLElement).textContent shouldBe "No data recorded"
-                (root.querySelector("#history-coverage-ledgers") as HTMLElement).textContent shouldBe "No data recorded"
+                    "All history – 2026-03-10"
+                (root.querySelector("#history-coverage-trades") as HTMLElement).textContent shouldBe "No data available"
+                (root.querySelector("#history-coverage-ledgers") as HTMLElement).textContent shouldBe
+                    "No data available"
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 19 · Incomplete · Gaps: 1"
+                    "Account value points: 19 · Incomplete · Gaps: 1"
                 (root.querySelector("#history-scope-link") as HTMLElement).hidden shouldBe true
 
                 val svg = root.querySelector("#history-value-chart svg")!!
@@ -574,7 +645,7 @@ class HistoryRangeTest : StringSpec() {
                 initHistoryRangeControls(currentQuery = "?range=all", fetchJson = fetch, timezone = { "UTC" })
 
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 2403 · Plotted points: 3 · Incomplete · Gaps: 6"
+                    "Account value points: 2403 · Plotted points: 3 · Incomplete · Gaps: 6"
             } finally {
                 root.remove()
             }
@@ -609,10 +680,10 @@ class HistoryRangeTest : StringSpec() {
                 initHistoryRangeControls(currentQuery = "?range=30d", fetchJson = fetch)
 
                 (root.querySelector("#history-coverage-selected") as HTMLElement).textContent shouldBe
-                    "All recorded data"
-                (root.querySelector("#history-coverage-values") as HTMLElement).textContent shouldBe "No data recorded"
+                    "All history"
+                (root.querySelector("#history-coverage-values") as HTMLElement).textContent shouldBe "No data available"
                 (root.querySelector("#history-coverage-count") as HTMLElement).textContent shouldBe
-                    "Recorded observations: 0 · Complete · Gaps: 0"
+                    "Account value points: 0 · Complete · Gaps: 0"
                 (root.querySelector("#history-coverage-sparse") as HTMLElement).hidden shouldBe true
                 root.querySelector("#history-value-chart circle[data-value]") shouldBe null
                 root.querySelector("#history-value-chart svg")!!.textContent!!.contains(
@@ -645,7 +716,7 @@ private fun historyRangeFixture(): HTMLElement {
             <p id="history-range-custom-error" hidden></p>
         </div>
         <select id="history-scope-select"></select>
-        <a href="#history-scope-select" id="history-scope-link" hidden>Earlier recorded portfolios available</a>
+        <a href="#history-scope-select" id="history-scope-link" hidden>Earlier portfolio periods available</a>
         <div id="history-coverage-selected"></div>
         <div id="history-coverage-values"></div>
         <div id="history-coverage-trades"></div>

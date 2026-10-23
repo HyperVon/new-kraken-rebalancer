@@ -3,13 +3,20 @@ package com.gemini.krakenbot.service.history
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.confirmVerified
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.flow.flowOf
+import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 
 class HistoryCsvExporterTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -28,6 +35,435 @@ class HistoryCsvExporterTest : StringSpec() {
     )
 
     init {
+        coEvery { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) } answers {
+            val limit = arg<Int>(4)
+            val offset = arg<Int>(5)
+            HistoryPage(emptyList(), 0L, limit, offset, false)
+        }
+        coEvery { historyStore.queryDailyAssetValues(any(), any(), any(), any(), any(), any()) } answers {
+            val limit = arg<Int>(4)
+            val offset = arg<Int>(5)
+            HistoryPage(emptyList(), 0L, limit, offset, false)
+        }
+        coEvery { historyStore.queryDailyValueSnapshot(any(), any(), any(), any()) } coAnswers {
+            val digest = firstArg<String>()
+            val scope = secondArg<String>()
+            val from = thirdArg<Instant?>()
+            val until = arg<Instant?>(3)
+            val limit = if (from != null && until == from.plusSeconds(1)) 1 else HISTORY_PAGE_LIMIT
+            val values = mutableListOf<HistoryDailyValue>()
+            val loadLegacyHoldings = from != null && until == from.plusSeconds(1)
+            var valueOffset = 0
+            while (true) {
+                val page = historyStore.queryDailyValues(digest, scope, from, until, limit, valueOffset)
+                for (value in page.items) {
+                    val assets = mutableListOf<HistoryDailyAssetValue>()
+                    if (loadLegacyHoldings) {
+                        var assetOffset = 0
+                        while (true) {
+                            val assetPage = historyStore.queryDailyAssetValues(
+                                digest,
+                                scope,
+                                value.dayEnd,
+                                value.dayEnd.plusSeconds(1),
+                                500,
+                                assetOffset,
+                            )
+                            assets += assetPage.items
+                            if (!assetPage.hasMore || assetPage.items.isEmpty()) break
+                            assetOffset += assetPage.items.size
+                        }
+                    }
+                    values += value.copy(assets = assets.ifEmpty { value.assets })
+                }
+                if (!page.hasMore || page.items.isEmpty()) break
+                valueOffset += page.items.size
+            }
+            HistoryDailyValueSnapshot(values, null)
+        }
+
+        "exports intraday account values from timestamped cycle samples" {
+            val firstAt = Instant.parse("2026-03-09T12:00:00Z")
+            val first = intradayObservation("cycle-one", firstAt, "150")
+            val incomplete = intradayObservation("cycle-two", firstAt.plusSeconds(30), null)
+            every {
+                historyStore.queryObservationSnapshotPages(any())
+            } returns flowOf(listOf(first), listOf(incomplete))
+            val chunks = mutableListOf<String>()
+
+            exporter.exportDailyValues(
+                HistoryDailyValueExportRange(
+                    accountIdentityDigest = accountDigest,
+                    from = firstAt.minusSeconds(1),
+                    until = firstAt.plusSeconds(60),
+                    intraday = true,
+                ),
+            ) { chunks += it } shouldBe 2L
+
+            val rows = recordMaps(chunks.joinToString(""))
+            rows.map { it["timestamp_utc"] } shouldContainExactly
+                listOf(firstAt.toString(), firstAt.plusSeconds(30).toString())
+            rows.map { it["account_value_usd"] } shouldContainExactly listOf("150", "")
+            rows.map { it["availability"] } shouldContainExactly listOf("COMPLETE", "INCOMPLETE")
+            rows.map { it["cycle_id"] } shouldContainExactly listOf("cycle-one", "cycle-two")
+            verify {
+                historyStore.queryObservationSnapshotPages(
+                    match {
+                        it.sourceScope == HistoryObservationValuator.fullAccountScope(accountDigest) &&
+                            it.from == firstAt.minusSeconds(1) && it.until == firstAt.plusSeconds(60) &&
+                            it.limit == HISTORY_MAX_PAGE_LIMIT
+                    },
+                )
+            }
+        }
+
+        "intraday holdings export preserves sample time and labels missing or empty samples" {
+            val sampleAt = Instant.parse("2026-03-09T12:34:56.123Z")
+            val holding = HistoryAssetValue(
+                symbol = "XXBT",
+                status = HistoryAssetValueStatus.COMPLETE,
+                quantity = BigDecimal.ONE,
+                priceUsd = BigDecimal("50000"),
+                valueUsd = BigDecimal("50000"),
+                reason = "=HYPERLINK(1)",
+            )
+            val available = intradayObservation("cycle-holdings", sampleAt, "50000", listOf(holding))
+            val empty = available.copy(assets = emptyList())
+            coEvery { historyStore.queryObservationsSnapshot(any()) } returnsMany listOf(
+                listOf(available),
+                emptyList(),
+                listOf(empty),
+            )
+            val query = HistoryDailyHoldingsExportQuery(
+                accountDigest,
+                sampleAt.atZone(ZoneOffset.UTC).toLocalDate(),
+                sampleAt,
+            )
+            val availableChunks = mutableListOf<String>()
+            val missingChunks = mutableListOf<String>()
+            val emptyChunks = mutableListOf<String>()
+
+            exporter.exportDailyHoldings(query) { availableChunks += it } shouldBe 1L
+            exporter.exportDailyHoldings(query) { missingChunks += it } shouldBe 1L
+            exporter.exportDailyHoldings(query) { emptyChunks += it } shouldBe 1L
+
+            val availableRow = recordMaps(availableChunks.joinToString("")).single()
+            availableRow["timestamp_utc"] shouldBe sampleAt.toString()
+            availableRow["asset"] shouldBe "BTC"
+            availableRow["quantity"] shouldBe "1"
+            availableRow["availability"] shouldBe "COMPLETE"
+            availableRow["reason"] shouldBe "'=HYPERLINK(1)"
+            val missingRow = recordMaps(missingChunks.joinToString("")).single()
+            missingRow["account_availability"] shouldBe "OUTSIDE_COVERAGE"
+            missingRow["reason"] shouldBe "No account value is available at this time."
+            val emptyRow = recordMaps(emptyChunks.joinToString("")).single()
+            emptyRow["reason"] shouldBe "No held assets."
+        }
+
+        "exports daily account values with honest gaps and excludes equity-only reasons" {
+            val day = LocalDate.parse("2026-03-09")
+            val value = dailyValue(
+                day = day,
+                total = null,
+                status = HistoryDailyValueStatus.NO_PRICE,
+                assets = listOf(
+                    dailyAsset(
+                        day = day,
+                        key = "XXBT",
+                        status = HistoryDailyValueStatus.NO_PRICE,
+                        reason = "No completed close is available.",
+                    ),
+                    dailyAsset(
+                        day = day,
+                        key = "AAPL",
+                        assetClass = "equity",
+                        status = HistoryDailyValueStatus.NO_PRICE,
+                        reason = "Equity shares are outside account valuation.",
+                    ),
+                ),
+            )
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), 500, 0)
+            } returns HistoryPage(listOf(value), 1L, 500, 0, false)
+            val chunks = mutableListOf<String>()
+
+            exporter.exportDailyValues(
+                HistoryDailyValueExportRange(
+                    accountDigest,
+                    null,
+                    day.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                ),
+            ) { chunks += it } shouldBe 1L
+
+            val row = recordMaps(chunks.joinToString("")).single()
+            row["day_utc"] shouldBe day.toString()
+            row["account_value_usd"] shouldBe ""
+            row["availability"] shouldBe "NO_PRICE"
+            row["generation_id"] shouldBe "generation-1"
+            row["source_revision"] shouldBe "3"
+            row["missing_asset_reasons"] shouldBe "BTC: No completed close is available."
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), 500, 0)
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any())
+            }
+            confirmVerified(historyService, historyStore)
+        }
+
+        "neutralizes formula-leading persisted reasons in daily CSV exports" {
+            val day = LocalDate.parse("2026-03-09")
+            val value = dailyValue(
+                day = day,
+                total = null,
+                status = HistoryDailyValueStatus.NO_PRICE,
+                assets = listOf(
+                    dailyAsset(
+                        day = day,
+                        key = "=HYPERLINK(1)",
+                        status = HistoryDailyValueStatus.NO_PRICE,
+                        reason = "=HYPERLINK(1)",
+                    ),
+                ),
+            )
+            coEvery {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), 500, 0)
+            } returns HistoryPage(listOf(value), 1L, 500, 0, false)
+            val chunks = mutableListOf<String>()
+
+            exporter.exportDailyValues(
+                HistoryDailyValueExportRange(
+                    accountDigest,
+                    null,
+                    day.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                ),
+            ) { chunks += it } shouldBe 1L
+
+            recordMaps(chunks.joinToString("")).single()["missing_asset_reasons"] shouldBe
+                "'=HYPERLINK(1): =HYPERLINK(1)"
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValues(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any(), 500, 0)
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(accountDigest, HISTORY_ACCOUNT_DAILY_SCOPE, any(), any())
+            }
+            confirmVerified(historyService, historyStore)
+        }
+
+        "exports holdings without equity rows and reports only written account assets" {
+            val day = LocalDate.parse("2026-03-09")
+            val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            val total = dailyValue(day, "90", HistoryDailyValueStatus.COMPLETE, emptyList())
+            val cash = dailyAsset(
+                day,
+                "ZUSD",
+                quantity = "90",
+                price = "1",
+                value = "90",
+                reason = "=HYPERLINK(1)",
+            )
+            val equity = dailyAsset(
+                day = day,
+                key = "STRC",
+                assetClass = "equity",
+                quantity = "1",
+                price = "10",
+                value = "10",
+            )
+            coEvery {
+                historyStore.queryDailyValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    1,
+                    0,
+                )
+            } returns HistoryPage(listOf(total), 1L, 1, 0, false)
+            coEvery {
+                historyStore.queryDailyAssetValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    500,
+                    0,
+                )
+            } returns HistoryPage(listOf(cash, equity), 2L, 500, 0, false)
+            val chunks = mutableListOf<String>()
+
+            exporter.exportDailyHoldings(HistoryDailyHoldingsExportQuery(accountDigest, day)) { chunks += it } shouldBe
+                1L
+
+            val rows = recordMaps(chunks.joinToString(""))
+            rows.size shouldBe 1
+            rows.single()["asset"] shouldBe "USD"
+            rows.single()["quantity"] shouldBe "90"
+            rows.single()["reason"] shouldBe "'=HYPERLINK(1)"
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    1,
+                    0,
+                )
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyAssetValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    500,
+                    0,
+                )
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            }
+            confirmVerified(historyService, historyStore)
+        }
+
+        "daily holdings export distinguishes outside coverage from an empty held-asset set" {
+            val day = LocalDate.parse("2026-03-09")
+            val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            coEvery {
+                historyStore.queryDailyValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    1,
+                    0,
+                )
+            } returnsMany listOf(
+                HistoryPage(emptyList(), 0L, 1, 0, false),
+                HistoryPage(
+                    listOf(dailyValue(day, null, HistoryDailyValueStatus.INCOMPLETE, emptyList())),
+                    1L,
+                    1,
+                    0,
+                    false,
+                ),
+            )
+            coEvery {
+                historyStore.queryDailyAssetValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    500,
+                    0,
+                )
+            } returns HistoryPage(
+                listOf(dailyAsset(day, "TSLA", assetClass = "equity", status = HistoryDailyValueStatus.NO_PRICE)),
+                1L,
+                500,
+                0,
+                false,
+            )
+            val outsideChunks = mutableListOf<String>()
+            val emptyChunks = mutableListOf<String>()
+
+            exporter.exportDailyHoldings(HistoryDailyHoldingsExportQuery(accountDigest, day)) {
+                outsideChunks += it
+            } shouldBe
+                1L
+            exporter.exportDailyHoldings(HistoryDailyHoldingsExportQuery(accountDigest, day)) {
+                emptyChunks += it
+            } shouldBe
+                1L
+
+            recordMaps(outsideChunks.joinToString("")).single()["account_availability"] shouldBe "OUTSIDE_COVERAGE"
+            recordMaps(emptyChunks.joinToString("")).single()["reason"] shouldBe "No held assets."
+            coVerify(exactly = 2) {
+                historyStore.queryDailyValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    1,
+                    0,
+                )
+            }
+            coVerify(exactly = 1) {
+                historyStore.queryDailyAssetValues(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                    500,
+                    0,
+                )
+            }
+            coVerify(exactly = 2) {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            }
+            confirmVerified(historyService, historyStore)
+        }
+
+        "daily holdings export materializes one generation and omits equity rows" {
+            val day = LocalDate.parse("2026-03-09")
+            val dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            val total = dailyValue(day, "501", HistoryDailyValueStatus.COMPLETE, emptyList())
+            val firstPage = (0 until 500).map { index ->
+                dailyAsset(day, "ASSET$index", quantity = "1", price = "1", value = "1")
+            }
+            val finalEquity = dailyAsset(
+                day = day,
+                key = "TSLA",
+                assetClass = "equity",
+                quantity = "1",
+                price = "1",
+                value = "1",
+            )
+            val finalCash = dailyAsset(day, "LAST", quantity = "1", price = "1", value = "1")
+            coEvery {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            } returns HistoryDailyValueSnapshot(
+                listOf(total.copy(assets = firstPage + finalEquity + finalCash)),
+                null,
+            )
+            val chunks = mutableListOf<String>()
+
+            exporter.exportDailyHoldings(HistoryDailyHoldingsExportQuery(accountDigest, day)) {
+                chunks += it
+            } shouldBe 501L
+
+            val rows = recordMaps(chunks.joinToString(""))
+            rows.size shouldBe 501
+            rows.last()["asset"] shouldBe "LAST"
+            rows.any { it["asset"] == "TSLA" } shouldBe false
+            coVerify(exactly = 1) {
+                historyStore.queryDailyValueSnapshot(
+                    accountDigest,
+                    HISTORY_ACCOUNT_DAILY_SCOPE,
+                    dayEnd,
+                    dayEnd.plusSeconds(1),
+                )
+            }
+            coVerify(exactly = 0) { historyStore.queryDailyValues(any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { historyStore.queryDailyAssetValues(any(), any(), any(), any(), any(), any()) }
+            confirmVerified(historyService, historyStore)
+        }
+
         "quotes every field and escapes RFC-4180 commas quotes and embedded newlines" {
             val record = trade(pair = "XBT,USD", misc = "memo, \"quoted\"\r\nsecond line")
             coEvery { historyService.queryTrades(any()) } returns pageOf(listOf(record))
@@ -396,6 +832,48 @@ class HistoryCsvExporterTest : StringSpec() {
     private fun pageOf(trades: List<HistoryTrade>): HistoryPage<HistoryTrade> =
         HistoryPage(trades, trades.size.toLong(), 500, 0, false)
 
+    private fun dailyValue(
+        day: LocalDate,
+        total: String?,
+        status: HistoryDailyValueStatus,
+        assets: List<HistoryDailyAssetValue>,
+    ) = HistoryDailyValue(
+        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+        accountIdentityDigest = accountDigest,
+        sourceAssetScope = HISTORY_ACCOUNT_DAILY_SCOPE,
+        totalUsd = total?.let(::BigDecimal),
+        status = status,
+        assets = assets,
+        dayLabel = day,
+        generationId = "generation-1",
+        calculationPolicyVersion = HISTORY_DAILY_VALUE_POLICY_VERSION,
+        sourceRevision = 3,
+    )
+
+    private fun dailyAsset(
+        day: LocalDate,
+        key: String,
+        assetClass: String = "currency",
+        quantity: String? = null,
+        price: String? = null,
+        value: String? = null,
+        status: HistoryDailyValueStatus = HistoryDailyValueStatus.COMPLETE,
+        reason: String? = null,
+    ) = HistoryDailyAssetValue(
+        dayEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+        accountIdentityDigest = accountDigest,
+        rawAssetClass = assetClass,
+        rawAssetKey = key,
+        quantity = quantity?.let(::BigDecimal),
+        priceUsd = price?.let(::BigDecimal),
+        valueUsd = value?.let(::BigDecimal),
+        pricePair = if (price == null) null else "${key}USD",
+        priceCandleOpen = if (price == null) null else day.atStartOfDay(ZoneOffset.UTC).toInstant(),
+        priceSource = if (price == null) null else "TEST",
+        status = status,
+        reason = reason,
+    )
+
     private fun pageOfLedgers(ledgers: List<HistoryLedger>): HistoryPage<HistoryLedger> =
         HistoryPage(ledgers, ledgers.size.toLong(), 500, 0, false)
 
@@ -495,6 +973,26 @@ class HistoryCsvExporterTest : StringSpec() {
         val headers = rows.first()
         return rows.drop(1).map { headers.zip(it).toMap() }
     }
+
+    private fun intradayObservation(
+        cycleId: String,
+        time: Instant,
+        totalUsd: String?,
+        assets: List<HistoryAssetValue> = emptyList(),
+    ) = HistoryObservation(
+        observationId = "$cycleId:full-account-intraday-v1",
+        cycleId = cycleId,
+        sourceScope = HistoryObservationValuator.fullAccountScope(accountDigest),
+        observedAt = time,
+        balanceRequestStartedAt = time.minusMillis(100),
+        balanceResponseEndedAt = time,
+        priceRequestStartedAt = time.minusMillis(50),
+        priceResponseEndedAt = time,
+        status = if (totalUsd == null) HistoryObservationStatus.INCOMPLETE else HistoryObservationStatus.COMPLETE,
+        totalUsd = totalUsd?.let(::BigDecimal),
+        incompleteReasons = if (totalUsd == null) listOf("missing-direct-price") else emptyList(),
+        assets = assets,
+    )
 
     private fun countCsvRecords(csv: String): Int = parseCsv(csv).drop(1).size
 

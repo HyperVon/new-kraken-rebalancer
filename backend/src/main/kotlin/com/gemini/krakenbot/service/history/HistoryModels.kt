@@ -4,13 +4,20 @@ import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
 import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 const val HISTORY_PAGE_LIMIT = 500
 const val HISTORY_MAX_PAGE_LIMIT = 2_000
 const val HISTORY_MAX_CHART_POINTS = 2_000
+const val HISTORY_MAX_DAILY_SNAPSHOT_ROWS = 20_000
 const val HISTORY_WALLET_SCOPE = "KRAKEN_DEFAULT_WALLET"
 const val HISTORY_BALANCE_SOURCE = "KRAKEN_PRIVATE_BALANCE"
 const val HISTORY_PRICE_SOURCE = "KRAKEN_PUBLIC_TICKER_LAST_TRADE_C0"
+const val HISTORY_ACCOUNT_DAILY_SCOPE = "KRAKEN_SPOT_EARN_ACCOUNT_DAILY_V1"
+const val HISTORY_ACCOUNT_INTRADAY_SCOPE = "KRAKEN_SPOT_FULL_ACCOUNT_INTRADAY_V1"
+const val HISTORY_FULL_ACCOUNT_SCOPE_SYMBOL = "FULL_ACCOUNT_INTRADAY"
+const val HISTORY_DAILY_VALUE_POLICY_VERSION = "ACCOUNT_DAILY_CLOSE_V2"
 
 enum class HistorySourceMode { ACCOUNT, SIMULATION }
 
@@ -192,6 +199,22 @@ data class HistoryRangeQuery(
     }
 }
 
+/** Bounded chart samples and range-wide facts read from one database snapshot. */
+data class HistoryObservationChartSnapshot(
+    val chartObservations: List<HistoryObservation>,
+    val totalObservations: Long,
+    val firstObservation: HistoryObservation?,
+    val lastObservation: HistoryObservation?,
+    val incompleteObservations: Long,
+    val firstIncompleteReason: String?,
+    val availableAssetSymbols: List<String>,
+    val completeObservations: Long,
+    val firstCompleteObservation: HistoryObservation?,
+    val lastCompleteObservation: HistoryObservation?,
+    val minimumCompleteObservation: HistoryObservation?,
+    val maximumCompleteObservation: HistoryObservation?,
+)
+
 data class HistoryEventQuery(
     /** Inclusive lower time bound. */
     val from: Instant? = null,
@@ -303,6 +326,12 @@ class HistoryBalanceCheckpoint(
 
 enum class HistoryDailyValueStatus { COMPLETE, INCOMPLETE, NO_BALANCE, NO_PRICE, AMBIGUOUS_BALANCE, OUTSIDE_COVERAGE }
 
+enum class HistoryDailyBalanceStatus { VALID, NO_OPENING_ANCHOR, COVERAGE_GAP, INVALID_CHECKPOINT, AMBIGUOUS_ORDER }
+
+enum class HistoryValuationJobState { PENDING, RUNNING, WAITING, NEEDS_ATTENTION, COMPLETE }
+
+enum class HistoryValuationStage { ESTABLISH_BALANCES, PRICE_AND_VALUE }
+
 data class HistoryDailyAssetValue(
     val dayEnd: Instant,
     val accountIdentityDigest: String,
@@ -326,6 +355,25 @@ data class HistoryDailyPrice(
     val candleEnd: Instant,
     val closeUsd: BigDecimal,
     val source: String = "KRAKEN_OHLC_DAILY_CLOSE",
+    val legs: List<HistoryDailyPriceLeg> = emptyList(),
+)
+
+data class HistoryDailyPriceLeg(val pair: String, val close: BigDecimal, val quoteAsset: String)
+
+data class HistoryDailyBalance(
+    val dayEnd: Instant,
+    val dayLabel: LocalDate,
+    val accountIdentityDigest: String,
+    val sourceAssetScope: String,
+    val rawAssetClass: String?,
+    val rawAssetKey: String,
+    val quantity: BigDecimal?,
+    val sourceLedgerId: String?,
+    val sourceObservedAt: Instant?,
+    val sourceRevision: Long,
+    val generationId: String,
+    val status: HistoryDailyBalanceStatus,
+    val reason: String? = null,
 )
 
 data class HistoryDailyValue(
@@ -336,6 +384,59 @@ data class HistoryDailyValue(
     val status: HistoryDailyValueStatus,
     val source: String = "KRAKEN_LEDGER_CHECKPOINTS_PLUS_DAILY_OHLC_CLOSE",
     val assets: List<HistoryDailyAssetValue>,
+    val dayLabel: LocalDate = dayEnd.minusNanos(1).atZone(ZoneOffset.UTC).toLocalDate(),
+    val generationId: String = "legacy",
+    val calculationPolicyVersion: String = "legacy",
+    val sourceRevision: Long = 0,
+)
+
+/** Daily headers, asset rows, and durable valuation progress read from one committed SQLite view. */
+data class HistoryDailyValueSnapshot(val values: List<HistoryDailyValue>, val valuationJob: HistoryValuationJob?)
+
+data class HistoryDailyValueStatusReason(
+    val dayLabel: LocalDate,
+    val status: HistoryDailyValueStatus,
+    val rawAssetKey: String?,
+    val reason: String?,
+)
+
+data class HistoryDailyValueStatusSnapshot(
+    val firstDayLabel: LocalDate?,
+    val lastDayLabel: LocalDate?,
+    val availableDays: Long,
+    val incompleteDays: Long,
+    val valuationJob: HistoryValuationJob?,
+    val blockedReasons: List<HistoryDailyValueStatusReason>,
+    val publishedGenerationId: String? = null,
+    val publishedSourceRevision: Long? = null,
+)
+
+data class HistoryValuationJob(
+    val accountIdentityDigest: String,
+    val sourceAssetScope: String,
+    val generationId: String,
+    val state: HistoryValuationJobState,
+    val stage: HistoryValuationStage,
+    val targetStartDay: LocalDate,
+    val targetEndDay: LocalDate,
+    val nextDay: LocalDate?,
+    val targetDays: Int,
+    val balancesProcessed: Int,
+    val balancesValid: Int,
+    val balancesBlocked: Int,
+    val requiredPriceTasks: Int?,
+    val completedPriceTasks: Int,
+    val completeValueDays: Int,
+    val blockedValueDays: Int,
+    val sourceRevision: Long,
+    val calculationPolicyVersion: String,
+    val lastProgressAt: Instant?,
+    val nextRetryAt: Instant?,
+    val lastSuccessAt: Instant?,
+    val lastError: String?,
+    val updatedAt: Instant,
+    val retryAttempt: Int = 0,
+    val startedAt: Instant = updatedAt,
 )
 
 enum class HistoryFeed { TRADES, LEDGERS }

@@ -6,6 +6,7 @@ import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.RebalancePlan
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
@@ -21,6 +22,7 @@ data class ObservedPrices(
     val prices: AssetPrices,
     val directCapture: DirectTickerCapture? = null,
     val observedAt: Instant = directCapture?.responseEndedAt ?: Instant.now(),
+    val assetMetadata: List<KrakenAssetMetadata>? = null,
 )
 
 interface PortfolioAnalyzer {

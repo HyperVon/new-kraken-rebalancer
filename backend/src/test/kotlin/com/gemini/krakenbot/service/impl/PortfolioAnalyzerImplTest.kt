@@ -9,10 +9,12 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.ConfiguredAssetTradingEligibility
 import com.gemini.krakenbot.service.DirectBalanceCapture
 import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
@@ -209,6 +211,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     return TickerRead(mapOf("XXBTZUSD" to BigDecimal("50000.25")), capture)
                 }
             }
+            coEvery { krakenService.getFreshAssetMetadata() } returns listOf(KrakenAssetMetadata("XXBT", "currency"))
             val analyzer = PortfolioAnalyzerImpl(directService, configService)
 
             val observed = analyzer.fetchObservedPrices()
@@ -216,6 +219,69 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             capturedRequests shouldBe listOf(DirectTickerRequest("BTC", "XBTUSD"))
             observed.prices.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("50000.25"))
             observed.directCapture shouldBe capture
+            coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
+        }
+
+        "configured symbols must have explicit Kraken currency metadata before ticker or order work" {
+            every { configService.getConfig() } returns TestFixtures.config(
+                settings = TestFixtures.settings(),
+                allocations = listOf(Allocation(Asset.BTC, 80.0), Allocation(Asset.USD, 20.0)),
+            )
+            coEvery { krakenService.getFreshAssetMetadata() } returns listOf(
+                KrakenAssetMetadata("XXBT", "currency"),
+                KrakenAssetMetadata("AAPL", "equity"),
+            )
+            val analyzer = PortfolioAnalyzerImpl(krakenService, configService)
+
+            analyzer.fetchObservedPrices()
+
+            coVerify(exactly = 1) { krakenService.getFreshAssetMetadata() }
+            coVerify(exactly = 1) { krakenService.getTickerPrices("XBTUSD") }
+        }
+
+        "configured tokenized, equity, unknown, and missing classes fail closed " +
+            "while unconfigured entries are ignored" {
+                ConfiguredAssetTradingEligibility.requireEligible(
+                    configuredSymbols = listOf("BTC"),
+                    metadata = listOf(
+                        KrakenAssetMetadata("XXBT", "currency"),
+                        KrakenAssetMetadata("AAPL", "equity"),
+                        KrakenAssetMetadata("TSLA", "tokenized_asset"),
+                        KrakenAssetMetadata("MYSTERY", "unknown"),
+                    ),
+                )
+
+                listOf(
+                    "AAPL" to "equity",
+                    "TSLA" to "tokenized_asset",
+                    "MYSTERY" to "unknown",
+                ).forEach { (symbol, assetClass) ->
+                    shouldThrow<IllegalStateException> {
+                        ConfiguredAssetTradingEligibility.requireEligible(
+                            configuredSymbols = listOf(symbol),
+                            metadata = listOf(KrakenAssetMetadata(symbol, assetClass)),
+                        )
+                    }
+                }
+                shouldThrow<IllegalStateException> {
+                    ConfiguredAssetTradingEligibility.requireEligible(listOf("UNLISTED"), emptyList())
+                }
+                ConfiguredAssetTradingEligibility.requireEligible(listOf("ZUSD"), emptyList())
+            }
+
+        "public metadata failures prevent configured ticker reads" {
+            every { configService.getConfig() } returns TestFixtures.config(
+                settings = TestFixtures.settings(),
+                allocations = listOf(Allocation(Asset.BTC, 100.0)),
+            )
+            val metadataFailure = IllegalStateException("asset metadata unavailable")
+            coEvery { krakenService.getAssetMetadata() } returns listOf(KrakenAssetMetadata("XXBT", "currency"))
+            coEvery { krakenService.getFreshAssetMetadata() } throws metadataFailure
+            val analyzer = PortfolioAnalyzerImpl(krakenService, configService)
+
+            shouldThrow<IllegalStateException> { analyzer.fetchObservedPrices() }.message shouldBe
+                "asset metadata unavailable"
+
             coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
         }
 
@@ -231,6 +297,28 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             observed.prices shouldBe emptyMap()
             observed.directCapture?.resultShapeValid shouldBe true
             coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
+        }
+
+        "account balances outside configured allocations do not enter rebalancer totals" {
+            every { configService.getConfig() } returns TestFixtures.config(
+                settings = TestFixtures.settings(),
+                allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+            )
+            val analyzer = PortfolioAnalyzerImpl(krakenService, configService)
+
+            val result = analyzer.calculatePortfolioValues(
+                balances = mapOf(
+                    "XXBT" to BigDecimal("1"),
+                    "ZUSD" to BigDecimal("100"),
+                    "STRC" to BigDecimal("3"),
+                    "AAPL" to BigDecimal("2"),
+                ),
+                prices = mapOf("BTC" to BigDecimal("20")),
+            )
+
+            val values = (result as Result.Success).value
+            values.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("120"))
+            values.currentValuesUSD.keys shouldBe setOf("BTC", "USD")
         }
     }
 }

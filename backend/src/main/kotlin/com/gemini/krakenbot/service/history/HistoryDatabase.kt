@@ -5,6 +5,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.Statement
 import java.util.UUID
 
 /**
@@ -19,14 +20,20 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
     private val migrations = mapOf<Int, (Connection) -> Unit>(
         2 to ::migrateV2ToV3,
         3 to ::migrateV3ToV4,
+        4 to ::migrateV4ToV5,
     )
 
     private val inMemoryKeepalive: Connection? = if (filePath == null) openRawConnection() else null
+    private val journalModeLock = Any()
+
+    @Volatile
+    private var journalModeVerified = filePath == null
 
     /** Called only by the explicit data-initialization command or in-memory tests. */
     fun initializeFreshSchema() {
         filePath?.toAbsolutePath()?.parent?.let { Files.createDirectories(it) }
         connectRaw().use { connection ->
+            ensureWalMode(connection)
             connection.autoCommit = false
             try {
                 val tables = connection.createStatement().use { statement ->
@@ -74,6 +81,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             throw IllegalStateException("History database is not initialized.")
         }
         try {
+            ensureWalMode(connection)
             // Ordinary readers must not reserve SQLite's writer just to check the schema.
             // An actual upgrade still reserves it and rechecks the version inside the transaction.
             if (readSchemaVersion(connection) != HISTORY_SCHEMA_VERSION) {
@@ -173,6 +181,110 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         }
     }
 
+    /** Version 4 to 5 adds account-wide daily balance evidence and durable valuation generations. */
+    private fun migrateV4ToV5(connection: Connection) {
+        connection.createStatement().use { statement ->
+            statement.executeUpdate("ALTER TABLE history_daily_values ADD COLUMN day_label TEXT NOT NULL DEFAULT ''")
+            statement.executeUpdate(
+                "ALTER TABLE history_daily_values ADD COLUMN generation_id TEXT NOT NULL DEFAULT 'legacy'",
+            )
+            statement.executeUpdate(
+                "ALTER TABLE history_daily_values ADD COLUMN calculation_policy_version TEXT NOT NULL DEFAULT 'legacy'",
+            )
+            statement.executeUpdate(
+                "ALTER TABLE history_daily_values ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0",
+            )
+            statement.executeUpdate(
+                "ALTER TABLE history_daily_values ADD COLUMN updated_at_ns INTEGER NOT NULL DEFAULT 0",
+            )
+            statement.executeUpdate(
+                "UPDATE history_daily_values SET day_label = date(day_end_sec, 'unixepoch', '-1 day') " +
+                    "WHERE day_label = ''",
+            )
+            createV5Tables(statement)
+            statement.executeUpdate(
+                "INSERT INTO history_ledger_revisions(account_identity_digest, revision) " +
+                    "SELECT DISTINCT account_identity_digest, 1 FROM history_ledgers",
+            )
+        }
+    }
+
+    private fun createV5Tables(statement: Statement) {
+        statement.executeUpdate(
+            "CREATE TABLE history_daily_balances(" +
+                "account_identity_digest TEXT NOT NULL, " +
+                "source_asset_scope TEXT NOT NULL, " +
+                "day_end_sec INTEGER NOT NULL, " +
+                "day_label TEXT NOT NULL, " +
+                "partition_key TEXT NOT NULL, " +
+                "raw_asset_class TEXT, " +
+                "raw_asset_key TEXT NOT NULL, " +
+                "quantity TEXT, " +
+                "source_ledger_id TEXT, " +
+                "source_observed_at_ns INTEGER, " +
+                "source_revision INTEGER NOT NULL, " +
+                "generation_id TEXT NOT NULL, " +
+                "status TEXT NOT NULL CHECK(status IN " +
+                "('VALID', 'NO_OPENING_ANCHOR', 'COVERAGE_GAP', 'INVALID_CHECKPOINT', 'AMBIGUOUS_ORDER')), " +
+                "reason TEXT, " +
+                "PRIMARY KEY(account_identity_digest, source_asset_scope, day_end_sec, partition_key))",
+        )
+        statement.executeUpdate(
+            "CREATE TABLE history_daily_price_legs(" +
+                "account_identity_digest TEXT NOT NULL, " +
+                "raw_asset_key TEXT NOT NULL, " +
+                "candle_open_sec INTEGER NOT NULL, " +
+                "leg_index INTEGER NOT NULL, " +
+                "pair TEXT NOT NULL, " +
+                "close TEXT NOT NULL, " +
+                "quote_asset TEXT NOT NULL, " +
+                "PRIMARY KEY(account_identity_digest, raw_asset_key, candle_open_sec, leg_index), " +
+                "FOREIGN KEY(account_identity_digest, raw_asset_key, candle_open_sec) " +
+                "REFERENCES history_daily_prices(account_identity_digest, raw_asset_key, candle_open_sec) " +
+                "ON DELETE CASCADE)",
+        )
+        statement.executeUpdate(
+            "CREATE TABLE history_valuation_jobs(" +
+                "account_identity_digest TEXT NOT NULL, " +
+                "source_asset_scope TEXT NOT NULL, " +
+                "generation_id TEXT NOT NULL, " +
+                "state TEXT NOT NULL CHECK(state IN ('PENDING', 'RUNNING', 'WAITING', " +
+                "'NEEDS_ATTENTION', 'COMPLETE')), " +
+                "stage TEXT NOT NULL CHECK(stage IN (" +
+                "'ESTABLISH_BALANCES', " +
+                "'PRICE_AND_VALUE')), " +
+                "target_start_day TEXT NOT NULL, " +
+                "target_end_day TEXT NOT NULL, " +
+                "next_day TEXT, " +
+                "target_days INTEGER NOT NULL, " +
+                "balances_processed INTEGER NOT NULL, " +
+                "balances_valid INTEGER NOT NULL, " +
+                "balances_blocked INTEGER NOT NULL, " +
+                "required_price_tasks INTEGER, " +
+                "completed_price_tasks INTEGER NOT NULL, " +
+                "complete_value_days INTEGER NOT NULL, " +
+                "blocked_value_days INTEGER NOT NULL, " +
+                "source_revision INTEGER NOT NULL, " +
+                "calculation_policy_version TEXT NOT NULL, " +
+                "last_progress_at_ns INTEGER, " +
+                "next_retry_at_ns INTEGER, " +
+                "last_success_at_ns INTEGER, " +
+                "last_error TEXT, " +
+                "retry_attempt INTEGER NOT NULL DEFAULT 0, " +
+                "started_at_ns INTEGER NOT NULL, " +
+                "updated_at_ns INTEGER NOT NULL, " +
+                "PRIMARY KEY(account_identity_digest, source_asset_scope))",
+        )
+        statement.executeUpdate(
+            "CREATE TABLE history_ledger_revisions(" +
+                "account_identity_digest TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision >= 0))",
+        )
+        statement.executeUpdate(
+            "CREATE INDEX idx_history_daily_balances_scope_day " +
+                "ON history_daily_balances(account_identity_digest, source_asset_scope, day_end_sec)",
+        )
+    }
+
     /**
      * Version 2 to 3: durable job/progress/revision metadata plus structured cycle outcomes.
      * Existing records are preserved. A recent-refresh horizon is seeded only from proven
@@ -264,6 +376,33 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
         connection.createStatement().use { statement ->
             statement.execute("PRAGMA foreign_keys = ON")
             statement.execute("PRAGMA busy_timeout = 5000")
+        }
+    }
+
+    private fun ensureWalMode(connection: Connection) {
+        if (filePath == null || journalModeVerified) return
+        synchronized(journalModeLock) {
+            if (journalModeVerified) return
+            val currentMode = connection.createStatement().use { statement ->
+                statement.executeQuery("PRAGMA journal_mode").use { resultSet ->
+                    check(resultSet.next()) { "History database journal mode could not be read." }
+                    resultSet.getString(1)
+                }
+            }
+            val journalMode = if (currentMode.equals("wal", ignoreCase = true)) {
+                currentMode
+            } else {
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA journal_mode = WAL").use { resultSet ->
+                        check(resultSet.next()) { "History database journal mode could not be changed to WAL." }
+                        resultSet.getString(1)
+                    }
+                }
+            }
+            check(journalMode.equals("wal", ignoreCase = true)) {
+                "History database requires WAL mode for concurrent snapshot reads and writes; found '$journalMode'."
+            }
+            journalModeVerified = true
         }
     }
 
@@ -512,10 +651,17 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
                     total_usd TEXT,
                     status TEXT NOT NULL,
                     source TEXT NOT NULL,
+                    day_label TEXT NOT NULL,
+                    generation_id TEXT NOT NULL,
+                    calculation_policy_version TEXT NOT NULL,
+                    source_revision INTEGER NOT NULL,
+                    updated_at_ns INTEGER NOT NULL,
                     PRIMARY KEY(account_identity_digest, source_asset_scope, day_end_sec)
                 )
                 """.trimIndent(),
             )
+
+            createV5Tables(statement)
             statement.execute(
                 """
                 CREATE TABLE history_daily_assets (
@@ -636,7 +782,7 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
     }
 
     companion object {
-        private const val HISTORY_SCHEMA_VERSION = 4
+        private const val HISTORY_SCHEMA_VERSION = 5
         private val REQUIRED_TABLES = setOf(
             "history_schema_meta",
             "history_observations",
@@ -654,6 +800,10 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             "history_daily_prices",
             "history_daily_values",
             "history_daily_assets",
+            "history_daily_balances",
+            "history_daily_price_legs",
+            "history_valuation_jobs",
+            "history_ledger_revisions",
         )
         private val ACCOUNT_EVIDENCE_TABLES = listOf(
             "history_observations",
@@ -669,6 +819,10 @@ class HistoryDatabase private constructor(private val jdbcUrl: String, private v
             "history_daily_prices",
             "history_daily_values",
             "history_daily_assets",
+            "history_daily_balances",
+            "history_daily_price_legs",
+            "history_valuation_jobs",
+            "history_ledger_revisions",
         )
 
         fun inMemory(): HistoryDatabase {

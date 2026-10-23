@@ -81,6 +81,8 @@ class DynamicKrakenService(
 
     override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = currentBackend().getAssetMetadata()
 
+    override suspend fun getFreshAssetMetadata(): List<KrakenAssetMetadata> = currentBackend().getFreshAssetMetadata()
+
     override suspend fun executeOrder(
         pair: String,
         type: String,

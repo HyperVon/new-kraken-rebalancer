@@ -36,7 +36,7 @@ class HistoryDatabaseTest : StringSpec() {
                     conn.createStatement().use { stmt ->
                         stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
                             rs.next() shouldBe true
-                            rs.getInt(1) shouldBe 4
+                            rs.getInt(1) shouldBe 5
                         }
                     }
                 }
@@ -216,7 +216,7 @@ class HistoryDatabaseTest : StringSpec() {
                     conn.createStatement().use { stmt ->
                         stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
                             rs.next() shouldBe true
-                            rs.getInt(1) shouldBe 4
+                            rs.getInt(1) shouldBe 5
                         }
                         stmt.executeQuery("SELECT COUNT(*) FROM history_trades").use { rs ->
                             rs.next() shouldBe true
@@ -288,7 +288,7 @@ class HistoryDatabaseTest : StringSpec() {
                         conn.createStatement().use { stmt ->
                             stmt.executeQuery("SELECT schema_version FROM history_schema_meta WHERE id = 1").use { rs ->
                                 rs.next() shouldBe true
-                                rs.getInt(1) shouldBe 4
+                                rs.getInt(1) shouldBe 5
                             }
                             stmt.executeQuery("SELECT COUNT(*) FROM history_sync_jobs").use { rs ->
                                 rs.next() shouldBe true
