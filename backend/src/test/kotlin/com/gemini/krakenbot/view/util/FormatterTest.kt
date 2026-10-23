@@ -42,20 +42,12 @@ class FormatterTest : StringSpec() {
             Formatter.feeDigitsForDisplay(BigDecimal("0.50")) shouldBe 4
         }
 
-        "formatFeeWithCurrency styles USD fees and annotates other denominations" {
-            Formatter.formatFeeWithCurrency(BigDecimal("8.0"), "USD") shouldBe "\$8.00"
-            Formatter.formatFeeWithCurrency(BigDecimal("0.0001"), "BTC") shouldBe "0.0001 BTC"
-            Formatter.formatFeeWithCurrency(BigDecimal("0.5"), null) shouldBe "0.5 (currency unavailable)"
-            Formatter.formatFeeWithCurrency(BigDecimal.ZERO, "USD") shouldBe "—"
-            Formatter.formatFeeWithCurrency(null, "USD") shouldBe "—"
-        }
-
         "formatCount groups thousands" {
             Formatter.formatCount(1234L) shouldBe "1,234"
             Formatter.formatCount(0L) shouldBe "0"
         }
 
-        "formatQuantity preserves the sign of ledger outflows" {
+        "formatQuantity preserves the sign of negative quantities" {
             Formatter.formatQuantity(BigDecimal("-1.5")) shouldBe "-1.5"
             Formatter.formatQuantity(BigDecimal("-1234.5678")) shouldBe "-1,234.5678"
         }
@@ -69,12 +61,6 @@ class FormatterTest : StringSpec() {
             Formatter.formatPriceOrDash(null) shouldBe "—"
             Formatter.formatPriceOrDash(BigDecimal.ZERO) shouldBe "—"
             Formatter.formatFeeOrDash(BigDecimal.ZERO) shouldBe "—"
-        }
-
-        "formatPair falls back to the raw pair and formatCompactTradeTime blanks null" {
-            Formatter.formatPair("BTC", null, "XXBTZUSD") shouldBe "XXBTZUSD"
-            Formatter.formatPair(null, null, null) shouldBe ""
-            Formatter.formatCompactTradeTime(null) shouldBe ""
         }
 
         "formatSignedUsd prefixes positives without a sign" {

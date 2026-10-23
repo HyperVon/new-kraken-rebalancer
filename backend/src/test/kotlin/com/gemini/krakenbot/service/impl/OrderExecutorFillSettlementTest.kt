@@ -3,8 +3,8 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeFill
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.OrderIntentService
 import io.kotest.core.spec.IsolationMode
@@ -14,7 +14,6 @@ import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
-import java.time.Instant
 
 @Suppress("unused")
 class OrderExecutorFillSettlementTest : StringSpec() {
@@ -30,8 +29,8 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-FILL-1"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
@@ -70,8 +69,8 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-MULTI-LEG"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
@@ -107,13 +106,13 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             }
         }
 
-        "ignores non-matching trade history legs when summing fill proceeds" {
+        "ignores non-matching trade fill legs when summing fill proceeds" {
             runTest {
                 val sellTxid = "OID-FILTER"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
@@ -155,8 +154,8 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                     when {
                         side == TestFixtures.SELL && pair == Asset.BTC_USD_PAIR ->
                             OrderResult(
-                                success = false,
                                 pair = pair,
+                                success = false,
                                 side = side,
                                 volume = volume,
                                 errorMessage = "simulated BTC sell failure",
@@ -200,20 +199,20 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             }
         }
 
-        "caps fill-confirmed cash to lower observed balance when history leads spendable USD" {
+        "caps fill-confirmed cash to lower observed balance when fills lead spendable USD" {
             runTest {
                 val sellTxid = "OID-FILL-CAP"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 krakenService.tradePageSupplier = pages(fill(sellTxid, cost = "100.00"))
-                // History says $200; balance only shows $150 → buy budget from $150.
+                // Fill records report $200; balance only shows $150 → buy budget from $150.
                 krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("150.00")) }
 
                 orderExecutor.executeOrders(
@@ -235,12 +234,12 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             }
         }
 
-        "falls back to balance poll when sell txids do not match trade history" {
+        "falls back to balance poll when sell txids do not match fill records" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) "OID-MISSING" else null,
@@ -271,19 +270,19 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             }
         }
 
-        "falls back to balance poll when fill history throws" {
+        "falls back to balance poll when fill lookup throws" {
             runTest {
                 val sellTxid = "OID-HISTORY-FAILURE"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else "OID-BUY",
                     )
                 }
-                krakenService.tradePageSupplier = { _, _, _, _ -> error("history unavailable") }
+                krakenService.tradePageSupplier = { _, _, _, _ -> error("fill lookup unavailable") }
                 krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("190.00")) }
 
                 orderExecutor.executeOrders(
@@ -309,8 +308,8 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) "OID-CURRENT" else null,
@@ -344,38 +343,28 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-PAGE-2"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
-                val paddingFill = fill(orderTxid = "OID-PAD-0", cost = "10.00", side = "buy", pair = Asset.ETH_USD_PAIR)
+                val paddingFill = fill(orderTxid = "OID-PAD-0", cost = "10.00", side = "buy")
                 val matchingFill =
-                    fill(orderTxid = sellTxid, cost = "100.00", fee = "1.00", side = "sell", pair = Asset.BTC_USD_PAIR)
+                    fill(orderTxid = sellTxid, cost = "100.00", fee = "1.00", side = "sell")
 
-                krakenService.tradePageSupplier = { start, end, cursor, _ ->
+                krakenService.tradePageSupplier = { _, _, cursor, _ ->
                     if (cursor == null) {
-                        ExchangeHistoryPage(
+                        ExchangeTradePage(
                             entries = listOf(paddingFill),
-                            startSec = start,
-                            endSec = end,
-                            requestedCursor = null,
                             nextCursor = "cursor-page-2",
-                            count = null,
-                            rawSize = 1,
                             valid = true,
                         )
                     } else {
-                        ExchangeHistoryPage(
+                        ExchangeTradePage(
                             entries = listOf(matchingFill),
-                            startSec = start,
-                            endSec = end,
-                            requestedCursor = cursor,
                             nextCursor = null,
-                            count = null,
-                            rawSize = 1,
                             valid = true,
                         )
                     }
@@ -397,7 +386,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                     actionLog = mutableListOf(),
                 )
 
-                // Two history pages fetched on the first fill-poll attempt.
+                // Two trade pages fetched on the first fill-poll attempt.
                 (krakenService.getTradePageCallCount >= 2) shouldBe true
                 krakenService.executedOrders.size shouldBe 2
                 // Net fill $99 + opening $100 = $199 → 99% budget → vol 0.19701
@@ -434,27 +423,17 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                     fee = "0.00",
                     tradeId = "",
                 )
-                krakenService.tradePageSupplier = { start, end, cursor, _ ->
+                krakenService.tradePageSupplier = { _, _, cursor, _ ->
                     if (cursor == null) {
-                        ExchangeHistoryPage(
+                        ExchangeTradePage(
                             entries = listOf(duplicateFill) + padding,
-                            startSec = start,
-                            endSec = end,
-                            requestedCursor = null,
                             nextCursor = "cursor-page-2",
-                            count = null,
-                            rawSize = 1 + padding.size,
                             valid = true,
                         )
                     } else {
-                        ExchangeHistoryPage(
+                        ExchangeTradePage(
                             entries = listOf(duplicateFill, idLessLeg1, idLessLeg2),
-                            startSec = start,
-                            endSec = end,
-                            requestedCursor = cursor,
                             nextCursor = null,
-                            count = null,
-                            rawSize = 3,
                             valid = true,
                         )
                     }
@@ -463,8 +442,8 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.balanceSupplier = { emptyMap() }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
@@ -500,14 +479,14 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-OVERSTATED"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
-                // History overstates proceeds vs the $100 sell intent.
+                // Fill records overstate proceeds vs the $100 sell intent.
                 krakenService.tradePageSupplier = pages(fill(sellTxid, cost = "500.00"))
                 krakenService.balanceSupplier = { emptyMap() }
 
@@ -536,8 +515,8 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 val sellTxid = "OID-ZERO-BALANCE"
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
-                        success = true,
                         pair = pair,
+                        success = true,
                         side = side,
                         volume = volume,
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
@@ -577,31 +556,19 @@ class OrderExecutorFillSettlementTest : StringSpec() {
         price: String = "1000.00",
         feeCurrency: String? = Asset.USD,
         side: String = "sell",
-        pair: String = Asset.BTC_USD_PAIR,
-    ): ExchangeTradeHistoryEntry {
+    ): ExchangeTradeFill {
         val id = tradeId ?: "FILL-${nextFillSequence++}"
-        return ExchangeTradeHistoryEntry(
+        return ExchangeTradeFill(
             tradeId = id,
             orderTxid = orderTxid,
-            postTxid = "post-$id",
-            pair = pair,
             baseAsset = Asset.BTC,
             quoteCurrency = Asset.USD,
             feeCurrency = feeCurrency,
-            time = Instant.parse("2026-10-13T12:00:00Z"),
-            rawTime = "1791892800.000000000",
             type = side,
-            orderType = "market",
             price = price,
             cost = cost,
             fee = fee,
             volume = volume,
-            margin = "0.0",
-            misc = "",
-            tradeSequenceId = id,
-            maker = false,
-            ledgerIds = null,
-            rawRecordJson = null,
             hasValidTime = true,
             hasValidPrice = true,
             hasValidCost = true,
@@ -611,23 +578,12 @@ class OrderExecutorFillSettlementTest : StringSpec() {
         )
     }
 
-    private fun pages(
-        vararg entries: ExchangeTradeHistoryEntry,
-    ): (Long?, Long?, String?, Int?) -> ExchangeHistoryPage<ExchangeTradeHistoryEntry> = {
-            start,
-            end,
-            cursor,
-            _,
-        ->
-        ExchangeHistoryPage(
-            entries = entries.toList(),
-            startSec = start,
-            endSec = end,
-            requestedCursor = cursor,
-            nextCursor = null,
-            count = entries.size.toLong(),
-            rawSize = entries.size,
-            valid = true,
-        )
-    }
+    private fun pages(vararg entries: ExchangeTradeFill): (Long?, Long?, String?, Int?) -> ExchangeTradePage =
+        { _, _, _, _ ->
+            ExchangeTradePage(
+                entries = entries.toList(),
+                nextCursor = null,
+                valid = true,
+            )
+        }
 }

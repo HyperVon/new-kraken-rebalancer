@@ -42,8 +42,8 @@ This skill covers **all repository artifacts**, including:
 
 1. **Source code**: Kotlin JVM (`backend/src/main/`), KMP `:common` (`common/src/`), and Kotlin/JS (`frontend-js/src/`).
 2. **Tests**: focused Kotest JVM specs and Karma/Istanbul JS tests mapped in
-   [`docs/EVALUATION.md`](../../../docs/EVALUATION.md), including current-cycle
-   Dashboard, active Settings, direct History values, and account-sync evidence.
+  [`docs/EVALUATION.md`](../../../docs/EVALUATION.md), including current-cycle
+  Dashboard, active Settings, order execution, and safety evidence.
 3. **Documentation**: Technical and end-user documentation (`docs/*`, `README.md`, `CHANGELOG.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/USER_GUIDE.md`, `docs/ALGORITHM.md`, `docs/FLOWS.md`).
 4. **Agent skills**: Skill instructions and resources (`.agents/skills/*/SKILL.md`, supporting scripts/examples/references).
 5. **Agent rules & guidance**: Agent invariants and operating norms (`.agents/AGENTS.md`, `.agents/OPERATING.md`, `.cursor/rules/*.mdc`, root `CLAUDE.md`, `.github/copilot-instructions.md`).
@@ -66,9 +66,9 @@ This skill covers **all repository artifacts**, including:
 This skill does not replace an applicable owner skill, mandatory PR workflow,
 or quality gate. Load domain skills for touched code, especially
 `portfolio-rebalancing-math`, `kraken-api-integration`,
-`dry-run-and-simulation`, `common-kmp-module`, `exposed-repository`,
+`dry-run-and-simulation`, `common-kmp-module`,
 `coroutines-flows-sse`, `ktor-html-views`, `frontend-js-development`,
-`trade-history-sync`, and `koin-di-and-config`.
+`koin-di-and-config`.
 
 ## Evidence standard
 
@@ -231,7 +231,7 @@ Check the actual owner skill/source instead of inventing a fourth pattern:
 | `:common` | Pure KMP only: no JVM/JS-only imports; shared routes/DTOs/constants belong here when they serve both targets |
 | Money and orders | `BigDecimal`; precision rules; dry-run differs from simulation; sell-first, 99% cash budget, durable live-order journal, and `cl_ord_id` safety |
 | Kraken I/O | `RateLimiter`, `Mutex`, retry/backoff, symbol mapping, and real API surface per `kraken-api-integration` |
-| Repositories | Existing Exposed helpers: `safeTransactionIO` for writes and `readTransactionIO` for reads when applicable |
+| Repositories | SQLite JDBC execution journal transactions and recovery boundaries |
 | Coroutines/Flows | No `GlobalScope`; preserve cancellation; choose replay/buffer semantics from the flow's consumer contract, not a universal `SharedFlow` recipe |
 | Ktor views/routes | `DashboardRoutes`/`DashboardController` and `view/component/*` own the established boundary |
 | Agent Skills | Under `.agents/skills/*/SKILL.md`; valid YAML frontmatter; accurate trigger phrases; verified file/tool links |

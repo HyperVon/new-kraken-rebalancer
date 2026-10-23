@@ -40,10 +40,6 @@ class DashboardTest : StringSpec() {
             button.setAttribute(RecentActivityText.FILTER_ATTRIBUTE, filter)
             root.appendChild(button)
         }
-        val warning = document.createElement("p") as HTMLElement
-        warning.id = RecentActivityText.PERSISTENCE_WARNING_ID
-        warning.hidden = true
-        root.appendChild(warning)
         val groups = document.createElement("div") as HTMLElement
         groups.id = RecentActivityText.GROUPS_ID
         items.forEach { item ->
@@ -98,7 +94,6 @@ class DashboardTest : StringSpec() {
             recentActivityUiState = RecentActivityUiState(
                 sourceId = "source-35",
                 items = mergeRecentActivityItems(emptyList(), items),
-                hydrationSourceId = "source-35",
             )
 
             restoreRecentActivityState()
@@ -151,89 +146,144 @@ class DashboardTest : StringSpec() {
             filtered.map { it.cycleId } shouldBe listOf("warning-cycle", "error-cycle")
         }
 
-        "hydration merges by cycle ID with current-run activity taking precedence" {
+        "current activity renders simulator orders and recorded outcomes" {
             resetRecentActivityClientState()
-            recentActivityUiState.sourceId = "account-a"
-            val current = activity(
-                "duplicate-cycle",
-                Date.parse("2026-10-11T13:00:00Z"),
-                "PROBLEM",
-                listOf("ERROR: current"),
+            val timestamp = Date.parse("2026-10-11T12:00:00Z")
+            val root = activityDom(
+                "source-current",
+                listOf(
+                    RecentActivityItem(
+                        cycleId = "simulated-cycle",
+                        occurredAt = timestamp + 1_000.0,
+                        mode = "SIMULATION",
+                        outcome = "DRY_RUN_PLAN",
+                        actions = listOf("[DRY RUN] SELL ETH"),
+                    ),
+                    RecentActivityItem(
+                        cycleId = "recorded-cycle",
+                        occurredAt = timestamp,
+                        mode = "LIVE",
+                        outcome = null,
+                        actions = emptyList(),
+                    ),
+                ),
             )
-            recentActivityUiState.items = listOf(current)
-            val payload = """
-                {
-                  "range":"all",
-                  "items":[
-                    {
-                      "cycleId":"duplicate-cycle",
-                      "occurredAt":"2026-10-11T12:00:00Z",
-                      "mode":"LIVE",
-                      "outcome":"ORDERS_ATTEMPTED",
-                      "actions":["BUY BTC"]
-                    },
-                    {
-                      "cycleId":"older-cycle",
-                      "occurredAt":"2026-10-11T11:00:00Z",
-                      "mode":"LIVE",
-                      "outcome":null,
-                      "actions":["legacy"]
-                    }
-                  ],
-                  "nextCursor":null,
-                  "hasMore":false
-                }
-            """.trimIndent()
 
-            hydrateRecentActivityJson(payload, "account-a") shouldBe true
-            recentActivityUiState.items.size shouldBe 2
-            recentActivityUiState.items.first().actions shouldBe listOf("ERROR: current")
-            recentActivityUiState.items.last().outcome shouldBe null
-        }
+            restoreRecentActivityState()
 
-        "hydration skips malformed rows and accepts numeric timestamps" {
-            resetRecentActivityClientState()
-            val root = activityDom("source-numeric")
-            recentActivityUiState.sourceId = "source-numeric"
-            val numericTime = Date.parse("2026-10-11T12:00:00Z")
-            val payload = """
-                {
-                  "items":[
-                    {
-                      "cycleId":"numeric-cycle",
-                      "occurredAt":$numericTime,
-                      "mode":"SIMULATION",
-                      "outcome":"DRY_RUN_PLAN",
-                      "actions":["[DRY RUN] SELL ETH"]
-                    },
-                    {
-                      "cycleId":"legacy-cycle",
-                      "occurredAt":"2026-10-11T12:00:01Z",
-                      "mode":"LIVE",
-                      "outcome":null,
-                      "actions":[]
-                    },
-                    {"occurredAt":$numericTime,"mode":"LIVE","actions":[]},
-                    {"cycleId":"invalid-time","occurredAt":"not-a-date","mode":"LIVE","actions":[]}
-                  ]
-                }
-            """.trimIndent()
-
-            hydrateRecentActivityJson(payload, "source-numeric") shouldBe true
-
-            recentActivityUiState.items.map { it.cycleId } shouldBe listOf("legacy-cycle", "numeric-cycle")
-            recentActivityUiState.items.last().occurredAt shouldBe numericTime
             root.textContent shouldContain "SIMULATION"
             root.textContent shouldContain "Dry-run plan"
             root.textContent shouldContain "SELL"
             root.textContent shouldContain "Recorded activity"
-
-            hydrateRecentActivityJson("{}", "source-numeric") shouldBe true
-            hydrateRecentActivityJson(payload, "other-source") shouldBe true
-            recentActivityUiState.items.size shouldBe 2
-            setRecentActivityPersistenceUnavailable("other-source")
-            (root.querySelector("#${RecentActivityText.PERSISTENCE_WARNING_ID}") as HTMLElement).hidden.shouldBeTrue()
+            root.textContent shouldContain "LIVE TRADING"
+            val simulated = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='simulated-cycle']",
+            ) as HTMLElement
+            (simulated.asDynamic().open as Boolean).shouldBeTrue()
+            val recorded = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='recorded-cycle']",
+            ) as HTMLElement
+            (recorded.asDynamic().open as Boolean).shouldBeFalse()
             removeActivityDom(root)
+        }
+
+        "recent activity expands the latest meaningful record and leaves empty no-trade rows closed" {
+            resetRecentActivityClientState()
+            val root = activityDom(
+                "source-activity",
+                listOf(
+                    activity("empty-no-trade", 2.0),
+                    activity("completed-orders", 1.5, "ORDERS_ATTEMPTED"),
+                    activity("completed-check", 1.0, actions = listOf("Completed balance check")),
+                ),
+            )
+            val malformed = document.createElement("details") as HTMLElement
+            malformed.setAttribute(RecentActivityText.CYCLE_ID_ATTRIBUTE, "invalid-timestamp")
+            malformed.setAttribute(RecentActivityText.OCCURRED_AT_ATTRIBUTE, "not-a-timestamp")
+            root.querySelector("#${RecentActivityText.GROUPS_ID}")!!.appendChild(malformed)
+
+            restoreRecentActivityState()
+
+            recentActivityUiState.items.none { it.cycleId == "invalid-timestamp" }.shouldBeTrue()
+            val meaningfulOrder = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='completed-orders']",
+            ) as HTMLElement
+            (meaningfulOrder.asDynamic().open as Boolean).shouldBeTrue()
+            val noTrade = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='empty-no-trade']",
+            ) as HTMLElement
+            (noTrade.asDynamic().open as Boolean).shouldBeFalse()
+            removeActivityDom(root)
+        }
+
+        "new activity expands after a swap without reopening a collapsed record" {
+            resetRecentActivityClientState()
+            val oldActivity = activity("old-cycle", 1.0, "ORDERS_ATTEMPTED", listOf("BUY BTC"))
+            var root = activityDom("source-updates", listOf(oldActivity))
+            restoreRecentActivityState()
+            val oldRow = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='old-cycle']",
+            ) as HTMLElement
+            oldRow.asDynamic().open = false
+            oldRow.dispatchEvent(Event("toggle"))
+            captureRecentActivityState()
+
+            removeActivityDom(root)
+            root = activityDom(
+                "source-updates",
+                listOf(
+                    oldActivity,
+                    activity("new-trade", 2.0, "ORDERS_ATTEMPTED", listOf("SELL ETH")),
+                    activity("new-no-trade", 3.0),
+                ),
+            )
+            restoreRecentActivityState()
+
+            val restoredOld = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='old-cycle']",
+            ) as HTMLElement
+            (restoredOld.asDynamic().open as Boolean).shouldBeFalse()
+            restoredOld.asDynamic().open = true
+            restoredOld.dispatchEvent(Event("toggle"))
+            recentActivityUiState.expandedCycleIds.contains("old-cycle").shouldBeTrue()
+            restoredOld.asDynamic().open = false
+            restoredOld.dispatchEvent(Event("toggle"))
+            recentActivityUiState.expandedCycleIds.contains("old-cycle").shouldBeFalse()
+            val newTrade = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='new-trade']",
+            ) as HTMLElement
+            (newTrade.asDynamic().open as Boolean).shouldBeTrue()
+            val newNoTrade = root.querySelector(
+                "details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}='new-no-trade']",
+            ) as HTMLElement
+            (newNoTrade.asDynamic().open as Boolean).shouldBeFalse()
+            removeActivityDom(root)
+        }
+
+        "dashboard age refresh handles missing time and updates a present freshness badge" {
+            val age = document.createElement("span") as HTMLElement
+            age.className = CssClass.DataAge.Value.value
+            document.body!!.appendChild(age)
+
+            updateAge()
+
+            val time = document.createElement("time") as HTMLElement
+            time.className = CssClass.DataAge.Time.value
+            time.setAttribute("data-epoch", Date.now().toString())
+            document.body!!.appendChild(time)
+            val badge = document.createElement("span") as HTMLElement
+            badge.className = CssClass.StatusCard.Badge.value
+            document.body!!.appendChild(badge)
+
+            updateAge()
+
+            time.textContent.isNullOrBlank().shouldBeFalse()
+            badge.textContent shouldBe "STREAM"
+            badge.classList.contains("live").shouldBeTrue()
+            badge.parentNode?.removeChild(badge)
+            updateAge()
+            age.parentNode?.removeChild(age)
+            time.parentNode?.removeChild(time)
         }
 
         "activity state capture keeps its current filter and page when swap metadata is absent" {
@@ -265,7 +315,6 @@ class DashboardTest : StringSpec() {
 
             recentActivityUiState.items.map { it.cycleId } shouldBe listOf("account-b-cycle")
             recentActivityUiState.expandedCycleIds shouldBe emptySet()
-            recentActivityUiState.hydrationSourceId shouldBe null
             removeActivityDom(root)
         }
 
@@ -279,7 +328,6 @@ class DashboardTest : StringSpec() {
                 sourceId = source,
                 items = rows,
                 filter = RecentActivityText.FILTER_VALUE_ALL,
-                hydrationSourceId = source,
             )
             restoreRecentActivityState()
             (root.querySelector("button[${RecentActivityText.FILTER_ATTRIBUTE}='orders']") as HTMLButtonElement).click()
@@ -310,57 +358,34 @@ class DashboardTest : StringSpec() {
             spacer.parentNode?.removeChild(spacer)
         }
 
-        "missing persistence warns without removing current-run activity" {
-            resetRecentActivityClientState()
-            val root = activityDom("source-warning", listOf(activity("current-cycle", 1.0)))
-            recentActivityUiState.sourceId = "source-warning"
-            recentActivityUiState.items = listOf(activity("current-cycle", 1.0))
-
-            hydrateRecentActivityJson("{", "source-warning") shouldBe false
-
-            val warning = root.querySelector("#${RecentActivityText.PERSISTENCE_WARNING_ID}") as HTMLElement
-            warning.hidden.shouldBeFalse()
-            root.querySelectorAll("details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}]").length shouldBe 1
-            removeActivityDom(root)
-        }
-
-        "legacy hydrated outcome is rendered as recorded activity" {
-            resetRecentActivityClientState()
-            val root = activityDom("source-legacy")
-            recentActivityUiState.sourceId = "source-legacy"
-            val payload = """
-                {"items":[{
-                  "cycleId":"legacy-cycle",
-                  "occurredAt":"2026-10-11T12:00:00Z",
-                  "mode":"LIVE",
-                  "outcome":null,
-                  "actions":[]
-                }]}
-            """.trimIndent()
-
-            hydrateRecentActivityJson(payload, "source-legacy") shouldBe true
-
-            root.textContent shouldContain "Recorded activity"
-            root.textContent shouldContain "LIVE TRADING"
-            removeActivityDom(root)
-        }
-
         "empty filtered activity shows an empty state and hides older paging" {
             resetRecentActivityClientState()
             val root = activityDom("source-empty", listOf(activity("healthy-cycle", 1.0)))
             recentActivityUiState.sourceId = "source-empty"
             recentActivityUiState.filter = RecentActivityText.FILTER_VALUE_PROBLEMS
-            recentActivityUiState.hydrationSourceId = "source-empty"
             recentActivityUiState.items = listOf(activity("healthy-cycle", 1.0))
 
             restoreRecentActivityState()
 
             root.textContent shouldContain RecentActivityText.EMPTY_FILTER
             (root.querySelector("#${RecentActivityText.SHOW_OLDER_ID}") as HTMLButtonElement).hidden.shouldBeTrue()
+            registerDashboardGlobals()
+            val ignoredButton = document.createElement("button") as HTMLButtonElement
+            ignoredButton.id = "unrelated-action"
+            root.appendChild(ignoredButton)
+            ignoredButton.click()
+            recentActivityUiState.filter shouldBe RecentActivityText.FILTER_VALUE_PROBLEMS
+            recentActivityUiState.visibleCount shouldBe RecentActivityText.PAGE_SIZE.toInt()
+            root.removeChild(ignoredButton)
+            root.querySelector("#${RecentActivityText.SHOW_OLDER_ID}")?.let { button ->
+                button.parentNode?.removeChild(button)
+            }
+            restoreRecentActivityState()
             removeActivityDom(root)
         }
 
         "sortTable orders strings and amounts in both directions" {
+            reapplySort()
             val table = document.createElement("table") as HTMLTableElement
             val tbody = document.createElement("tbody") as HTMLTableSectionElement
             table.appendChild(tbody)
@@ -421,6 +446,17 @@ class DashboardTest : StringSpec() {
             th1.classList.contains("asc").shouldBeTrue()
             th0.getAttribute("data-sort") shouldBe "none"
             th1.getAttribute("data-sort") shouldBe "ascending"
+            document.body!!.appendChild(table)
+            reapplySort()
+            table.parentNode?.removeChild(table)
+
+            val incompleteTable = document.createElement("table") as HTMLTableElement
+            val incompleteHeader = document.createElement("th") as HTMLElement
+            incompleteHeader.className = "sortable"
+            incompleteTable.appendChild(incompleteHeader)
+            document.body!!.appendChild(incompleteTable)
+            sortTable(incompleteHeader, 0)
+            incompleteTable.parentNode?.removeChild(incompleteTable)
         }
 
         "sortTable parses comma-formatted Price and Value cells numerically" {

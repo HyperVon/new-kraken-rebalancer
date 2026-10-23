@@ -99,7 +99,7 @@ The decisions Canvas and recommend-only boundary in Step 6 remain mandatory.
 ### Step 0: Scope
 
 Default = **full system**. Narrow only if the user names a subsystem (e.g.
-Dashboard/History UI, account synchronization, persistence, rebalance loop).
+Dashboard/Settings UI, execution persistence, or the rebalance loop).
 
 Ask once if unclear: full redesign brainstorm vs evolutionary options only.
 Default to **both**, ranked.
@@ -141,7 +141,7 @@ Build a short mental model (include a mermaid diagram in the report):
 | Process / entry | `KrakenRebalancerApplication`, Koin `AppModule` |
 | Domain loop | `service` / `service/impl` — manager, analyzer, calculations, executor |
 | Exchange I/O | Kraken client(s), rate limiting, dry-run vs simulation routing |
-| Persistence | `repository`, Exposed tables, SQLite usage |
+| Persistence | `ExecutionDatabase`, SQLite JDBC, execution repositories |
 | HTTP / SSR | `controller`, `view/**`, routes in `:common` |
 | Client | `:frontend-js` (SSE, charts, HTMX hooks) |
 | Shared contracts | `:common` (config models, routes, UI constants) |
@@ -159,8 +159,6 @@ whether the split earns its keep.
 | :--- | :--- | :--- | :--- |
 | `watchConfigChanges()` | Hot SharedFlow | ConfigServiceImpl | Settings change restarts the loop |
 | Dashboard snapshot and hero trend | Hot StateFlow + bounded in-memory deque | CurrentPortfolioState | Latest completed cycle plus up to 24 same-source snapshots; clear trend on mode or credential-scope changes |
-| History sample write | Bounded channel | HistoryObservationRecorder | Persist selected direct cycle evidence away from the order path |
-| Account History sync | Explicit bounded sync | HistorySynchronizer | Verify account identity around pages and commit cursors atomically |
 | Exchange retry / USD settle poll | Cold Flow | Kraken adapters / OrderSettleHelper | Collect for current cycle work; never broadcast to UI |
 
 **Redesign smell:** adding an EventSource/WebSocket client when HTMX SSE +
@@ -183,8 +181,8 @@ Cover each dimension. Skip empty sections in the report; do not invent issues.
    modes when Kraken is wrong/slow. Treat exchange-doc claims as hypotheses
    until verified against current official Kraken docs (canonical links in
    [kraken-api-integration](../kraken-api-integration/SKILL.md)).
-5. **Persistence & continuity** — SQLite/Exposed fit; separately initialized
-   execution and History stores; data-directory account pinning; corruption
+5. **Persistence & continuity** — SQLite JDBC fit; durable execution journal;
+   data-directory account pinning; corruption
    and recovery.
 6. **API & UI architecture** — SSR + HTMX + Kotlin/JS vs SPA vs thinner
    server; chart/SSE coupling; operational clarity of LIVE/DRY/SIM.
@@ -261,9 +259,8 @@ bind-to-localhost — not "add JWT later".
 
 Any proposal replacing manager / executor / analyzer must preserve the focused
 current contracts in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md): fixed
-USD planning, execution safety, Dashboard, Settings compatibility, direct
-History capture, and account-history synchronization. Do not infer prior
-portfolio values from exchange events or add a synthetic benchmark.
+USD planning, execution safety, Dashboard, and Settings compatibility. Do not
+add retrospective reporting or a synthetic benchmark.
 
 ### Step 4: Brainstorm alternatives
 

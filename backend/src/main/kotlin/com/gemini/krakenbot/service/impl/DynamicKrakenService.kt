@@ -3,11 +3,8 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.service.AuthenticatedAccountInfo
 import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
@@ -92,37 +89,21 @@ class DynamicKrakenService(
         clOrdId: String?,
     ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun, clOrdId)
 
-    override suspend fun getAccountTradePage(
+    override suspend fun getRecentTradePage(
         startSec: Long?,
         endSec: Long?,
         cursor: String?,
         limit: Int?,
-    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> = currentBackend().getAccountTradePage(
+    ): ExchangeTradePage = currentBackend().getRecentTradePage(
         startSec = startSec,
         endSec = endSec,
         cursor = cursor,
         limit = limit,
     )
 
-    override suspend fun getAccountLedgerPage(
-        startSec: Long?,
-        endSec: Long?,
-        cursor: String?,
-    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> = currentBackend().getAccountLedgerPage(
-        startSec = startSec,
-        endSec = endSec,
-        cursor = cursor,
-    )
-
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> =
-        currentBackend().getOHLC(pair, interval, since)
-
     override suspend fun getFundingEvidenceScope(): String = currentBackend().getFundingEvidenceScope()
 
     override suspend fun getAuthenticatedAccountIdentity(): String? = currentBackend().getAuthenticatedAccountIdentity()
-
-    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
-        currentBackend().getAuthenticatedAccountInfo()
 
     override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

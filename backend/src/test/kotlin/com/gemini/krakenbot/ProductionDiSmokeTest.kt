@@ -19,15 +19,9 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.history.HistoryDatabase
-import com.gemini.krakenbot.service.history.HistoryObservationRecorder
-import com.gemini.krakenbot.service.history.HistoryService
-import com.gemini.krakenbot.service.history.HistoryStore
-import com.gemini.krakenbot.service.history.HistorySynchronizer
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.DashboardShellComponent
-import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -87,7 +81,6 @@ class ProductionDiSmokeTest :
             try {
                 get<DataDirectoryIdentity>().shouldNotBeNull()
                 get<ExecutionDatabase>().shouldNotBeNull()
-                get<HistoryDatabase>().shouldNotBeNull()
                 get<ObjectMapper>().shouldNotBeNull()
                 get<ConfigService>().shouldNotBeNull()
                 get<CoroutineScope>(named(APPLICATION_SCOPE_QUALIFIER)).shouldNotBeNull()
@@ -98,11 +91,6 @@ class ProductionDiSmokeTest :
                 get<ExecutionAccountBindingVerifier>().shouldNotBeNull()
                 get<ExecutionJournalBootstrap>().shouldNotBeNull()
 
-                get<HistoryStore>().shouldNotBeNull()
-                get<HistoryService>().shouldNotBeNull()
-                get<HistoryObservationRecorder>().shouldNotBeNull()
-                val synchronizer = get<HistorySynchronizer>()
-                synchronizer.shouldNotBeNull()
                 get<PortfolioManager>().isCycleActive() shouldBe false
 
                 com.gemini.krakenbot.config.coreModule.shouldNotBeNull()
@@ -119,7 +107,6 @@ class ProductionDiSmokeTest :
                 get<DashboardView>().shouldNotBeNull()
                 get<DashboardShellComponent>().shouldNotBeNull()
                 get<SettingsFormComponent>().shouldNotBeNull()
-                get<HistoryPageComponent>().shouldNotBeNull()
             } finally {
                 stopKoin()
                 restoreDatabasePaths(previousPaths)

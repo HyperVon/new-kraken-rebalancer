@@ -5,12 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.service.AuthenticatedAccountInfo
 import com.gemini.krakenbot.service.BalanceRead
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.DirectKrakenEvidenceService
@@ -90,37 +87,7 @@ class KrakenServiceImpl(
             ?.trim()
             ?.takeIf(String::isNotBlank)
 
-    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? {
-        val result = readApiKeyInfo()
-        val identity = result.path(KrakenApiConstants.FIELD_IBAN).takeIf { it.isTextual }
-            ?.asText()?.trim()?.takeIf(String::isNotBlank) ?: return null
-        val from = parseQueryBound(result, KrakenApiConstants.FIELD_QUERY_FROM)
-        val to = parseQueryBound(result, KrakenApiConstants.FIELD_QUERY_TO)
-        val boundsVerified = from.valid && to.valid &&
-            (from.value == null || to.value == null || from.value <= to.value)
-        return AuthenticatedAccountInfo(
-            identity = identity,
-            queryFromSec = from.value.takeIf { boundsVerified },
-            queryToSec = to.value.takeIf { boundsVerified },
-            queryBoundsVerified = boundsVerified,
-        )
-    }
-
     private suspend fun readApiKeyInfo(): JsonNode = queryPrivate(KrakenApiConstants.PATH_API_KEY_INFO, emptyMap())
-
-    private fun parseQueryBound(result: JsonNode, name: String): ParsedQueryBound {
-        if (!result.has(name)) return ParsedQueryBound(null, valid = false)
-        val node = result.path(name)
-        val raw = when {
-            node.isTextual -> node.asText()
-            node.isIntegralNumber -> node.asText()
-            else -> return ParsedQueryBound(null, valid = false)
-        }
-        val value = raw.toLongOrNull()?.takeIf { it >= 0 } ?: return ParsedQueryBound(null, valid = false)
-        return ParsedQueryBound(value.takeIf { it > 0 }, valid = true)
-    }
-
-    private data class ParsedQueryBound(val value: Long?, val valid: Boolean)
 
     private suspend fun <T> retryWithFlow(
         actionName: String,
@@ -400,17 +367,19 @@ class KrakenServiceImpl(
                 cause is ResponseException
         }
 
-    override suspend fun getAccountTradePage(
+    override suspend fun getRecentTradePage(
         startSec: Long?,
         endSec: Long?,
         cursor: String?,
         limit: Int?,
-    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> {
+    ): ExchangeTradePage {
         require(limit == null || limit in 1..MAX_TRADE_PAGE_LIMIT) {
-            "Trade history limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
+            "Trade page limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
         }
         if (!configService.getConfig().kraken.hasValidCredentials()) {
-            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
+            throw KrakenCredentialsUnavailableException(
+                "Kraken credentials are unavailable for order fill confirmation.",
+            )
         }
 
         val params = mutableMapOf<String, String>()
@@ -419,7 +388,6 @@ class KrakenServiceImpl(
         params[KrakenApiConstants.PARAM_WITH_CURSOR] = "true"
         params[KrakenApiConstants.PARAM_TRADES] = "true"
         params[KrakenApiConstants.PARAM_CONSOLIDATE_TAKER] = "false"
-        params[KrakenApiConstants.PARAM_LEDGERS] = "true"
         if (cursor != null) params[KrakenApiConstants.PARAM_CURSOR] = cursor
         if (limit != null) params[KrakenApiConstants.PARAM_LIMIT] = limit.toString()
 
@@ -433,56 +401,7 @@ class KrakenServiceImpl(
                 throw e
             }
 
-        return KrakenParsers.parseAccountTradePage(result, startSec, endSec, cursor)
-    }
-
-    override suspend fun getAccountLedgerPage(
-        startSec: Long?,
-        endSec: Long?,
-        cursor: String?,
-    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> {
-        if (!configService.getConfig().kraken.hasValidCredentials()) {
-            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for ledgers.")
-        }
-
-        val params = mutableMapOf<String, String>()
-        if (startSec != null) params[KrakenApiConstants.PARAM_START] = startSec.toString()
-        if (endSec != null) params[KrakenApiConstants.PARAM_END] = endSec.toString()
-        params[KrakenApiConstants.PARAM_TYPE] = KrakenApiConstants.LEDGER_TYPE_ALL
-        params[KrakenApiConstants.PARAM_WITH_CURSOR] = "true"
-        if (cursor != null) params[KrakenApiConstants.PARAM_CURSOR] = cursor
-
-        val result =
-            try {
-                queryPrivate(KrakenApiConstants.PATH_LEDGERS, params)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.error("Failed to query private Ledgers endpoint", e)
-                throw e
-            }
-
-        return KrakenParsers.parseAccountLedgerPage(result, startSec, endSec, cursor)
-    }
-
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
-        val params = mutableMapOf<String, String>()
-        params[KrakenApiConstants.PARAM_PAIR] = pair
-        params[KrakenApiConstants.PARAM_INTERVAL] = interval.toString()
-        if (since != null) params[KrakenApiConstants.PARAM_SINCE] = since.toString()
-        val queryStr = params.map { "${it.key}=${it.value}" }.joinToString("&")
-        val path = "${KrakenApiConstants.PATH_OHLC}?$queryStr"
-        val root =
-            try {
-                queryPublic(path)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.error("Failed to query public OHLC endpoint for pair $pair", e)
-                throw e
-            }
-
-        return KrakenParsers.parseOHLC(root, pair)
+        return KrakenParsers.parseTradePage(result)
     }
 
     private suspend fun queryPublic(path: String): JsonNode = retryWithFlow(

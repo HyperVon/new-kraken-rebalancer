@@ -9,7 +9,7 @@ val CANONICAL_BY_KRAKEN_ALIAS: Map<String, String>
     get() = AssetAliasTables.CANONICAL_BY_KRAKEN_ALIAS
 
 /**
- * Earn-migration suffixes: Kraken balances/ledger entries use e.g. `DOT.S`, `USDT.F` for
+ * Earn-migration suffixes: Kraken balance keys use e.g. `DOT.S`, `USDT.F` for
  * read-only yield-bearing assets; the base asset remains the transactable one.
  */
 val EARN_ASSET_SUFFIXES: List<String>

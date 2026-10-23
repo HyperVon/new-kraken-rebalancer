@@ -67,7 +67,7 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
     }
 
     init {
-        "executeOrder_live_addOrder_does_not_charge_history_counter_and_carries_apiKey_apiSign_and_nonce" {
+        "executeOrder_live_addOrder_does_not_charge_private_api_counter_and_carries_apiKey_apiSign_and_nonce" {
             runTest {
                 val limiter = RecordingRateLimiter()
                 var capturedApiKey: String? = null

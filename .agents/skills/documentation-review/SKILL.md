@@ -81,13 +81,11 @@ Gather facts from code/build (do not trust docs yet):
    `rebalancer-config-template.json`; distinguish active controls from retired
    history-only keys discarded on load and removed by Settings save.
 4. **HTTP / UI** — routes and form fields; Dashboard latest-cycle snapshot,
-   active Settings, direct History value observations, account-scoped trade and
-   ledger synchronization, simulation scoping, and SSE.
+   active Settings, simulation scoping, and SSE.
 5. **Algorithm** — fixed configured USD target, `PortfolioCalculations`,
    `PortfolioAnalyzerImpl`, and `OrderExecutorImpl` vs `docs/ALGORITHM.md`.
-6. **Flows** — config updates, in-memory current snapshot state, asynchronous
-   History capture and synchronization, and Dashboard SSE vs `docs/FLOWS.md`;
-   check that exchange events do not reconstruct earlier portfolio values.
+6. **Flows** — config updates, in-memory current snapshot state, order-specific
+   sell-fill confirmation, and Dashboard SSE vs `docs/FLOWS.md`.
 7. **Tests / evaluation** — focused current-contract tests mapped in
    `docs/EVALUATION.md`; verify file names and behavior in source. Check JaCoCo
    and `frontend-js/karma.config.d/coverage.js` separately.
@@ -303,9 +301,9 @@ Spot-check:
 
 - [ ] README tech stack versions match Gradle
 - [ ] README directory tree matches packages (tables under `repository/table/`)
-- [ ] ALGORITHM covers fixed USD target, fiat correction, dust, sell→buy, 99% cash reserve, Dashboard, and History boundaries
-- [ ] FLOWS matches config updates, current snapshot state, History capture/sync, and SSE route
-- [ ] EVALUATION links direct History capture/sync tests and excludes reconstructed-value or benchmark scenarios
+- [ ] ALGORITHM covers fixed USD target, fiat correction, dust, sell→buy, 99% cash reserve, and current Dashboard behavior
+- [ ] FLOWS matches config updates, current snapshot state, order settlement, and SSE route
+- [ ] EVALUATION links current rebalancing, execution-safety, Dashboard, and Settings checks
 - [ ] Template JSON keys ⊆ `Settings` / `AppConfig`
 - [ ] AGENTS skill index links resolve to existing `SKILL.md` files
 - [ ] `dryRun` vs `simulation` distinguished wherever both appear
@@ -322,7 +320,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | :--- | :--- | :--- |
 | Rebalance math | `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl` | `docs/ALGORITHM.md` |
 | Flows / SSE | `ConfigServiceImpl`, `CurrentPortfolioState`, `ActualObservationDispatcher`, `DashboardController` | `docs/FLOWS.md` |
-| Evaluation | Focused planning, execution-safety, Dashboard, Settings, History, and account-sync tests | `docs/EVALUATION.md` |
+| Evaluation | Focused planning, execution-safety, Dashboard, and Settings checks | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
 | Coverage | `backend/build.gradle.kts` JaCoCo, `frontend-js/karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
 | Security | `KtorConfig.configureCORS`, `SECURITY.md` | SECURITY, AGENTS security section |

@@ -1,18 +1,13 @@
-# Refined Glass baseline (current UI)
+# Refined Glass Baseline
 
-Review these shipped patterns for execution quality. Treat a missing or broken
-baseline item as a finding; do not re-propose retired retrospective surfaces.
+| Surface | Baseline |
+| --- | --- |
+| Global header | Brand, mode plate, navigation, and loop control stay readable on Dashboard and Settings. |
+| Dashboard | Current-cycle value, allocation, performance, recent activity, stream freshness, and live-order safety are easy to scan. |
+| Settings | Active loop controls, safety modes, allocations, and quality-score preview are visually distinct. |
+| Responsive behavior | Cards and controls reflow without horizontal clipping at phone widths. |
 
-| Area | What ships today |
-| :--- | :--- |
-| Global header | `brandWithMode()` — brand mark + persistent **mode plate** (`SIMULATION` / `DRY RUN` / `LIVE TRADING`, with tooltip) on Dashboard, Settings, and History |
-| Stream health | Dashboard-only chip reading **STREAM** / **STALE** with relative age + timestamp (`header-status`) — SSE freshness, never trading mode |
-| Dashboard | Latest completed current-cycle snapshot, bounded same-source hero trend, configured allocation values, Cash / Crypto summary tiles, current-cycle actions |
-| Settings safety | Simulation / Dry Run as toggle cards — icon, consequence prose, `ON`/`OFF` state pill, section subtitle |
-| History evidence | Direct cycle-value observations, account-sync state, and separately displayed exchange trade, ledger, and balance-checkpoint evidence |
-
-The Dashboard hero may show a bounded in-memory trend from the current portfolio
-source. History values are direct recorded observations; missing observations
-remain gaps and exchange events do not reconstruct a historical portfolio
-value. Simulation values are process-scoped and do not establish account trade
-or ledger evidence.
+The Dashboard displays the current Rebalancer state. Its recent cycle trend and
+activity are process-local. Settings contains the controls that determine
+future cycles; the quality-score preview does not change configuration until
+the operator saves it.

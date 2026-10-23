@@ -2,7 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.service.CurrentCycleActivityMode
-import com.gemini.krakenbot.service.history.HistoryCycleOutcome
+import com.gemini.krakenbot.service.CurrentCycleOutcome
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeLessThan
@@ -21,7 +21,7 @@ class RecentActivityComponentTest : StringSpec() {
         cycleId = "cycle-contract-1",
         occurredAt = Instant.parse("2026-10-11T12:34:56Z"),
         mode = CurrentCycleActivityMode.LIVE,
-        outcome = HistoryCycleOutcome.ORDERS_ATTEMPTED,
+        outcome = CurrentCycleOutcome.ORDERS_ATTEMPTED,
         actions = actions.toList(),
     )
 
@@ -32,7 +32,7 @@ class RecentActivityComponentTest : StringSpec() {
     private fun visibleText(html: String) = html.replace(Regex("<[^>]*>"), "")
 
     init {
-        "legacy live cost row humanizes and hides persisted markers" {
+        "legacy live cost row humanizes and hides raw cost markers" {
             val htmlString = renderActions($$"BUY BTC Volume: 0.1 Cost: $5000.00")
 
             htmlString shouldContain $$"BUY BTC · 0.1 · $5,000.00"
@@ -79,7 +79,7 @@ class RecentActivityComponentTest : StringSpec() {
                 RecentActivityComponent().render(
                     listOf(
                         activity("first recorded warning", "ERROR: second recorded action", "last recorded note")
-                            .copy(outcome = HistoryCycleOutcome.PROBLEM),
+                            .copy(outcome = CurrentCycleOutcome.PROBLEM),
                     ),
                     "source-1",
                 )

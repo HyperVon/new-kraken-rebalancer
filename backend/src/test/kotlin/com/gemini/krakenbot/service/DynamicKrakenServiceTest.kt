@@ -99,30 +99,26 @@ class DynamicKrakenServiceTest : StringSpec() {
                 realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
-            dynamicService.getAccountTradePage(12345L, null, null, 10)
-            coVerify(exactly = 1) { simulatedService.getAccountTradePage(12345L, null, null, 10) }
-            coVerify(exactly = 0) { realService.getAccountTradePage(any(), any(), any(), any()) }
-
-            dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
-            coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
-            coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
+            dynamicService.getRecentTradePage(12345L, null, null, 10)
+            coVerify(exactly = 1) { simulatedService.getRecentTradePage(12345L, null, null, 10) }
+            coVerify(exactly = 0) { realService.getRecentTradePage(any(), any(), any(), any()) }
         }
 
         "forwards cursor trade pages to the selected backend" {
             every { configService.getConfig() } returns appConfig(simulation = true)
             val dynamicService = createService()
 
-            dynamicService.getAccountTradePage(12345L, 12399L, "cursor-a", 10)
+            dynamicService.getRecentTradePage(12345L, 12399L, "cursor-a", 10)
 
-            coVerify(exactly = 1) { simulatedService.getAccountTradePage(12345L, 12399L, "cursor-a", 10) }
-            coVerify(exactly = 0) { realService.getAccountTradePage(any(), any(), any(), any()) }
+            coVerify(exactly = 1) { simulatedService.getRecentTradePage(12345L, 12399L, "cursor-a", 10) }
+            coVerify(exactly = 0) { realService.getRecentTradePage(any(), any(), any(), any()) }
 
             every { configService.getConfig() } returns appConfig(simulation = false)
 
-            dynamicService.getAccountTradePage(12345L, 12399L, "cursor-a", 10)
+            dynamicService.getRecentTradePage(12345L, 12399L, "cursor-a", 10)
 
-            coVerify(exactly = 1) { realService.getAccountTradePage(12345L, 12399L, "cursor-a", 10) }
-            coVerify(exactly = 1) { simulatedService.getAccountTradePage(12345L, 12399L, "cursor-a", 10) }
+            coVerify(exactly = 1) { realService.getRecentTradePage(12345L, 12399L, "cursor-a", 10) }
+            coVerify(exactly = 1) { simulatedService.getRecentTradePage(12345L, 12399L, "cursor-a", 10) }
         }
 
         "forwards clOrdId to the real backend when simulation is false" {
@@ -216,13 +212,9 @@ class DynamicKrakenServiceTest : StringSpec() {
                 simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
-            dynamicService.getAccountTradePage(null, null, null, null)
-            coVerify(exactly = 1) { realService.getAccountTradePage(null, null, null, null) }
-            coVerify(exactly = 0) { simulatedService.getAccountTradePage(any(), any(), any(), any()) }
-
-            dynamicService.getOHLC(TestFixtures.BTCUSD, 60, 1L)
-            coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 60, 1L) }
-            coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
+            dynamicService.getRecentTradePage(null, null, null, null)
+            coVerify(exactly = 1) { realService.getRecentTradePage(null, null, null, null) }
+            coVerify(exactly = 0) { simulatedService.getRecentTradePage(any(), any(), any(), any()) }
         }
 
         "withStableBackend keeps sell and buy on the backend pinned at entry despite mid-call flip" {
@@ -477,21 +469,6 @@ class DynamicKrakenServiceTest : StringSpec() {
 
             dynamicService.getFreshAssetMetadata() shouldBe liveMetadata
             coVerify(exactly = 1) { realService.getFreshAssetMetadata() }
-        }
-
-        "delegates cursor ledger pages to the selected backend" {
-            every { configService.getConfig() } returns appConfig(simulation = false)
-            val dynamicService = createService()
-
-            dynamicService.getAccountLedgerPage(12345L, 12399L, "cursor-a")
-            coVerify(exactly = 1) { realService.getAccountLedgerPage(12345L, 12399L, "cursor-a") }
-            coVerify(exactly = 0) { simulatedService.getAccountLedgerPage(any(), any(), any()) }
-
-            every { configService.getConfig() } returns appConfig(simulation = true)
-
-            dynamicService.getAccountLedgerPage(12345L, 12399L, "cursor-b")
-            coVerify(exactly = 1) { simulatedService.getAccountLedgerPage(12345L, 12399L, "cursor-b") }
-            coVerify(exactly = 0) { realService.getAccountLedgerPage(12345L, 12399L, "cursor-b") }
         }
 
         "delegates API counter and credential scope queries to the selected backend" {

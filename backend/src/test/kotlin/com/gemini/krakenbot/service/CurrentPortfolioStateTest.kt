@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.service.history.HistoryCycleOutcome
+import com.gemini.krakenbot.service.CurrentCycleOutcome
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -13,6 +13,13 @@ class CurrentPortfolioStateTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "dashboard views default to empty in-memory activity" {
+            val view = CurrentPortfolioDashboardView(latest = null, recentSnapshots = emptyList())
+
+            view.recentActivities shouldBe emptyList()
+            view.activitySourceId shouldBe ""
+        }
+
         "dashboard view retains only the latest 24 completed snapshots in publish order" {
             val state = CurrentPortfolioState()
             val start = Instant.parse("2026-10-11T12:00:00Z")
@@ -75,7 +82,7 @@ class CurrentPortfolioStateTest : StringSpec() {
                         cycleId = "cycle-$index",
                         occurredAt = start.plusSeconds(index.toLong()),
                         mode = CurrentCycleActivityMode.LIVE,
-                        outcome = HistoryCycleOutcome.NO_TRADE,
+                        outcome = CurrentCycleOutcome.NO_TRADE,
                         actions = listOf("check $index"),
                     ),
                 )
@@ -91,7 +98,7 @@ class CurrentPortfolioStateTest : StringSpec() {
                 cycleId = "failed-cycle",
                 occurredAt = start.plusSeconds(200),
                 mode = CurrentCycleActivityMode.LIVE,
-                outcome = HistoryCycleOutcome.PROBLEM,
+                outcome = CurrentCycleOutcome.PROBLEM,
                 actions = listOf("ERROR: cycle failed"),
             )
             state.publishActivity(failed, "live:credential-generation-a")
@@ -107,10 +114,10 @@ class CurrentPortfolioStateTest : StringSpec() {
                 cycleId = "same-cycle",
                 occurredAt = timestamp,
                 mode = CurrentCycleActivityMode.DRY_RUN,
-                outcome = HistoryCycleOutcome.DRY_RUN_PLAN,
+                outcome = CurrentCycleOutcome.DRY_RUN_PLAN,
                 actions = listOf("[DRY RUN] BUY BTC"),
             )
-            val updated = original.copy(outcome = HistoryCycleOutcome.PROBLEM, actions = listOf("ERROR: submit failed"))
+            val updated = original.copy(outcome = CurrentCycleOutcome.PROBLEM, actions = listOf("ERROR: submit failed"))
 
             state.publishActivity(original, "live:credential-generation-a")
             state.publishActivity(updated, "live:credential-generation-a")

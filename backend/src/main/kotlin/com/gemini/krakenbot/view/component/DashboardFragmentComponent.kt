@@ -80,7 +80,7 @@ class DashboardFragmentComponent(
         overviewGridComponent.render(latest, recentSnapshots)
 
         div.div(CssClass.Layout.DetailGrid) {
-            allocationChartComponent.render(latest, allocations, qualityScores)
+            allocationChartComponent.render(latest, allocations)
             performanceTableComponent.render(latest, qualityScores)
         }
 

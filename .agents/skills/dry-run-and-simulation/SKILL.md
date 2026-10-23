@@ -37,8 +37,8 @@ Settings.simulation == false → KrakenServiceImpl
 DI: `AppModule` binds `KrakenService` → `DynamicKrakenService(live, simulated, configService)`.
 
 `PortfolioManagerImpl.performCycleWithStableSession()` owns the normal
-cycle-wide boundary: in-cycle ledger sync, trade sync, historical
-reconstruction, and `performRebalanceCycle()` run inside one
+cycle-wide boundary: balance and price reads, planning, order execution, and
+sell settlement run inside one
 `ConfigService` execution session and one `DynamicKrakenService.withStableBackend`
 pin. Nested sync, reconstruction, and order-executor calls reuse that
 coroutine-context backend pin, so all reads and writes in the cycle use one
@@ -66,10 +66,8 @@ decision explicitly.
 - **Pinned:** the normal cycle-wide sequence owned by
   `performCycleWithStableSession` (balance/price reads, planning, orders, and
   order-specific settlement); and top-level `OrderExecutor.executeOrders`
-  (nested pins reuse the outer pin). Startup runs the execution-journal
-  recovery, History recorder, and portfolio manager. Simulation writes a
-  process-scoped History value series but does not authenticate an account or
-  synchronize Kraken trades and ledgers.
+  (nested pins reuse the outer pin). Startup recovers the execution journal
+  before starting the portfolio manager.
 - **Unpinned:** dashboard balance/price reads, health checks — each call
   re-resolves from config at invocation time.
 - Anti-patterns: assuming a mid-cycle config flip affects an already-pinned
@@ -96,8 +94,8 @@ decision explicitly.
 - `SimulatedKrakenService`: MARKET orders only; synchronized lazy balance/price
   init; random-walk prices per ticker fetch; a coroutine `Mutex` makes each
   non-dry-run balance check, mutation, and trade append atomic.
-- Seeding: historical snapshots (~15 days) and simulated trades when DB empty +
-  simulation enabled (see trade-history-sync).
+- Seeding: in-memory balances and prices are initialized for offline simulation;
+  no snapshots or account trade feed are persisted.
 - Still honors `dryRun` (no balance mutation on orders).
 - Dry-run emulator orders omit `orderTxid`. That only matters when settle runs
   (`dryRun=false` with successful sells); when `settings.dryRun` is true, the

@@ -1,14 +1,13 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.Instant
 import java.util.UUID
 
-/** Process-local snapshot and cycle-activity state; it never reads persisted history. */
+/** Process-local portfolio snapshots and cycle activities for the Dashboard. */
 class CurrentPortfolioState {
     private val mutableSnapshot = MutableStateFlow<PortfolioSnapshot?>(null)
     private val mutableActivityUpdate = MutableStateFlow<CurrentCycleActivity?>(null)
@@ -76,11 +75,13 @@ class CurrentPortfolioState {
 
 enum class CurrentCycleActivityMode { SIMULATION, DRY_RUN, LIVE }
 
+enum class CurrentCycleOutcome { NO_TRADE, DRY_RUN_PLAN, ORDERS_ATTEMPTED, PROBLEM }
+
 data class CurrentCycleActivity(
     val cycleId: String,
     val occurredAt: Instant,
     val mode: CurrentCycleActivityMode,
-    val outcome: HistoryCycleOutcome?,
+    val outcome: CurrentCycleOutcome?,
     val actions: List<String>,
 )
 

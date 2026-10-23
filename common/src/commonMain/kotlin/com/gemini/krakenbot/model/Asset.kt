@@ -93,7 +93,7 @@ value class Asset(val value: String) {
                 else -> null
             } ?: return null
 
-            val canonical = normalizeLedgerAsset(base)
+            val canonical = normalizeKrakenAssetCode(base)
             if (matchesTradingPair(normalizedPair, canonical)) {
                 return canonical
             }
@@ -102,7 +102,8 @@ value class Asset(val value: String) {
 
         private fun normalizedSymbol(symbol: String): String = symbol.uppercase()
 
-        private fun isUsdSymbol(symbol: String): Boolean = normalizeLedgerAsset(symbol).equals(USD, ignoreCase = true)
+        private fun isUsdSymbol(symbol: String): Boolean =
+            normalizeKrakenAssetCode(symbol).equals(USD, ignoreCase = true)
 
         private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean =
             normalizedPair in acceptedKrakenPairs(symbol)
@@ -148,7 +149,7 @@ value class Asset(val value: String) {
             val legacyBase = normalizedPair.removeSuffix(quoteSuffix)
             val resolvedSuffix = if (legacyQuote && legacyBase.length <= 2) USD else quoteSuffix
             val quote = QUOTE_SUFFIX_TO_ASSET.getValue(resolvedSuffix)
-            val base = normalizeLedgerAsset(normalizedPair.removeSuffix(resolvedSuffix)).uppercase()
+            val base = normalizeKrakenAssetCode(normalizedPair.removeSuffix(resolvedSuffix)).uppercase()
             if (base.isEmpty() || base == quote) return null
             return TradingPairSplit(base = base, quote = quote, rawPair = normalizedPair)
         }
@@ -179,11 +180,11 @@ value class Asset(val value: String) {
         }
 
         /**
-         * Normalize a Kraken Ledgers asset code to the application symbol: strips Earn-migration
+         * Normalize a Kraken asset code to the application symbol: strips Earn-migration
          * suffixes (`DOT.S` → `DOT`, `AVAX.S` → `AVAX`) and maps legacy Kraken ISO-4217 prefixes
          * (`XXBT` → `BTC`, `ZUSD` → `USD`, `XETH` → `ETH`).
          */
-        fun normalizeLedgerAsset(asset: String): String {
+        fun normalizeKrakenAssetCode(asset: String): String {
             var upper = asset.trim().uppercase()
             if (upper.isEmpty()) return upper
 

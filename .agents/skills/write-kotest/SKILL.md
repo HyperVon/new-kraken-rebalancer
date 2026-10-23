@@ -1,175 +1,69 @@
 ---
 name: write-kotest
 description: >-
-  Write Kotest specs and evaluation/E2E tests — StringSpec init blocks,
-  IsolationMode, TestFixtures, FakeKraken vs SimulatedKraken, BigDecimal
-  shouldBeEqualComparingTo, in-memory SQLite, and advanceUntilIdle for Flow
-  tests. Use when adding or changing JVM/JS tests for current cycle, order
-  safety, Dashboard, Settings, History capture, or account-history sync behavior.
+  Write focused JVM and Kotlin/JS Kotest specs for rebalancing, live-order
+  safety, Dashboard, Settings, and current-cycle behavior.
 ---
 
 # Writing Kotest Unit Tests
 
-Canonical evaluation doc: [`docs/EVALUATION.md`](../../../docs/EVALUATION.md).
+The current contract map is in docs/EVALUATION.md.
 
 ## Spec structure
 
-```kotlin
-class MyServiceTest : StringSpec() {
+Use StringSpec with an init block and prefer InstancePerTest for mutable
+fixtures. Do not use constructor-lambda StringSpec. Add suppressions only when
+the compiler or IDE reports a real warning.
 
-    override fun isolationMode() = IsolationMode.InstancePerTest
+## Comparisons and isolation
 
-    init {
-        "should do something correctly" {
-            // …
-        }
-    }
-}
-```
-
-Never use constructor-lambda `StringSpec({ … })`. Prefer
-`IsolationMode.InstancePerTest` for mutable fixtures.
-Add `@Suppress("unused")` only when the compiler or IDE reports a real warning;
-reflection-based discovery does not require it on every spec.
-
-## TestFixtures
-
-Use the current test fixtures and configuration builders in the owning test
-module. Keep credentials and identifiers fake; avoid runtime config files and
-magic values unrelated to the test contract.
-
-## BigDecimal comparisons
-
-```kotlin
-import io.kotest.matchers.comparables.shouldBeEqualComparingTo
-
-result.shouldBeEqualComparingTo(BigDecimal("100.50"))
-```
-
-Never `.equals()`, `shouldBe` alone on `BigDecimal`, or
-`shouldBeEqualByComparingTo`.
-
-## In-memory SQLite
-
-```kotlin
-private val historyDb = HistoryDatabase.inMemory()
-```
+Use shouldBeEqualComparingTo for BigDecimal. Never use equals or shouldBe
+alone for BigDecimal comparisons.
 
 Never touch an operator's configured data directory from tests. Use in-memory
-or temporary SQLite paths for both History and execution stores.
+or temporary SQLite paths for execution-journal tests.
 
-## FakeKrakenService vs SimulatedKrakenService
+## Test doubles and coroutines
 
-| Double | Role |
-| :--- | :--- |
-| **`FakeKrakenService`** | Test-only controllable fake (suppliers, `executedOrders`) — prefer in unit/evaluation tests |
-| **`SimulatedKrakenService`** | Production emulator used when `settings.simulation=true` |
+Use FakeKrakenService for controlled cases and SimulatedKrakenService when the
+production emulator itself is under test. Keep credentials and account
+identifiers fake.
 
-Use `FakeKrakenService` for controlled cases and `SimulatedKrakenService` when
-the production emulator behavior itself is under test. Current focused test
-coverage is mapped in [`docs/EVALUATION.md`](../../../docs/EVALUATION.md),
-including direct History capture, account sync, and rendering contracts.
+Use runTest for suspending functions and advanceUntilIdle for Flow or loop
+events. Do not resolve races with arbitrary sleeps or longer fixed delays.
 
-```kotlin
-val fakeKraken = FakeKrakenService().apply {
-    balanceSupplier = {
-        mapOf("XXBT" to BigDecimal("0.5"), "ZUSD" to BigDecimal("1000.00"))
-    }
-}
-```
+For SSE, assert the initial snapshot and subsequent flow events. For settings
+changes, verify collectLatest cancels an idle delay and restarts with the new
+configuration. Cancellation must not be recorded as a cycle failure.
 
-### MockK + Exposed static mocks
+## Focused contract coverage
 
-- Use the constant
-  `TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT`.
-- Always `unmockkStatic(...)` in `finally` or test teardown.
-- Prefer `HistoryDatabase.inMemory()` for History store tests and
-  `ExecutionDatabase.initialize(":memory:")` for execution journal tests unless
-  a test targets file lifecycle or failure mapping.
-- For services:
-  `coEvery { kraken.withStableBackend(any()) } coAnswers { firstArg<suspend (KrakenService) -> Any>().invoke(fakeKraken) }`
-- **Mock contract fidelity:** Assert observable domain effects and returned contracts, not just invocation counts (`coVerify(exactly = 1)`). Do not construct deep mock hierarchies where a fake or in-memory instance is cleaner.
-- **Timing & flakiness discipline:** Never resolve async test races by inserting arbitrary `Thread.sleep()` or extending fixed delays; use `advanceUntilIdle()` inside `runTest` or deterministic polling.
+Add or update tests when changes affect:
 
-## Coroutines & Flows
+- Fixed USD targets, rebalancing math, fiat correction, dust thresholds, or
+  sell/settle/buy ordering.
+- OrderExecutor, settled-cash limits, buy reserve, or durable live-order
+  intent safety.
+- DynamicKrakenService, simulation/dryRun behavior, or Settings parsing.
+- Dashboard current-cycle snapshots, in-memory activity, health/readiness, or
+  SSE.
+- Execution-journal initialization, account binding, or restart recovery.
 
-```kotlin
-runTest {
-    // suspend work
-    advanceUntilIdle() // Flow / SharedFlow collectors, rate limiter, loop events
-}
-```
-
-Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
-
-### Loop & config-change tests
-
-- Emit settings while the loop sits in `delay(loopDelaySeconds)` — expect
-  `collectLatest` to cancel and restart with the new settings.
-- Assert `CancellationException` is not logged as a cycle failure.
-- Use `runTest` + `advanceUntilIdle()` after emissions.
-- For SSE: assert the initial snapshot send, then subsequent flow events.
-
-## Evaluation / E2E / chaos
-
-### Focused contract coverage
-
-Add or update focused tests when a change affects:
-
-- Fixed USD targets, `RebalancerEngine`, `PortfolioCalculations`, fiat
-  correction, dust thresholds, or sell/settle/buy ordering
-- `OrderExecutorImpl`, settled-cash limits, the 99% buy reserve, or live
-  `cl_ord_id` intent safety
-- `DynamicKrakenService`, `dryRun` / `simulation`, or current Settings parsing
-- Dashboard's latest in-memory cycle snapshot, History page/APIs, sync status,
-  health/readiness, or SSE
-- Direct History observations, incomplete evidence, account/scope continuity,
-  pagination, cursor commits, or data-store initialization
-
-Use the focused tests listed in `docs/EVALUATION.md` as the starting point;
-update that coverage map when test ownership changes. Prefer `FakeKrakenService`
-and `TestFixtures.DEFAULT_TEST_SETTINGS` for deterministic cases; never use a
-file-backed runtime database in unit tests.
+Prefer observable domain effects to invocation counts. Each test should cover a
+distinct failure mode. Avoid coverage padding and framework-only tests.
 
 ## Kotlin/JS tests
 
-Under `frontend-js/src/jsTest/` — Kotest `StringSpec` + `IsolationMode.InstancePerTest`,
-mock DOM, clean up nodes. Prefer `CssClass` / `HtmlIds` / `HtmlTags` / `TestDomBuilders`
-for internal setup and non-contract mechanics. When the test verifies emitted
-DOM/HTML, JSON, HTTP, route, header, or persisted-key spelling, use independent
-raw expected literals instead of the generated production catalog. A shared
-test mirror of production constants is not an independent oracle.
-Coverage gates: 90% statements/lines, 80% functions, 75% branches.
-
-```bash
-./gradlew :frontend-js:jsBrowserTest
-./gradlew test jacocoTestReport jacocoTestCoverageVerification
-```
-
-## Test necessity (no test slop)
-
-Each test is the cheapest way to kill a **distinct defect class**:
-
-- If you cannot name the failure mode a new test uniquely covers, do not add
-  it. Cosmetic input variation with identical structure is duplication; use
-  table-driven rows only when each row kills a distinct variant.
-- Skip inputs the type system or the caller's contract makes impossible (null
-  on a non-nullable internal parameter; an already-validated shape deep inside
-  the boundary). Keep unlikely-but-possible boundary cases (Kraken responses,
-  config files, user input) — they are cheap insurance.
-- No coverage padding: assertions that only prove "does not throw" or
-  "is not null", or that restate a stubbed mock's return value with no
-  production logic in between.
-- Do not test the framework: getters, constructors, and delegation with no
-  logic unless an external contract depends on them.
-
-Full rubric: [ai-slop-detector](../ai-slop-detector/SKILL.md) § Test necessity.
+Under frontend-js/src/jsTest, use Kotest StringSpec and isolate mutable DOM
+state. Use shared catalogs for internal setup, but raw independent literals
+when checking emitted DOM, JSON, HTTP, route, header, or persisted-key spelling.
+Coverage gates are configured in frontend-js/karma.config.d/coverage.js.
 
 ## Checklist
 
-- [ ] `init` block + isolation mode; suppress only demonstrated warnings
-- [ ] Each test kills a distinct defect class; no impossible-case or coverage-padding tests
-- [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
-- [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
-- [ ] Focused current-contract tests updated when behavior changes
-- [ ] No machine paths/hostnames; no FQNs
+- [ ] StringSpec init block and suitable isolation
+- [ ] BigDecimal uses shouldBeEqualComparingTo
+- [ ] Tests use fake credentials and isolated database paths
+- [ ] Flow tests use runTest and deterministic scheduling
+- [ ] Each test covers a distinct failure mode
+- [ ] Focused contracts are mapped in docs/EVALUATION.md

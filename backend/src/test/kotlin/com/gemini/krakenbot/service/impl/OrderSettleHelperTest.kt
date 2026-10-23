@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeFill
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -16,7 +16,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
-import java.time.Instant
 
 class OrderSettleHelperTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -26,7 +25,7 @@ class OrderSettleHelperTest : StringSpec() {
     init {
         "settles only USD fee-denominated fills and caps to spendable USD" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "fill-1", txid = "sell-1", cost = "5000.00", fee = "10.00", feeCurrency = Asset.USD),
                 )
                 coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4800.00"))
@@ -44,7 +43,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "unknown nonzero fee denomination falls back to the observed USD balance" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "fill-unknown-fee", txid = "sell-unknown-fee", cost = "5000.00", fee = "10.00"),
                 )
                 coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4700.00"))
@@ -62,7 +61,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "positive non-USD fees cannot confirm USD proceeds" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(
                         id = "fill-bitcoin-fee",
                         txid = "sell-bitcoin-fee",
@@ -86,7 +85,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "zero fee without a denomination may confirm proceeds subject to the balance cap" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "fill-zero-fee", txid = "sell-zero-fee", cost = "5000.00", fee = "0.00"),
                 )
                 coEvery { backend.getBalances() } returns mapOf(Asset.USD to BigDecimal("4800.00"))
@@ -104,7 +103,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "one unknown matched fee prevents a mixed page from claiming partial proceeds" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "fill-known", txid = "sell-mixed", cost = "2500.00", fee = "0.00"),
                     trade(id = "fill-unknown", txid = "sell-mixed", cost = "2500.00", fee = "5.00"),
                 )
@@ -121,10 +120,10 @@ class OrderSettleHelperTest : StringSpec() {
             }
         }
 
-        "continues native history at cursor and settles matching rows from the later page" {
+        "continues recent fill pages at the cursor and settles a matching later row" {
             runTest {
                 val requestedCursors = mutableListOf<String?>()
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } coAnswers {
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } coAnswers {
                     val cursor = thirdArg<String?>()
                     requestedCursors += cursor
                     if (cursor == null) {
@@ -141,7 +140,6 @@ class OrderSettleHelperTest : StringSpec() {
                                 fee = "5.00",
                                 feeCurrency = Asset.USD,
                             ),
-                            requestedCursor = cursor,
                         )
                     }
                 }
@@ -161,7 +159,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "concurrent settlements filter their own order IDs without shared page metadata" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "fill-a", txid = "sell-a", cost = "100.00", fee = "0.00"),
                     trade(id = "fill-b", txid = "sell-b", cost = "200.00", fee = "0.00"),
                 )
@@ -191,7 +189,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "invalid page cannot confirm fills and settlement uses balance polling" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "untrusted", txid = "sell-untrusted", cost = "5000.00", fee = "0.00"),
                     valid = false,
                 )
@@ -210,7 +208,7 @@ class OrderSettleHelperTest : StringSpec() {
 
         "cancellation from spendable balance peek propagates" {
             runTest {
-                coEvery { backend.getAccountTradePage(any(), any(), any(), any()) } returns page(
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
                     trade(id = "fill-cancel", txid = "sell-cancel", cost = "505.00", fee = "0.00"),
                 )
                 coEvery { backend.getBalances() } throws CancellationException("settlement cancelled")
@@ -244,45 +242,25 @@ class OrderSettleHelperTest : StringSpec() {
         }
     }
 
-    private fun page(
-        vararg entries: ExchangeTradeHistoryEntry,
-        nextCursor: String? = null,
-        requestedCursor: String? = null,
-        valid: Boolean = true,
-    ) = ExchangeHistoryPage(
-        entries = entries.toList(),
-        startSec = 1L,
-        endSec = 2L,
-        requestedCursor = requestedCursor,
-        nextCursor = nextCursor,
-        count = null,
-        rawSize = entries.size,
-        valid = valid,
-    )
+    private fun page(vararg entries: ExchangeTradeFill, nextCursor: String? = null, valid: Boolean = true) =
+        ExchangeTradePage(
+            entries = entries.toList(),
+            nextCursor = nextCursor,
+            valid = valid,
+        )
 
     private fun trade(id: String, txid: String, cost: String, fee: String, feeCurrency: String? = null) =
-        ExchangeTradeHistoryEntry(
+        ExchangeTradeFill(
             tradeId = id,
             orderTxid = txid,
-            postTxid = "post-$id",
-            pair = "XXBTZUSD",
             baseAsset = Asset.BTC,
             quoteCurrency = Asset.USD,
             feeCurrency = feeCurrency,
-            time = Instant.parse("2026-10-13T12:00:00Z"),
-            rawTime = "1791892800.000000000",
             type = "sell",
-            orderType = "market",
             price = "50000.00",
             cost = cost,
             fee = fee,
             volume = "0.10000000",
-            margin = "0.0",
-            misc = "",
-            tradeSequenceId = id,
-            maker = null,
-            ledgerIds = null,
-            rawRecordJson = null,
             hasValidTime = true,
             hasValidPrice = true,
             hasValidCost = true,

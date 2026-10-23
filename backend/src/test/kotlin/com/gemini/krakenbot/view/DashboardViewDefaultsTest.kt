@@ -1,19 +1,16 @@
 package com.gemini.krakenbot.view
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.service.history.HistoryEventQuery
-import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
-import com.gemini.krakenbot.view.component.HistoryPageComponent
-import com.gemini.krakenbot.view.component.HistoryPageData
 import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.div
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
@@ -33,7 +30,6 @@ class DashboardViewDefaultsTest :
                     performanceTableComponent = PerformanceTableComponent(),
                     recentActivityComponent = RecentActivityComponent(),
                 ),
-                historyPageComponent = HistoryPageComponent(),
             )
 
             val shell = createHTML(prettyPrint = false).html {
@@ -53,29 +49,6 @@ class DashboardViewDefaultsTest :
             }
             form shouldContain "test-token"
 
-            val history = createHTML(prettyPrint = false).html {
-                with(this) {
-                    dashboardView.renderHistoryPage(
-                        settings = config.settings,
-                        paused = true,
-                        csrfToken = "csrf-val",
-                        data = HistoryPageData(
-                            range = "all",
-                            filters = HistoryEventQuery(),
-                            tradesOffset = 0,
-                            ledgersOffset = 0,
-                            observations = emptyList(),
-                            checkpoints = HistoryPage(emptyList(), total = 0, limit = 50, offset = 0, hasMore = false),
-                            trades = HistoryPage(emptyList(), total = 0, limit = 50, offset = 0, hasMore = false),
-                            ledgers = HistoryPage(emptyList(), total = 0, limit = 50, offset = 0, hasMore = false),
-                            syncStatuses = emptyList(),
-                            accountAvailable = false,
-                        ),
-                    )
-                }
-            }
-            history shouldContain "History"
-
             val fragment = createHTML(prettyPrint = false).div {
                 with(this) {
                     dashboardView.renderDashboardFragment(
@@ -85,5 +58,37 @@ class DashboardViewDefaultsTest :
                 }
             }
             fragment shouldContain "mode-plate"
+        }
+
+        "dashboard components retain their defaults when rendered directly" {
+            val settings = TestFixtures.DEFAULT_TEST_CONFIG.settings
+            val latest = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("100"))
+            val shell = createHTML(prettyPrint = false).html {
+                with(this) { DashboardShellComponent().render(settings) }
+            }
+            shell shouldContain "mode-plate"
+
+            val fragmentComponent = DashboardFragmentComponent(
+                overviewGridComponent = OverviewGridComponent(),
+                allocationChartComponent = AllocationChartComponent(),
+                performanceTableComponent = PerformanceTableComponent(),
+                recentActivityComponent = RecentActivityComponent(),
+            )
+            val fragment = createHTML(prettyPrint = false).div {
+                with(this) { fragmentComponent.render(settings, latest) }
+            }
+            fragment shouldContain "Recent Activity"
+            fragment shouldContain "data-activity-source-id=\"\""
+            fragment shouldNotContain "<form"
+
+            val allocation = createHTML(prettyPrint = false).div {
+                with(this) { AllocationChartComponent().render(latest) }
+            }
+            allocation shouldContain "Portfolio Allocation"
+
+            val performance = createHTML(prettyPrint = false).div {
+                with(this) { PerformanceTableComponent().render(latest) }
+            }
+            performance shouldContain "Asset Performance"
         }
     })

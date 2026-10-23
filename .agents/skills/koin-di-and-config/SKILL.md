@@ -89,14 +89,14 @@ the settings flow publish the new values. File reload follows the same
 transactional rule: parse and validate both representations before assigning
 runtime or raw-credential state.
 
-### Active execution sessions and data-store lifecycle
+### Active execution sessions and execution journal lifecycle
 
 `PortfolioManagerImpl.performCycleWithStableSession()` owns the outer,
 cycle-wide `beginExecutionSession()` / `endExecutionSession()` boundary. It
 covers current balance and price reads, planning, order execution, and
 order-specific sell settlement. The same boundary owns the outer
 `DynamicKrakenService.withStableBackend` pin; nested order-executor pins reuse
-it. Startup does not synchronize account history or reconstruct reports.
+it. Startup initializes the durable execution journal before the portfolio loop.
 
 While the session depth is positive, `updateConfig()` still validates and
 persists atomically, and `loadConfig()` still validates disk content, but both
@@ -106,16 +106,12 @@ last staged config and emits its settings. This keeps one money-moving cycle
 on one coherent config and credential version.
 
 `ExecutionJournalBootstrap` runs before the portfolio loop to recover
-interrupted submissions in the active execution journal. The application also
-starts `HistoryObservationRecorder` before the loop. `DataDirectoryConfig`
-locates separate `execution.db` and `history.db` files under
+interrupted submissions. `DataDirectoryConfig` locates `execution.db` under
 `KRAKEN_DATA_DIR`, `-Dkraken.data.dir`, or the default
 `rebalancer-data-v1` directory. `DataDirectoryConfig.ensureDataDirectory()`
-creates fresh stores on first start and resumes an interrupted initialization;
-a mixed directory holding only one store fails closed.
-`DataDirectoryIdentity` binds account-scoped stores to one
-verified account with `account-identity.sha256`. The application does not
-migrate the former reporting or Actual stores.
+creates the journal on first start and resumes an interrupted initialization.
+`DataDirectoryIdentity` binds order-execution evidence to one verified account
+with `account-identity.sha256`.
 
 Older settings JSON may include retired history-only drawdown, deployment,
 inception, or comparison-start keys. The parser drops these keys before model

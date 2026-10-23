@@ -7,12 +7,10 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.toCryptoScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeFill
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
-import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
@@ -26,7 +24,6 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ThreadLocalRandom
@@ -37,10 +34,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     private val balances = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedPrices = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedTrades = CopyOnWriteArrayList<TradeRecord>()
-    private val simulatedLedgerEntries = CopyOnWriteArrayList<LedgerEvent>()
     private val orderMutex = Mutex()
-    private var historicalTradesSeeded = false
-    private var historicalLedgersSeeded = false
 
     init {
         log.info("Initialized SimulatedKrakenService")
@@ -92,141 +86,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     driftedUSDValue.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
             }
         }
-
-        // Seed demo history once when both sides of a USD-quoted fill can be represented.
-        if (
-            !historicalTradesSeeded &&
-            allocations.any { !it.symbol.isUsd } &&
-            allocations.any { it.symbol.isUsd }
-        ) {
-            seedSimulatedTrades()
-            historicalTradesSeeded = true
-            seedSimulatedLedgerEntries()
-            historicalLedgersSeeded = true
-        }
-    }
-
-    // Seeds staking ledger history so the rewards panel is populated in simulation
-    // mode. Entries spread across the same ~15-day window as seeded snapshots and
-    // trades, so the cumulative rewards line grows realistically over any range.
-    private fun seedSimulatedLedgerEntries() {
-        val now = Instant.now()
-        val allocations = configService.getConfig().allocations
-        val nonUsd = allocations.filter { !it.symbol.isUsd }
-        if (nonUsd.isEmpty()) return
-
-        nonUsd.forEachIndexed { assetIndex, alloc ->
-            val symbol = alloc.symbol.value.uppercase()
-            val price =
-                simulatedPrices[symbol]
-                    ?: (SimulationDefaults.INITIAL_PRICES[symbol] ?: SimulationDefaults.DEFAULT_PRICE)
-            repeat(5) { eventIndex ->
-                val hoursAgo = 14L + eventIndex * 72L + assetIndex.toLong()
-                val rewardUsd = BigDecimal.valueOf(25L + eventIndex * 6L)
-                val rewardAmount =
-                    rewardUsd.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
-                simulatedLedgerEntries.add(
-                    LedgerEvent(
-                        ledgerId = "SIM-SEED-LEDGER-$assetIndex-$eventIndex",
-                        time = now.minus(hoursAgo, ChronoUnit.HOURS),
-                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
-                        subtype = "reward",
-                        aclass = "currency",
-                        asset = symbol,
-                        amount = rewardAmount,
-                    ),
-                )
-                // Production staking rewards credit actual balances; mirror that so the
-                // seeded ledger rows reconcile against the seeded balance series.
-                balances.merge(symbol, rewardAmount, BigDecimal::add)
-            }
-        }
-    }
-
-    private fun seedSimulatedTrades() {
-        val now = Instant.now()
-        val allocations = configService.getConfig().allocations
-        val nonUsd = allocations.filter { !it.symbol.isUsd }
-        if (nonUsd.isEmpty()) return
-
-        // Seven paired rebalances over the last five days. Each pair returns the
-        // asset quantity to its starting level while retaining realistic fee and
-        // execution-price effects in USD, so seeded snapshots can reconcile the
-        // same fills without inventing deposits or withdrawals.
-        repeat(7) { index ->
-            val alloc = nonUsd[index % nonUsd.size]
-            val symbol = alloc.symbol.value.uppercase()
-            val pair = Asset.tradingPair(symbol)
-            val basePrice = SimulationDefaults.INITIAL_PRICES[symbol] ?: SimulationDefaults.DEFAULT_PRICE
-            val firstPrice = basePrice.multiply(BigDecimal.valueOf(0.94 + index * 0.012)).toCryptoScale()
-            val returnFactor = if (index % 3 == 0) {
-                1.035
-            } else if (index % 3 == 1) {
-                0.978
-            } else {
-                1.014
-            }
-            val secondPrice = firstPrice.multiply(BigDecimal.valueOf(returnFactor)).toCryptoScale()
-            val targetUsd = BigDecimal.valueOf(800L + index * 175L).toUsdScale()
-            val volume = targetUsd.divide(firstPrice, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
-            val firstSide = if (index % 2 == 0) OrderSide.BUY else OrderSide.SELL
-            val secondSide = if (firstSide == OrderSide.BUY) OrderSide.SELL else OrderSide.BUY
-            // Anchored to SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO so the final pair's
-            // second leg always lands that many hours before `now`; TradeHistorySnapshotStore
-            // relies on this to align its snapshot grid. Equivalent to 114L - index * 16L.
-            val firstHoursAgo =
-                SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO + 6L + (6 - index) * 16L
-
-            simulatedTrades += seededTrade(
-                timestamp = now.minus(firstHoursAgo, ChronoUnit.HOURS),
-                pair = pair,
-                side = firstSide,
-                symbol = symbol,
-                volume = volume,
-                price = firstPrice,
-                seedId = "${index + 1}-1",
-            )
-            simulatedTrades += seededTrade(
-                timestamp = now.minus(firstHoursAgo - 6L, ChronoUnit.HOURS),
-                pair = pair,
-                side = secondSide,
-                symbol = symbol,
-                volume = volume,
-                price = secondPrice,
-                seedId = "${index + 1}-2",
-            )
-        }
-        val sorted = simulatedTrades.sortedBy { it.timestamp }
-        simulatedTrades.clear()
-        simulatedTrades.addAll(sorted)
-    }
-
-    private fun seededTrade(
-        timestamp: Instant,
-        pair: String,
-        side: OrderSide,
-        symbol: String,
-        volume: BigDecimal,
-        price: BigDecimal,
-        seedId: String,
-    ): TradeRecord {
-        val usdAmount = volume.multiply(price).toUsdScale()
-        return TradeRecord(
-            timestamp = timestamp,
-            pair = pair,
-            side = side.name,
-            symbol = symbol,
-            volume = volume,
-            usdAmount = usdAmount,
-            success = true,
-            dryRun = false,
-            price = price,
-            fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
-            source = TradeSource.API_FILL,
-            cycleId = "sim-cycle-$seedId",
-            orderTxid = "$SEED_ORDER_TXID_PREFIX$seedId",
-            tradeId = "$SEED_TRADE_ID_PREFIX$seedId",
-        )
     }
 
     private fun fluctuatePrices() {
@@ -303,7 +162,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val price = simulatedPrices[symbol] ?: BigDecimal.TEN
         val normalizedVolume = volume.toCryptoScale()
         val usdAmount = normalizedVolume.multiply(price).toUsdScale()
-        val fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
+        val fee = usdAmount.multiply(SIMULATED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
 
         if (dryRun) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully cl_ord_id=$clOrdId")
@@ -384,14 +243,14 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         )
     }
 
-    override suspend fun getAccountTradePage(
+    override suspend fun getRecentTradePage(
         startSec: Long?,
         endSec: Long?,
         cursor: String?,
         limit: Int?,
-    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> = orderMutex.withLock {
+    ): ExchangeTradePage = orderMutex.withLock {
         require(limit == null || limit in 1..MAX_TRADE_PAGE_LIMIT) {
-            "Trade history limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
+            "Trade page limit must be between 1 and $MAX_TRADE_PAGE_LIMIT."
         }
         initializeMissingBalancesAndPrices()
 
@@ -401,7 +260,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             .filter { endSec == null || !it.timestamp.isAfter(Instant.ofEpochSecond(endSec)) }
             .sortedByDescending(TradeRecord::timestamp)
             .toList()
-        val pageSize = limit ?: KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+        val pageSize = limit ?: KrakenApiConstants.TRADE_PAGE_SIZE
         val slice = cursorPage(
             entries = filtered,
             requestedCursor = cursor,
@@ -409,76 +268,27 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             entryId = { it.tradeId },
         )
         val mapped = slice.entries.map(::toExchangeTrade)
-        ExchangeHistoryPage(
+        ExchangeTradePage(
             entries = mapped,
-            startSec = startSec,
-            endSec = endSec,
-            requestedCursor = cursor,
             nextCursor = slice.nextCursor,
-            count = filtered.size.toLong(),
-            rawSize = mapped.size,
             valid = slice.valid,
         )
     }
 
-    override suspend fun getAccountLedgerPage(
-        startSec: Long?,
-        endSec: Long?,
-        cursor: String?,
-    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> = orderMutex.withLock {
-        initializeMissingBalancesAndPrices()
-
-        val filtered = simulatedLedgerEntries
-            .asSequence()
-            .filter { startSec == null || !it.time.isBefore(Instant.ofEpochSecond(startSec)) }
-            .filter { endSec == null || !it.time.isAfter(Instant.ofEpochSecond(endSec)) }
-            .sortedByDescending(LedgerEvent::time)
-            .toList()
-        val slice = cursorPage(
-            entries = filtered,
-            requestedCursor = cursor,
-            pageSize = KrakenApiConstants.LEDGER_PAGE_SIZE,
-            entryId = { it.ledgerId },
-        )
-        val mapped = slice.entries.map(::toExchangeLedger)
-        ExchangeHistoryPage(
-            entries = mapped,
-            startSec = startSec,
-            endSec = endSec,
-            requestedCursor = cursor,
-            nextCursor = slice.nextCursor,
-            count = filtered.size.toLong(),
-            rawSize = mapped.size,
-            valid = slice.valid,
-        )
-    }
-
-    private fun toExchangeTrade(trade: TradeRecord): ExchangeTradeHistoryEntry {
+    private fun toExchangeTrade(trade: TradeRecord): ExchangeTradeFill {
         val pairSplit = Asset.splitTradingPair(trade.pair)
-        val rawTime = trade.timestamp.toRawEpochSeconds()
-        return ExchangeTradeHistoryEntry(
+        return ExchangeTradeFill(
             tradeId = trade.tradeId.orEmpty(),
             orderTxid = trade.orderTxid,
-            postTxid = null,
-            pair = trade.pair,
             baseAsset = pairSplit?.base,
             quoteCurrency = pairSplit?.quote,
             // The simulator deducts its fee from USD cash, so its synthetic row has a known unit.
             feeCurrency = Asset.USD.takeIf { pairSplit?.quote == Asset.USD },
-            time = trade.timestamp,
-            rawTime = rawTime,
             type = trade.side.lowercase(),
-            orderType = null,
             price = trade.price.toPlainString(),
             cost = trade.usdAmount.toPlainString(),
             fee = trade.fee.toPlainString(),
             volume = trade.volume.toPlainString(),
-            margin = null,
-            misc = null,
-            tradeSequenceId = null,
-            maker = null,
-            ledgerIds = null,
-            rawRecordJson = null,
             hasValidTime = true,
             hasValidPrice = trade.price.signum() > 0,
             hasValidCost = trade.usdAmount.signum() >= 0,
@@ -487,26 +297,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             isValidRecord = !trade.tradeId.isNullOrBlank(),
         )
     }
-
-    private fun toExchangeLedger(event: LedgerEvent): ExchangeLedgerHistoryEntry = ExchangeLedgerHistoryEntry(
-        ledgerId = event.ledgerId,
-        refid = event.refid,
-        time = event.time,
-        rawTime = event.time.toRawEpochSeconds(),
-        type = event.type,
-        subtype = event.subtype,
-        assetClass = event.aclass,
-        asset = event.asset,
-        amount = event.amount.toPlainString(),
-        fee = event.fee.toPlainString(),
-        balance = event.balance.toPlainString().takeIf { event.hasAuthoritativeBalance },
-        rawRecordJson = null,
-        hasValidTime = true,
-        hasValidAmount = event.hasValidAmount,
-        hasValidFee = event.hasValidFee,
-        hasValidBalance = event.hasAuthoritativeBalance,
-        isValidRecord = true,
-    )
 
     private class CursorSlice<T>(val entries: List<T>, val nextCursor: String?, val valid: Boolean)
 
@@ -529,13 +319,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         return CursorSlice(page, nextCursor, !hasMore || nextCursor != null)
     }
 
-    private fun Instant.toRawEpochSeconds(): String = BigDecimal.valueOf(epochSecond)
-        .add(BigDecimal.valueOf(nano.toLong(), 9))
-        .stripTrailingZeros()
-        .toPlainString()
-
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
-
     /** Offline emulator has no network rate limiter; returns 0.0. */
     override suspend fun getApiCallCounter(): Double = 0.0
 
@@ -544,10 +327,8 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val SIMULATED_ASSET_METADATA =
             (SimulationDefaults.INITIAL_PRICES.keys + listOf("MORPHO", "XMR"))
                 .map { KrakenAssetMetadata(it, KrakenApiConstants.ASSET_CLASS_CURRENCY) }
-        const val SEED_ORDER_TXID_PREFIX = "SIM-SEED-"
-        const val SEED_TRADE_ID_PREFIX = "SIM-SEED-FILL-"
         const val SIM_ORDER_TXID_PREFIX = "SIM-"
         const val SIM_TRADE_ID_PREFIX = "SIM-FILL-"
-        val SEED_FEE_RATE: BigDecimal = BigDecimal("0.0026")
+        val SIMULATED_FEE_RATE: BigDecimal = BigDecimal("0.0026")
     }
 }

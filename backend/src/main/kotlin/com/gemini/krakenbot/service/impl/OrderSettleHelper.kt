@@ -4,7 +4,7 @@ import com.gemini.krakenbot.domain.resolveBalance
 import com.gemini.krakenbot.domain.resolveBalanceOrNull
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeFill
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.KrakenService
@@ -31,7 +31,7 @@ internal object OrderSettleHelper {
 
     /** Backoff cap (milliseconds) for cold settle polls. */
     private const val MAX_POLL_BACKOFF_MS = 32000L
-    private const val MAX_FILL_HISTORY_PAGES = 5
+    private const val MAX_FILL_PAGES = 5
 
     /**
      * Reconciles available USD cash after executing one or more sell orders.
@@ -40,14 +40,14 @@ internal object OrderSettleHelper {
      * 1. **Primary Tier (Fill-Confirmed Proceeds)**: Polls Kraken `TradesHistory` matching [sellOrderTxids]
      *    and sums confirmed net proceeds (`openingUsd + sum(volume * price - fee)`).
      * 2. **Safety Cap 1 (Spendable Balance Peek)**: When fill confirmation succeeds, peeks at live balances
-     *    and caps the settled cash to `min(fillConfirmed, balancePeek)`. This ensures that fills in trade history
-     *    that have not yet settled into spendable ledger balance cannot cause downstream buys to fail for insufficient funds.
+     *    and caps the settled cash to `min(fillConfirmed, balancePeek)`. This ensures that fills in the fill response
+     *    that have not yet settled into spendable balance cannot cause downstream buys to fail for insufficient funds.
      * 3. **Safety Cap 2 (Projected Cash Cap)**: If the spendable balance peek encounters a transient API error,
      *    caps the confirmed proceeds to `min(fillConfirmed, projectedCash)` as a defensive safety upper bound.
      * 4. **Fallback Tier (Balance-Polling Heuristic)**: When [sellOrderTxids] is empty (e.g. mock/emulator paths
      *    omitting txids), fill confirmation yields no positive cash, or the capped confirmation is below 95% of
      *    [projectedCash], polls live balances up to [MAX_REFRESH_ATTEMPTS] with exponential backoff. The latter
-     *    case treats a materially short fill history as potentially truncated while Kraken indexes or paginates it.
+     *    case treats a materially short fill page as potentially truncated while Kraken indexes or paginates it.
      */
     suspend fun settleUsdAfterSells(
         backend: KrakenService,
@@ -83,9 +83,9 @@ internal object OrderSettleHelper {
                         }
                         cappedToProjected
                     }
-                // Fill confirmation can quietly under-report when Kraken trade history indexing lags
+                // Fill confirmation can quietly under-report when Kraken indexing lags
                 // or a deep page offset hides fills (10-minute window, 5-page cap). Only the balance
-                // poll sees the full ledger effect, so treat a materially short fill total as evidence
+                // poll sees the full balance change, so treat a materially short fill total as evidence
                 // of a truncated view and fall through to the balance-polling tier.
                 if (settled >= targetThreshold) {
                     return settled
@@ -160,12 +160,12 @@ internal object OrderSettleHelper {
         val seenTradeIds = mutableSetOf<String>()
         val seenCursors = mutableSetOf<String>()
 
-        repeat(MAX_FILL_HISTORY_PAGES) {
-            val page = backend.getAccountTradePage(
+        repeat(MAX_FILL_PAGES) {
+            val page = backend.getRecentTradePage(
                 startSec = startSec,
                 endSec = endSec,
                 cursor = cursor,
-                limit = KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE,
+                limit = KrakenApiConstants.TRADE_PAGE_SIZE,
             )
             if (!page.valid) return null
 
@@ -211,7 +211,7 @@ internal object OrderSettleHelper {
     }
 
     /** Confirms only matching USD sells whose fee can safely be expressed in USD. */
-    private fun ExchangeTradeHistoryEntry.matchSettlementFill(txidSet: Set<String>): SettlementFillMatch {
+    private fun ExchangeTradeFill.matchSettlementFill(txidSet: Set<String>): SettlementFillMatch {
         val txid = orderTxid?.takeIf(String::isNotBlank) ?: return SettlementFillMatch.Unmatched
         if (txid !in txidSet) return SettlementFillMatch.Unmatched
         if (!isValidRecord || !hasValidTime || !hasValidPrice || !hasValidCost || !hasValidFee || !hasValidVolume) {

@@ -122,7 +122,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         } else {
                             respond(
                                 content =
-                                "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}",
+                                "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                             )
@@ -130,7 +130,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                     },
                 )
 
-                service.getOHLC(TestFixtures.XXBTZUSD, 1440, null).size shouldBe 1
+                service.getTickerPrices(TestFixtures.XXBTZUSD).size shouldBe 1
                 attempt shouldBe 2
                 currentTime shouldBe 2_000L
             }
@@ -219,7 +219,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         } else {
                             respond(
                                 content =
-                                "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}",
+                                "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                             )
@@ -227,7 +227,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                     },
                 )
 
-                service.getOHLC(TestFixtures.XXBTZUSD, 1440, null).size shouldBe 1
+                service.getTickerPrices(TestFixtures.XXBTZUSD).size shouldBe 1
                 attempt shouldBe 2
                 currentTime shouldBe 10_000L
             }
@@ -248,7 +248,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 )
 
                 val thrown = shouldThrow<RuntimeException> {
-                    service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
+                    service.getTickerPrices(TestFixtures.XXBTZUSD)
                 }
 
                 thrown.message shouldBe
@@ -293,7 +293,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 )
 
                 val thrown = shouldThrow<RuntimeException> {
-                    service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
+                    service.getTickerPrices(TestFixtures.XXBTZUSD)
                 }
 
                 thrown.message shouldBe null
@@ -318,7 +318,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         } else {
                             respond(
                                 content =
-                                "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}",
+                                "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                             )
@@ -326,7 +326,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                     },
                 )
 
-                val request = launch { service.getOHLC(TestFixtures.XXBTZUSD, 1440, null) }
+                val request = launch { service.getTickerPrices(TestFixtures.XXBTZUSD) }
                 firstAttemptCompleted.await()
                 yield()
                 request.cancelAndJoin()
@@ -573,81 +573,6 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             }
         }
 
-        "getOHLC_Success" {
-            runTest {
-                val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[[" +
-                    "1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"52500.0\",\"52200.0\",\"100.5\",1234]],\"last\":1616835600}}"
-                val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.size shouldBe 1
-                ohlc[0].first shouldBe 1616662800L
-                ohlc[0].second.shouldBeEqualComparingTo(BigDecimal("52500.0"))
-            }
-        }
-
-        "getOHLC_Error" {
-            runTest {
-                val service = createService("invalid-json")
-                shouldThrow<RuntimeException> { service.getOHLC(TestFixtures.XXBTZUSD, 1440, null) }
-            }
-        }
-
-        "CQ-12-1: getOHLC rethrows coroutine cancellation" {
-            runTest {
-                val cancellation = CancellationException("OHLC request cancelled")
-                val mockEngine = MockEngine { throw cancellation }
-                val service = KrakenServiceImpl(
-                    configService = mockk(relaxed = true),
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
-
-                val thrown = shouldThrow<CancellationException> {
-                    service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                }
-
-                thrown shouldBe cancellation
-            }
-        }
-
-        "getOHLC_NonObjectResult" {
-            runTest {
-                val responseJson = "{\"error\":[],\"result\":\"not-an-object\"}"
-                val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.isEmpty().shouldBeTrue()
-            }
-        }
-
-        "getOHLC_LastFieldFirst" {
-            runTest {
-                val responseJson = "{\"error\":[],\"result\":{\"last\":1616835600,\"XXBTZUSD\":[[" +
-                    "1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"52500.0\",\"52200.0\",\"100.5\",1234]]}}"
-                val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.size shouldBe 1
-            }
-        }
-
-        "getOHLC_NullOrNonArrayOhlcNode" {
-            runTest {
-                val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":\"not-an-array\",\"last\":1616835600}}"
-                val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.isEmpty().shouldBeTrue()
-            }
-        }
-
-        "getOHLC_SkipsUnparseableClosePrice" {
-            runTest {
-                val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[\"not-an-array\", " +
-                    "[1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"invalid-price\",\"52200.0\",\"100.5\",1234]]}}"
-                val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.isEmpty().shouldBeTrue()
-            }
-        }
-
         "queryPrivate_RateLimiter_ThrottlesCorrectly" {
             runTest {
                 var callCount = 0
@@ -696,19 +621,6 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             }
         }
 
-        "queryPublic_getOHLC_neverAcquiresRateLimiter" {
-            runTest {
-                val limiter = RecordingRateLimiter()
-                val responseJson =
-                    "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}"
-                val service = createService(responseJson, limiter)
-
-                service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-
-                limiter.acquiredCosts shouldBe emptyList()
-            }
-        }
-
         "queryPrivate_Balance_acquiresWithCost1" {
             runTest {
                 val limiter = RecordingRateLimiter()
@@ -728,18 +640,16 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 """.trimIndent()
                 val service = createService(responseJson, limiter)
 
-                service.getAccountTradePage(null, null, null, null)
+                service.getRecentTradePage(null, null, null, null)
 
                 limiter.acquiredCosts shouldBe listOf(4.0)
             }
         }
 
-        "krakenPrivateEndpointCost_TradesHistory_Ledgers_ClosedOrders_are4" {
+        "krakenPrivateEndpointCost_TradesHistory_and_ClosedOrders_are4" {
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_TRADES_HISTORY) shouldBe 4.0
-            krakenPrivateEndpointCost("/0/private/Ledgers") shouldBe 4.0
             krakenPrivateEndpointCost("/0/private/ClosedOrders") shouldBe 4.0
             KrakenApiConstants.SUBSTRING_TRADES_HISTORY shouldBe "TradesHistory"
-            KrakenApiConstants.SUBSTRING_LEDGERS shouldBe "Ledgers"
             KrakenApiConstants.SUBSTRING_CLOSED_ORDERS shouldBe "ClosedOrders"
         }
 

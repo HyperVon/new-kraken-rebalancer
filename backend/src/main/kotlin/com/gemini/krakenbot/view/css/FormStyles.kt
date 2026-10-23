@@ -112,7 +112,7 @@ object FormStyles {
             color = Color.white
         }
 
-        // HIST-1: quiet ghost destructive action — reads as muted until hover.
+        // Keep the Settings remove action quiet until hover.
         CssClass.Button.DangerGhost.querySelector {
             background = "transparent"
             solidBorder(Color.transparent)

@@ -32,19 +32,17 @@ Before merging or deleting a type, name which pattern it implements.
   money path. Nested pins must reuse the outer pin (already implemented — do
   not break).
 
-### 3. Current snapshot and History evidence ownership
+### 3. Current snapshot and execution evidence ownership
 
 - `CurrentPortfolioState` exposes the latest completed cycle in an in-memory
   `StateFlow` and retains up to 24 same-source snapshots for the hero trend;
   it clears that window on mode or credential-scope changes and writes no
   reporting data.
-- `HistoryObservationRecorder` queues selected direct cycle evidence off the
-  order path, while `HistoryStore` preserves recorded values and gaps.
-- `HistorySynchronizer` imports account-scoped trade and ledger pages with
-  bounded commits and account identity checks around exchange requests.
-- **Rule:** Keep current Dashboard state and account History in their respective
-  owners. Do not reconstruct prior portfolio values from exchange events or add
-  a synthetic benchmark.
+- The execution journal preserves live order intents and account binding across
+  process restarts; it is independent of current Dashboard state.
+- **Rule:** Keep snapshots and recent activity process-local. Use the durable
+  journal only for execution safety and account binding; do not add retrospective
+  portfolio reporting to the rebalance path.
 
 ### 4. Pure-ish domain calculator (`RebalancerEngine` + `PortfolioCalculations`)
 
@@ -63,7 +61,7 @@ Before merging or deleting a type, name which pattern it implements.
 
 | Role | Type | Pattern job |
 | :--- | :--- | :--- |
-| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → current snapshot / History capture |
+| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → current snapshot |
 | Brain | `PortfolioAnalyzerImpl` | Snapshot inputs + analysis; no `executeOrder` |
 | Brawn | `OrderExecutorImpl` | Place/settle only; no planning or target % math |
 
@@ -72,7 +70,7 @@ Before merging or deleting a type, name which pattern it implements.
 - `view/component/*` render DTOs + `Settings`; `DashboardView` composes pages;
   `DashboardController` maps HTTP ↔ services ↔ HTML/JSON.
 - HTMX + SSE shell owns Dashboard updates; `:frontend-js` owns Dashboard and
-  Settings DOM behavior. History charts and filters are server-rendered.
+  Settings DOM behavior.
 - **Rule:** Do not introduce client-side routing or a second SSE stack while
   "optimizing."
 
@@ -82,9 +80,6 @@ Before merging or deleting a type, name which pattern it implements.
   the active cycle's execution session exits.
 - Hot `StateFlow` plus a bounded deque: latest Dashboard snapshot and its
   source-scoped hero trend.
-- Bounded channel: selected History observation writes outside the order path.
-- Explicit `HistorySynchronizer` requests: bounded account trade and ledger
-  pages, committed separately from the cycle/order path.
 - Cold `Flow`: exchange retry and USD sell-settlement polling.
 - **Rule:** Promoting a cold poll to a hot SharedFlow "for reuse" is an
   architecture bug. See [docs/FLOWS.md](../../../docs/FLOWS.md).
@@ -113,7 +108,7 @@ RebalancerEngine / PortfolioCalculations → service domain types (AnalysisResul
   AssetPrices, …), sibling calculations, :common config/models/util/ViewText,
   JVM util helpers that are non-I/O (toUsdScale / resolveBalance /
   ActionLogFormatter), logging — no repository, no KrakenService, no Ktor, no Koin
-repository/impl → Exposed, util (safeTransaction*), models
+repository/impl → execution database JDBC API, util, models
 :common     →  nothing JVM/JS-specific
 frontend-js →  DOM/Chart.js + :common Ids/text (no JVM services)
 ```

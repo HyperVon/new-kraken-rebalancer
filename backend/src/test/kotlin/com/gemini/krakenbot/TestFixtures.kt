@@ -8,7 +8,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.test.TestConstants
 import java.math.BigDecimal
-import java.nio.file.Files
 import java.time.Instant
 
 fun Map<String, Double>.toBigDecimalMap(): Map<String, BigDecimal> = this.mapValues { BigDecimal.valueOf(it.value) }
@@ -27,10 +26,10 @@ object TestFixtures {
     const val TEST_SERVER_API_SECRET = "server-secret"
 
     /** Kraken service credentials used by isolated authentication tests. */
-    const val TRADE_HISTORY_API_KEY = "test-api-key"
+    const val KRAKEN_TEST_API_KEY = "test-api-key"
 
     /** Base64 of `test-private-key` — Kraken private keys must decode as Base64. */
-    const val TRADE_HISTORY_API_SECRET = "dGVzdC1wcml2YXRlLWtleQ=="
+    const val KRAKEN_TEST_API_SECRET = "dGVzdC1wcml2YXRlLWtleQ=="
 
     /** Trading side constants (lowercase matching OrderSide.apiValue, uppercase for display/models). */
     const val BUY = "buy"
@@ -66,28 +65,10 @@ object TestFixtures {
     /** Generic credential / key constants. */
     const val SECRET = "secret"
 
-    /** In-memory database path. */
-    const val MEMORY_ = ":memory:"
-
-    /** SQL drop statements for test tables. */
-    const val DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS = "DROP TABLE IF EXISTS portfolio_snapshots"
-    const val DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS = "DROP TABLE IF EXISTS portfolio_stats"
-
-    /** Sync metadata keys. */
-    const val SYNC_KEY = "sync_key"
-    const val SYNC_VAL = "sync_val"
-    const val SYNC_VAL_UPDATED = "sync_val_updated"
-    const val SYNC_OFFSET = "sync_offset"
-    const val SYNC_TOTAL = "sync_total"
-
     /** Generic test key/value constants. */
     const val TEST_KEY = "test_key"
     const val TEST_VALUE = "test_value"
     const val TEST_VALUE_2 = "test_value2"
-
-    /** Per-call hermetic trade-history file so parallel test forks never share snapshot-store state. */
-    fun hermeticTradeHistoryPath(): String =
-        Files.createTempDirectory("trade-history-").resolve("trade-history.json").toAbsolutePath().toString()
 
     /** Misc test string constants. */
     const val PASS = "PASS"
@@ -95,13 +76,6 @@ object TestFixtures {
     const val GZIP = "gzip"
     const val TEST = "test"
     const val HELLO = "hello"
-
-    /**
-     * File facade that carries Exposed's transaction extensions. `mockkStatic` has to
-     * be given this class name because extension functions cannot be stubbed through their receiver.
-     */
-    const val ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT =
-        "org.jetbrains.exposed.v1.jdbc.transactions.JdbcTransactionInterfaceKt"
 
     /**
      * Note the flag pair: `simulation = true` picks the offline emulator backend while `dryRun = false`

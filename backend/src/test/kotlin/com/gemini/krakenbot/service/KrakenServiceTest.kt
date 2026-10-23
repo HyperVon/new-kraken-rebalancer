@@ -14,7 +14,10 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.KrakenPublicApiException
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.KrakenTransport
 import com.gemini.krakenbot.service.impl.PublicRateLimiter
+import com.gemini.krakenbot.service.impl.RateLimiter
+import com.gemini.krakenbot.service.impl.isFundingPermissionPath
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -35,6 +38,7 @@ import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -44,6 +48,49 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         checkNotNull(javaClass.getResource("/kraken-assets/$name")).readText()
 
     init {
+        "funding permission classification matches only the configured endpoints" {
+            listOf(
+                KrakenApiConstants.PATH_DEPOSIT_STATUS,
+                KrakenApiConstants.PATH_WITHDRAW_STATUS,
+                KrakenApiConstants.PATH_FUNDING_DEPOSITS,
+                KrakenApiConstants.PATH_FUNDING_WITHDRAWALS,
+                KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT,
+                KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW,
+            ).forEach { path -> isFundingPermissionPath(path) shouldBe true }
+
+            isFundingPermissionPath(KrakenApiConstants.PATH_ADD_ORDER) shouldBe false
+            isFundingPermissionPath("/0/private/FundingMethods/Unknown") shouldBe false
+        }
+
+        "transport parses public responses with its default rate limiter" {
+            runTest {
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """{"error":[],"result":{"unixtime":1}}""",
+                            headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                        )
+                    },
+                )
+                try {
+                    val transport = KrakenTransport(
+                        configService = mockk(relaxed = true),
+                        objectMapper = jacksonObjectMapper(),
+                        httpClient = client,
+                        rateLimiter = mockk<RateLimiter>(relaxed = true),
+                        nonceGenerator = AtomicLong(),
+                    )
+
+                    transport.queryPublic("/0/public/Time")
+                        .path("result")
+                        .path("unixtime")
+                        .asInt() shouldBe 1
+                } finally {
+                    client.close()
+                }
+            }
+        }
+
         "getAuthenticatedAccountIdentity reads the IIBAN returned by Kraken" {
             runTest {
                 val paths = mutableListOf<String>()
@@ -56,57 +103,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
-        "getAuthenticatedAccountInfo parses and validates Kraken query date restrictions" {
-            runTest {
-                val bounded = createService(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"1700000000","query_to":"1800000000"}}""",
-                ).getAuthenticatedAccountInfo()
-                bounded shouldBe AuthenticatedAccountInfo(
-                    identity = "AA00 ACCOUNT",
-                    queryFromSec = 1_700_000_000L,
-                    queryToSec = 1_800_000_000L,
-                    queryBoundsVerified = true,
-                )
-
-                val unrestricted = createService(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"0","query_to":"0"}}""",
-                ).getAuthenticatedAccountInfo()
-                unrestricted shouldBe AuthenticatedAccountInfo("AA00 ACCOUNT", queryBoundsVerified = true)
-
-                val malformed = createService(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"yesterday","query_to":"0"}}""",
-                ).getAuthenticatedAccountInfo()
-                malformed?.queryBoundsVerified shouldBe false
-                malformed?.queryFromSec shouldBe null
-                malformed?.queryToSec shouldBe null
-            }
-        }
-
-        "getAuthenticatedAccountInfo rejects incomplete or invalid query date restrictions" {
-            runTest {
-                val invalidResponses = listOf(
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"-1","query_to":"0"}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"1800000000","query_to":"1700000000"}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":1.5,"query_to":0}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_from":"9223372036854775808","query_to":"0"}}""",
-                    """{"error":[],"result":{"iban":"AA00 ACCOUNT","query_to":"0"}}""",
-                    """{"error":[],"result":{"query_from":"0","query_to":"0"}}""",
-                )
-
-                invalidResponses.forEach { response ->
-                    val info = createService(response).getAuthenticatedAccountInfo()
-                    if (response.contains("AA00 ACCOUNT")) {
-                        info?.queryBoundsVerified shouldBe false
-                        info?.queryFromSec shouldBe null
-                        info?.queryToSec shouldBe null
-                    } else {
-                        info shouldBe null
-                    }
-                }
-            }
-        }
-
-        "history page requests send bounded cursor parameters to Kraken" {
+        "recent fill page requests send bounded cursor parameters to Kraken" {
             runTest {
                 val paths = mutableListOf<String>()
                 val bodies = mutableListOf<String>()
@@ -116,14 +113,13 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     paths += request.url.encodedPath
                     bodies += (request.body as TextContent).text
                 }
-                val tradePage = tradeService.getAccountTradePage(
+                val tradePage = tradeService.getRecentTradePage(
                     startSec = 1_700_000_000,
                     endSec = 1_700_000_100,
                     cursor = "trade-current",
                     limit = 75,
                 )
                 tradePage.valid shouldBe true
-                tradePage.requestedCursor shouldBe "trade-current"
                 tradePage.nextCursor shouldBe "trade-next"
                 paths.single() shouldBe KrakenApiConstants.PATH_TRADES_HISTORY
                 val tradeBody = bodies.single()
@@ -133,7 +129,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 tradeBody.contains("${KrakenApiConstants.PARAM_LIMIT}=75").shouldBeTrue()
                 tradeBody.contains("${KrakenApiConstants.PARAM_TRADES}=true").shouldBeTrue()
 
-                val unboundedTradePage = tradeService.getAccountTradePage()
+                val unboundedTradePage = tradeService.getRecentTradePage()
                 unboundedTradePage.valid shouldBe true
                 val unboundedTradeBody = bodies.last()
                 unboundedTradeBody.contains("${KrakenApiConstants.PARAM_START}=").shouldBeFalse()
@@ -141,42 +137,11 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 Regex("(?:^|&)${KrakenApiConstants.PARAM_CURSOR}=").containsMatchIn(unboundedTradeBody)
                     .shouldBeFalse()
                 unboundedTradeBody.contains("${KrakenApiConstants.PARAM_LIMIT}=").shouldBeFalse()
-                shouldThrow<IllegalArgumentException> { tradeService.getAccountTradePage(limit = 0) }
-
-                paths.clear()
-                bodies.clear()
-                val ledgerService = createService(
-                    """{"error":[],"result":{"ledger":{},"count":0,"cursor":{"next":"ledger-next"}}}""",
-                ) { request ->
-                    paths += request.url.encodedPath
-                    bodies += (request.body as TextContent).text
-                }
-                val ledgerPage = ledgerService.getAccountLedgerPage(
-                    startSec = 1_700_000_000,
-                    endSec = 1_700_000_100,
-                    cursor = "ledger-current",
-                )
-                ledgerPage.valid shouldBe true
-                ledgerPage.requestedCursor shouldBe "ledger-current"
-                ledgerPage.nextCursor shouldBe "ledger-next"
-                paths.single() shouldBe KrakenApiConstants.PATH_LEDGERS
-                val ledgerBody = bodies.single()
-                Regex("(?:^|&)${KrakenApiConstants.PARAM_CURSOR}=ledger-current")
-                    .containsMatchIn(ledgerBody).shouldBeTrue()
-                ledgerBody.contains("${KrakenApiConstants.PARAM_WITH_CURSOR}=true").shouldBeTrue()
-                ledgerBody.contains("${KrakenApiConstants.PARAM_TYPE}=all").shouldBeTrue()
-
-                val unboundedLedgerPage = ledgerService.getAccountLedgerPage()
-                unboundedLedgerPage.valid shouldBe true
-                val unboundedLedgerBody = bodies.last()
-                unboundedLedgerBody.contains("${KrakenApiConstants.PARAM_START}=").shouldBeFalse()
-                unboundedLedgerBody.contains("${KrakenApiConstants.PARAM_END}=").shouldBeFalse()
-                Regex("(?:^|&)${KrakenApiConstants.PARAM_CURSOR}=").containsMatchIn(unboundedLedgerBody)
-                    .shouldBeFalse()
+                shouldThrow<IllegalArgumentException> { tradeService.getRecentTradePage(limit = 0) }
             }
         }
 
-        "history page requests fail when Kraken credentials are unavailable" {
+        "recent fill page requests fail when Kraken credentials are unavailable" {
             runTest {
                 val service = createService("""{"error":[],"result":{}}""")
                 val config = configService.getConfig()
@@ -184,8 +149,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     kraken = KrakenCredentials(ApiKey(""), PrivateKey("")),
                 )
 
-                shouldThrow<KrakenCredentialsUnavailableException> { service.getAccountTradePage() }
-                shouldThrow<KrakenCredentialsUnavailableException> { service.getAccountLedgerPage() }
+                shouldThrow<KrakenCredentialsUnavailableException> { service.getRecentTradePage() }
             }
         }
 
@@ -361,29 +325,6 @@ class KrakenServiceTest : KrakenServiceTestBase() {
 
                 cancelRequests = true
                 shouldThrow<CancellationException> { service.getAssetMetadata() }
-            }
-        }
-
-        "getOHLC forwards its optional query bound" {
-            runTest {
-                var ohlcUrl = ""
-                val ohlcService = createService(
-                    responseContent =
-                    """
-                        {
-                          "error": [],
-                          "result": {
-                            "XXBTZUSD": [[1700000000, "1", "2", "0.5", "1.5", "10", 1]],
-                            "last": 1700000100
-                          }
-                        }
-                    """.trimIndent(),
-                    onRequest = { request -> ohlcUrl = request.url.toString() },
-                )
-
-                ohlcService.getOHLC(TestFixtures.XBTUSD, interval = 15, since = 100L).single().second shouldBe
-                    BigDecimal("1.5")
-                ohlcUrl.contains("since=100").shouldBeTrue()
             }
         }
 

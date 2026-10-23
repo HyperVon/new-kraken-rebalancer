@@ -6,7 +6,6 @@ import com.gemini.krakenbot.view.util.DataSort
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlKeys
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
@@ -14,9 +13,7 @@ import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.th
 import com.gemini.krakenbot.view.util.tr
-import com.gemini.krakenbot.view.util.withQuery
 import kotlinx.html.DIV
-import kotlinx.html.a
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.thead
@@ -84,9 +81,7 @@ class PerformanceTableComponent {
 
                             tr(CssClass.Table.Hoverable) {
                                 td(CssClass.Table.SymbolCol) {
-                                    a(href = Routes.HISTORY.withQuery("asset", asset.symbol.value)) {
-                                        +asset.symbol.value
-                                    }
+                                    +asset.symbol.value
                                 }
                                 td(CssClass.Table.MonoCol) {
                                     attributes[HtmlAttrs.DATA_SORT_VALUE] = asset.price.toPlainString()

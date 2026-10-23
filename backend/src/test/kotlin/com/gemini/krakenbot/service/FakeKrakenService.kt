@@ -4,37 +4,29 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import java.math.BigDecimal
 
 /**
- * Test-only controllable [KrakenService]: suppliers drive balances/prices/history, and
+ * Test-only controllable [KrakenService]: suppliers drive balances/prices, and
  * [executedOrders] records placements. Prefer this in unit/evaluation tests.
  *
  * Distinct from [com.gemini.krakenbot.service.impl.SimulatedKrakenService], the production
  * emulator used when `settings.simulation=true` (seeded portfolio, drifted prices).
  *
  * Suppliers and [executeOrderAction] / [orderResultFactory] may be reassigned between tests.
- * [tradePageSupplier] and [ledgerPageSupplier] serve raw cursor pages; the default is one empty valid page.
+ * [tradePageSupplier] serves recent fill cursor pages; the default is one empty valid page.
  */
 class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var assetMetadataSupplier: () -> List<KrakenAssetMetadata> = { DEFAULT_ASSET_METADATA }
-    var tradePageSupplier: (Long?, Long?, String?, Int?) -> ExchangeHistoryPage<ExchangeTradeHistoryEntry> =
-        { startSec, endSec, cursor, _ -> emptyPage(startSec, endSec, cursor) }
-    var ledgerPageSupplier: (Long?, Long?, String?) -> ExchangeHistoryPage<ExchangeLedgerHistoryEntry> =
-        { startSec, endSec, cursor -> emptyPage(startSec, endSec, cursor) }
-    var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
+    var tradePageSupplier: (Long?, Long?, String?, Int?) -> ExchangeTradePage =
+        { _, _, _, _ -> emptyPage() }
     var fundingEvidenceScopeSupplier: () -> String = { "fake-account" }
     var authenticatedAccountIdentitySupplier: () -> String? = { "AA00 TEST TEST TEST" }
-    var authenticatedAccountInfoFactory: (String) -> AuthenticatedAccountInfo = { identity ->
-        AuthenticatedAccountInfo(identity, queryBoundsVerified = true)
-    }
 
     /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -47,8 +39,6 @@ class FakeKrakenService : KrakenService {
     var executedOrders = mutableListOf<OrderCall>()
     var getBalancesCallCount = 0
     var getTradePageCallCount = 0
-    var getLedgerPageCallCount = 0
-    var getOHLCCallCount = 0
     var getAuthenticatedAccountIdentityCallCount = 0
 
     override suspend fun getBalances(): RawBalances {
@@ -80,23 +70,14 @@ class FakeKrakenService : KrakenService {
         return assetMetadataSupplier()
     }
 
-    override suspend fun getAccountTradePage(
+    override suspend fun getRecentTradePage(
         startSec: Long?,
         endSec: Long?,
         cursor: String?,
         limit: Int?,
-    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> {
+    ): ExchangeTradePage {
         getTradePageCallCount++
         return tradePageSupplier(startSec, endSec, cursor, limit)
-    }
-
-    override suspend fun getAccountLedgerPage(
-        startSec: Long?,
-        endSec: Long?,
-        cursor: String?,
-    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> {
-        getLedgerPageCallCount++
-        return ledgerPageSupplier(startSec, endSec, cursor)
     }
 
     override suspend fun getFundingEvidenceScope(): String = fundingEvidenceScopeSupplier()
@@ -105,12 +86,6 @@ class FakeKrakenService : KrakenService {
         getAuthenticatedAccountIdentityCallCount++
         return authenticatedAccountIdentitySupplier()
     }
-
-    override suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? =
-        authenticatedAccountIdentitySupplier()?.let { identity ->
-            getAuthenticatedAccountIdentityCallCount++
-            authenticatedAccountInfoFactory(identity)
-        }
 
     override suspend fun executeOrder(
         pair: String,
@@ -133,20 +108,10 @@ class FakeKrakenService : KrakenService {
             )
     }
 
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
-        getOHLCCallCount++
-        return ohlcSupplier(pair, interval, since)
-    }
-
     private companion object {
-        fun <T> emptyPage(startSec: Long?, endSec: Long?, cursor: String?) = ExchangeHistoryPage<T>(
+        fun emptyPage() = ExchangeTradePage(
             entries = emptyList(),
-            startSec = startSec,
-            endSec = endSec,
-            requestedCursor = cursor,
             nextCursor = null,
-            count = null,
-            rawSize = 0,
             valid = true,
         )
 

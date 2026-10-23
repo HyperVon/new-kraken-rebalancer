@@ -18,19 +18,6 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.history.HistoryApiPresenter
-import com.gemini.krakenbot.service.history.HistoryCsvExporter
-import com.gemini.krakenbot.service.history.HistoryCycleGate
-import com.gemini.krakenbot.service.history.HistoryDailyPriceResolver
-import com.gemini.krakenbot.service.history.HistoryDatabase
-import com.gemini.krakenbot.service.history.HistoryObservationRecorder
-import com.gemini.krakenbot.service.history.HistoryService
-import com.gemini.krakenbot.service.history.HistoryServiceImpl
-import com.gemini.krakenbot.service.history.HistoryStore
-import com.gemini.krakenbot.service.history.HistorySyncCoordinator
-import com.gemini.krakenbot.service.history.HistorySynchronizer
-import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
-import com.gemini.krakenbot.service.history.SqliteHistoryStore
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.ExecutionAccountBindingService
@@ -40,12 +27,10 @@ import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.service.reporting.HistoryReportingService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
-import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
@@ -85,11 +70,10 @@ val coreModule =
 
         single {
             DataDirectoryIdentity(DataDirectoryConfig.resolveDataDirectory()) {
-                get<ExecutionDatabase>().hasAccountEvidence() || get<HistoryDatabase>().hasAccountEvidence()
+                get<ExecutionDatabase>().hasAccountEvidence()
             }
         }
         single { ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath().toString()) }
-        single { HistoryDatabase(DataDirectoryConfig.historyDatabasePath()) }
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         single { CurrentPortfolioState() }
@@ -113,56 +97,6 @@ val coreModule =
         }
         single<ExecutionJournalBootstrap> {
             ExecutionJournalBootstrap(database = get(), repository = get())
-        }
-        single<HistoryStore> { SqliteHistoryStore(get()) }
-        single<HistoryService> { HistoryServiceImpl(get()) }
-        single { HistoryCsvExporter(historyService = get(), historyStore = get()) }
-        single { HistoryReportingService(historyService = get()) }
-        single {
-            HistoryApiPresenter(
-                historyService = get(),
-                historyStore = get(),
-                reportingService = get(),
-                syncCoordinator = get(),
-            )
-        }
-        single {
-            HistoryObservationRecorder(
-                store = get(),
-                krakenService = get(),
-                configService = get(),
-                dataDirectoryIdentity = get(),
-            )
-        }
-        single {
-            HistorySynchronizer(
-                applicationScope = get(qualifier = named(APPLICATION_SCOPE_QUALIFIER)),
-                krakenService = get(),
-                configService = get(),
-                dataDirectoryIdentity = get(),
-                store = get(),
-                cycleGate = HistoryCycleGate { block -> get<PortfolioManager>().runHistoryPageIfAdmitted(block) },
-                onLedgerPageCommitted = { get<HistoryValuationCoordinator>().requestRebuild() },
-            )
-        }
-        single {
-            HistoryDailyPriceResolver(krakenService = get())
-        }
-        single {
-            HistoryValuationCoordinator(
-                applicationScope = get(qualifier = named(APPLICATION_SCOPE_QUALIFIER)),
-                synchronizer = get(),
-                store = get(),
-                priceResolver = get(),
-            )
-        }
-        single {
-            HistorySyncCoordinator(
-                applicationScope = get(qualifier = named(APPLICATION_SCOPE_QUALIFIER)),
-                synchronizer = get(),
-                store = get(),
-                settingsProvider = { get<ConfigService>().getConfig().settings },
-            )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
         // the limiter is a constructor param only so tests can record acquire costs.
@@ -196,8 +130,6 @@ val coreModule =
                 orderExecutor = get(),
                 krakenService = get(),
                 currentPortfolioState = get(),
-                historyObservationRecorder = get(),
-                historySyncCoordinator = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {
@@ -214,7 +146,6 @@ val webModule =
         singleOf(::PerformanceTableComponent)
         singleOf(::RecentActivityComponent)
         singleOf(::DashboardFragmentComponent)
-        single { HistoryPageComponent() }
         singleOf(::DashboardView)
         single {
             DashboardController(
@@ -224,13 +155,6 @@ val webModule =
                 portfolioManager = get(),
                 currentPortfolioState = get(),
                 orderIntentService = get(),
-                historyService = get(),
-                historyObservationRecorder = get(),
-                historySynchronizer = get(),
-                historyApi = get(),
-                historyReportingService = get(),
-                historyCsvExporter = get(),
-                historyValuationCoordinator = get(),
             )
         }
     }

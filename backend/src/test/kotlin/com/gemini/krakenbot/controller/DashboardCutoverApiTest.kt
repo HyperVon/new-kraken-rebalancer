@@ -108,18 +108,6 @@ class DashboardCutoverApiTest : StringSpec() {
     }
 
     init {
-        "history route renders history page" {
-            val server = server()
-            testApplication {
-                application { installRoutes(server) }
-
-                val response = client.get("/history")
-                response.status shouldBe HttpStatusCode.OK
-                val html = response.bodyAsText()
-                html shouldContain "History"
-            }
-        }
-
         "dashboard serves only the latest in-memory cycle and omits retired trend metrics" {
             val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("1234.50"))
             val server = server(snapshot)

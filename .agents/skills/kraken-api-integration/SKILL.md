@@ -158,9 +158,8 @@ ambiguous AddOrder response. Journal it as unresolved and require reconciliation
   separately — lockout doubles 10s → 15m without consuming the 5 network attempts.
 - `queryPublic` uses `PublicRateLimiter`; private calls serialize the limiter,
   nonce generation, signing, POST, and response handling.
-- Missing private credentials raise typed unavailability; sync preflight may
-  skip live synchronization without converting unavailable history into an
-  empty successful result.
+- Missing private credentials raise typed unavailability; fill confirmation
+  must not convert missing credentials into an empty successful result.
 
 ---
 

@@ -79,20 +79,14 @@ when saving other settings.
 Additional precautions include:
 
 - granting only the Kraken permissions needed by the application: **Query
-  Funds**, **Query Closed Orders & Trades**, **Query Ledgers** (Kraken UI:
-  *Data - Query ledger entries*), and **Create & Modify Orders**;
+  Funds**, **Query Closed Orders & Trades**, and **Create & Modify Orders**;
 - rotating API keys periodically and immediately after suspected exposure;
 - using separate credentials for this application rather than reusing keys;
 - redacting credentials and account data from logs, screenshots, and bug reports;
 - starting with `dryRun: true` or `simulation: true` before considering live
   trading.
 
-After the authenticated account identity is verified, the application
-automatically synchronizes account-scoped trade and ledger history using the
-read permissions above. This background synchronization does not run for
-simulation scopes and does not grant order permissions; treat `history.db` as
-private financial data even when no live orders are enabled.
-
+The app uses the private TradesHistory endpoint only to confirm fills from the current sell-order settlement. It does not query account ledgers or synchronize account history. The recommended read permission is needed for this fill confirmation and for operator reconciliation.
 Runtime logs can include order identifiers, balance amounts, and asset keys.
 Protect them as account data and redact them before sharing. The endpoints used
 during normal application operation do not require the **Query Open Orders &
@@ -150,17 +144,16 @@ For safe operation:
 - add authentication at a trusted reverse proxy before permitting access beyond
   a private single-operator environment.
 
-### Execution and account-history data protection
+### Execution-journal data protection
 
 #### Execution-journal storage and recovery
 
-The live-order journal and account History use separate SQLite databases in
-one data directory: `execution.db` and `history.db`. The default directory is
+The live-order journal uses a SQLite database named `execution.db` in the
+configured data directory. The default directory is
 `rebalancer-data-v1`; select another with `KRAKEN_DATA_DIR` or the JVM property
 `kraken.data.dir`. A new directory is initialized automatically on first start;
 `--initialize-data` remains available for explicit initialization and refuses
-to replace an existing execution database. Normal startup fails closed if only
-one of the two databases is present or the execution journal's
+to replace an existing execution database. Normal startup validates the execution journal and fails closed if its
 `execution.db.journal-id` marker is missing or inconsistent. An interrupted
 initialization is resumed only when its `.initialization-in-progress` marker is
 present and no existing store file predates that marker; do not fabricate such
@@ -168,17 +161,16 @@ a marker next to copied-in database files, and keep the directory's
 `account-identity.sha256` binding in place so mismatched stores are refused
 before any live submission.
 
-The `account-identity.sha256` file binds account-scoped History and execution
-state in that data directory to one authenticated Kraken account. It contains a
+The `account-identity.sha256` file binds execution state in that data directory
+to one authenticated Kraken account. It contains a
 SHA-256 digest rather than the raw account identity. Do not move the data files
-or identity marker independently or reuse them with another account. The new
-stores do not migrate the former reporting or Actual databases; retain any
+or identity marker independently or reuse them with another account. The journal does not migrate the former reporting or Actual databases; retain any
 previous data separately if it is still needed.
 
-Treat the History database as private financial data. Stop the application
+Treat the execution journal as sensitive operational data. Stop the application
 before copying SQLite files so committed WAL contents are included. Back up the
 entire configured data directory, including `execution.db`, its identity
-marker, `history.db`, and `account-identity.sha256`, together with the
+marker and `account-identity.sha256`, together with the
 credential-protected `rebalancer-config.json`. Protect backups with the same
 access controls as the original files. Live order submission requires the
 file-backed execution journal; an in-memory database cannot authorize a real
@@ -214,8 +206,12 @@ blocks later live submissions. If this occurs:
 #### Operator recovery runbook
 
 Resolving an intent is a deliberate local-recovery action, not an order retry.
-The endpoint updates the execution journal. It does **not** submit, cancel, or
-change an order at Kraken.
+The endpoint updates only the execution-journal row with the outcome, evidence
+note, and optional order transaction ID supplied by the operator. It does not
+query Kraken, synchronize `API_FILL` rows, match unkeyed trades, check fill
+candidates, or remove a duplicate failed estimate. The operator must verify the
+exchange outcome independently before resolving the intent. Resolution does
+not submit, cancel, or change an order at Kraken.
 Operators can inspect and resolve unresolved intents directly via the Dashboard
 Action Required banner and form or programmatically via the
 `POST /api/order-intents/{id}/resolve` endpoint.
@@ -223,8 +219,7 @@ Action Required banner and form or programmatically via the
 Before sending a resolution request:
 
 1. Pause the loop in the dashboard and leave it paused throughout the review.
-2. Back up the complete configured data directory, including both SQLite
-   databases and their identity files.
+2. Back up the complete configured data directory, including execution.db and its identity files.
 3. Fetch `GET /api/order-intents` and confirm the exact row is `UNCERTAIN`.
    Do not resolve a `PENDING` row: an AddOrder request may still be in flight.
 4. Match the row's `clientOrderId`, pair, side, volume, and timestamp to Kraken.
@@ -233,8 +228,8 @@ Before sending a resolution request:
    as proof that the exchange rejected an order.
 
 For a confirmed fill, send the order transaction ID even though the endpoint
-accepts it as optional. It preserves the evidence needed to reconcile the
-local record with the authoritative exchange fill.
+accepts it as optional. The journal stores it as operator-supplied evidence; the
+endpoint does not verify it against Kraken or reconcile a local fill record.
 
 The following macOS/Linux `curl` example requests a CSRF token from the
 Settings page, keeps the matching cookie, then resolves intent `42`. Replace
@@ -271,27 +266,15 @@ rejected order, change `state` to `REJECTED`, omit `orderTxid` unless one exists
 and record the specific negative exchange evidence. Never infer rejection from
 silence or from the application's provisional local estimate.
 
-Some historical `API_FILL` rows may predate persistence of Kraken's order and
-trade identifiers. During a manually confirmed resolution, the application
-accepts such a row only when exactly one unkeyed API fill matches the intent's
-pair, symbol, side, volume, and a timestamp within ±10 seconds of the intent,
-plus 1% USD tolerance and, when available, 1% expected-price tolerance. If the
-unkeyed fallback is evaluated and multiple candidates match, the request
-returns HTTP `409` and leaves the intent unresolved for further
-investigation.
-This manual fallback is deliberately stricter than background sync: every
-listed constraint must pass, and pair aliases or exact-volume overrides do not
-qualify a candidate.
-
 After a successful resolution response, while the loop is still paused:
 
 1. Re-fetch `GET /api/order-intents`; the resolved ID must no longer appear.
 2. Check `GET /api/health`; `unresolvedOrderIntents` must decrease. It reaches
    `0` only when no other intent remains unresolved. Readiness remains `PAUSED`
    (and `/api/readiness` returns `503`) until you resume, which is expected.
-3. Inspect the matching history entry. When the exact Kraken API fill has
-   already synced, confirmation keeps that fill and removes only its duplicate
-   local failed estimate.
+3. Independently re-check that the Kraken outcome matches the evidence you
+   submitted. A successful resolution response confirms only the journal state;
+   it does not verify or import a Kraken fill.
 4. Resume from the dashboard only after all checks pass and no other safety
    condition remains.
 
@@ -300,11 +283,11 @@ and TradesHistory. Direct REST verification through OpenOrders additionally
 requires **Query Open Orders & Trades**, even though the application does not
 need that permission during normal operation. If it is needed for an
 investigation, prefer a separate read-only diagnostic key or remove the added
-permission after reconciliation.
+permission after the investigation.
 
 An empty trade-history response is not sufficient proof that Kraken rejected the
-order. Unresolved intents are deliberately excluded from heuristic
-reconciliation, duplicate cleanup, and age-based pruning.
+order. Intent resolution does not perform heuristic reconciliation, duplicate
+cleanup, or age-based pruning.
 
 `GET /api/readiness` returns `503` while an unresolved intent exists, while the
 loop is paused or stopped, before a snapshot has been produced, after a cycle

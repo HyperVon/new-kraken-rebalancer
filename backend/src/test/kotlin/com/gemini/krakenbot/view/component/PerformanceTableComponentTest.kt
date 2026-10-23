@@ -37,10 +37,9 @@ class PerformanceTableComponentTest : StringSpec() {
     }
 
     init {
-        "holdings show precise amounts and configured quality with numeric sorting and History links" {
+        "holdings show precise amounts and configured quality with numeric sorting" {
             val html = render(mapOf("DOGE" to BigDecimal("7.5")))
 
-            html shouldContain "href=\"/history?asset=DOGE\""
             html shouldContain "12,345.67890123"
             html shouldContain "data-sort-value=\"12345.67890123\""
             html shouldContain "data-sort-value=\"7.5\""

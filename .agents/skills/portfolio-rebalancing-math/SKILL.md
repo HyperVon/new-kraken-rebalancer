@@ -59,8 +59,8 @@ deviationPct[i] = deviationUSD[i] / targetValue[i] × 100
 
 The configured USD weight remains fixed each cycle. Remaining allocation is
 split among configured non-USD assets in their existing relative proportions.
-No ATH, drawdown, historical capital flow, OHLC high, retrospective report, or
-History value changes the plan.
+No ATH, drawdown, historical capital flow, OHLC high, or retrospective value
+changes the plan.
 
 A zero target with a positive holding uses a 100% relative deviation so it can
 still clear the percent gate and be liquidated; zero holding at zero target has
@@ -98,7 +98,7 @@ rounding. Sell volume cannot exceed the cycle-entry holding.
    cycle, prefer Kraken fills matched to the sell order transaction IDs. Cap
    proceeds to spendable USD (or projected cash if the peek fails). If fill
    evidence is missing or materially short, use bounded USD balance polling.
-   Stop buys when no positive spendable USD is confirmed. Fill history here is
+   Stop buys when no positive spendable USD is confirmed. Kraken fill data here is
    order-specific settlement evidence, not retrospective reporting.
 3. **Buy second.** Limit the cycle's buys to 99% of post-sell USD, rounded down
    to cents, and reduce the remaining budget after each successful buy.
@@ -119,13 +119,11 @@ rounding. Sell volume cannot exceed the cycle-entry holding.
 in-memory `StateFlow` and retains up to 24 same-source snapshots for the
 Dashboard hero trend. The trend clears when simulation mode or credential scope
 changes; it is process-local and is not a retrospective persisted timeline.
-Dashboard and SSE expose current-cycle state and actions. `/history` displays
-directly recorded portfolio values alongside exchange-reported trades, ledgers,
-and balance checkpoints. It does not feed the rebalance plan or reconstruct
-earlier values from exchange events. Simulation values use a process-scoped
-source and emulator activity is not presented as account evidence. Account
-History and execution state use separately initialized SQLite stores pinned to
-one verified Kraken account by the active data-directory identity.
+Dashboard and SSE expose current-cycle state and actions. There is no
+retrospective portfolio or account activity page. Simulation values use a
+process-scoped source and emulator activity is not presented as account
+evidence. The durable execution journal uses SQLite and is bound to one
+verified Kraken account by the active data-directory identity.
 
 ## Active settings and config compatibility
 
@@ -142,15 +140,15 @@ one verified Kraken account by the active data-directory identity.
 Older JSON may contain retired keys such as `fiatMaxDrawdown`,
 `fiatDeploymentExponent`, `fiatDeploymentThresholdPercent`, `inceptionDate`, and
 `comparisonStartDate`. The parser discards them on load; the next Settings save
-writes active settings without those keys. Fresh execution and History stores
-are initialized explicitly; normal startup does not migrate former databases.
+writes active settings without those keys. The execution journal is initialized
+before the rebalance loop; normal startup does not migrate former databases.
 
 ## Test ownership
 
 Use focused current-contract tests listed in
 [`docs/EVALUATION.md`](../../../docs/EVALUATION.md), including the engine math,
-portfolio manager, order-settlement, execution-journal, Dashboard cutover,
-History capture/synchronization, and Settings/config tests.
+portfolio manager, order-settlement, execution-journal, Dashboard, and
+Settings/config checks.
 Do not add retrospective ATH/reconstruction/comparison scenarios.
 
 ## Checklist
@@ -161,7 +159,6 @@ Do not add retrospective ATH/reconstruction/comparison scenarios.
 - [ ] Sells precede settled-cash-limited buys; 99% reserve remains
 - [ ] No zero/negative amount or volume reaches an exchange backend
 - [ ] Ambiguous live AddOrder stays unresolved and blocks later live orders
-- [ ] Dashboard exposes current-cycle state and a bounded, source-scoped hero trend; History values remain direct observations
-- [ ] History exchange events do not reconstruct prior portfolio values or enter rebalance planning
+- [ ] Dashboard exposes current-cycle state and a bounded, source-scoped hero trend
 - [ ] Retired config fields are dropped and fresh stores fail closed without initialization
 - [ ] Update `docs/ALGORITHM.md` and focused tests when contracts change

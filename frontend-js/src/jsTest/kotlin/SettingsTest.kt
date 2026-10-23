@@ -72,45 +72,112 @@ class SettingsTest : StringSpec() {
                 initSettings()
                 dispatchSettingsInput(input, "61")
 
+                val failedSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 val persistenceFailure = dispatchSettingsResponse(
                     status = 500,
                     response = "{\"error\":\"persistence failed\"}",
+                    xhr = failedSaveXhr,
                 )
                 (persistenceFailure.shouldSwap as Boolean).shouldBeFalse()
                 input.value shouldBe "61"
                 status.textContent shouldBe "Unsaved changes"
 
-                dispatchSettingsBeforeRequest("/settings", form)
+                val inFlightSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 dispatchSettingsInput(input, "62")
                 val inFlightEdit = dispatchSettingsResponse(
                     status = 200,
                     response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:40:00Z\"}",
+                    xhr = inFlightSaveXhr,
                 )
                 (inFlightEdit.shouldSwap as Boolean).shouldBeFalse()
                 input.value shouldBe "62"
                 status.textContent shouldBe "Unsaved changes"
                 status.classList.contains("hidden").shouldBeFalse()
 
-                dispatchSettingsBeforeRequest("/settings", form)
+                val staleSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 dispatchSettingsInput(input, "63")
-                dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
+                val previewXhr = dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
                 val previewEdit = dispatchSettingsResponse(
                     status = 200,
                     response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:41:00Z\"}",
+                    xhr = previewXhr,
+                    contentType = "text/html; charset=UTF-8",
                 )
-                (previewEdit.shouldSwap as Boolean).shouldBeFalse()
+                (previewEdit.shouldSwap as Boolean).shouldBeTrue()
                 input.value shouldBe "63"
                 status.textContent shouldBe "Unsaved changes"
 
-                dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(
+                    status = 500,
+                    response = "{\"error\":\"persistence failed\"}",
+                    xhr = staleSaveXhr,
+                )
+                status.textContent shouldBe "Unsaved changes"
+
+                val deferredSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 val deferredSave = dispatchSettingsResponse(
                     status = 200,
                     response = "{\"configPublicationPending\":true,\"savedAt\":\"2026-10-19T14:42:00Z\"}",
+                    xhr = deferredSaveXhr,
                 )
                 (deferredSave.shouldSwap as Boolean).shouldBeFalse()
                 input.value shouldBe "63"
                 status.textContent shouldBe "Saved — applies after current cycle"
                 status.getAttribute("datetime") shouldBe "2026-10-19T14:42:00Z"
+            } finally {
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "overlapping settings saves acknowledge only their own submitted snapshot" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val input = form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement
+            val status = form.querySelector("#settings-save-status") as HTMLElement
+
+            try {
+                registerSettingsGlobals()
+                initSettings()
+                val firstSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "61")
+                val secondSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
+
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:43:00Z\"}",
+                    xhr = firstSaveXhr,
+                )
+
+                status.textContent shouldBe "Unsaved changes"
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:44:00Z\"}",
+                    xhr = secondSaveXhr,
+                )
+
+                status.textContent shouldBe "Saved and active"
+                status.getAttribute("datetime") shouldBe "2026-10-19T14:44:00Z"
+
+                dispatchSettingsInput(input, "62")
+                val olderSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "63")
+                val latestSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:46:00Z\"}",
+                    xhr = latestSaveXhr,
+                )
+                status.textContent shouldBe "Saved and active"
+                status.getAttribute("datetime") shouldBe "2026-10-19T14:46:00Z"
+
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:45:00Z\"}",
+                    xhr = olderSaveXhr,
+                )
+                status.textContent shouldBe "Saved and active"
+                status.getAttribute("datetime") shouldBe "2026-10-19T14:46:00Z"
             } finally {
                 document.body!!.removeChild(form)
                 initSettings()
@@ -500,23 +567,30 @@ private fun dispatchSettingsInput(input: HTMLInputElement, value: String) {
     input.dispatchEvent(event)
 }
 
-private fun dispatchSettingsBeforeRequest(path: String, target: Element) {
+private fun dispatchSettingsBeforeRequest(path: String, target: Element): dynamic {
+    val xhr = js("({})")
     val requestConfig = js("({})")
     requestConfig.path = path
     requestConfig.verb = "post"
     val detail = js("({})")
+    detail.xhr = xhr
     detail.requestConfig = requestConfig
     val event = document.createEvent("CustomEvent")
     event.asDynamic().initCustomEvent("htmx:beforeRequest", true, true, detail)
     target.dispatchEvent(event)
+    return xhr
 }
 
-private fun dispatchSettingsResponse(status: Int, response: String): dynamic {
-    val xhr = js("({})")
+private fun dispatchSettingsResponse(
+    status: Int,
+    response: String,
+    xhr: dynamic = js("({})"),
+    contentType: String = "application/json; charset=UTF-8",
+): dynamic {
     xhr.status = status
     xhr.responseText = response
     xhr.getResponseHeader = { name: String ->
-        if (name == "Content-Type") "application/json; charset=UTF-8" else null
+        if (name == "Content-Type") contentType else null
     }
     val detail = js("({})")
     detail.xhr = xhr

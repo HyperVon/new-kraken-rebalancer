@@ -60,10 +60,10 @@ agents be taught?”
 Default content targets (highest leverage):
 
 - `code-review`, `architecture-review`, `kotlin-refactoring-and-cleanup`
-- `write-kotest`, `exposed-repository`, `koin-di-and-config`
+- `write-kotest`, `koin-di-and-config`
 - `portfolio-rebalancing-math`, `kraken-api-integration`, `coroutines-flows-sse`
 - `ktor-html-views`, `frontend-js-development`, `common-kmp-module`
-- `dry-run-and-simulation`, `trade-history-sync`, `gradle-quality-gates`
+- `dry-run-and-simulation`, `gradle-quality-gates`
 
 Process/UI skills still get content ideas when thin (e.g. better QA smells,
 PR verification patterns) — but **coding/architecture skills come first**.
@@ -76,7 +76,7 @@ PR verification patterns) — but **coding/architecture skills come first**.
    patterns, traps, and decision rules over generic “write clean code.”
 2. **Ground in this repo.** Propose additions that match (or deliberately
    improve) how *this* codebase works — SRP names, BigDecimal, dryRun≠sim,
-   Exposed, Ktor HTML, Kotlin/JS, Flows/SSE. Spot-read code when unsure.
+   SQLite JDBC, Ktor HTML, Kotlin/JS, Flows/SSE. Spot-read code when unsure.
 3. **Draft the text.** Every content finding includes a **ready-to-paste**
    bullet list, checklist items, or short section — not “consider documenting X.”
 4. **Progressive disclosure.** If a skill would exceed ~500 lines, recommend a

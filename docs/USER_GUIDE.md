@@ -1,8 +1,7 @@
 # User Guide — Kraken Rebalancer
 
-This guide walks through the Dashboard, account History, and Settings. It
-explains how to read the latest rebalance cycle, review portfolio values and
-exchange activity, and configure the bot.
+This guide walks through the Dashboard and Settings. It explains how to read
+the latest rebalance cycle and configure the bot.
 
 For install and first launch, see the [README Getting Started](../README.md#getting-started)
 section. For rebalancing math internals, see [ALGORITHM.md](ALGORITHM.md).
@@ -52,10 +51,10 @@ safety on unless you intend to trade live.
 
 ## Navigation
 
-Dashboard, History, and Settings share the same top nav tabs (active page is
+Dashboard and Settings share the same top nav tabs (active page is
 highlighted and centered below the header identity on wider screens). The header
 brand reads **Kraken** + **Rebalancer**. A **persistent mode plate** shows the
-current trading mode on **every** page: **SIMULATION** (blue), **DRY RUN** (amber), or
+current trading mode on **both** pages: **SIMULATION** (blue), **DRY RUN** (amber), or
 **LIVE TRADING** (red).
 Precedence is simulation first (even if dry run is also on), then dry run, then
 live. The plate reflects your Settings, and hovering it reveals a tooltip
@@ -73,17 +72,7 @@ Live Trading settings.
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Latest completed cycle snapshot, allocation bars, performance table, current-cycle actions |
-| **History** | `/history` | Historical account values, Kraken trades and transactions, and durable data progress |
 | **Settings** | `/settings` | Loop timing, triggers, USD percentage target, safety modes, allocations |
-
-The History page synchronizes Kraken trade and ledger records for the verified
-account, then derives daily balances and values from those committed records.
-It shows a complete account total only when every included nonzero balance has
-valid same-day price evidence; missing dates and assets remain explicit gaps.
-The chart reports account-value changes, not profit or investment returns.
-Simulation keeps its process-scoped samples separate from authenticated account
-history. Operator recovery for unresolved live orders remains available through
-the separate safety workflow.
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 **Only the Dashboard** shows a stream-health chip in the header next to the mode
@@ -101,7 +90,7 @@ that.
 
 ## Dashboard
 
-<a href="images/dashboard.png"><img src="images/dashboard.png" alt="Dashboard showing the latest current-cycle snapshot" width="960"></a>
+<a href="images/dashboard.png"><img src="images/dashboard.png" alt="Dashboard showing the latest current-cycle snapshot and recent activity" width="960"></a>
 *Dashboard overview — the latest completed cycle and its current allocation.*
 
 ### Portfolio overview
@@ -117,9 +106,8 @@ value with a short trailing chart plus two tiles:
 
 The trend uses only in-memory snapshots from the current application run. It
 appears after the second completed cycle, shows the cycle count and sample
-times, and resets when the application restarts. It does not read older
-database snapshots, which may predate the current account or include simulation
-data.
+times, and resets when the application restarts. The application does not
+persist portfolio snapshots between runs.
 
 ### Loop control
 
@@ -143,13 +131,12 @@ Dry Run, or Live Trading mode.
   assets get an auto-assigned color).
 - **Asset Performance** — Sortable table of price, value, target %, current %,
   and **Dev %** (how far each asset is from target, with dollar impact), plus
-  sortable **Quantity** and **Quality score** columns on larger screens. Asset
-  symbols open History filtered to that asset. Quality metrics are grouped
-  above the allocation bars.
+  sortable **Quantity** and **Quality score** columns on larger screens. Quality
+  score is descriptive and does not affect orders.
   Amber = over target, blue = under target (not profit/loss green/red); a small
   legend sits above the table.
 - **Recent Activity** — the newest 20 cycle outcomes with a short summary and
-  timestamps. Use **Show older** to page through the in-memory history, which is
+  timestamps. Use **Show older** to page through in-memory cycle outcomes, which are
   capped at 120 cycles. Failed cycles without a portfolio snapshot remain
   visible:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
@@ -204,7 +191,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. Minimum **0**. |
 | **Minimum Order Size ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. **Minimum `2` (enforced).** |
 
-Older configuration files may contain retired history-only values such as
+Older configuration files may contain retired settings values such as
 drawdown, deployment, inception, or comparison-start settings. These values are
 discarded when the file is read and do not affect the active strategy, which
 uses configured allocations directly. The next Settings save removes those
@@ -251,10 +238,8 @@ limited.
 Before a rebalance cycle analyzes a configured non-USD asset, Kraken metadata
 must explicitly classify it as `currency`. Missing or unknown metadata and
 non-currency classes, including tokenized assets, stop the cycle before price
-analysis. The application does not infer asset class from ticker names. This
-live eligibility check is separate from historical ledger reporting, which
-excludes share balances only when the imported ledger explicitly identifies
-them as equities.
+analysis. The application does not infer asset class from ticker names. This check prevents tokenized or unclassified assets from entering the live
+trading plan.
 
 - Target percent is bounded to **0–100%** by the percent input itself.
 - **Quality score** is optional and runs **0–10**. It is a preference input, not
@@ -318,47 +303,8 @@ untouched either way:
 | **1** (flattest) | 58.23% | 36.77% | 5% |
 | **4** (pre-selected) | 81.96% | 13.04% | 5% |
 
-**Reading the three figures.** They answer different questions, and each says
-which one:
-
-| Figure | What it answers | Scope |
-| :--- | :--- | :--- |
-| **Weighted quality score** | How strong the scored assets look overall. | **Scored assets only** — an unscored asset has no score to average in. |
-| **Largest single position** | Am I concentrated? | The **whole book**, including the targets preserved for unscored assets. |
-| **Effective independent bets** | How many genuinely separate positions do I hold? | The **whole book**. `1 / Σ(share²)`: equals the leg count when evenly weighted, and **1** when everything sits in one asset. Two assets at 86 / 14 behave like **1.3** bets, not 2. |
-
 The configured USD percentage target, sell-then-buy sequence, and dust handling are documented in
 [ALGORITHM.md](ALGORITHM.md).
-
----
-
-## History
-
-<a href="images/history.png"><img src="images/history.png" alt="Account value history and daily holdings" width="960"></a>
-*History — daily account values derived from imported exchange records and completed historical closing prices.*
-
-History restores account history from imported Kraken records. It keeps four views: **Account value**, **Trades**, **Transactions**, and **Data status**. The Account value range defaults to 30 days and offers 24h, 7d, 30d, 90d, 1y, All, and custom dates. Ranges from 7d onward use daily UTC closing-price values. The 24h range uses full-account balance and direct USD price samples captured during account cycles; selecting a chart point opens holdings from that exact sample. If no full-account samples are available in the last 24 hours, History shows an empty state instead of substituting a daily mark. In Simulation, process-scoped cycle samples stay separate and authenticated account history is unavailable.
-
-The **Account value (USD)** chart includes spot balances, USD cash, and identifiable staking/Earn balance buckets represented in ledger history, including assets that are no longer configured or held. All ledger assets classified as equities are excluded from holdings and totals; all USD ledger balance changes remain included, including stock trade settlements and dividend credits. Separate derivatives and margin positions are outside this chart. The chart uses completed Kraken daily candles and labels the results as historical closing-price estimates. Missing balances or prices create visible gaps; a known subtotal is never shown as a total. Daily historical value is not an exchange-certified statement, tax valuation, profit, investment return, or strategy performance.
-
-The chart reports the latest available value, the account-value change over the selected range, and the actual baseline date used. A change requires at least two complete daily values; a one-day range still reports its available value and extrema. Deposits and withdrawals affect the change. A missing or zero baseline does not produce a percentage. Select a daily point, or choose a date under **Holdings at [date]**, to inspect that day's asset, quantity, historical USD price, value, and availability. The daily-total and selected-date holdings CSV exports preserve missing-data status.
-
-Drag to zoom, use **Reset zoom** to restore the selected period, and use the chart tooltips for exact daily values. The chart leaves a break at every incomplete date. Older ranges use daily marks and do not imply that all transaction history has a complete price series. **All** shows available account-value history; **Data status** reports the requested period and its actual value coverage.
-When you change the holdings date, the previous rows clear while the new date
-loads; only the response for the still-selected date and account scope is shown.
-
-**Data status** separates the four kinds of work:
-
-1. **Import exchange records** reports imported trade and transaction counts, covered dates, the active scan window, and saved progress. Kraken does not provide a stable total, so the page does not invent a completion percentage.
-2. **Establish daily balances** reports evaluated days, valid days, and dates that lack balance evidence.
-3. **Obtain prices and calculate values** reports required asset-days priced, complete account totals, and blocked dates.
-4. **Routine refresh** is shown separately from the frozen historical import job. A recent check does not restart or erase the historical-import status.
-
-The page shows the requested value period, available-value dates, last successful update, elapsed time, and last committed progress. A collapsed **Why is this incomplete?** section lists specific unavailable evidence and dates. **Retry failed work** resumes durable checkpoints; it does not delete or reimport intact records. Technical details contain cursors, source identifiers, coverage intervals, and sanitized errors. A cursor is not evidence that the account history is complete.
-
-Trades and transactions retain their independent filters, pagination, and CSV exports. Exchange trades and ledger rows are account history; bot-cycle values remain separate and do not feed account-value history. Account identity is verified before synchronization, and the local account reference is stored as a digest. The sync and valuation workers do not participate in the portfolio trading calculation.
-
-History and live-order state use separate SQLite files under the configured data directory. Initialize the data directory before first launch; details and backup requirements are in the [README storage notes](../README.md#configuration-reference) and [SECURITY.md](../SECURITY.md#execution-journal-storage-and-recovery).
 
 ---
 
@@ -368,9 +314,7 @@ History and live-order state use separate SQLite files under the configured data
 
 1. Enable **Simulation Mode** (dry run optional).
 2. Explore Dashboard and Settings, then save a small allocation change and
-   watch the next completed cycle appear in **Recent Activity** and History.
-3. The simulated History value series is separate from authenticated account
-   trades, ledgers, and values.
+   watch the next completed cycle appear in **Recent Activity**.
 
 ### 2. Rehearse against live market data (no orders)
 

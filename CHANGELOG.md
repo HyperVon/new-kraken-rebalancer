@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.8] - 2026-10-23
+
+### Removed
+
+- **History reporting**: removed the History page, account-history synchronization,
+  its APIs, persistence, and associated client code. Recent cycle activity remains
+  process-local on the Dashboard.
+- **Dashboard allocation summary cards**: removed weighted quality score, largest
+  position, and effective independent bets from the Dashboard.
+
+### Changed
+
+- **Storage**: removed the History database. The remaining execution journal is
+  required for durable live-order intent and restart recovery. Kraken
+  TradesHistory remains in use only for current sell-fill settlement.
+
 ## [6.20.7] - 2026-10-22
 
 ### Fixed
@@ -4826,7 +4842,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Docs / skill drift**: Documented zero-target → 100% `Deviation%` in
   [`docs/ALGORITHM.md`](docs/ALGORITHM.md) and
   [`portfolio-rebalancing-math`](.agents/skills/portfolio-rebalancing-math/SKILL.md);
-  corrected [`trade-history-sync`](.agents/skills/trade-history-sync/SKILL.md)
+  corrected `trade-history-sync`
   so full vs incremental sync follows `latestTradeTime` nullity (not
   `isHistorySeeded`) and OHLC fetch is 95 days vs `HISTORICAL_DAYS_BACK` 90.
 - **Documentation review**: Corrected README Exposed migration API and package
