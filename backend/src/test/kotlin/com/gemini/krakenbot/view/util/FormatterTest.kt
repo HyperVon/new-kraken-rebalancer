@@ -55,7 +55,7 @@ class FormatterTest : StringSpec() {
             Formatter.formatCount(0L) shouldBe "0"
         }
 
-        "formatQuantity preserves the sign of ledger outflows" {
+        "formatQuantity preserves the sign of negative quantities" {
             Formatter.formatQuantity(BigDecimal("-1.5")) shouldBe "-1.5"
             Formatter.formatQuantity(BigDecimal("-1234.5678")) shouldBe "-1,234.5678"
         }

@@ -65,10 +65,6 @@ fun main() {
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, {
         updateAge()
         reapplySort()
-        // Swapped panels drop detached chart instances and enhance whatever evidence now exists.
-        initHistoryCharts()
-        initHistoryViews()
-        initHistoryDataActions()
         if (document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) != null) {
             initSettings()
         }
@@ -129,9 +125,6 @@ fun main() {
 }
 
 fun initOnLoad() {
-    initHistoryCharts()
-    initHistoryViews()
-    initHistoryDataActions()
     updateAge()
     reapplySort()
 

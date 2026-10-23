@@ -10,9 +10,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
-import com.gemini.krakenbot.service.history.HistoryCycleOutcome
-import com.gemini.krakenbot.service.history.HistorySourceMode
-import com.gemini.krakenbot.service.history.HistorySourceScope
+import com.gemini.krakenbot.service.CurrentCycleOutcome
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
@@ -542,32 +540,6 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
             }
         }
 
-        "history sync status returns no rows without a scope and queries a verified scope" {
-            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
-            val scope = HistorySourceScope(
-                mode = HistorySourceMode.SIMULATION,
-                managedScopeFingerprint = "a".repeat(64),
-                managedScopeSymbols = listOf("BTC"),
-                simulationSessionId = "test-session",
-            )
-            coEvery { historyObservationRecorder.currentSourceScope(any()) } returns null
-
-            testApplication {
-                application { configureTestEnv() }
-
-                val noScope = client.get(Routes.API_HISTORY_SYNC_STATUS)
-                noScope.status shouldBe HttpStatusCode.OK
-                noScope.bodyAsText() shouldBe "[]"
-
-                coEvery { historyObservationRecorder.currentSourceScope(any()) } returns scope
-                coEvery { historyService.getSyncStatus(scope) } returns emptyList()
-                val withScope = client.get(Routes.API_HISTORY_SYNC_STATUS)
-                withScope.status shouldBe HttpStatusCode.OK
-                withScope.bodyAsText() shouldBe "[]"
-                coVerify(exactly = 1) { historyService.getSyncStatus(scope) }
-            }
-        }
-
         "settings and preview reject stale CSRF tokens while returning safe recovery content" {
             every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
 
@@ -677,7 +649,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     cycleId = "failed-before-first-snapshot",
                     occurredAt = Instant.parse("2026-10-11T12:00:00Z"),
                     mode = CurrentCycleActivityMode.LIVE,
-                    outcome = HistoryCycleOutcome.PROBLEM,
+                    outcome = CurrentCycleOutcome.PROBLEM,
                     actions = listOf("WARNING: price refresh unavailable"),
                 ),
                 "test-source",

@@ -5,9 +5,8 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.safeParseBigDecimal
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradeFill
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.service.DirectBalanceCapture
@@ -24,61 +23,23 @@ import java.time.Instant
 object KrakenParsers {
     private val log = LoggerFactory.getLogger(KrakenParsers::class.java)
 
-    /** Parses one account-wide native TradesHistory cursor response without allocation filtering. */
-    fun parseAccountTradePage(
-        result: JsonNode,
-        startSec: Long?,
-        endSec: Long?,
-        requestedCursor: String?,
-    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry> {
+    /** Parses the recent Kraken trade page used for order-fill confirmation. */
+    fun parseTradePage(result: JsonNode): ExchangeTradePage {
         val tradesNode = result.get(KrakenApiConstants.FIELD_TRADES)
-        val rawSize = tradesNode?.takeIf(JsonNode::isObject)?.size() ?: 0
         val count = parseOptionalCount(result)
         val cursor = parseCursor(result)
         val entries = tradesNode?.takeIf(JsonNode::isObject)?.properties()?.map { (tradeId, node) ->
-            parseAccountTrade(tradeId, node)
+            parseTradeFill(tradeId, node)
         }.orEmpty()
 
-        return ExchangeHistoryPage(
+        return ExchangeTradePage(
             entries = entries,
-            startSec = startSec,
-            endSec = endSec,
-            requestedCursor = requestedCursor,
             nextCursor = cursor.next,
-            count = count.value,
-            rawSize = rawSize,
             valid = result.isObject && tradesNode?.isObject == true && count.valid && cursor.valid,
         )
     }
 
-    /** Parses one account-wide native Ledgers cursor response without asset/type filtering. */
-    fun parseAccountLedgerPage(
-        result: JsonNode,
-        startSec: Long?,
-        endSec: Long?,
-        requestedCursor: String?,
-    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry> {
-        val ledgerNode = result.get(KrakenApiConstants.FIELD_LEDGERS)
-        val rawSize = ledgerNode?.takeIf(JsonNode::isObject)?.size() ?: 0
-        val count = parseOptionalCount(result)
-        val cursor = parseCursor(result)
-        val entries = ledgerNode?.takeIf(JsonNode::isObject)?.properties()?.map { (ledgerId, node) ->
-            parseAccountLedger(ledgerId, node)
-        }.orEmpty()
-
-        return ExchangeHistoryPage(
-            entries = entries,
-            startSec = startSec,
-            endSec = endSec,
-            requestedCursor = requestedCursor,
-            nextCursor = cursor.next,
-            count = count.value,
-            rawSize = rawSize,
-            valid = result.isObject && ledgerNode?.isObject == true && count.valid && cursor.valid,
-        )
-    }
-
-    private fun parseAccountTrade(tradeId: String, node: JsonNode): ExchangeTradeHistoryEntry {
+    private fun parseTradeFill(tradeId: String, node: JsonNode): ExchangeTradeFill {
         val rawTime = rawValue(node, KrakenApiConstants.FIELD_TIME)
         val time = rawTime?.toBigDecimalOrNull()?.let(::epochSecondsToInstantExact)
         val pair = rawValue(node, KrakenApiConstants.FIELD_PAIR)
@@ -88,35 +49,17 @@ object KrakenParsers {
         val fee = rawValue(node, KrakenApiConstants.FIELD_FEE)
         val volume = rawValue(node, KrakenApiConstants.FIELD_VOL)
         val orderTxid = rawValue(node, KrakenApiConstants.FIELD_ORDER_TXID)
-        val ledgerNode = node.get(KrakenApiConstants.FIELD_LEDGER_IDS)
-        val ledgerIds = when {
-            ledgerNode == null || ledgerNode.isNull -> null
-            ledgerNode.isArray -> ledgerNode.mapNotNull(JsonNode::textValue)
-            else -> listOfNotNull(rawValue(node, KrakenApiConstants.FIELD_LEDGER_IDS))
-        }
-
-        return ExchangeTradeHistoryEntry(
+        return ExchangeTradeFill(
             tradeId = tradeId,
             orderTxid = orderTxid,
-            postTxid = rawValue(node, KrakenApiConstants.FIELD_POST_TXID),
-            pair = pair,
             baseAsset = pairSplit?.base,
             quoteCurrency = pairSplit?.quote,
             feeCurrency = null,
-            time = time,
-            rawTime = rawTime,
             type = rawValue(node, KrakenApiConstants.FIELD_TYPE),
-            orderType = rawValue(node, KrakenApiConstants.FIELD_ORDER_TYPE),
             price = price,
             cost = cost,
             fee = fee,
             volume = volume,
-            margin = rawValue(node, KrakenApiConstants.FIELD_MARGIN),
-            misc = rawValue(node, KrakenApiConstants.FIELD_MISC),
-            tradeSequenceId = rawValue(node, KrakenApiConstants.FIELD_TRADE_ID),
-            maker = node.get(KrakenApiConstants.FIELD_MAKER)?.takeIf(JsonNode::isBoolean)?.booleanValue(),
-            ledgerIds = ledgerIds,
-            rawRecordJson = node.toString(),
             hasValidTime = time != null,
             hasValidPrice = price.isPositiveDecimal(),
             hasValidCost = cost.isNonNegativeDecimal(),
@@ -126,41 +69,13 @@ object KrakenParsers {
         )
     }
 
-    private fun parseAccountLedger(ledgerId: String, node: JsonNode): ExchangeLedgerHistoryEntry {
-        val rawTime = rawValue(node, KrakenApiConstants.FIELD_TIME)
-        val time = rawTime?.toBigDecimalOrNull()?.let(::epochSecondsToInstantExact)
-        val amount = rawValue(node, KrakenApiConstants.FIELD_AMOUNT)
-        val fee = rawValue(node, KrakenApiConstants.FIELD_FEE)
-        val balance = rawValue(node, KrakenApiConstants.FIELD_BALANCE)
-
-        return ExchangeLedgerHistoryEntry(
-            ledgerId = ledgerId,
-            refid = rawValue(node, KrakenApiConstants.FIELD_REFID),
-            time = time,
-            rawTime = rawTime,
-            type = rawValue(node, KrakenApiConstants.FIELD_TYPE),
-            subtype = rawValue(node, KrakenApiConstants.FIELD_SUBTYPE),
-            assetClass = rawValue(node, KrakenApiConstants.FIELD_ACLASS),
-            asset = rawValue(node, KrakenApiConstants.FIELD_ASSET),
-            amount = amount,
-            fee = fee,
-            balance = balance,
-            rawRecordJson = node.toString(),
-            hasValidTime = time != null,
-            hasValidAmount = amount.isDecimal(),
-            hasValidFee = fee.isNonNegativeDecimal(),
-            hasValidBalance = balance.isDecimal(),
-            isValidRecord = node.isObject,
-        )
-    }
-
-    private class ParsedCount(val value: Long?, val valid: Boolean)
+    private data class ParsedCount(val valid: Boolean)
 
     private fun parseOptionalCount(result: JsonNode): ParsedCount {
-        val node = result.get(KrakenApiConstants.FIELD_COUNT) ?: return ParsedCount(null, true)
-        if (node.isNull) return ParsedCount(null, true)
+        val node = result.get(KrakenApiConstants.FIELD_COUNT) ?: return ParsedCount(true)
+        if (node.isNull) return ParsedCount(true)
         val value = node.takeIf { it.isIntegralNumber && it.canConvertToLong() }?.longValue()
-        return if (value != null && value >= 0L) ParsedCount(value, true) else ParsedCount(null, false)
+        return ParsedCount(value != null && value >= 0L)
     }
 
     private class ParsedCursor(val next: String?, val valid: Boolean)
@@ -181,8 +96,6 @@ object KrakenParsers {
             else -> value.toString()
         }
     }
-
-    private fun String?.isDecimal(): Boolean = this?.toBigDecimalOrNull() != null
 
     private fun String?.isPositiveDecimal(): Boolean = this?.toBigDecimalOrNull()?.signum()?.let { it > 0 } == true
 
@@ -388,38 +301,4 @@ object KrakenParsers {
         }
     }
 
-    fun parseOHLC(root: JsonNode, pair: String? = null): List<Pair<Long, BigDecimal>> {
-        val resultNode = root.path(KrakenApiConstants.FIELD_RESULT)
-        if (!resultNode.isObject) return emptyList()
-
-        val ohlcNode = resultNode.properties().firstOrNull { it.key != KrakenApiConstants.FIELD_LAST }?.value
-        if (ohlcNode == null || !ohlcNode.isArray) return emptyList()
-
-        val priceList = mutableListOf<Pair<Long, BigDecimal>>()
-        ohlcNode.forEach { entry ->
-            if (entry.isArray && entry.size() >= 5) {
-                val time = entry.get(0).asLong()
-                val closePrice =
-                    try {
-                        BigDecimal(entry.get(4).asText())
-                    } catch (_: Exception) {
-                        if (pair == null) {
-                            log.warn(
-                                "Skipping OHLC entry with unparseable close price: {}",
-                                entry.get(4).asText(),
-                            )
-                        } else {
-                            log.warn(
-                                "Skipping OHLC entry for {} with unparseable close price: {}",
-                                pair,
-                                entry.get(4).asText(),
-                            )
-                        }
-                        return@forEach
-                    }
-                priceList.add(Pair(time, closePrice))
-            }
-        }
-        return priceList
-    }
 }

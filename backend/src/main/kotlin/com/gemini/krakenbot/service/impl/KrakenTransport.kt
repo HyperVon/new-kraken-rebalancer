@@ -28,7 +28,6 @@ internal fun krakenPrivateEndpointCost(path: String): Double = when {
     path == KrakenApiConstants.PATH_ADD_ORDER || path.endsWith("/CancelOrder") -> 0.0
 
     path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
-        path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
         path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 4.0
 
     else -> 1.0

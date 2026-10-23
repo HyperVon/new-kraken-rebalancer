@@ -68,7 +68,7 @@ Copy this checklist and track progress:
 
 For a large dependency surface, fan out independent read-only evidence tracks
 through the host's native parallel task surface
-such as Kotlin/KSP/Gradle, Ktor/Koin/Exposed, and testing/frontend/npm. Workers
+such as Kotlin/KSP/Gradle, Ktor/Koin, and testing/frontend/npm. Workers
 may inspect manifests, release notes, and compatibility evidence only; version
 edits, dependency refreshes, package-manager commands, migrations, and all
 builds remain parent-owned and serial. If route selection is unavailable, do
@@ -113,7 +113,7 @@ Cross-reference the numbers in `.agents/AGENTS.md` §1 (Stack Specification) so 
 Summarize each proposed bump as `name: old -> new` grouped by risk:
 
 - **Patch/minor** (safe): apply together.
-- **Major** (breaking): call out each one and check its migration guide before touching code. Prefer web search / official changelogs for `Kotlin`, `Ktor`, `Koin`, `Exposed`, `Kotest`, `Jackson`, `Gradle`.
+- **Major** (breaking): call out each one and check its migration guide before touching code. Prefer web search / official changelogs for `Kotlin`, `Ktor`, `Koin`, `Kotest`, `Jackson`, `Gradle`.
 
 Do not upgrade past a version that requires a JDK newer than the configured toolchain unless you also bump the toolchain intentionally. Keep security-motivated pins (e.g. the Netty `resolutionStrategy` block, Jackson BOM, yarn `resolution(...)`) — only raise them, never drop below the pinned secure version.
 
@@ -146,7 +146,6 @@ For each deprecation/breaking change:
 Known migration-sensitive areas in this codebase:
 
 - **Ktor** — plugin install APIs, SSE, HTML builder, client engine config change across majors.
-- **Exposed** — the `0.x → 1.x` split moved packages from `org.jetbrains.exposed.sql.*` to `org.jetbrains.exposed.v1.core.*` / `org.jetbrains.exposed.v1.jdbc.*` (see `exposed-repository` skill); also watch DSL/DAO signatures and the `java-time` module across versions.
 - **Koin** — module DSL / `KoinApplication` lifecycle.
 - **Kotest / MockK** — assertion + matcher package moves; keep `BigDecimal` comparisons on `shouldBeEqualComparingTo`.
 - **Jackson** — always bump via the `jackson-bom` platform, not individual artifacts.

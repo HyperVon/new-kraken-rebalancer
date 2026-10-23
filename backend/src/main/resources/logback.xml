@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- Production default: INFO. Without this file logback falls back to DEBUG,
-         which logs every Exposed SQL statement. Debug database timing diagnostics
-         stay available via explicit overrides. Individual DB calls of at least
+    <!-- Production default: INFO. Debug database timing diagnostics stay
+         available via explicit overrides. Individual DB calls of at least
          500 ms already log at WARN without any override. -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>

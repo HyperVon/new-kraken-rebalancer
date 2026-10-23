@@ -4,8 +4,8 @@
          runtime with -Dlogback.configurationFile=logback-debug.xml (see start.bat
          debug mode). The override REPLACES the packaged logback.xml entirely, so
          the CONSOLE appender and INFO root are kept here to avoid losing output
-         and to keep Exposed SQL logging quiet. The two DEBUG loggers enable DB
-         call timings and comparison publication/digest diagnostics.
+         and to keep the INFO root level. The DB timing logger enables database
+         call timing diagnostics.
          Debug output also rolls to logs/rebalancer-debug.*.log (50 MB per file,
          5 files kept, ~250 MB cap) so a long run can be captured and shared. -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -26,7 +26,6 @@
         </encoder>
     </appender>
     <logger name="com.gemini.krakenbot.db.timing" level="DEBUG" />
-    <logger name="com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService" level="DEBUG" />
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />

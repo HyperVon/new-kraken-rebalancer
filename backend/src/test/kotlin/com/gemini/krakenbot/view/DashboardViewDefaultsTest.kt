@@ -1,13 +1,9 @@
 package com.gemini.krakenbot.view
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.service.history.HistoryEventQuery
-import com.gemini.krakenbot.service.history.HistoryPage
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
-import com.gemini.krakenbot.view.component.HistoryPageComponent
-import com.gemini.krakenbot.view.component.HistoryPageData
 import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
@@ -33,7 +29,6 @@ class DashboardViewDefaultsTest :
                     performanceTableComponent = PerformanceTableComponent(),
                     recentActivityComponent = RecentActivityComponent(),
                 ),
-                historyPageComponent = HistoryPageComponent(),
             )
 
             val shell = createHTML(prettyPrint = false).html {
@@ -52,29 +47,6 @@ class DashboardViewDefaultsTest :
                 dashboardView.renderSettingsFormFragment(this, config, errorMessage = null, csrfToken = "test-token")
             }
             form shouldContain "test-token"
-
-            val history = createHTML(prettyPrint = false).html {
-                with(this) {
-                    dashboardView.renderHistoryPage(
-                        settings = config.settings,
-                        paused = true,
-                        csrfToken = "csrf-val",
-                        data = HistoryPageData(
-                            range = "all",
-                            filters = HistoryEventQuery(),
-                            tradesOffset = 0,
-                            ledgersOffset = 0,
-                            observations = emptyList(),
-                            checkpoints = HistoryPage(emptyList(), total = 0, limit = 50, offset = 0, hasMore = false),
-                            trades = HistoryPage(emptyList(), total = 0, limit = 50, offset = 0, hasMore = false),
-                            ledgers = HistoryPage(emptyList(), total = 0, limit = 50, offset = 0, hasMore = false),
-                            syncStatuses = emptyList(),
-                            accountAvailable = false,
-                        ),
-                    )
-                }
-            }
-            history shouldContain "History"
 
             val fragment = createHTML(prettyPrint = false).div {
                 with(this) {

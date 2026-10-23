@@ -63,7 +63,7 @@ Run whatever the change requires **before** drafting checked boxes:
 
 | Change kind | Verify with |
 | :--- | :--- |
-| UI / CSS / History density | Sim boot + viewport check (`~1280–1440px`); `ui-manual-qa` / temp screenshots as needed |
+| UI / CSS density | Sim boot + viewport check (`~1280–1440px`); `ui-manual-qa` / temp screenshots as needed |
 | Appearance in README | `docs-screenshot-refresh` (canonical) or document why canonicals are unaffected |
 | Behavior / trading path | Relevant Kotest / evaluation already in Step 2; add targeted runs if gaps |
 

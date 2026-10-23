@@ -110,18 +110,8 @@ object TableStyles {
 
         ".${CssClass.Table.MonoCol}" {
             fontFamily = CssTheme.fontMono
-            // HIST-3: tabular figures keep decimal columns aligned.
+            // Tabular figures keep decimal columns aligned.
             fontVariantNumericRaw("tabular-nums")
-        }
-
-        // HIST-3: quiet success indicator (replaces the always-"SUCCESS" text column).
-        ".${CssClass.Table.StatusDot.value}" {
-            display = Display.inlineBlock
-            width = 0.5.rem
-            height = 0.5.rem
-            borderRadius = 50.pct
-            backgroundColor = CssTheme.colorSuccess
-            boxShadowRaw(CssTheme.shadowStatusDot)
         }
 
         HtmlQueries.SORTABLE_TH {
@@ -157,7 +147,7 @@ object TableStyles {
             opacity = 1
         }
 
-        // Badges — shared outline system for activity + trade SIDE/STATUS
+        // Badges — shared outline system for activity actions.
         ".badge" {
             display = Display.inlineFlex
             alignItems = Align.center

@@ -3,9 +3,7 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.model.ExchangeHistoryPage
-import com.gemini.krakenbot.model.ExchangeLedgerHistoryEntry
-import com.gemini.krakenbot.model.ExchangeTradeHistoryEntry
+import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import java.math.BigDecimal
 
@@ -35,22 +33,13 @@ interface KrakenService {
         clOrdId: String? = null,
     ): OrderResult
 
-    /** Returns one raw account-wide TradesHistory cursor page. */
-    suspend fun getAccountTradePage(
+    /** Returns a bounded Kraken TradesHistory page for confirming recent order fills. */
+    suspend fun getRecentTradePage(
         startSec: Long? = null,
         endSec: Long? = null,
         cursor: String? = null,
         limit: Int? = null,
-    ): ExchangeHistoryPage<ExchangeTradeHistoryEntry>
-
-    /** Returns one raw account-wide Ledgers cursor page, retaining Kraken asset codes verbatim. */
-    suspend fun getAccountLedgerPage(
-        startSec: Long? = null,
-        endSec: Long? = null,
-        cursor: String? = null,
-    ): ExchangeHistoryPage<ExchangeLedgerHistoryEntry>
-
-    suspend fun getOHLC(pair: String, interval: Int = 1440, since: Long? = null): List<Pair<Long, BigDecimal>>
+    ): ExchangeTradePage
 
     /**
      * Stable account/configuration scope for cached funding evidence. The
@@ -61,11 +50,6 @@ interface KrakenService {
 
     /** Authenticated stable account identity (Kraken Spot IIBAN); never use a credential hash here. */
     suspend fun getAuthenticatedAccountIdentity(): String? = null
-
-    /** Authenticated API-key account identity and verified private-history time restrictions. */
-    suspend fun getAuthenticatedAccountInfo(): AuthenticatedAccountInfo? = getAuthenticatedAccountIdentity()?.let {
-        AuthenticatedAccountInfo(identity = it, queryBoundsVerified = false)
-    }
 
     /** Current private-API call-counter load; 0 for backends without a rate limiter. */
     suspend fun getApiCallCounter(): Double = 0.0
@@ -78,22 +62,6 @@ interface KrakenService {
      * calls each capture their own entry-time backend.
      */
     suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
-}
-
-data class AuthenticatedAccountInfo(
-    val identity: String,
-    /** Inclusive earliest allowed query second; null means Kraken reports no lower restriction. */
-    val queryFromSec: Long? = null,
-    /** Inclusive latest allowed query second; null means Kraken reports no upper restriction. */
-    val queryToSec: Long? = null,
-    val queryBoundsVerified: Boolean,
-) {
-    init {
-        require(identity.isNotBlank())
-        require(queryFromSec == null || queryFromSec >= 0)
-        require(queryToSec == null || queryToSec >= 0)
-        require(queryFromSec == null || queryToSec == null || queryFromSec <= queryToSec)
-    }
 }
 
 /** Optional capability for account balances reduced to amounts currently available for trading. */

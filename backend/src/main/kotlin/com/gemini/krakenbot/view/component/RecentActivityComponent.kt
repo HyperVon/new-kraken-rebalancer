@@ -3,24 +3,21 @@ package com.gemini.krakenbot.view.component
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.service.CurrentCycleActivityMode
+import com.gemini.krakenbot.service.CurrentCycleOutcome
 import com.gemini.krakenbot.service.CurrentPortfolioState
-import com.gemini.krakenbot.service.history.HistoryCycleOutcome
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.RecentActivityText
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
-import com.gemini.krakenbot.view.util.withQuery
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
-import kotlinx.html.a
 import kotlinx.html.button
 import kotlinx.html.details
 import kotlinx.html.id
@@ -71,11 +68,6 @@ class RecentActivityComponent {
                     renderFilterButton(RecentActivityText.FILTER_VALUE_ORDERS, RecentActivityText.FILTER_ORDERS)
                     renderFilterButton(RecentActivityText.FILTER_VALUE_PROBLEMS, RecentActivityText.FILTER_PROBLEMS)
                 }
-                p {
-                    id = RecentActivityText.PERSISTENCE_WARNING_ID
-                    attributes["hidden"] = "hidden"
-                    +RecentActivityText.PERSISTENCE_UNAVAILABLE
-                }
                 div {
                     id = RecentActivityText.GROUPS_ID
                     val visibleItems = activities.take(CurrentPortfolioState.MAX_RECENT_ACTIVITIES)
@@ -90,20 +82,6 @@ class RecentActivityComponent {
                             attributes["hidden"] = "hidden"
                         }
                         +RecentActivityText.SHOW_OLDER
-                    }
-                    a(
-                        href = Routes.HISTORY
-                            .withQuery(
-                                RecentActivityText.HISTORY_TAB_QUERY_KEY,
-                                RecentActivityText.HISTORY_TAB_ACTIVITY,
-                            )
-                            .withQuery(
-                                RecentActivityText.HISTORY_ACTIVITY_QUERY_KEY,
-                                RecentActivityText.HISTORY_ACTIVITY_BOT,
-                            ),
-                        classes = CssClass.Button.Secondary.value,
-                    ) {
-                        +RecentActivityText.VIEW_FULL_ACTIVITY
                     }
                 }
             }
@@ -123,8 +101,8 @@ class RecentActivityComponent {
     private fun DIV.renderCycle(activity: CurrentCycleActivity, hidden: Boolean) {
         val outcome = activity.outcome.toLabel()
         val orders = activity.actions.any { TradeAction.from(it) != TradeAction.INFO } ||
-            activity.outcome in setOf(HistoryCycleOutcome.DRY_RUN_PLAN, HistoryCycleOutcome.ORDERS_ATTEMPTED)
-        val problem = activity.outcome == HistoryCycleOutcome.PROBLEM || activity.actions.any(::isProblemAction)
+            activity.outcome in setOf(CurrentCycleOutcome.DRY_RUN_PLAN, CurrentCycleOutcome.ORDERS_ATTEMPTED)
+        val problem = activity.outcome == CurrentCycleOutcome.PROBLEM || activity.actions.any(::isProblemAction)
         val actions = activity.actions
         details(CssClass.Activity.Cycle.value) {
             if (hidden) attributes["hidden"] = "hidden"
@@ -183,12 +161,12 @@ class RecentActivityComponent {
     }
 
     private companion object {
-        fun HistoryCycleOutcome?.toLabel(): String = when (this) {
-            HistoryCycleOutcome.NO_TRADE -> RecentActivityText.OUTCOME_NO_TRADE
-            HistoryCycleOutcome.DRY_RUN_PLAN -> RecentActivityText.OUTCOME_DRY_RUN_PLAN
-            HistoryCycleOutcome.ORDERS_ATTEMPTED -> RecentActivityText.OUTCOME_ORDERS_ATTEMPTED
-            HistoryCycleOutcome.PROBLEM -> RecentActivityText.OUTCOME_PROBLEM
-            HistoryCycleOutcome.RECORDED, null -> RecentActivityText.OUTCOME_RECORDED
+        fun CurrentCycleOutcome?.toLabel(): String = when (this) {
+            CurrentCycleOutcome.NO_TRADE -> RecentActivityText.OUTCOME_NO_TRADE
+            CurrentCycleOutcome.DRY_RUN_PLAN -> RecentActivityText.OUTCOME_DRY_RUN_PLAN
+            CurrentCycleOutcome.ORDERS_ATTEMPTED -> RecentActivityText.OUTCOME_ORDERS_ATTEMPTED
+            CurrentCycleOutcome.PROBLEM -> RecentActivityText.OUTCOME_PROBLEM
+            null -> RecentActivityText.OUTCOME_RECORDED
         }
 
         fun CurrentCycleActivityMode.label(): String = when (this) {

@@ -24,5 +24,5 @@ unchecked boxes for “after merge”.
 
 - [x] `./.agents/skills/commit-and-push/scripts/pre_commit_check.sh`
 - [x] Adaptive bounded adversarial review converged
-- [x] _(Only if needed)_ Manual/UI/sim spot-checks already performed — e.g. History
+- [x] _(Only if needed)_ Manual/UI/sim spot-checks already performed — e.g. Dashboard
   table at ~1280px — never “after merge”

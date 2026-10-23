@@ -280,7 +280,7 @@ Always:
 Also when UI changed:
 
 - Prefer [ui-manual-qa](../ui-manual-qa/SKILL.md) scoped or full (include
-  `STYLE-*`, current Dashboard/Settings/History cases, and History API checks)
+  `STYLE-*` and current Dashboard/Settings cases)
 - Or at least [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md) against
   local sim after hard-refresh / `?v=`
 

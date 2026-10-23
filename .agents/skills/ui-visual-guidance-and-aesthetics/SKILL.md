@@ -34,7 +34,7 @@ which owns source edits and screenshot verification.
 | Skill | Owns |
 | :--- | :--- |
 | ui-visual-guidance-and-aesthetics | Design principles, hierarchy, aesthetics, decisions, acceptance criteria |
-| ui-visual-review | Dashboard, Settings, and History boot, screenshots, visual critique |
+| ui-visual-review | Dashboard and Settings boot, screenshots, visual critique |
 | ui-visual-implement | Approved visual implementation and screenshot verification |
 | ui-manual-qa | Functional interaction and browser QA |
 | ktor-html-views | SSR markup, HTMX, and CSS implementation |
@@ -43,7 +43,7 @@ which owns source edits and screenshot verification.
 
 ## Non-negotiable safety and quality contract
 
-- Keep the persistent trading-mode plate on Dashboard, Settings, and History.
+- Keep the persistent trading-mode plate on Dashboard and Settings.
 - Keep SIMULATION, DRY RUN, and LIVE TRADING distinct and obvious.
 - Keep STREAM / STALE separate from trading mode; freshness is not a trading
   mode.
@@ -99,7 +99,7 @@ actions, green success, amber warning, red danger/live consequence, muted
 secondary data, soft elevation, and limited glow.
 
 Use existing CssTheme, LayoutStyles, ComponentStyles, FormStyles, TableStyles,
-NavigationStyles, History styles, MediaQueries, and shared CssClass constants
+NavigationStyles, MediaQueries, and shared CssClass constants
 before inventing values. The detailed reference lists typography roles,
 surface rules, screen guidance, breakpoints, screenshot profiles, and
 repository-specific responsive decisions.

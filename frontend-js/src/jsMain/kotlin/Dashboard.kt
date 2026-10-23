@@ -15,7 +15,6 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
-import kotlin.js.JSON
 import com.gemini.krakenbot.view.util.HtmlQueries.DATA_AGE_TIME as DATA_AGE_TIME_QUERY
 import com.gemini.krakenbot.view.util.HtmlQueries.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
 import com.gemini.krakenbot.view.util.HtmlQueries.HOVERABLE_TR as HOVERABLE_TR_QUERY
@@ -173,8 +172,6 @@ internal data class RecentActivityUiState(
     var visibleCount: Int = RecentActivityText.PAGE_SIZE.toInt(),
     val expandedCycleIds: MutableSet<String> = mutableSetOf(),
     var pageScrollY: Double = 0.0,
-    var hydrationSourceId: String? = null,
-    var persistenceUnavailable: Boolean = false,
 )
 
 internal fun mergeRecentActivityItems(
@@ -201,44 +198,6 @@ internal fun filterRecentActivityItems(items: List<RecentActivityItem>, filter: 
 
         else -> items
     }
-
-internal fun hydrateRecentActivityJson(json: String, sourceId: String): Boolean {
-    return try {
-        val payload = JSON.parse<dynamic>(json)
-        val items = payload.items
-        val count = (items?.length as? Number)?.toInt() ?: 0
-        val hydrated = (0 until count).mapNotNull { index ->
-            val item = items[index]
-            val cycleId = item.cycleId as? String ?: return@mapNotNull null
-            val occurredAt = parseActivityTime(item.occurredAt) ?: return@mapNotNull null
-            RecentActivityItem(
-                cycleId = cycleId,
-                occurredAt = occurredAt,
-                mode = (item.mode as? String).orEmpty(),
-                outcome = item.outcome as? String,
-                actions = dynamicStrings(item.actions),
-            )
-        }
-        val root = recentActivityRoot()
-        if (recentActivityUiState.sourceId == sourceId) {
-            recentActivityUiState.items = mergeRecentActivityItems(hydrated, recentActivityUiState.items)
-            recentActivityUiState.persistenceUnavailable = false
-            if (root?.getAttribute(RecentActivityText.SOURCE_ID_ATTRIBUTE) == sourceId) renderRecentActivity(root)
-        }
-        true
-    } catch (_: Throwable) {
-        setRecentActivityPersistenceUnavailable(sourceId)
-        false
-    }
-}
-
-internal fun setRecentActivityPersistenceUnavailable(sourceId: String) {
-    val root = recentActivityRoot() ?: return
-    if (root.getAttribute(RecentActivityText.SOURCE_ID_ATTRIBUTE) != sourceId) return
-    recentActivityUiState.persistenceUnavailable = true
-    root.querySelector("#${RecentActivityText.PERSISTENCE_WARNING_ID}")
-        ?.asDynamic()?.hidden = false
-}
 
 internal fun captureRecentActivityState() {
     val root = recentActivityRoot() ?: return
@@ -272,7 +231,6 @@ internal fun restoreRecentActivityState() {
         recentActivityUiState.items = mergeRecentActivityItems(recentActivityUiState.items, renderedItems)
     }
     renderRecentActivity(root)
-    if (recentActivityUiState.hydrationSourceId != sourceId) requestStoredRecentActivity(sourceId)
     if (recentActivityUiState.pageScrollY > 0.0) window.scrollTo(window.scrollX, recentActivityUiState.pageScrollY)
 }
 
@@ -287,21 +245,6 @@ private fun resetRecentActivitySource(sourceId: String, initialItems: List<Recen
         filter = recentActivityUiState.filter,
         pageScrollY = recentActivityUiState.pageScrollY,
     )
-}
-
-private fun requestStoredRecentActivity(sourceId: String) {
-    recentActivityUiState.hydrationSourceId = sourceId
-    val url = "${Routes.API_HISTORY_ACTIVITIES}?limit=${RecentActivityText.MAX_ITEMS}"
-    window.asDynamic().fetch(url)
-        .then({ response: dynamic ->
-            if (response.ok as Boolean) response.text() else throw IllegalStateException()
-        })
-        .then({ body: dynamic ->
-            if (!hydrateRecentActivityJson(body as String, sourceId)) {
-                setRecentActivityPersistenceUnavailable(sourceId)
-            }
-        })
-        .catch({ _: dynamic -> setRecentActivityPersistenceUnavailable(sourceId) })
 }
 
 private fun handleRecentActivityClick(event: org.w3c.dom.events.Event) {
@@ -335,8 +278,6 @@ private fun renderRecentActivity(root: Element) {
     updateActivityFilterButtons(root)
     val showOlder = root.querySelector("#${RecentActivityText.SHOW_OLDER_ID}") as? HTMLButtonElement
     showOlder?.hidden = rows.size <= visible.size || visible.size >= RecentActivityText.MAX_ITEMS.toInt()
-    val warning = root.querySelector("#${RecentActivityText.PERSISTENCE_WARNING_ID}") as? HTMLElement
-    warning?.hidden = !recentActivityUiState.persistenceUnavailable
 }
 
 private fun renderRecentActivityItem(item: RecentActivityItem): HTMLElement {
@@ -437,18 +378,6 @@ private fun appendActivityText(parent: HTMLElement, classes: String, text: Strin
     child.className = classes
     child.textContent = text
     parent.appendChild(child)
-}
-
-private fun dynamicStrings(value: dynamic): List<String> {
-    val length = (value?.length as? Number)?.toInt() ?: return emptyList()
-    return (0 until length).mapNotNull { index -> value[index] as? String }
-}
-
-private fun parseActivityTime(value: dynamic): Double? {
-    val number = (value as? Number)?.toDouble()
-    if (number != null && number.isFinite()) return number
-    val text = value as? String ?: return null
-    return Date.parse(text).takeIf { it.isFinite() }
 }
 
 private fun outcomeCode(outcome: String?): String = when (outcome?.uppercase()) {

@@ -49,8 +49,8 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | QO-ARCH03 | M | deferred | architecture | Consolidated KSP entity mapping pipeline | QO-1 | Roadmap: Later |
 | QO-ARCH04 | M/L | deferred | architecture | Tiered exchange gateway SPI & WebSocket tickers | QO-1 | Roadmap: Later |
 | QO-ARCH05 | L | deferred | architecture | Rebalance lifecycle FSM with persisted step journals | QO-1 | Roadmap: Later |
-| QO-PROD07 | S/M | deferred | product | Advanced historical telemetry & alpha analytics (Sharpe, Sortino, fee drag, rebalancing alpha) | QO-1 | User may consider |
-| QO-HIST01 | M | deferred | frontend | Real-time History page updates — automatically refresh History charts, summary cards, and trade data when portfolio snapshots change | QO-1 | Deferred after runtime SSE prototype caused duplicate refreshes, accumulating/stale SSE sessions, and browser/application lockups; revisit only with a simpler, bounded realtime architecture and stronger end-to-end connection-lifecycle and real-browser integration testing |
+| QO-PROD07 | S/M | dropped | product | Advanced historical telemetry & alpha analytics (Sharpe, Sortino, fee drag, rebalancing alpha) | QO-1 | Retired with the product decision to focus on live Rebalancer state and Settings. |
+| QO-HIST01 | M | dropped | frontend | Real-time History page updates — automatically refresh History charts, summary cards, and trade data when portfolio snapshots change | QO-1 | Retired with the History page and account-reporting feature set. |
 
 ## Done (recent)
 

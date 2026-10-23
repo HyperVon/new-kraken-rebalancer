@@ -6,7 +6,6 @@ snakeyaml = "2.7"
 ktor = "3.5.2"
 koin = "4.2.2"
 kotlinxCoroutines = "1.11.0"
-exposed = "1.6.0"
 sqliteJdbc = "3.53.4.0"
 kotlinCssJvm = "2026.10.0"
 logback = "1.6.5"
@@ -42,8 +41,6 @@ koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-slf4j = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-slf4j", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
-exposed-core = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
-exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 kotlin-css-jvm = { module = "org.jetbrains.kotlin-wrappers:kotlin-css-jvm", version.ref = "kotlinCssJvm" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }

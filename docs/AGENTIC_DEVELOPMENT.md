@@ -27,7 +27,7 @@ AI assistance went well beyond code completion. It included:
 
 - exploring alternative Java, Kotlin, Go, and TypeScript architectures;
 - implementing the current Kotlin/JVM and Kotlin/JS application;
-- hardening rebalancing, exchange, persistence, and history behavior;
+- hardening rebalancing, exchange, persistence, and live-order safety;
 - writing unit, integration, evaluation, browser, and regression tests;
 - running formatting, build, coverage, simulation, and UI checks;
 - reviewing changes with independent models;
@@ -149,13 +149,11 @@ harnesses.
 | [`common-kmp-module`](../.agents/skills/common-kmp-module/SKILL.md) | Shared KMP models, routes, IDs, view constants, and JVM/JS purity boundaries |
 | [`coroutines-flows-sse`](../.agents/skills/coroutines-flows-sse/SKILL.md) | `Flow`, `SharedFlow`, config restarts, snapshots, and SSE architecture |
 | [`dry-run-and-simulation`](../.agents/skills/dry-run-and-simulation/SKILL.md) | The distinct meanings and safety implications of `dryRun` and `simulation` |
-| [`exposed-repository`](../.agents/skills/exposed-repository/SKILL.md) | Exposed tables, SQLite repositories, transactions, cascades, and upserts |
 | [`frontend-js-development`](../.agents/skills/frontend-js-development/SKILL.md) | Dashboard freshness/sorting, active Settings controls, HTMX hooks, and client coverage |
 | [`koin-di-and-config`](../.agents/skills/koin-di-and-config/SKILL.md) | Koin bindings, settings validation, atomic persistence, and config flows |
 | [`kraken-api-integration`](../.agents/skills/kraken-api-integration/SKILL.md) | Kraken signing, symbols, rate limits, retries, order IDs, and credentials |
 | [`ktor-html-views`](../.agents/skills/ktor-html-views/SKILL.md) | Server-rendered HTML, CSS DSL, HTMX, routes, and UI safety indicators |
 | [`portfolio-rebalancing-math`](../.agents/skills/portfolio-rebalancing-math/SKILL.md) | Fixed-USD target math, fiat correction, dust, and order sequencing |
-| [`trade-history-sync`](../.agents/skills/trade-history-sync/SKILL.md) | Direct History values, account-scoped Kraken trade/ledger sync, and bounded cursor commits |
 
 ### Engineering quality
 
@@ -179,7 +177,7 @@ harnesses.
 | [`docs-screenshot-refresh`](../.agents/skills/docs-screenshot-refresh/SKILL.md) | Canonical README and User Guide screenshots produced from simulation |
 | [`documentation-review`](../.agents/skills/documentation-review/SKILL.md) | Full documentation audits against current source and build truth |
 | [`post-deploy-ui-smoke`](../.agents/skills/post-deploy-ui-smoke/SKILL.md) | Hard-refresh smoke testing after deployment |
-| [`ui-manual-qa`](../.agents/skills/ui-manual-qa/SKILL.md) | Click-through testing of Dashboard, Settings, and History |
+| [`ui-manual-qa`](../.agents/skills/ui-manual-qa/SKILL.md) | Click-through testing of Dashboard and Settings |
 | [`ui-visual-guidance-and-aesthetics`](../.agents/skills/ui-visual-guidance-and-aesthetics/SKILL.md) | Design principles, hierarchy, aesthetics, responsive behavior, accessibility expectations, and visual acceptance criteria |
 | [`ui-visual-implement`](../.agents/skills/ui-visual-implement/SKILL.md) | Implementation and screenshot verification of approved visual changes |
 | [`ui-visual-review`](../.agents/skills/ui-visual-review/SKILL.md) | Screenshot-based visual critique without implementation |

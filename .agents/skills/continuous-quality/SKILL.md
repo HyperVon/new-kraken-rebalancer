@@ -43,7 +43,7 @@ source of truth for open / done / deferred QA items across cycles.
 When a cycle fans out, the parent chooses an adaptive number of tracks from the
 actual QA gaps and file ownership. Do not send every child agent the whole
 repository or run a fixed two-agent review. Use one track per independent area
-(for example bug review, algorithm edges, coverage, evaluation, history, flows,
+(for example bug review, algorithm edges, coverage, evaluation, logs, flows,
 Kraken, or UI), normally 2–6 and at most 8, with one owner for shared tests and
 production files.
 
@@ -240,8 +240,7 @@ disjoint. Suggested discovery tracks (pick what fits timebox):
 | Algorithm edges | [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) + `docs/ALGORITHM.md` vs focused engine and execution tests |
 | Modes / safety | [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md) — confusion, dry-run stats, sim vs live paths |
 | Coverage gaps | [gradle-quality-gates](../gradle-quality-gates/SKILL.md) — JaCoCo/Karma reports; packages near thresholds; missed branches |
-| Current-contract coverage | `docs/EVALUATION.md` + [write-kotest](../write-kotest/SKILL.md) — Dashboard, Settings, direct History capture/sync, and execution contracts |
-| Account History sync | [trade-history-sync](../trade-history-sync/SKILL.md) — account-scoped trade and ledger pages, identity checks, and bounded commits |
+| Current-contract coverage | `docs/EVALUATION.md` + [write-kotest](../write-kotest/SKILL.md) — Dashboard, Settings, execution, and safety contracts |
 | Kraken / limits | [kraken-api-integration](../kraken-api-integration/SKILL.md) — lockout backoff, mutex, public vs private |
 | Flows / SSE | [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md) — restart, multi-subscriber, cancellation |
 | UI interactions | [ui-manual-qa](../ui-manual-qa/SKILL.md) — full checklist when time allows; failures → backlog (`REGRESSION-*` / `STYLE-*`) |
@@ -315,7 +314,7 @@ Follow the **child skill** for each approved item. Default order:
 5. Update `docs/EVALUATION.md` when adding/changing evaluation scenarios
 
 Use the bounded delegation rules above when ownership is disjoint (e.g. engine
-math vs History synchronization vs Dashboard/Settings tests). Keep a single owner for
+math vs Dashboard/Settings tests). Keep a single owner for
 each shared test file and any shared production file under fix.
 
 **Do not** weaken coverage thresholds or delete tests to go green. **Do not**
@@ -343,17 +342,14 @@ Confirm the count actually moved (JUnit XML under `build/test-results/test/`) �
 Also when UI changed or UI findings were in the backlog:
 
 - Prefer [ui-manual-qa](../ui-manual-qa/SKILL.md) scoped or full (include
-  `STYLE-*`, current Dashboard/Settings/History cases, and History API checks)
+  `STYLE-*` and current Dashboard/Settings cases)
 - Or at least [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md) against
   local sim after hard-refresh / `?v=`
 
-Trading / algorithm touches → run the focused tests listed in
-[`docs/EVALUATION.md`](../../../docs/EVALUATION.md). Keep History tests focused
-on direct observations and exchange sync; do not add reconstructed-value or
-benchmark scenarios.
+Trading / algorithm touches → run the focused checks listed in
+[`docs/EVALUATION.md`](../../../docs/EVALUATION.md).
 
-Fix failures before commit. Do not open a red PR. Keep History evidence direct;
-do not add retrospective reconstruction or benchmark scenarios.
+Fix failures before commit. Do not open a red PR.
 
 Complete **all** PR Test plan / Verification items **before** `gh pr create`
 (including UI/sim spot-checks). Never defer checks to after merge — see

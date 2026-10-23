@@ -187,7 +187,7 @@ build — re-verify serially (see below).
 | Concern | Prefer owner |
 | :--- | :--- |
 | SSR / CSS modules | `view/css/*`, `view/component/*` — one stream per CSS file when possible |
-| Charts / History JS | `frontend-js/.../History*.kt` — **single** stream |
+| Dashboard JS behavior | `frontend-js/src/jsMain/kotlin/Dashboard.kt` — **single** stream |
 | Shared IDs/strings | `:common` — coordinate before parallel CSS+JS |
 | Agent skills / AGENTS | `.agents/**` — safe parallel with app code |
 | Screenshots / User Guide | docs skills — safe parallel with non-UI backend |
@@ -196,6 +196,5 @@ build — re-verify serially (see below).
 
 - Track CSS: header spacing + button appearance (`LayoutStyles`, `NavigationStyles`)
 - Track skills: `ui-manual-qa` / `ui-visual-review` regression cases
-- Track History JS: visibility presets + zoom scrubber (`HistoryChartState.kt`,
-  `HistoryZoom.kt`)
+- Track Dashboard JS: freshness and sorting behavior in `Dashboard.kt`
 - Parent: wire tests + CHANGELOG + commit

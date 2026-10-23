@@ -2,7 +2,7 @@
 name: autonomous-code-optimizer
 description: >-
   Autonomous multi-pass audit/refactor loop across Kotlin JVM, Kotlin/JS,
-  Exposed, HTML DSL, and Kotest until a full cycle finds zero issues. Use when
+  SQLite JDBC, HTML DSL, and Kotest until a full cycle finds zero issues. Use when
   the user asks for exhaustive cleanup, /goal optimization, or repo-wide
   convergence — not for small single-file edits.
 ---

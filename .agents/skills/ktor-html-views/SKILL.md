@@ -1,7 +1,7 @@
 ---
 name: ktor-html-views
 description: >-
-  Server-side HTML/CSS for Dashboard, Settings, and History: view components,
+  Server-side HTML/CSS for Dashboard and Settings: view components,
   DashboardController routes, kotlinx.html/CSS, HTMX, and SSE. Use when changing
   SSR templates, CSS modules, or Ktor UI routes.
 ---
@@ -11,21 +11,19 @@ description: >-
 ## Active layout
 
 1. `DashboardRoutes.dashboardRouting()` registers `DashboardController`.
-2. `DashboardController` serves Dashboard, Settings, History, fragments, health,
-   readiness, order-intent actions, account-history APIs, and current-cycle SSE.
+2. `DashboardController` serves Dashboard, Settings, fragments, health,
+   readiness, order-intent actions, and current-cycle SSE.
 3. `DashboardView` coordinates page rendering.
 4. `view/component/` contains `DashboardShellComponent`,
    `DashboardFragmentComponent`, the Dashboard overview/allocation/performance/
-   activity components, `SettingsFormComponent`, and
-   `HistoryPageComponent`.
+   activity components, and `SettingsFormComponent`.
 5. `view/css/` contains the theme and layout/component style modules.
 6. Shared `:common` catalogs define `Routes`, IDs, attributes, selectors,
    visible text, and CSS classes.
 
-The retained user pages are `/`, `/settings`, and `/history`. History combines
-direct cycle samples with account-scoped Kraken trades, ledgers, and balance
-checkpoints. Its value chart does not reconstruct a historical portfolio or
-calculate Buy & Hold performance.
+The retained user pages are `/` and `/settings`. The Dashboard displays the
+current process's latest cycle and bounded recent trend; Settings contains the
+active allocation, quality-score, and trading controls.
 
 ## Type-safe view helpers (`:common` + JVM `HtmlExtensions`)
 
@@ -69,18 +67,16 @@ fragment, and the fragment refreshes mode from current Settings while updating
 `#header-status` out-of-band.
 
 Pass current `Settings` to every page and fragment renderer that displays the
-header. For example, `DashboardView.renderHistoryPage(settings,
-page, ...)` and `renderDashboardFragment(settings, latest, ...)` both need the
-same persisted mode information.
+header. The Dashboard and Settings pages and Dashboard fragment use the same
+persisted mode information.
 
 ## Dashboard and SSE
 
 The Dashboard shows the latest completed in-memory cycle snapshot, including
 the current allocation/performance view and activity from that cycle. Its hero
 trend uses up to 24 recent snapshots from the same mode and credential scope;
-the window resets when that source changes. It is process-local, with no
-retrospective report history. Before the first completed cycle, the fragment
-shows a waiting state.
+the window resets when that source changes. Before the first completed cycle,
+the fragment shows a waiting state.
 
 `DashboardShellComponent` loads HTMX plus its SSE extension. The shell connects
 to `/api/status/stream`; `sse:message` triggers a refreshed
@@ -88,15 +84,6 @@ to `/api/status/stream`; `sse:message` triggers a refreshed
 and a source-scoped bounded window for the hero chart. The JS client updates
 age/freshness and preserves table sorting; it does not open `EventSource` or
 reconstruct reports.
-
-The History page uses `HistoryPageComponent`. It presents direct cycle-value
-samples, per-feed synchronization status, time-range and event filters,
-paginated trade and ledger tables, and exchange-reported balance checkpoints.
-The Kotlin/JS client enhances server-rendered SVG markers with chart controls
-and tooltips, preserving the native chart if Chart.js cannot load. Named views
-store only range/asset/pair/type filters in this browser. Incomplete samples
-have no total; gaps are not filled. Account synchronization
-is unavailable until the authenticated identity is verified.
 
 ## HTMX and static assets
 
@@ -122,16 +109,15 @@ of hostname-prefix lookalikes when editing the access boundary.
 
 ## Documentation and focused checks
 
-Visible changes to Dashboard, Settings, or History should refresh the retained
-screenshots via [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md)
-and update the User Guide when user-facing behavior changes. Use
+Visible changes to Dashboard or Settings should refresh the retained screenshots
+via [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) and update
+the User Guide when user-facing behavior changes. Use
 [ui-manual-qa](../ui-manual-qa/SKILL.md) for interaction checks, and
 [ui-visual-review](../ui-visual-review/SKILL.md) followed by
 [ui-visual-implement](../ui-visual-implement/SKILL.md) for visual redesigns.
 
-Relevant backend checks include the focused Dashboard and History route/API
-and view-component tests. Keep the History page and account sync routes aligned
-with their controller and service contracts.
+Relevant backend checks include the focused Dashboard route and view-component
+checks. `/history` and retrospective account-history routes are retired.
 
 ## Checklist
 
@@ -140,7 +126,5 @@ with their controller and service contracts.
 - [ ] Mode plate precedence remains Simulation, then Dry Run, then Live Trading
 - [ ] STREAM/STALE remains current-snapshot freshness only
 - [ ] Dashboard uses the latest current-cycle snapshot
-- [ ] History samples retain account and managed-asset scopes; incomplete values stay incomplete
-- [ ] Account-history sync requires same-origin / CSRF protection and verified identity
 - [ ] SSE refresh, out-of-band freshness swap, and static cache-busting remain intact
 - [ ] User-facing visual changes update active screenshots and guide text

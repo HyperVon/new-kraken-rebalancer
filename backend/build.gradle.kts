@@ -32,15 +32,6 @@ tasks.named<JavaExec>("run") {
     workingDir(rootProject.projectDir)
 }
 
-tasks.register<JavaExec>("browserFixture") {
-    group = "verification"
-    description = "Runs the test-only loopback browser fixture with a fake verified account."
-    dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.test.get().runtimeClasspath
-    jvmArgs(application.applicationDefaultJvmArgs)
-    mainClass.set("com.gemini.krakenbot.browserfixture.BrowserFixtureRunner")
-}
-
 repositories {
     mavenCentral()
 }
@@ -91,9 +82,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.slf4j)
 
-    // SQLite + Exposed ORM
-    implementation(libs.exposed.core)
-    implementation(libs.exposed.jdbc)
+    // SQLite execution journal
     implementation(libs.sqlite.jdbc)
     implementation(libs.kotlin.css.jvm)
 
@@ -187,18 +176,12 @@ val coverageExcludes =
         // via `*Kt$*` in tight scopes if ever needed rather than whole-class excludes.
         "**/config/KtorConfigKt*",
         "**/config/ExecutionDatabase*",
-        "**/service/history/HistoryDatabase*",
-        "**/repository/table/**",
         "**/service/KrakenService*",
         // Thin interfaces are excluded at their actual package paths; implementations under
-        // service/impl (including service/impl/history) remain measured by both JaCoCo tasks.
+        // service/impl remain measured by both JaCoCo tasks.
         "**/service/ConfigService.class",
         "**/service/OrderExecutor.class",
         "**/service/PortfolioManager.class",
-        "**/service/history/HistoryStore.class",
-        "**/service/history/HistoryService.class",
-        "**/service/history/HistoryCycleGate.class",
-        "**/service/history/HistoryCycleGate$*",
         "**/repository/*Repository.class",
         "**/*\$DefaultImpls*",
         "**/view/util/HtmlExtensionsKt*",

@@ -4,7 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.service.CurrentCycleActivityMode
-import com.gemini.krakenbot.service.history.HistoryCycleOutcome
+import com.gemini.krakenbot.service.CurrentCycleOutcome
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -56,7 +56,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
             }
         }
 
-        "late SSE subscribers start at the current snapshot without replaying retired history" {
+        "late SSE subscribers start at the current snapshot without replaying prior activity" {
             val initial = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:00:00Z"), BigDecimal("10000.00"))
             val current = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:02:00Z"), BigDecimal("13000.00"))
             currentPortfolioState.publish(initial, "test-source")
@@ -77,7 +77,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 cycleId = "failed-without-snapshot",
                 occurredAt = Instant.parse("2026-10-10T12:03:00Z"),
                 mode = CurrentCycleActivityMode.LIVE,
-                outcome = HistoryCycleOutcome.PROBLEM,
+                outcome = CurrentCycleOutcome.PROBLEM,
                 actions = listOf("ERROR: price lookup failed"),
             )
             currentPortfolioState.publishActivity(activity, "test-source")

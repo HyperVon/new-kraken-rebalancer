@@ -46,7 +46,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
             }
         }
 
-        "directory identity captured by History prevents execution from binding another account" {
+        "prior directory identity prevents execution from binding another account" {
             withTempDirectory { directory ->
                 val identity = DataDirectoryIdentity(directory) { false }
                 identity.bindOrVerify(identityDigest(ACCOUNT_A))
@@ -104,7 +104,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
                     kraken = com.gemini.krakenbot.config.KrakenCredentials(
                         com.gemini.krakenbot.test.TestConstants.API_KEY,
-                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                        TestFixtures.KRAKEN_TEST_API_SECRET,
                     ),
                     settings = TestFixtures.settings(dryRun = true, simulation = false),
                 )
@@ -278,7 +278,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
             }
         }
 
-        "missing binding record despite durable binding history anchor" {
+        "missing binding record despite durable binding evidence" {
             withTempDirectory { directory ->
                 val exchange = exchange(ACCOUNT_A, GENERATION_A)
                 val environment = openEnvironment(directory, exchange)
@@ -342,7 +342,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                         every { getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
                             kraken = com.gemini.krakenbot.config.KrakenCredentials(
                                 com.gemini.krakenbot.test.TestConstants.API_KEY,
-                                TestFixtures.TRADE_HISTORY_API_SECRET,
+                                TestFixtures.KRAKEN_TEST_API_SECRET,
                             ),
                             settings = TestFixtures.settings(dryRun = false, simulation = false),
                         )
@@ -417,7 +417,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                         every { getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
                             kraken = com.gemini.krakenbot.config.KrakenCredentials(
                                 com.gemini.krakenbot.test.TestConstants.API_KEY,
-                                TestFixtures.TRADE_HISTORY_API_SECRET,
+                                TestFixtures.KRAKEN_TEST_API_SECRET,
                             ),
                             settings = TestFixtures.settings(dryRun = false, simulation = false),
                         )
@@ -539,7 +539,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         val config = customConfig ?: TestFixtures.DEFAULT_TEST_CONFIG.copy(
             kraken = com.gemini.krakenbot.config.KrakenCredentials(
                 com.gemini.krakenbot.test.TestConstants.API_KEY,
-                TestFixtures.TRADE_HISTORY_API_SECRET,
+                TestFixtures.KRAKEN_TEST_API_SECRET,
             ),
             settings = TestFixtures.settings(dryRun = false, simulation = false),
         )

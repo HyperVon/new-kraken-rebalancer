@@ -17,9 +17,6 @@ internal object CssThemeVarsSchema
 @GenerateStringConstants(fileName = "HtmlAttrs", resource = "codegen/html-attrs.yaml")
 internal object HtmlAttrsSchema
 
-@GenerateStringConstants(fileName = "HistoryRange", resource = "codegen/history-ranges.yaml")
-internal object HistoryRangeSchema
-
 @GenerateStringConstants(fileName = "RouteConstants", resource = "codegen/route-constants.yaml")
 internal object RouteConstantsSchema
 

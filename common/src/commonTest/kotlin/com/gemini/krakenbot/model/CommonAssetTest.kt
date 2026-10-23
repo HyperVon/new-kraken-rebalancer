@@ -7,61 +7,61 @@ import kotlin.test.assertNull
 class CommonAssetTest {
 
     @Test
-    fun normalizeLedgerAssetStripsEarnSuffixesForAnyAsset() {
-        assertEquals("DOT", Asset.normalizeLedgerAsset("DOT.S"))
-        assertEquals("DOT", Asset.normalizeLedgerAsset("DOT.M"))
-        assertEquals("DOT", Asset.normalizeLedgerAsset("DOT.P"))
-        assertEquals("USDT", Asset.normalizeLedgerAsset("USDT.F"))
-        assertEquals("USDT", Asset.normalizeLedgerAsset("USDT.B"))
-        assertEquals("AVAX", Asset.normalizeLedgerAsset("AVAX.S"))
-        assertEquals("NEAR", Asset.normalizeLedgerAsset("NEAR.M"))
-        assertEquals("ATOM", Asset.normalizeLedgerAsset("ATOM.S"))
-        assertEquals("SOL", Asset.normalizeLedgerAsset("SOL.S"))
-        assertEquals("ETH", Asset.normalizeLedgerAsset("ETH.S"))
-        assertEquals("SUI", Asset.normalizeLedgerAsset("SUI.S"))
+    fun normalizeKrakenAssetCodeStripsEarnSuffixes() {
+        assertEquals("DOT", Asset.normalizeKrakenAssetCode("DOT.S"))
+        assertEquals("DOT", Asset.normalizeKrakenAssetCode("DOT.M"))
+        assertEquals("DOT", Asset.normalizeKrakenAssetCode("DOT.P"))
+        assertEquals("USDT", Asset.normalizeKrakenAssetCode("USDT.F"))
+        assertEquals("USDT", Asset.normalizeKrakenAssetCode("USDT.B"))
+        assertEquals("AVAX", Asset.normalizeKrakenAssetCode("AVAX.S"))
+        assertEquals("NEAR", Asset.normalizeKrakenAssetCode("NEAR.M"))
+        assertEquals("ATOM", Asset.normalizeKrakenAssetCode("ATOM.S"))
+        assertEquals("SOL", Asset.normalizeKrakenAssetCode("SOL.S"))
+        assertEquals("ETH", Asset.normalizeKrakenAssetCode("ETH.S"))
+        assertEquals("SUI", Asset.normalizeKrakenAssetCode("SUI.S"))
     }
 
     @Test
-    fun normalizeLedgerAssetMapsLegacyKrakenIsoAliases() {
-        assertEquals("BTC", Asset.normalizeLedgerAsset("XXBT"))
-        assertEquals("BTC", Asset.normalizeLedgerAsset("XBT"))
-        assertEquals("DOGE", Asset.normalizeLedgerAsset("XXDG"))
-        assertEquals("DOGE", Asset.normalizeLedgerAsset("XDG"))
-        assertEquals("ETH", Asset.normalizeLedgerAsset("XETH"))
-        assertEquals("SOL", Asset.normalizeLedgerAsset("SOL03"))
-        assertEquals("LTC", Asset.normalizeLedgerAsset("XLTC"))
-        assertEquals("XRP", Asset.normalizeLedgerAsset("XXRP"))
-        assertEquals("XLM", Asset.normalizeLedgerAsset("XXLM"))
-        assertEquals("XMR", Asset.normalizeLedgerAsset("XXMR"))
-        assertEquals("ZEC", Asset.normalizeLedgerAsset("XZEC"))
-        assertEquals("USD", Asset.normalizeLedgerAsset("ZUSD"))
-        assertEquals("EUR", Asset.normalizeLedgerAsset("ZEUR"))
-        assertEquals("CAD", Asset.normalizeLedgerAsset("ZCAD"))
-        assertEquals("GBP", Asset.normalizeLedgerAsset("ZGBP"))
-        assertEquals("JPY", Asset.normalizeLedgerAsset("ZJPY"))
-        assertEquals("CHF", Asset.normalizeLedgerAsset("ZCHF"))
-        assertEquals("AUD", Asset.normalizeLedgerAsset("ZAUD"))
+    fun normalizeKrakenAssetCodeMapsLegacyAliases() {
+        assertEquals("BTC", Asset.normalizeKrakenAssetCode("XXBT"))
+        assertEquals("BTC", Asset.normalizeKrakenAssetCode("XBT"))
+        assertEquals("DOGE", Asset.normalizeKrakenAssetCode("XXDG"))
+        assertEquals("DOGE", Asset.normalizeKrakenAssetCode("XDG"))
+        assertEquals("ETH", Asset.normalizeKrakenAssetCode("XETH"))
+        assertEquals("SOL", Asset.normalizeKrakenAssetCode("SOL03"))
+        assertEquals("LTC", Asset.normalizeKrakenAssetCode("XLTC"))
+        assertEquals("XRP", Asset.normalizeKrakenAssetCode("XXRP"))
+        assertEquals("XLM", Asset.normalizeKrakenAssetCode("XXLM"))
+        assertEquals("XMR", Asset.normalizeKrakenAssetCode("XXMR"))
+        assertEquals("ZEC", Asset.normalizeKrakenAssetCode("XZEC"))
+        assertEquals("USD", Asset.normalizeKrakenAssetCode("ZUSD"))
+        assertEquals("EUR", Asset.normalizeKrakenAssetCode("ZEUR"))
+        assertEquals("CAD", Asset.normalizeKrakenAssetCode("ZCAD"))
+        assertEquals("GBP", Asset.normalizeKrakenAssetCode("ZGBP"))
+        assertEquals("JPY", Asset.normalizeKrakenAssetCode("ZJPY"))
+        assertEquals("CHF", Asset.normalizeKrakenAssetCode("ZCHF"))
+        assertEquals("AUD", Asset.normalizeKrakenAssetCode("ZAUD"))
     }
 
     @Test
-    fun normalizeLedgerAssetHandlesStakedLegacyAliases() {
-        assertEquals("BTC", Asset.normalizeLedgerAsset("XXBT.S"))
-        assertEquals("BTC", Asset.normalizeLedgerAsset("XBT.M"))
-        assertEquals("ETH", Asset.normalizeLedgerAsset("XETH.S"))
-        assertEquals("DOGE", Asset.normalizeLedgerAsset("XXDG.F"))
+    fun normalizeKrakenAssetCodeHandlesStakedAliases() {
+        assertEquals("BTC", Asset.normalizeKrakenAssetCode("XXBT.S"))
+        assertEquals("BTC", Asset.normalizeKrakenAssetCode("XBT.M"))
+        assertEquals("ETH", Asset.normalizeKrakenAssetCode("XETH.S"))
+        assertEquals("DOGE", Asset.normalizeKrakenAssetCode("XXDG.F"))
     }
 
     @Test
-    fun normalizeLedgerAssetPreservesModernTickersStartingWithXOrZ() {
-        assertEquals("XRP", Asset.normalizeLedgerAsset("XRP"))
-        assertEquals("XTZ", Asset.normalizeLedgerAsset("XTZ"))
-        assertEquals("ZEC", Asset.normalizeLedgerAsset("ZEC"))
-        assertEquals("ZETA", Asset.normalizeLedgerAsset("ZETA"))
-        assertEquals("XAUT", Asset.normalizeLedgerAsset("XAUT"))
-        assertEquals("ZRO", Asset.normalizeLedgerAsset("ZRO"))
-        assertEquals("ZRX", Asset.normalizeLedgerAsset("ZRX"))
-        assertEquals("ZEN", Asset.normalizeLedgerAsset("ZEN"))
-        assertEquals("ZIL", Asset.normalizeLedgerAsset("ZIL"))
+    fun normalizeKrakenAssetCodePreservesModernTickers() {
+        assertEquals("XRP", Asset.normalizeKrakenAssetCode("XRP"))
+        assertEquals("XTZ", Asset.normalizeKrakenAssetCode("XTZ"))
+        assertEquals("ZEC", Asset.normalizeKrakenAssetCode("ZEC"))
+        assertEquals("ZETA", Asset.normalizeKrakenAssetCode("ZETA"))
+        assertEquals("XAUT", Asset.normalizeKrakenAssetCode("XAUT"))
+        assertEquals("ZRO", Asset.normalizeKrakenAssetCode("ZRO"))
+        assertEquals("ZRX", Asset.normalizeKrakenAssetCode("ZRX"))
+        assertEquals("ZEN", Asset.normalizeKrakenAssetCode("ZEN"))
+        assertEquals("ZIL", Asset.normalizeKrakenAssetCode("ZIL"))
     }
 
     @Test

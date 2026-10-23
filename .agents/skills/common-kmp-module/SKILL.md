@@ -4,7 +4,7 @@ description: >-
   Owns what belongs in common/src/commonMain — CssClass, HtmlIds, HtmlAttrs,
   HtmxAttrs, ViewText, Routes, TimeRange, OrderSide, PrecisionConstants,
   AppConfig/Settings, api wire DTOs — and purity rules (no JVM/JS imports). Use
-  when adding UI strings, IDs, CSS class names, shared models, History JSON DTOs,
+  when adding UI strings, IDs, CSS class names, or shared models,
   or touching the :common module.
 ---
 
@@ -26,8 +26,7 @@ Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 | Area | Types / files |
 | :--- | :--- |
 | Config | `AppConfig`, `Settings`, `Allocation`, `KrakenCredentials` |
-| Domain | `TimeRange`, `OrderSide`, `OrderType`, `Asset`, `Result`, `TradeSource`, `SyncMetadataKeys` |
-| Wire DTOs (`api/`) | `PortfolioSnapshot`, `TradeRecord`, `RebalancerComparison`, `RewardsOverTime`, `RewardsOverTimePoint`, `HistoryStats`, `SyncProgressResponse` |
+| Domain | `OrderSide`, `OrderType`, `Asset`, `Result`, `TradeSource` |
 | Precision | `PrecisionConstants` |
 | View util | `CssClass`, `HtmlQueries`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `ChartProps` |
 
@@ -56,19 +55,7 @@ Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadat
   behavior-bearing objects handwritten unless a typed generator is proven to
   preserve their contracts.
 - Generated output must compile for both common metadata/JVM and JS targets;
-  it may not import JVM, Ktor, Exposed, logging, or browser DOM APIs.
-
-### Two TradeRecord types (do not merge)
-
-| Layer | Path | Fields |
-| :--- | :--- | :--- |
-| `:common` wire DTO | `common/src/commonMain/kotlin/com/gemini/krakenbot/api/TradeRecord.kt` | `timestamp`, `volume`, `usdAmount` … as **strings** for History JSON |
-| JVM domain (`:engine`) | `engine/src/main/kotlin/com/gemini/krakenbot/model/TradeRecord.kt` | `Instant`, `BigDecimal`, `TradeSource`, `cycleId`, `orderTxid` |
-
-- Reconcile/dedupe extensions (`isMatchingApiTrade`, `isPairAliasDuplicateOf`)
-  live on the **JVM domain model** (`:engine`), not in `:common`.
-- Map explicitly at HTTP boundaries; never put `java.time.Instant` or JVM
-  `BigDecimal` in `commonMain`.
+  it may not import JVM, Ktor, logging, or browser DOM APIs.
 
 ### Kraken aliases live in `Asset` (`:common`)
 
@@ -91,7 +78,7 @@ Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadat
 
 `commonMain` must compile for **both** JVM and JS:
 
-- **Do not** import `java.*`, SLF4J, Exposed, Ktor server, or browser DOM APIs.
+- **Do not** import `java.*`, SLF4J, Ktor server, or browser DOM APIs.
 - Prefer Kotlin stdlib / multiplatform libraries only.
 - Monetary math that needs `BigDecimal` stays on the JVM (or use shared
   string/Double display helpers carefully — engine math is JVM `BigDecimal`).

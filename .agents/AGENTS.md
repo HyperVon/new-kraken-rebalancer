@@ -43,7 +43,6 @@ Canonical deep docs:
 | Kotest / FakeKraken / evaluation | [write-kotest](skills/write-kotest/SKILL.md) |
 | Spotless, JaCoCo, Karma, CI | [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) |
 | CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
-| History capture, account-scoped sync, and value evidence | [trade-history-sync](skills/trade-history-sync/SKILL.md) |
 | Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
 | Complex-code comments (audit / hygiene) | [complex-code-comments](skills/complex-code-comments/SKILL.md) |
 | Resolve actionable source-code TODO comments | [todo-resolution](skills/todo-resolution/SKILL.md) |
@@ -122,7 +121,6 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **20**, decay **0.5**) + `PublicRateLimiter` |
 | Dashboard snapshot state | `CurrentPortfolioState` (`StateFlow` of the latest cycle plus up to 24 recent in-memory snapshots for the hero trend; the window clears when simulation mode or credential scope changes) |
-| Account History | `HistoryObservationRecorder` → `HistoryStore`; `HistorySynchronizer` commits account-verified Kraken trade and ledger pages |
 | HTTP | `DashboardRoutes` / `DashboardController` |
 | Views | `view/component/*`, `DashboardView`, `view/css/*` |
 | Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `HtmlQueries`, `ViewText` and generated pure-string catalogs |
@@ -133,7 +131,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
-- **Configured USD percentage target**: the percentage stays fixed, while the target dollar value scales with the current portfolio total; no ATH, drawdown, or history-based deployment changes the target. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
+- **Configured USD percentage target**: the percentage stays fixed, while the target dollar value scales with the current portfolio total; no ATH, drawdown, or retrospective performance changes the target. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
   **and** `|DeviationUSD| ≥ minimumOrderSizeUSD` (`isSignificant`).
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
@@ -152,8 +150,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
-- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries current-cycle snapshots; the hero trend uses up to 24 in-memory cycles from one mode and credential scope, clears when that source changes, and never reads persisted history. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
-- **Data-store safety**: `DataDirectoryConfig.ensureDataDirectory()` creates fresh `execution.db` and `history.db` files on first start and resumes an interrupted initialization; a mixed directory holding only one store fails closed instead of recreating a missing file. `DataDirectoryIdentity` pins account-scoped stores in the directory to one verified Kraken account.
+- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries current-cycle snapshots; the hero trend uses up to 24 in-memory cycles from one mode and credential scope, clears when that source changes, and never reads persisted portfolio snapshots. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
+- **Data-store safety**: DataDirectoryConfig creates execution.db on a fresh data directory and resumes interrupted initialization. The journal preserves pending, uncertain, and resolved live-order intents across restarts; DataDirectoryIdentity pins the journal to one verified Kraken account.
 
 ---
 
@@ -173,13 +171,13 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 - `PortfolioManagerImpl.performCycleWithStableSession()` owns the normal
   cycle-wide execution session/backend pin across current balance and price
   reads, planning, order execution, and order-specific fill settlement. Startup
-  does not reconstruct portfolio values from historical trade or ledger events. The separate History synchronizer fetches bounded Kraken trade and ledger pages only after account identity is verified.
+  does not reconstruct portfolio values from exchange events.
 - `ConfigServiceImpl` defers runtime publication of saved/reloaded config while
   any such execution session is active. Disk persistence may complete during
   the session, but `appConfig` and `_configFlow` publication wait for the
   outermost session exit. Do not remove that boundary or let one cycle or
   its order-settlement work mix settings or credentials.
-- The config parser drops retired history-only drawdown, deployment, inception,
+- The config parser drops retired legacy drawdown, deployment, inception,
   and comparison-start keys before deserialization. A later Settings save
   writes the active config shape without those keys; do not reintroduce them.
 
@@ -189,7 +187,7 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 See [common-kmp-module](skills/common-kmp-module/SKILL.md).
 
-Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and pure shared configuration, utility, and view models. Current-cycle snapshot state and History observation/synchronization contracts are backend-owned.
+Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and pure shared configuration, utility, and view models. Current-cycle snapshot state is backend-owned.
 
 `commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
 
@@ -248,18 +246,9 @@ with the workflow.
   can contain order identifiers, balance amounts, and asset keys; treat them as
   sensitive and redact them before sharing.
 - Kraken credentials use least privilege. Dry-run cycles against Kraken need
-  Query Funds; live trading also needs Query Closed Orders & Trades for
-  fill-confirmed sell settlement and Create & Modify Orders. Query Ledgers is used
-  by account-scoped History synchronization. Keep account-wide synchronization
-  separate from order-specific sell-fill checks. Do not claim Query Open Orders
-  is required for normal operation unless the API surface changes and the claim
-  is verified.
-- Preserve the durable live-order journal: write `PENDING` before AddOrder;
-  ambiguous outcomes become blocking `UNCERTAIN`; never retry or heuristically
-  clear them. Operator reconciliation requires a database backup and follows
-  local `client_order_id` → Kraken `cl_ord_id` on an open/closed order → Kraken
-  order txid → TradesHistory fills. REST-based OpenOrders verification requires
-  Query Open Orders & Trades in addition to the normal application permissions.
+  Query Funds; live trading additionally needs Query Closed Orders & Trades to
+  confirm sell fills and Create & Modify Orders. Query Open Orders & Trades is
+  not required during routine operation.
 - Treat changes to authentication, network exposure, CORS, credentials,
   persistence, or live-order safety as high impact and require explicit user
   direction plus focused security tests.
@@ -314,12 +303,10 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
 - Evaluation/E2E/chaos: focused tests for current planning, order safety,
-  Dashboard behavior, direct History observations, account-scoped trade/ledger
-  synchronization, and execution safety are mapped in `docs/EVALUATION.md`.
-  `FakeKrakenService` remains useful for deterministic cases and
-  `SimulatedKrakenService` is the production emulator; do not reconstruct
-  portfolio history from exchange events. Flow tests use
-  `advanceUntilIdle()`.
+  Dashboard behavior, in-memory current-cycle activity, account binding, and
+  execution safety are mapped in docs/EVALUATION.md. Prefer FakeKrakenService
+  for deterministic cases and SimulatedKrakenService for emulator behavior.
+  Flow tests use advanceUntilIdle().
 - Each test kills a distinct defect class; no impossible-case, cosmetic-duplicate, or coverage-padding tests (see [ai-slop-detector](skills/ai-slop-detector/SKILL.md) § Test necessity).
 
 ---

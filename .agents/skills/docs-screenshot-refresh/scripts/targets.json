@@ -83,21 +83,6 @@
         "Calculate from scores"
       ],
       "anchor": "Target Allocations"
-    },
-    {
-      "file": "history.png",
-      "path": "/history",
-      "await_text": [
-        "Portfolio Value Over Time",
-        "Activity",
-        "Data status",
-        "Latest observed value"
-      ],
-      "await_charts": 1,
-      "viewport": {
-        "height": 1200
-      },
-      "position": "top"
     }
   ]
 }

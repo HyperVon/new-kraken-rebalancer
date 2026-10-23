@@ -13,7 +13,7 @@ purple secondary data accent, soft elevation, and limited glow.
 
 Use existing tokens and components before adding values. Relevant anchors are
 `CssTheme`, `LayoutStyles`, `ComponentStyles`, `FormStyles`, `TableStyles`,
-`NavigationStyles`, `History*Styles`, `MediaQueries`, and shared `CssClass`
+`NavigationStyles`, `MediaQueries`, and shared `CssClass`
 constants. Current type roles are Outfit for headings/major figures, Inter for
 application UI, and Roboto Mono only where machine-oriented alignment helps.
 
@@ -72,15 +72,15 @@ semantic purpose.
 - Simulation and Dry Run need consequence-aware treatment and retain the
   existing safety-card concept unless an explicit redesign improves clarity.
 
-### Dashboard and history
+### Dashboard and Settings
 
 Dashboard priority is: mode/identity, portfolio value/condition, freshness,
 cash/crypto allocation and deviation, asset detail, recent activity, metadata.
 Keep total portfolio value the hero; do not add generic widgets or equal KPI
 cards merely to fill space.
 
-History priority is summary, trends/comparisons, chart analysis, then trade
-evidence. Charts and tables should answer different questions rather than
+Settings should group controls by task and explain constraints near each field.
+Dashboard charts and tables should answer different questions rather than
 duplicate the same information in large forms.
 
 Financial tables use right-aligned numeric columns, tabular numerals,
@@ -117,11 +117,9 @@ state, and loop action right as one operational cluster, with navigation below.
 Settings Save Configuration remains independently right-aligned. Pause and
 Resume are neutral labeled actions; danger styling is reserved for actual risk.
 
-Mobile trade rows are contained detail cards with a time/pair/side header,
-readable economics, and a distinct status line; do not use page-level
-horizontal scrolling or long raw timestamps. Recent Activity remains
-cycle-grouped but uses lightweight feed rows, at most one concise informational
-note per cycle, and keeps View all history. Chart headers keep title left and
+Recent Activity remains cycle-grouped but uses lightweight feed rows, at most
+one concise informational note per cycle, and keeps its Show older control.
+Chart headers keep title left and
 controls in a stable trailing slot; stack deliberately only below phone width.
 Hide a scrubber while it cannot pan a zoomed chart. Settings Remove actions are
 quiet ghost controls until hover.
@@ -165,12 +163,11 @@ icon the sole indication of a critical state.
 
 Unless the user explicitly approves a redesign:
 
-- retain the persistent trading-mode plate on Dashboard, Settings, and History;
+- retain the persistent trading-mode plate on Dashboard and Settings;
 - keep STREAM / STALE separate from trading mode;
 - keep total portfolio value as Dashboard hero and Cash/Crypto subordinate;
 - group recent activity by rebalance cycle;
 - make Simulation/Dry Run controls consequence-aware;
-- keep History controls compact;
 - keep normal trade success quieter than exceptional statuses;
 - suppress zero-value table noise where an em dash communicates better; and
 - preserve the dark Refined Glass direction across pages.

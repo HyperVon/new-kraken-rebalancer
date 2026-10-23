@@ -87,7 +87,7 @@ not treat this skill’s checklist as a substitute.
   once. Ambiguous responses become `UNCERTAIN`, abort the batch, and block
   later live submissions. Unresolved intents stay journaled and require
   evidence-based operator resolution; do not infer an outcome from missing
-  account-history data.
+  Kraken fill data.
 - **Exchange-claim gate:** any PR claim about exchange semantics (idempotency,
   uniqueness, retries, fee fields, order identity) must match current official
   Kraken docs — not memory, changelog prose, or skill text alone. Canonical
@@ -126,11 +126,10 @@ not treat this skill’s checklist as a substitute.
 - Dashboard age and STREAM/STALE freshness describe the latest snapshot, not
   trading mode; active table sorting survives fragment refresh.
 - Settings retains active controls and removes retired history-only keys on save.
-- History portfolio values come from direct cycle observations; exchange trades
-  and ledgers remain separate evidence and are not used to reconstruct earlier
-  portfolio values.
-- Hot `SharedFlow`, latest-value `StateFlow`, and bounded History recorder usage
-  match `docs/FLOWS.md`; account synchronization stays outside order execution.
+- Dashboard snapshots and activity remain process-local; only current sell
+  fills are read from Kraken as order-settlement evidence.
+- Hot `SharedFlow`, latest-value `StateFlow`, and cold settlement polling match
+  `docs/FLOWS.md`.
 
 #### Flow / SSE diff checks
 
@@ -154,7 +153,7 @@ not treat this skill’s checklist as a substitute.
 
 ### 6. Persistence & tests
 
-- Exposed: transactions, PK updates, cascade deletes.
+- SQLite JDBC: transaction boundaries, journal initialization, and recovery.
 - Tests: `:memory:`, FakeKraken, `IsolationMode`, evaluation suite awareness.
 - README tree + JaCoCo exclusions synced; markdown lint paths use
   `.agents/AGENTS.md`.

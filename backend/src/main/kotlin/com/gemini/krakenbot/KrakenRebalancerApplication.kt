@@ -14,12 +14,6 @@ import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.history.HistoryDatabase
-import com.gemini.krakenbot.service.history.HistoryFeed
-import com.gemini.krakenbot.service.history.HistoryObservationRecorder
-import com.gemini.krakenbot.service.history.HistorySyncCoordinator
-import com.gemini.krakenbot.service.history.HistorySynchronizer
-import com.gemini.krakenbot.service.history.HistoryValuationCoordinator
 import io.ktor.client.HttpClient
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -77,25 +71,16 @@ fun main(args: Array<String>) {
     }
 
     val koin = GlobalContext.get()
-    koin.get<HistoryDatabase>().verifyInitialized()
     val executionJournalBootstrap = koin.get<ExecutionJournalBootstrap>()
     runBlocking { executionJournalBootstrap.initialize() }
     val portfolioManager = koin.get<PortfolioManager>()
     val orderIntentService = koin.get<OrderIntentService>()
-    val historyObservationRecorder = koin.get<HistoryObservationRecorder>()
-    val historySyncCoordinator = koin.get<HistorySyncCoordinator>()
-    val historyValuationCoordinator = koin.get<HistoryValuationCoordinator>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
 
     val applicationScope: CoroutineScope = koin.get(
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
-    historyObservationRecorder.start(applicationScope)
-    historyValuationCoordinator.start(applicationScope)
-    historySyncCoordinator.start(applicationScope)
-    // Catch up the recent history window right away; the periodic ticker keeps it current afterwards.
-    historySyncCoordinator.requestRecentRefresh()
     portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
@@ -114,10 +99,6 @@ fun main(args: Array<String>) {
             if (!workerJoined) {
                 log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
             }
-            // Keep the coordinator alive until the worker is drained so it can service a History
-            // refresh requested before shutdown finishes.
-            historySyncCoordinator.stop()
-            historyValuationCoordinator.stop()
             applicationScope.cancel()
             httpClient.close()
             stopKoin()
