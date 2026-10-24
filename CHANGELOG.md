@@ -11,7 +11,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Test maintenance**: consolidate repeated config and Kraken service setup
-  without changing runtime behavior.
+  plus loop-manager, order-fill, and Settings DOM fixtures without removing test
+  cases or changing runtime behavior.
+- **Error responses**: centralize JSON response construction while preserving
+  HTTP statuses, message sanitization, and cancellation propagation.
 
 ## [6.20.8] - 2026-10-23
 

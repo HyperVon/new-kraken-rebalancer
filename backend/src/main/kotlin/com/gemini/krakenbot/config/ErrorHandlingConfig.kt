@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.httpMethod
@@ -55,17 +56,7 @@ object ErrorHandlingConfig {
                     } else {
                         log.warn("{}: {} {}", errorName, call.request.httpMethod.value, call.request.path())
                     }
-                    call.respondText(
-                        text =
-                        buildErrorJson(
-                            objectMapper = objectMapper,
-                            status = status.value,
-                            error = errorName,
-                            message = errorMsg,
-                        ),
-                        status = status,
-                        contentType = ContentType.Application.Json,
-                    )
+                    call.respondError(objectMapper, status, errorName, errorMsg)
                 }
             }
 
@@ -78,38 +69,36 @@ object ErrorHandlingConfig {
                 val status =
                     when (cause) {
                         is IllegalArgumentException -> HttpStatusCode.BadRequest
-                        is IllegalStateException -> HttpStatusCode.InternalServerError
                         else -> HttpStatusCode.InternalServerError
                     }
 
-                call.respondText(
-                    text =
-                    buildErrorJson(
-                        objectMapper = objectMapper,
-                        status = status.value,
-                        error = status.description,
-                        message =
-                        if (status.value >= 500) {
-                            "An unexpected error occurred."
-                        } else {
-                            cause.message ?: status.description
-                        },
-                    ),
+                call.respondError(
+                    objectMapper = objectMapper,
                     status = status,
-                    contentType = ContentType.Application.Json,
+                    error = status.description,
+                    message = if (status.value >= 500) {
+                        "An unexpected error occurred."
+                    } else {
+                        cause.message ?: status.description
+                    },
                 )
             }
         }
     }
 
-    private fun buildErrorJson(objectMapper: ObjectMapper, status: Int, error: String, message: String): String {
+    private suspend fun ApplicationCall.respondError(
+        objectMapper: ObjectMapper,
+        status: HttpStatusCode,
+        error: String,
+        message: String,
+    ) {
         val errorBody =
             mapOf(
                 "timestamp" to Instant.now().toString(),
-                "status" to status,
+                "status" to status.value,
                 "error" to error,
                 "message" to message,
             )
-        return objectMapper.writeValueAsString(errorBody)
+        respondText(objectMapper.writeValueAsString(errorBody), ContentType.Application.Json, status)
     }
 }
