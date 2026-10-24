@@ -26,7 +26,7 @@ class KrakenApiExample(
 
     suspend fun getAccountBalances(): Map<String, BigDecimal> {
         acquireCost(cost = 1.0)
-        log.info("Fetching private account balances from Kraken API...")
+        log.info("Simulating private account balance fetch...")
 
         // Map raw Kraken API symbols to normalized display symbols
         val rawBalances = fetchRawBalancesFromKraken()
@@ -47,10 +47,14 @@ class KrakenApiExample(
             rateLimiterMutex.withLock {
                 val now = System.currentTimeMillis()
                 val rawElapsedMs = now - lastUpdateTimeMs
-                val elapsedMs = rawElapsedMs.coerceIn(0L, (safeLimit / decayRate * 1000).toLong())
+                if (rawElapsedMs < 0) {
+                    lastUpdateTimeMs = now
+                    return@withLock
+                }
+                val elapsedMs = rawElapsedMs.coerceAtMost((safeLimit / decayRate * 1000).toLong())
                 val elapsedSeconds = elapsedMs / 1000.0
                 callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
-                lastUpdateTimeMs = if (rawElapsedMs < 0) lastUpdateTimeMs else now
+                lastUpdateTimeMs = now
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
                     waitMs = (neededDecay / decayRate * 1000).toLong().coerceAtLeast(1L)
