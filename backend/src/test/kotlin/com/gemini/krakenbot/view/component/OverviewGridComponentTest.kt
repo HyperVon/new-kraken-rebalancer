@@ -36,6 +36,20 @@ class OverviewGridComponentTest : StringSpec() {
             twoSamples shouldNotContain "aria-label"
         }
 
+        "dashboard hero chart displays more than the previous 24-cycle limit" {
+            val samples =
+                (0..24).map { index ->
+                    TestFixtures.emptySnapshot(
+                        Instant.parse("2026-10-11T12:00:00Z").plusSeconds(index.toLong()),
+                        BigDecimal.valueOf(100 + index.toLong()),
+                    )
+                }
+
+            val html = createHTML().div { OverviewGridComponent().render(samples.last(), samples) }
+
+            html shouldContain "25 completed cycles"
+        }
+
         "dashboard hero trend delta chip signs up and down windows" {
             val first = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:00:00Z"), BigDecimal("101.00"))
             val lowerLast = TestFixtures.emptySnapshot(Instant.parse("2026-10-11T12:01:00Z"), BigDecimal("100.00"))

@@ -74,9 +74,10 @@ persisted mode information.
 
 The Dashboard shows the latest completed in-memory cycle snapshot, including
 the current allocation/performance view and activity from that cycle. Its hero
-trend uses up to 24 recent snapshots from the same mode and credential scope;
-the window resets when that source changes. Before the first completed cycle,
-the fragment shows a waiting state.
+trend uses up to 2,880 recent snapshots from the same mode and credential scope
+(about 24 hours of configured delay at 30 seconds between cycles, plus cycle
+execution time); the window resets when that source changes. Before the first
+completed cycle, the fragment shows a waiting state.
 
 `DashboardShellComponent` loads HTMX plus its SSE extension. The shell connects
 to `/api/status/stream`; `sse:message` triggers a refreshed

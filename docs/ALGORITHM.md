@@ -147,13 +147,15 @@ orders can be submitted. See the [execution-journal storage notes](../SECURITY.m
 ## Dashboard, health, and readiness
 
 `CurrentPortfolioState` publishes the latest completed cycle through an
-in-memory `StateFlow` and retains up to 24 recent snapshots from the same
-portfolio source for the Dashboard hero trend. The source combines simulation
-mode with the adapter's non-secret credential scope; a source change clears the
-trend. It appears after the second comparable cycle, resets on restart, and does
-not read persisted portfolio snapshots. `/api/status/stream` sends current snapshots over
-SSE. The Dashboard's STREAM/STALE chip describes feed freshness and remains
-separate from the persistent Simulation / Dry Run / Live Trading mode plate.
+in-memory `StateFlow` and retains up to 2,880 recent snapshots from the same
+portfolio source for the Dashboard hero trend (about 24 hours of configured
+delay at 30 seconds between cycles, plus cycle execution time). The source
+combines simulation mode with the adapter's non-secret credential scope; a
+source change clears the trend. It appears after the second comparable cycle,
+resets on restart, and does not read persisted portfolio snapshots.
+`/api/status/stream` sends current snapshots over SSE. The Dashboard's
+STREAM/STALE chip describes feed freshness and remains separate from the
+persistent Simulation / Dry Run / Live Trading mode plate.
 
 Health and readiness describe current operation: loop and cycle state, active
 mode, latest snapshot, and unresolved live-order intent status. Readiness is

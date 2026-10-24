@@ -35,7 +35,7 @@ Before merging or deleting a type, name which pattern it implements.
 ### 3. Current snapshot and execution evidence ownership
 
 - `CurrentPortfolioState` exposes the latest completed cycle in an in-memory
-  `StateFlow` and retains up to 24 same-source snapshots for the hero trend;
+  `StateFlow` and retains up to 2,880 same-source snapshots for the hero trend;
   it clears that window on mode or credential-scope changes and writes no
   reporting data.
 - The execution journal preserves live order intents and account binding across

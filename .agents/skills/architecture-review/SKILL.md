@@ -158,7 +158,7 @@ whether the split earns its keep.
 | Flow | Type | Owner | Invariant |
 | :--- | :--- | :--- | :--- |
 | `watchConfigChanges()` | Hot SharedFlow | ConfigServiceImpl | Settings change restarts the loop |
-| Dashboard snapshot and hero trend | Hot StateFlow + bounded in-memory deque | CurrentPortfolioState | Latest completed cycle plus up to 24 same-source snapshots; clear trend on mode or credential-scope changes |
+| Dashboard snapshot and hero trend | Hot StateFlow + bounded in-memory deque | CurrentPortfolioState | Latest completed cycle plus up to 2,880 same-source snapshots; clear trend on mode or credential-scope changes |
 | Exchange retry / USD settle poll | Cold Flow | Kraken adapters / OrderSettleHelper | Collect for current cycle work; never broadcast to UI |
 
 **Redesign smell:** adding an EventSource/WebSocket client when HTMX SSE +

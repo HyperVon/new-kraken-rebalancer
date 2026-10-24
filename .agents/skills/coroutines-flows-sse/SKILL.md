@@ -16,7 +16,7 @@ Canonical runtime map: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 | :--- | :--- | :--- |
 | Cold `Flow` | Exchange retries and sell-settlement polling | Starts its request/poll work when collected. |
 | Hot `SharedFlow` | Saved Settings | Replays current Settings and publishes later updates. |
-| Hot `StateFlow` + bounded deque | `CurrentPortfolioState` | Exposes the latest completed snapshot and keeps up to 24 in-memory snapshots for the hero trend; clears the trend when simulation mode or credential scope changes. |
+| Hot `StateFlow` + bounded deque | `CurrentPortfolioState` | Exposes the latest completed snapshot and keeps up to 2,880 in-memory snapshots for the hero trend (about 24 hours of configured delay at 30 seconds between cycles, plus cycle execution time); clears the trend when simulation mode or credential scope changes. |
 
 Order-specific Kraken `TradesHistory` reads confirm fills from the current sell
 orders. They do not build a retrospective report or persist account history.
@@ -39,8 +39,10 @@ restart work correctly.
 
 `PortfolioManagerImpl` publishes each completed snapshot to
 `CurrentPortfolioState`, whose `StateFlow` holds the latest value and whose
-bounded in-memory deque supplies up to 24 same-source snapshots to the hero
-trend. A simulation-mode or credential-scope change clears that deque. The
+bounded in-memory deque supplies up to 2,880 same-source snapshots to the hero
+trend (about 24 hours of configured delay at 30 seconds between cycles, plus
+cycle execution time). A simulation-mode or credential-scope change clears
+that deque. The
 Dashboard fragment reads the latest value and trend; `/api/status/stream`
 collects the latest value and sends current-cycle snapshot JSON through Ktor
 SSE. HTMX's SSE extension refreshes the Dashboard fragment. `:frontend-js`

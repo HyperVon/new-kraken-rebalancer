@@ -68,7 +68,7 @@ class CurrentPortfolioState {
         sortedWith(compareByDescending<CurrentCycleActivity> { it.occurredAt }.thenByDescending { it.cycleId })
 
     companion object {
-        const val MAX_RECENT_SNAPSHOTS = 24
+        const val MAX_RECENT_SNAPSHOTS = 2_880
         const val MAX_RECENT_ACTIVITIES = 120
     }
 }
