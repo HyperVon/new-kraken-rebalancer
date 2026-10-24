@@ -182,22 +182,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         )
                     }
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
@@ -354,22 +339,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         )
                     }
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
@@ -398,22 +368,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         )
                     }
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
@@ -435,22 +390,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                     )
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 shouldThrow<RuntimeException> {
                     service.getBalances()
@@ -470,22 +410,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                     )
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 shouldThrow<RuntimeException> {
                     service.getBalances()
@@ -513,22 +438,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         )
                     }
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
@@ -550,22 +460,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                         )
                     }
                 }
-                val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials(
-                    "k",
-                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
-                )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
-                )
-
-                val service = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = HttpClient(mockEngine),
-                )
+                val service = configuredService(mockEngine)
 
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))

@@ -121,6 +121,22 @@ class ConfigServiceTest : StringSpec() {
         )
     }
 
+    private fun configServiceWithWriter(
+        readConfig: AppConfig = TestFixtures.config(
+            kraken = KrakenCredentials("a", "b"),
+            settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
+            allocations = listOf(Allocation(Asset.USD, 100.0)),
+        ),
+        write: (File) -> Unit,
+    ): ConfigServiceImpl {
+        val mockMapper = mockk<ObjectMapper>(relaxed = true)
+        val mockWriter = mockk<ObjectWriter>(relaxed = true)
+        every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+        every { mockMapper.readValue(any<String>(), AppConfig::class.java) } returns readConfig
+        every { mockWriter.writeValue(any<File>(), any<Any>()) } answers { write(firstArg()) }
+        return ConfigServiceImpl(mockMapper, tempFile.absolutePath)
+    }
+
     init {
         beforeTest {
             objectMapper = jacksonObjectMapper()
@@ -834,70 +850,23 @@ class ConfigServiceTest : StringSpec() {
 
         "saveConfig_Exception" {
             runTest {
-                val mockMapper = mockk<ObjectMapper>(relaxed = true)
-                val mockWriter = mockk<ObjectWriter>(relaxed = true)
-                val validConfig =
-                    TestFixtures.config(
-                        kraken = KrakenCredentials("a", "b"),
-                        settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
-                        allocations = listOf(Allocation(Asset.USD, 100.0)),
-                    )
-                every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-                every {
-                    mockMapper.readValue(
-                        any<String>(),
-                        AppConfig::class.java,
-                    )
-                } returns validConfig
-                every {
-                    mockWriter.writeValue(
-                        any<File>(),
-                        any<Any>(),
-                    )
-                } throws IOException("Write error")
-
-                configService = ConfigServiceImpl(
-                    mockMapper,
-                    tempFile.absolutePath,
-                )
+                val service = configServiceWithWriter { throw IOException("Write error") }
 
                 shouldThrow<RuntimeException> {
-                    configService.updateConfig(validConfig)
+                    service.updateConfig(service.getConfig())
                 }
             }
         }
 
         "updateConfig removes the temp file after a non-IO serialization failure" {
             runTest {
-                val mockMapper = mockk<ObjectMapper>(relaxed = true)
-                val mockWriter = mockk<ObjectWriter>(relaxed = true)
-                val validConfig =
-                    TestFixtures.config(
-                        kraken = KrakenCredentials("a", "b"),
-                        settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
-                        allocations = listOf(Allocation(Asset.USD, 100.0)),
-                    )
-                every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-                every {
-                    mockMapper.readValue(
-                        any<String>(),
-                        AppConfig::class.java,
-                    )
-                } returns validConfig
-                every {
-                    mockWriter.writeValue(
-                        any<File>(),
-                        any<Any>(),
-                    )
-                } answers {
-                    firstArg<File>().writeText("temporary credential material")
+                val service = configServiceWithWriter { file ->
+                    file.writeText("temporary credential material")
                     throw IllegalStateException("serialization failed")
                 }
 
-                configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
-
                 shouldThrow<IllegalStateException> {
-                    configService.updateConfig(validConfig)
+                    service.updateConfig(service.getConfig())
                 }
                 File("${tempFile.absolutePath}.tmp").exists() shouldBe false
             }
@@ -906,36 +875,14 @@ class ConfigServiceTest : StringSpec() {
         "writeConfigAtomically uses owner-only temp permissions before serialization on POSIX" {
             runTest {
                 if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
-                    val mockMapper = mockk<ObjectMapper>(relaxed = true)
-                    val mockWriter = mockk<ObjectWriter>(relaxed = true)
-                    val validConfig =
-                        TestFixtures.config(
-                            kraken = KrakenCredentials("a", "b"),
-                            settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
-                            allocations = listOf(Allocation(Asset.USD, 100.0)),
-                        )
                     var observedPermissions: Set<PosixFilePermission>? = null
-                    every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-                    every {
-                        mockMapper.readValue(
-                            any<String>(),
-                            AppConfig::class.java,
-                        )
-                    } returns validConfig
-                    every {
-                        mockWriter.writeValue(
-                            any<File>(),
-                            any<Any>(),
-                        )
-                    } answers {
-                        observedPermissions = Files.getPosixFilePermissions(firstArg<File>().toPath())
+                    val service = configServiceWithWriter { file ->
+                        observedPermissions = Files.getPosixFilePermissions(file.toPath())
                         throw IOException("write failed")
                     }
 
-                    configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
-
                     shouldThrow<RuntimeException> {
-                        configService.updateConfig(validConfig)
+                        service.updateConfig(service.getConfig())
                     }
                     observedPermissions shouldBe ownerOnlyPermissions
                     File("${tempFile.absolutePath}.tmp").exists() shouldBe false
@@ -947,26 +894,11 @@ class ConfigServiceTest : StringSpec() {
             runTest {
                 val originalDiskContent = tempFile.readText()
                 val originalConfig = configService.getConfig()
-                val mockMapper = mockk<ObjectMapper>(relaxed = true)
-                val mockWriter = mockk<ObjectWriter>(relaxed = true)
-                every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-                every {
-                    mockMapper.readValue(
-                        any<String>(),
-                        AppConfig::class.java,
-                    )
-                } returns originalConfig
-                every {
-                    mockWriter.writeValue(
-                        any<File>(),
-                        any<Any>(),
-                    )
-                } answers {
-                    firstArg<File>().writeText("temporary credential material")
+                val service = configServiceWithWriter(readConfig = originalConfig) { file ->
+                    file.writeText("temporary credential material")
                     throw IOException("Write error")
                 }
 
-                val service = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
                 val settingsEvents = mutableListOf<Settings>()
                 val collector = launch {
                     service.watchConfigChanges().collect { settingsEvents.add(it) }

@@ -6,7 +6,6 @@ import com.gemini.krakenbot.config.ApiKey
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.PrivateKey
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
@@ -46,6 +45,17 @@ class KrakenServiceTest : KrakenServiceTestBase() {
 
     private fun assetFixture(name: String): String =
         checkNotNull(javaClass.getResource("/kraken-assets/$name")).readText()
+
+    private fun configureSignedRequestTestConfig() {
+        configService = mockk(relaxed = true)
+        every { configService.getConfig() } returns TestFixtures.config(
+            kraken = KrakenCredentials(
+                apiKey = "public-key",
+                privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
+            ),
+            settings = TestFixtures.settings(dryRun = false, simulation = false, loopDelaySeconds = 60L),
+        )
+    }
 
     init {
         "funding permission classification matches only the configured endpoints" {
@@ -503,15 +513,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             runTest {
                 var requestCount = 0
                 val objectMapper = jacksonObjectMapper()
-                configService = mockk(relaxed = true)
-                every { configService.getConfig() } returns AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "public-key",
-                        privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
-                    ),
-                    settings = Settings(60L, 2.0, dryRun = false),
-                    allocations = emptyList(),
-                )
+                configureSignedRequestTestConfig()
                 val service = KrakenServiceImpl(
                     configService,
                     objectMapper,
@@ -541,15 +543,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             runTest {
                 var requestCount = 0
                 val objectMapper = jacksonObjectMapper()
-                configService = mockk(relaxed = true)
-                every { configService.getConfig() } returns AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "public-key",
-                        privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
-                    ),
-                    settings = Settings(60L, 2.0, dryRun = false),
-                    allocations = emptyList(),
-                )
+                configureSignedRequestTestConfig()
                 val service = KrakenServiceImpl(
                     configService,
                     objectMapper,
@@ -617,15 +611,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             runTest {
                 var requestCount = 0
                 val objectMapper = jacksonObjectMapper()
-                configService = mockk(relaxed = true)
-                every { configService.getConfig() } returns AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "public-key",
-                        privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
-                    ),
-                    settings = Settings(60L, 2.0, dryRun = false),
-                    allocations = emptyList(),
-                )
+                configureSignedRequestTestConfig()
                 val service = KrakenServiceImpl(
                     configService,
                     objectMapper,
@@ -658,19 +644,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         "executeOrder_ExceptionWithNullMessage" {
             runTest {
                 val objectMapper = jacksonObjectMapper()
-                configService = mockk(relaxed = true)
-                val credentials = KrakenCredentials(
-                    apiKey = "public-key",
-                    privateKey = Base64.getEncoder()
-                        .encodeToString("secret-key".toByteArray()),
-                )
-                val settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L)
-                val config = AppConfig(
-                    kraken = credentials,
-                    settings = settings,
-                    allocations = emptyList(),
-                )
-                every { configService.getConfig() } returns config
+                configureSignedRequestTestConfig()
 
                 val mockEngine = MockEngine {
                     throw RuntimeException(null as String?)
