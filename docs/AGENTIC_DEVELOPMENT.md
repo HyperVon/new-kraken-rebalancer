@@ -245,7 +245,7 @@ sounds convincing.
 | Google Antigravity | The initial project and much of its earlier development used Antigravity; the history of `.agents/AGENTS.md` records that foundation | Antigravity was the project's primary early harness, not merely another compatibility target |
 | Cursor | `.cursor/rules/*.mdc` projects shared conventions into Cursor-native rules | Cursor provides the deepest checked-in adapter; some skills currently require its Canvas or browser integrations |
 | Codex | The portable `.agents` files and most project skills are usable directly | Cursor-bound workflows need an equivalent artifact/tool or a small adaptation |
-| OpenCode | No separate full policy copy is committed | A human can point OpenCode at the canonical `.agents` files or maintain a thin local adapter |
+| OpenCode V2 | `opencode.jsonc` loads the canonical `.agents` instructions, discovers the project skills, and configures V2-compatible Rehydra and PTY plugins | This repository supports OpenCode V2 only; keep checkout-specific IDE MCP settings in personal configuration |
 | Claude Code | `CLAUDE.md` links to the portable rules and skills | The adapter remains intentionally small |
 | GitHub Copilot | `.github/copilot-instructions.md` links to the portable rules and skills | Copilot receives the same project context without a duplicated rulebook |
 | Other tools | Ordinary Markdown, scripts, tests, and Git remain available | Any harness capable of reading repository files can reuse the core policy and domain knowledge |
@@ -257,6 +257,14 @@ substitute an equivalent decision artifact or browser tool, or adapt those
 skills before expecting their end-to-end workflows to run unchanged. These
 integrations are not the source of project policy; the underlying architecture,
 safety rules, checklists, and review criteria remain ordinary repository files.
+
+The checked-in [`opencode.jsonc`](../opencode.jsonc) uses native OpenCode V2
+configuration and intentionally has no V1-compatible alternative. OpenCode V2
+loads the root `AGENTS.md`, the configured `.agents/AGENTS.md` and
+`.agents/OPERATING.md` files, and discovers skills under `.agents/skills`.
+Project plugins use Rehydra for secret/PII anonymization and the V2 entrypoint
+of `opencode-pty`. Local IDE MCP servers and checkout-specific paths belong in
+each contributor's personal OpenCode configuration, not the shared file.
 
 ### KiloCode portability boundary
 

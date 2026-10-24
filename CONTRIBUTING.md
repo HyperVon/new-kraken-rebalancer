@@ -104,8 +104,11 @@ Agent guidance is **in the repo** (commit it; do not gitignore `.cursor/`):
 When changing always-on norms, update **OPERATING.md** and the matching
 `.cursor/rules/*.mdc` files together.
 
-For Codex, OpenCode, or another harness without a checked-in entrypoint,
-explicitly direct it to read `.agents/AGENTS.md`, `.agents/OPERATING.md`, and
+OpenCode contributors must use V2. The checked-in `opencode.jsonc` loads the
+canonical `.agents` guidance, discovers `.agents/skills`, and configures the
+V2 Rehydra and PTY plugins; this repository does not maintain a V1-compatible
+configuration. For Codex or another harness without automatic project
+discovery, direct it to read `.agents/AGENTS.md`, `.agents/OPERATING.md`, and
 the smallest matching skill. Keep new harness adapters thin rather than
 duplicating the portable rules.
 
