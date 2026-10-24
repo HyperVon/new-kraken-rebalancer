@@ -115,7 +115,7 @@ object RebalancerEngine {
                     totalPortfolioValueUSD = totalPortfolioValueUSD,
                     effectiveUsdTarget = effectiveUsdTarget,
                     cryptoScaleFactor = cryptoScaleFactor,
-                    minimumOrderSizeUSD = settings.minimumOrderSizeUSD,
+                    minimumOrderSizeUSD = BigDecimal.valueOf(settings.minimumOrderSizeUSD),
                 )
 
             allDeviations[symbolVal] = metrics.deviationUSD

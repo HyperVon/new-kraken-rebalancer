@@ -1,17 +1,22 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DataDirectoryIdentity
 import com.gemini.krakenbot.config.ExecutionDatabase
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
+import com.gemini.krakenbot.repository.ExecutionAccountBinding
 import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
+import com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult
 import com.gemini.krakenbot.repository.impl.SqliteExecutionAccountBindingRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.test.TestConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -102,8 +107,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
             withTempDirectory { directory ->
                 val exchange = exchange(ACCOUNT_A, GENERATION_A)
                 val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
-                    kraken = com.gemini.krakenbot.config.KrakenCredentials(
-                        com.gemini.krakenbot.test.TestConstants.API_KEY,
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
                         TestFixtures.KRAKEN_TEST_API_SECRET,
                     ),
                     settings = TestFixtures.settings(dryRun = true, simulation = false),
@@ -119,7 +124,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
             withTempDirectory { directory ->
                 val exchange = exchange(ACCOUNT_A, GENERATION_A)
                 val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
-                    kraken = com.gemini.krakenbot.config.KrakenCredentials("", ""),
+                    kraken = KrakenCredentials("", ""),
                     settings = TestFixtures.settings(dryRun = false, simulation = false),
                 )
                 val environment = openEnvironment(directory, exchange, customConfig = config)
@@ -340,8 +345,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                     krakenService = exchange,
                     configService = mockk {
                         every { getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
-                            kraken = com.gemini.krakenbot.config.KrakenCredentials(
-                                com.gemini.krakenbot.test.TestConstants.API_KEY,
+                            kraken = KrakenCredentials(
+                                TestConstants.API_KEY,
                                 TestFixtures.KRAKEN_TEST_API_SECRET,
                             ),
                             settings = TestFixtures.settings(dryRun = false, simulation = false),
@@ -352,7 +357,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                     dataDirectoryIdentity = environment.dataDirectoryIdentity,
                 )
 
-                val matchingBinding = com.gemini.krakenbot.repository.ExecutionAccountBinding(
+                val matchingBinding = ExecutionAccountBinding(
                     accountIdentityDigest = identityDigest(ACCOUNT_A),
                     credentialGenerationDigest = digest(GENERATION_A),
                     bindingVersion = 1,
@@ -364,7 +369,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 coEvery { mockRepo.load() } returnsMany listOf(null, matchingBinding)
                 coEvery { mockRepo.hasBindingAnchor() } returns false
                 coEvery { mockRepo.createIfPristine(any()) } returns
-                    com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult.ALREADY_PRESENT
+                    ExecutionAccountBindingWriteResult.ALREADY_PRESENT
 
                 service.ensureVerifiedForSubmission()
 
@@ -380,7 +385,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 // Unexpected write result
                 coEvery { mockRepo.load() } returns null
                 coEvery { mockRepo.createIfPristine(any()) } returns
-                    com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult.UPDATED
+                    ExecutionAccountBindingWriteResult.UPDATED
                 val unexpectedEx = shouldThrow<IllegalStateException> {
                     service.ensureVerifiedForSubmission()
                 }
@@ -394,7 +399,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 val exchange = exchange(ACCOUNT_A, GENERATION_B)
                 val environment = openEnvironment(directory, exchange)
 
-                val currentBinding = com.gemini.krakenbot.repository.ExecutionAccountBinding(
+                val currentBinding = ExecutionAccountBinding(
                     accountIdentityDigest = identityDigest(ACCOUNT_A),
                     credentialGenerationDigest = digest(GENERATION_A),
                     bindingVersion = 1,
@@ -415,8 +420,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                     krakenService = exchange,
                     configService = mockk {
                         every { getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG.copy(
-                            kraken = com.gemini.krakenbot.config.KrakenCredentials(
-                                com.gemini.krakenbot.test.TestConstants.API_KEY,
+                            kraken = KrakenCredentials(
+                                TestConstants.API_KEY,
                                 TestFixtures.KRAKEN_TEST_API_SECRET,
                             ),
                             settings = TestFixtures.settings(dryRun = false, simulation = false),
@@ -430,7 +435,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 // Raced match
                 coEvery { mockRepo.load() } returnsMany listOf(currentBinding, matchingRotated)
                 coEvery { mockRepo.updateCredentialGeneration(any(), any(), any()) } returns
-                    com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult.STALE_BINDING
+                    ExecutionAccountBindingWriteResult.STALE_BINDING
 
                 service.ensureVerifiedForSubmission()
 
@@ -445,7 +450,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
                 // Unexpected write result
                 coEvery { mockRepo.load() } returns currentBinding
                 coEvery { mockRepo.updateCredentialGeneration(any(), any(), any()) } returns
-                    com.gemini.krakenbot.repository.ExecutionAccountBindingWriteResult.CREATED
+                    ExecutionAccountBindingWriteResult.CREATED
                 val unexpectedEx = shouldThrow<IllegalStateException> {
                     service.ensureVerifiedForSubmission()
                 }
@@ -528,7 +533,7 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         directory: Path,
         exchange: FakeKrakenService,
         dataDirectoryIdentity: DataDirectoryIdentity = DataDirectoryIdentity(directory) { false },
-        customConfig: com.gemini.krakenbot.config.AppConfig? = null,
+        customConfig: AppConfig? = null,
     ): Environment {
         val executionPath = directory.resolve("execution.db")
         val database = ExecutionDatabase.initialize(executionPath.toString())
@@ -537,8 +542,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         val bindingRepository = SqliteExecutionAccountBindingRepositoryImpl(database)
         val configService = mockk<ConfigService>()
         val config = customConfig ?: TestFixtures.DEFAULT_TEST_CONFIG.copy(
-            kraken = com.gemini.krakenbot.config.KrakenCredentials(
-                com.gemini.krakenbot.test.TestConstants.API_KEY,
+            kraken = KrakenCredentials(
+                TestConstants.API_KEY,
                 TestFixtures.KRAKEN_TEST_API_SECRET,
             ),
             settings = TestFixtures.settings(dryRun = false, simulation = false),

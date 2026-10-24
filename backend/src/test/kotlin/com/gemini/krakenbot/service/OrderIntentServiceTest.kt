@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.repository.ExecutionOrderIntentRepository
@@ -11,6 +13,8 @@ import io.kotest.matchers.shouldBe
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
+import java.math.BigDecimal
+import java.time.Instant
 
 @Suppress("unused")
 class OrderIntentServiceTest : StringSpec() {
@@ -86,17 +90,17 @@ class OrderIntentServiceTest : StringSpec() {
 
         "savePending forces PENDING state" {
             runTest {
-                val intent = com.gemini.krakenbot.model.OrderIntent(
+                val intent = OrderIntent(
                     cycleId = "c1",
                     clientOrderId = "cl-1",
                     pair = "XXBTZUSD",
                     symbol = "BTC",
                     side = "buy",
-                    volume = java.math.BigDecimal("0.1"),
-                    usdAmount = java.math.BigDecimal("5000.00"),
-                    expectedPrice = java.math.BigDecimal("50000"),
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("5000.00"),
+                    expectedPrice = BigDecimal("50000"),
                     state = OrderIntentState.UNCERTAIN,
-                    createdAt = java.time.Instant.now(),
+                    createdAt = Instant.now(),
                 )
                 coEvery { repository.savePending(any()) } returns 42
 
@@ -110,11 +114,11 @@ class OrderIntentServiceTest : StringSpec() {
                 coEvery { repository.recordOutcome(any(), any(), any(), any(), any(), any()) } returns true
 
                 // Uncertain
-                val uncertainResult = com.gemini.krakenbot.domain.OrderResult(
+                val uncertainResult = OrderResult(
                     pair = "XXBTZUSD",
                     side = "buy",
                     success = false,
-                    volume = java.math.BigDecimal("0.1"),
+                    volume = BigDecimal("0.1"),
                     submissionUncertain = true,
                     errorMessage = "timeout",
                 )
@@ -126,16 +130,16 @@ class OrderIntentServiceTest : StringSpec() {
                         null,
                         "timeout",
                         null,
-                        java.math.BigDecimal("0.1"),
+                        BigDecimal("0.1"),
                     )
                 }
 
                 // Confirmed
-                val successResult = com.gemini.krakenbot.domain.OrderResult(
+                val successResult = OrderResult(
                     pair = "XXBTZUSD",
                     side = "buy",
                     success = true,
-                    volume = java.math.BigDecimal("0.1"),
+                    volume = BigDecimal("0.1"),
                     orderTxid = "tx-123",
                 )
                 service.recordOutcome(2, successResult) shouldBe true
@@ -146,16 +150,16 @@ class OrderIntentServiceTest : StringSpec() {
                         "tx-123",
                         null,
                         any(),
-                        java.math.BigDecimal("0.1"),
+                        BigDecimal("0.1"),
                     )
                 }
 
                 // Rejected
-                val failureResult = com.gemini.krakenbot.domain.OrderResult(
+                val failureResult = OrderResult(
                     pair = "XXBTZUSD",
                     side = "buy",
                     success = false,
-                    volume = java.math.BigDecimal("0.1"),
+                    volume = BigDecimal("0.1"),
                     errorMessage = "rejected",
                 )
                 service.recordOutcome(3, failureResult) shouldBe true
@@ -166,7 +170,7 @@ class OrderIntentServiceTest : StringSpec() {
                         null,
                         "rejected",
                         any(),
-                        java.math.BigDecimal("0.1"),
+                        BigDecimal("0.1"),
                     )
                 }
             }

@@ -134,7 +134,7 @@ class PortfolioAnalyzerImpl(
                     totalPortfolioValueUSD = totalPortfolioValueUSD,
                     effectiveUsdTarget = effectiveUsdTarget,
                     cryptoScaleFactor = cryptoScaleFactor,
-                    minimumOrderSizeUSD = settings.minimumOrderSizeUSD,
+                    minimumOrderSizeUSD = BigDecimal.valueOf(settings.minimumOrderSizeUSD),
                 )
 
             assetSnapshots[symbol.value] =

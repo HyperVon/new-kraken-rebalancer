@@ -20,6 +20,7 @@ import com.gemini.krakenbot.view.util.HtmlQueries.DATA_AGE_VALUE as DATA_AGE_VAL
 import com.gemini.krakenbot.view.util.HtmlQueries.HOVERABLE_TR as HOVERABLE_TR_QUERY
 import com.gemini.krakenbot.view.util.HtmlQueries.SORTABLE_TH as SORTABLE_TH_QUERY
 import com.gemini.krakenbot.view.util.HtmlQueries.STATUS_BADGE as STATUS_BADGE_QUERY
+import org.w3c.dom.events.Event as DomEvent
 
 internal var currentSortCol: Int = PrecisionConstants.DEFAULT_SORT_COL_INDEX
 internal var currentSortDir: String = CssClass.Utility.Asc.toString()
@@ -255,7 +256,7 @@ private fun resetRecentActivitySource(sourceId: String, initialItems: List<Recen
     )
 }
 
-private fun handleRecentActivityClick(event: org.w3c.dom.events.Event) {
+private fun handleRecentActivityClick(event: DomEvent) {
     val clicked = (event.target as? Element)?.closest("button") as? HTMLButtonElement ?: return
     val root = clicked.closest("#${RecentActivityText.FEED_ID}") as? HTMLElement ?: return
     val filter = clicked.getAttribute(RecentActivityText.FILTER_ATTRIBUTE)

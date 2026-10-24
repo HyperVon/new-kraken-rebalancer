@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.config
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -39,7 +40,7 @@ class DataDirectoryIdentityTest : StringSpec() {
             val directory = Files.createTempDirectory("data-dir-invalid-digest-")
             try {
                 val identity = DataDirectoryIdentity(directory) { false }
-                io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+                shouldThrow<IllegalArgumentException> {
                     identity.bindOrVerify("not-a-valid-sha256-hex-digest")
                 }
             } finally {
@@ -62,7 +63,7 @@ class DataDirectoryIdentityTest : StringSpec() {
             try {
                 Files.writeString(directory.resolve("account-identity.sha256"), "corrupted-content")
                 val identity = DataDirectoryIdentity(directory) { false }
-                io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+                shouldThrow<IllegalStateException> {
                     identity.boundAccountIdentity()
                 }
             } finally {
@@ -88,7 +89,7 @@ class DataDirectoryIdentityTest : StringSpec() {
             try {
                 val identity = DataDirectoryIdentity(directory) { false }
                 identity.bindOrVerify(digest(ACCOUNT_A))
-                io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+                shouldThrow<IllegalStateException> {
                     identity.bindOrVerify(digest(ACCOUNT_B))
                 }
             } finally {
@@ -100,7 +101,7 @@ class DataDirectoryIdentityTest : StringSpec() {
             val directory = Files.createTempDirectory("data-dir-unmarked-evidence-")
             try {
                 val identity = DataDirectoryIdentity(directory) { true }
-                io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+                shouldThrow<IllegalStateException> {
                     identity.bindOrVerify(digest(ACCOUNT_A))
                 }
                 Files.exists(directory.resolve("account-identity.sha256")) shouldBe false

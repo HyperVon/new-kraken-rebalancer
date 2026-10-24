@@ -10,11 +10,7 @@ import java.math.RoundingMode
  * Shared portfolio math used by [RebalancerEngine] and portfolio analyzers.
  */
 object PortfolioCalculations {
-    /**
-     * Effective target % after ATH/drawdown fiat deployment: USD uses [effectiveUsdTarget]
-     * directly; crypto is [baseTargetPercent] × [cryptoScaleFactor] so reduced USD redistributes
-     * across crypto and totals still sum to 100%.
-     */
+    /** Keeps the USD target fixed and scales crypto weights across the remaining allocation. */
     fun calculateTargetPercent(
         symbol: Asset,
         baseTargetPercent: BigDecimal,
@@ -79,7 +75,7 @@ object PortfolioCalculations {
         val isSignificant: Boolean,
     )
 
-    /** Builds [AssetMetrics] for one symbol, applying ATH/drawdown scaling and the dust gate. */
+    /** Builds [AssetMetrics] from the configured target and applies the minimum-USD dust gate. */
     fun calculateAssetMetrics(
         symbol: Asset,
         baseTargetPercent: BigDecimal,
@@ -87,7 +83,7 @@ object PortfolioCalculations {
         totalPortfolioValueUSD: BigDecimal,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
-        minimumOrderSizeUSD: Double,
+        minimumOrderSizeUSD: BigDecimal,
     ): AssetMetrics {
         val calcTargetPct =
             calculateTargetPercent(
@@ -102,7 +98,7 @@ object PortfolioCalculations {
         val deviationUSD = calculateDeviationUSD(currentValueUSD, targetValueUSD)
         val deviationPct = calculateDeviationPercent(deviationUSD, targetValueUSD, currentValueUSD)
 
-        val isSignificant = deviationUSD.abs() >= BigDecimal.valueOf(minimumOrderSizeUSD)
+        val isSignificant = deviationUSD.abs() >= minimumOrderSizeUSD
 
         return AssetMetrics(
             symbol = symbol,

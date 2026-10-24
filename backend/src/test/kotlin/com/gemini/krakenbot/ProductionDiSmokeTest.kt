@@ -7,6 +7,8 @@ import com.gemini.krakenbot.config.DataDirectoryIdentity
 import com.gemini.krakenbot.config.ExecutionDatabase
 import com.gemini.krakenbot.config.ExecutionJournalBootstrap
 import com.gemini.krakenbot.config.appModule
+import com.gemini.krakenbot.config.coreModule
+import com.gemini.krakenbot.config.webModule
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.repository.ExecutionAccountBindingRepository
@@ -93,8 +95,8 @@ class ProductionDiSmokeTest :
 
                 get<PortfolioManager>().isCycleActive() shouldBe false
 
-                com.gemini.krakenbot.config.coreModule.shouldNotBeNull()
-                com.gemini.krakenbot.config.webModule.shouldNotBeNull()
+                coreModule.shouldNotBeNull()
+                webModule.shouldNotBeNull()
 
                 get<KrakenService>().shouldNotBeNull()
                 get<PortfolioAnalyzer>().shouldNotBeNull()

@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -56,13 +57,17 @@ class DynamicKrakenServiceTest : StringSpec() {
             coEvery { realService.getBalances() } returns mapOf(Asset.USD to BigDecimal("100.00"))
             val dynamicService = createService()
 
-            dynamicService.getSpendableBalances() shouldBe mapOf(Asset.USD to BigDecimal("90.00"))
+            val realSpendableBalances = dynamicService.getSpendableBalances()
+            realSpendableBalances.keys shouldBe setOf(Asset.USD)
+            realSpendableBalances.getValue(Asset.USD).shouldBeEqualComparingTo(BigDecimal("90.00"))
             coVerify(exactly = 1) { realService.getSpendableBalances() }
             coVerify(exactly = 0) { realService.getBalances() }
 
             every { configService.getConfig() } returns appConfig(simulation = true)
             coEvery { simulatedService.getBalances() } returns mapOf(Asset.USD to BigDecimal("100.00"))
-            dynamicService.getSpendableBalances() shouldBe mapOf(Asset.USD to BigDecimal("100.00"))
+            val simulatedSpendableBalances = dynamicService.getSpendableBalances()
+            simulatedSpendableBalances.keys shouldBe setOf(Asset.USD)
+            simulatedSpendableBalances.getValue(Asset.USD).shouldBeEqualComparingTo(BigDecimal("100.00"))
             coVerify(exactly = 1) { simulatedService.getBalances() }
         }
 

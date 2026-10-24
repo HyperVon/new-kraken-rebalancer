@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -249,7 +250,7 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
             databasePath.parent?.let { Files.createDirectories(it) }
             try {
                 Files.createFile(databasePath)
-            } catch (e: java.nio.file.FileAlreadyExistsException) {
+            } catch (e: FileAlreadyExistsException) {
                 throw IOException("Execution database already exists; refusing to replace it.", e)
             }
             val database = ExecutionDatabase(executionDbPath, buildSqliteUrl(executionDbPath))
@@ -377,7 +378,7 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
                     while (buffer.hasRemaining()) channel.write(buffer)
                     channel.force(true)
                 }
-            } catch (e: java.nio.file.FileAlreadyExistsException) {
+            } catch (e: FileAlreadyExistsException) {
                 val recordedId = runCatching { Files.readString(path).trim() }.getOrElse {
                     throw IOException("Execution journal identity marker cannot be read.", it)
                 }
