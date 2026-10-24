@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.9] - 2026-10-24
+
+### Changed
+
+- **Test maintenance**: consolidate repeated config and Kraken service setup
+  without changing runtime behavior.
+
 ## [6.20.8] - 2026-10-23
 
 ### Fixed
