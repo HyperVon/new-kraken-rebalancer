@@ -28,8 +28,9 @@ Normalize UI/logs to clean `BASE/USD` display form.
 
 - **Public** (`queryPublic`): ticker/OHLC — separate conservative `PublicRateLimiter`
   (at most about one call per second), no HMAC.
-- **Private** (`queryPrivate`): balances, orders, trades history — serialized
-  `RateLimiter`/nonce/sign/POST/response handling + HMAC-SHA512 + `retryWithFlow`.
+- **Private** (`queryPrivate`): balances, orders, trades history — acquire cost
+  through `RateLimiter`, then serialize credential lookup, nonce/sign/POST/response
+  handling with the request mutex; HMAC-SHA512 + `retryWithFlow`.
 
 DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 `SimulatedKrakenService`).
@@ -42,8 +43,9 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 
 - `safeLimit = 20.0`, `decayRate = 0.5`; the counter decays linearly by
   `elapsedSeconds × 0.5` for the standard account counter
-- Negative wall-clock elapsed time is clamped to zero and the stored baseline
-  stays monotonic, so clock rollback cannot inflate the counter.
+- On clock rollback, the counter is not decayed and the baseline is reset to the
+  observed time, so the limiter can resume without inflating the counter or
+  waiting for the clock to catch up to its old value.
 - All counter updates under coroutine **`Mutex`** (released **before** throttle
   `delay` so waiters do not HOL-block other private calls)
 - Waits until `callCounter + cost ≤ safeLimit`
@@ -74,7 +76,7 @@ must not be conflated.
 
 ## HMAC-SHA512 signing
 
-`KrakenServiceImpl.signRequest` / `KrakenApiConstants`:
+`KrakenSigning.sign` / `KrakenApiConstants`:
 
 1. SHA-256 of `(nonce + postData)`
 2. Prepend URI path bytes
@@ -92,25 +94,29 @@ get `EAPI:Invalid key`:
 1. **HMAC message order is `path bytes + SHA256(nonce + urlencoded body)`** —
    the path comes FIRST, then the SHA-256 digest. Many web examples reverse
    this (`sha256 + path`); that order returns `EAPI:Invalid key`. The app's
-   `signRequest` (SKILL.md § signing above) concatenates `path` then `sha2`.
+   `KrakenSigning.sign` (above) concatenates `path` then `sha2`.
 2. **Nonce**: seed `timeMs * 1_000_000L` and increment per request (matches
    `KrakenServiceImpl`). Missing/inconsistent nonce persistence is not the
    issue; the message order is what breaks.
 3. **`Ledgers` / `TradesHistory` `start`/`end` use epoch SECONDS when they are
    timestamps** (not ms); Kraken also accepts ledger/trade IDs for those
-   bounds. Both endpoints paginate with the `ofs` result offset, so do not
-   advance pagination by timestamp.
+   bounds. The app's fill-confirmation `TradesHistory` request uses cursor mode
+   (`with_cursor=true` and the returned `cursor`); do not replace that project
+   request contract with `ofs` pagination.
 4. Credentials for this project come from `rebalancer-config.json`
    (`kraken.apiKey` / `kraken.privateKey`). Placeholder values may use
    `${ENV_VAR}` or `${ENV_VAR:default}` and are resolved from the environment
-   when the config is loaded; never print resolved credentials, beyond any
-   deliberately redacted length/prefix/suffix diagnostics.
+   when the config is loaded; never disclose resolved credentials or any
+   credential fragment through output, logs, API responses, exceptions, or
+   committed artifacts. Use non-secret status such as configured/missing for
+   diagnostics.
 5. Public endpoints (`/0/public/Time`, `/0/public/Ticker`) need no auth.
    Ticker pair keys are canonical (`XXBTZUSD`, `XETHZUSD`, `XXRPZUSD`,
    `SOLUSD`, ...) — map the balance asset to its actual response key.
 
-A working reference pattern lives at
-`.agents/skills/kraken-api-integration/examples/KrakenApiExample.kt` and test
+The `KrakenApiExample.kt` file is an illustrative rate-limiter and symbol-mapping
+stub; its balance fetch is simulated. For actual signing and private-request
+construction, see `KrakenSigning.kt`, `KrakenTransport.kt`, and the test
 fixtures in `KrakenServiceTest.kt`.
 
 ---
@@ -156,8 +162,9 @@ ambiguous AddOrder response. Journal it as unresolved and require reconciliation
 
 - `retryWithFlow` tracks `attempt` (network / rate limit) and `lockoutAttempt`
   separately — lockout doubles 10s → 15m without consuming the 5 network attempts.
-- `queryPublic` uses `PublicRateLimiter`; private calls serialize the limiter,
-  nonce generation, signing, POST, and response handling.
+- `queryPublic` uses `PublicRateLimiter`. Private calls acquire rate-limit cost
+  before entering the request mutex, which serializes credential lookup, nonce
+  generation, signing, POST, and response handling.
 - Missing private credentials raise typed unavailability; fill confirmation
   must not convert missing credentials into an empty successful result.
 
