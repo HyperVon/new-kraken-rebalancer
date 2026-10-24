@@ -139,8 +139,9 @@ not treat this skill’s checklist as a substitute.
 - [ ] Config `SharedFlow` replays the latest Settings with `DROP_OLDEST`
 - [ ] `CurrentPortfolioState` retains the latest snapshot plus a bounded trend that resets on source changes
 - [ ] Non-cancellation SSE errors stay isolated per client session
-- [ ] SSE consumes current snapshots; cold exchange retries and settle polls do
-      not become hot broadcasts
+- [ ] Dashboard SSE carries revision invalidations; the legacy status stream
+      remains compatible; cold exchange retries and settle polls do not become
+      hot broadcasts
 
 #### UI safety chrome (SSR + JS)
 

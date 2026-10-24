@@ -149,7 +149,16 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
-- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle state, the latest current-cycle snapshot, active mode, and unresolved live-order intent status. Readiness is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while an unresolved live-order intent remains. Dashboard SSE carries current-cycle snapshots; the hero trend uses up to 2,880 in-memory cycles from one mode and credential scope, clears when that source changes, and never reads persisted portfolio snapshots. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
+- **Operational status**: `/api/health` and `/api/readiness` report loop/cycle
+  state, the latest current-cycle snapshot, active mode, and unresolved
+  live-order intent status. Readiness is `503` while paused/stopped/uninitialized/
+  failed, when configuration is unavailable, or while an unresolved live-order
+  intent remains. The Dashboard uses revision-only SSE invalidations; the legacy
+  `/api/status/stream` retains its snapshot JSON and activity-cycle-ID payloads.
+  The hero trend uses up to 2,880 in-memory cycles from one mode and credential
+  scope, clears when that source changes, and never reads persisted portfolio
+  snapshots. The dashboard intentionally remains unauthenticated for the trusted
+  private-LAN deployment model; CSRF protects mutation routes.
 - **Data-store safety**: DataDirectoryConfig creates execution.db on a fresh data directory and resumes interrupted initialization. The journal preserves pending, uncertain, and resolved live-order intents across restarts; DataDirectoryIdentity pins the journal to one verified Kraken account.
 
 ---

@@ -74,7 +74,9 @@ Live Trading settings.
 | **Dashboard** | `/` | Latest completed cycle snapshot, allocation bars, performance table, current-cycle actions |
 | **Settings** | `/settings` | Loop timing, triggers, USD percentage target, safety modes, allocations |
 
-The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
+The Dashboard refreshes live over a revision-only Server-Sent Events stream
+(`/api/dashboard/updates`). The server-rendered fragment supplies the current
+snapshot and activity; the stream only signals that newer state is available.
 **Only the Dashboard** shows a stream-health chip in the header next to the mode
 plate: **STREAM** (green) when data is flowing, or **STALE** when the last
 snapshot is older than **90 seconds** (governed by

@@ -11,6 +11,7 @@ import java.util.UUID
 class CurrentPortfolioState {
     private val mutableSnapshot = MutableStateFlow<PortfolioSnapshot?>(null)
     private val mutableActivityUpdate = MutableStateFlow<CurrentCycleActivity?>(null)
+    private val mutableDashboardRevision = MutableStateFlow(0L)
     private val lock = Any()
     private val recent = ArrayDeque<PortfolioSnapshot>()
     private val recentActivities = ArrayDeque<CurrentCycleActivity>()
@@ -19,6 +20,7 @@ class CurrentPortfolioState {
 
     val snapshot: StateFlow<PortfolioSnapshot?> = mutableSnapshot.asStateFlow()
     val activityUpdates: StateFlow<CurrentCycleActivity?> = mutableActivityUpdate.asStateFlow()
+    val dashboardRevision: StateFlow<Long> = mutableDashboardRevision.asStateFlow()
 
     fun publish(snapshot: PortfolioSnapshot, sourceScope: String, activity: CurrentCycleActivity? = null) {
         synchronized(lock) {
@@ -27,6 +29,7 @@ class CurrentPortfolioState {
             while (recent.size > MAX_RECENT_SNAPSHOTS) recent.removeFirst()
             activity?.let(::appendActivity)
             mutableSnapshot.value = snapshot
+            advanceDashboardRevision()
         }
     }
 
@@ -34,7 +37,12 @@ class CurrentPortfolioState {
         synchronized(lock) {
             useSource(sourceScope)
             appendActivity(activity)
+            advanceDashboardRevision()
         }
+    }
+
+    private fun advanceDashboardRevision() {
+        mutableDashboardRevision.value += 1
     }
 
     /** Returns one consistent latest-and-trend view for the dashboard, scoped to this process. */

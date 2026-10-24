@@ -15,7 +15,9 @@ import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import io.ktor.client.HttpClient
+import io.ktor.server.application.ServerReady
 import io.ktor.server.application.install
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.sse.SSE
@@ -72,7 +74,6 @@ fun main(args: Array<String>) {
 
     val koin = GlobalContext.get()
     val executionJournalBootstrap = koin.get<ExecutionJournalBootstrap>()
-    runBlocking { executionJournalBootstrap.initialize() }
     val portfolioManager = koin.get<PortfolioManager>()
     val orderIntentService = koin.get<OrderIntentService>()
     val httpClient = koin.get<HttpClient>()
@@ -81,41 +82,43 @@ fun main(args: Array<String>) {
     val applicationScope: CoroutineScope = koin.get(
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
-    portfolioManager.startRebalancingLoop(applicationScope)
+    val lifecycle =
+        KrakenRebalancerApplicationLifecycle(
+            portfolioManager = portfolioManager,
+            orderIntentService = orderIntentService,
+            applicationScope = applicationScope,
+            httpClient = httpClient,
+        )
+    val shutdownHook = Thread(lifecycle::shutdown, "kraken-rebalancer-shutdown")
+    var shutdownHookRegistered = false
+    try {
+        Runtime.getRuntime().addShutdownHook(shutdownHook)
+        shutdownHookRegistered = true
 
-    Runtime.getRuntime().addShutdownHook(
-        Thread {
-            // Stop and join the worker before closing its Koin-managed client and dependency graph.
-            // Use the job actually cancelled by stop() so a replacement worker created after a
-            // pause/resume is fully drained before the dependency graph is torn down.
-            val stoppedWorker = portfolioManager.stopRebalancingLoop()
-            val workerJoined =
-                runBlocking {
-                    joinRebalancingWorker(
-                        workerJob = stoppedWorker,
-                        hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
-                    )
-                }
-            if (!workerJoined) {
-                log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
+        runBlocking { executionJournalBootstrap.initialize() }
+        val server = createServer(objectMapper)
+        lifecycle.attachServer(server)
+        server.start(wait = true)
+    } finally {
+        lifecycle.shutdown()
+        if (shutdownHookRegistered) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook)
+            } catch (_: IllegalStateException) {
+                // JVM shutdown is already running the registered hook.
             }
-            applicationScope.cancel()
-            httpClient.close()
-            stopKoin()
-        },
-    )
-
-    startServer(objectMapper)
+        }
+    }
 }
 
-private fun startServer(objectMapper: ObjectMapper) {
+private fun createServer(objectMapper: ObjectMapper): EmbeddedServer<*, *> {
     // Bind the IPv6 wildcard. On dual-stack kernels (macOS/Windows default; Linux when
     // net.ipv6.bindv6only=0) the same socket also accepts IPv4-mapped clients. The IPv4
     // wildcard `0.0.0.0` refuses native IPv6, which breaks hostname clients that prefer AAAA.
     // IPv4 literals (e.g. http://10.0.0.x:8080/) never use AAAA — bind family does not affect them.
     // Hosts with IPv6 disabled or bindv6only=1 need an IPv4-capable network stack; keep the
     // host firewall covering both families (see SECURITY.md).
-    embeddedServer(Netty, port = ServerConfig.resolveServerPort(), host = "::") {
+    return embeddedServer(Netty, port = ServerConfig.resolveServerPort(), host = "::") {
         install(SSE)
         configureCompression()
         configureCachingAndConditionalHeaders()
@@ -123,5 +126,84 @@ private fun startServer(objectMapper: ObjectMapper) {
         configureSerialization()
         configureCORS()
         dashboardRouting()
-    }.start(wait = true)
+    }
+}
+
+internal class KrakenRebalancerApplicationLifecycle(
+    private val portfolioManager: PortfolioManager,
+    private val orderIntentService: OrderIntentService,
+    private val applicationScope: CoroutineScope,
+    private val httpClient: HttpClient,
+    private val stopContainer: () -> Unit = ::stopKoin,
+) {
+    private val lock = Any()
+    private var server: EmbeddedServer<*, *>? = null
+    private var workerStarted = false
+    private var shuttingDown = false
+
+    fun attachServer(server: EmbeddedServer<*, *>) {
+        synchronized(lock) {
+            check(!shuttingDown) { "Cannot attach an HTTP server after application shutdown has started." }
+            check(this.server == null) { "An HTTP server is already attached to the application lifecycle." }
+            this.server = server
+            server.monitor.subscribe(ServerReady) { startWorker() }
+        }
+    }
+
+    fun shutdown() {
+        val attachedServer = synchronized(lock) {
+            if (shuttingDown) return
+            shuttingDown = true
+            server
+        }
+
+        try {
+            attachedServer?.stop()
+        } catch (exception: Exception) {
+            log.warn("HTTP server shutdown failed; continuing application cleanup.", exception)
+        }
+
+        val stoppedWorker =
+            try {
+                portfolioManager.stopRebalancingLoop()
+            } catch (exception: Exception) {
+                log.error("Could not stop the rebalance worker during application shutdown.", exception)
+                null
+            }
+        val workerJoined =
+            try {
+                runBlocking {
+                    joinRebalancingWorker(
+                        workerJob = stoppedWorker,
+                        hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
+                    )
+                }
+            } catch (exception: Exception) {
+                log.error("Could not confirm rebalance worker shutdown.", exception)
+                false
+            }
+        if (!workerJoined) {
+            log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
+        }
+
+        applicationScope.cancel()
+        try {
+            httpClient.close()
+        } catch (exception: Exception) {
+            log.error("Could not close the HTTP client during application shutdown.", exception)
+        }
+        try {
+            stopContainer()
+        } catch (exception: Exception) {
+            log.error("Could not stop the dependency container during application shutdown.", exception)
+        }
+    }
+
+    private fun startWorker() {
+        synchronized(lock) {
+            if (shuttingDown || workerStarted) return
+            portfolioManager.startRebalancingLoop(applicationScope)
+            workerStarted = true
+        }
+    }
 }

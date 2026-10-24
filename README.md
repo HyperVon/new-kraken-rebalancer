@@ -226,7 +226,7 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 | **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
 | **Coverage**           | Backend JaCoCo 95% line/method/instruction + 85% branch temporarily; engine 95%/90%; Karma/Istanbul 90/80/90/75 (current)             |
 | **Serialization**      | Jackson 2.22.3, Go `encoding/json`, Zod schema validation                                                                             |
-| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes) and `StateFlow` (latest cycle snapshot), HTMX SSE extension       |
+| **Real-Time**          | Ktor SSE, Kotlin `SharedFlow` (config) + `StateFlow` (snapshot/revision), HTMX SSE stream                                             |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
 | **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                             |
 
@@ -374,11 +374,13 @@ for the active configuration, Dashboard SSE, and order-settlement flows.
 
 ### Dashboard updates
 
-The `/api/status/stream` SSE endpoint sends completed cycle snapshots to the
-Dashboard shell. HTMX requests `/fragments/dashboard` when an update arrives.
-The latest snapshot is displayed as current-cycle state; it is not a retained
-retrospective timeline. The STREAM/STALE chip describes update freshness and is
-separate from the SIMULATION / DRY RUN / LIVE TRADING mode plate.
+The Dashboard shell connects to `/api/dashboard/updates`, a revision-only SSE
+stream that tells HTMX when to request `/fragments/dashboard`. The fragment is
+the source of truth; the latest snapshot is current-cycle state, not a retained
+retrospective timeline. `/api/status/stream` remains available with its existing
+snapshot JSON and activity-cycle-ID messages. The STREAM/STALE chip describes
+update freshness and is separate from the SIMULATION / DRY RUN / LIVE TRADING
+mode plate.
 
 Settings changes update the configuration used by later cycles. During an
 active cycle, the saved settings take effect after that cycle finishes so one
@@ -563,7 +565,8 @@ submission. Simulation and dry-run modes do not create a live account binding.
 | `GET` | `/settings` | Settings page (HTML) |
 | `POST` | `/settings` | Submit settings form (HTMX) |
 | `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
-| `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
+| `GET` | `/api/dashboard/updates` | Revision-only SSE invalidations used by the Dashboard shell |
+| `GET` | `/api/status/stream` | Legacy SSE stream with snapshot JSON and activity-cycle-ID messages |
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
 | `GET` | `/api/readiness` | Readiness status; returns `503` until safe to operate (JSON) |
 | `GET` | `/api/order-intents` | Unresolved live-order intents for operator review (JSON) |

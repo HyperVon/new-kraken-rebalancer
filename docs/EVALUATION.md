@@ -9,7 +9,7 @@ coverage areas; it is not a record of a particular test run.
 | --- | --- |
 | Fixed configured USD target, deviation triggers, fiat correction, precision, and planning | RebalancerEngineTest, PortfolioCalculationsTest, PortfolioManagerFiatCorrectionTest, PortfolioManagerZeroAllocationTest |
 | Sell-first execution, settled cash limits, and live submission safety | PortfolioManagerOrderExecutionTest, OrderExecutorFillSettlementTest, OrderExecutorCashCapTest, OrderExecutorSubmissionSafetyTest |
-| Current-cycle Dashboard snapshot, SSE, health, readiness, and in-memory activity | DashboardCutoverApiTest, CurrentPortfolioStateTest, RecentActivityComponentTest |
+| Current-cycle Dashboard snapshot, revision invalidation and legacy SSE compatibility, health, readiness, and in-memory activity | DashboardCutoverApiTest, SseMultiSubscriberTest, CurrentPortfolioStateTest, RecentActivityComponentTest |
 | Active Settings, configuration validation, and hot reload | ConfigServiceTest, ConfigServiceNestedSessionTest, SettingsFormComponentTest |
 | Kraken signing, fill parsing, retries, and endpoint rate costs | KrakenServiceTest, KrakenTradeFillParserTest, KrakenRetryAndRateLimitTest |
 | Exchange metadata validation before trading | PortfolioAnalyzerImplTest |
@@ -36,8 +36,9 @@ trades or ledgers for retrospective reports or persist portfolio snapshots.
   target from the current portfolio total. Retired settings do not change the
   plan.
 - The Dashboard shows the latest completed in-memory snapshot, its current-cycle
-  activity, and recent process-local cycle outcomes. SSE publishes current
-  snapshots only.
+  activity, and recent process-local cycle outcomes. Its revision-only SSE
+  refresh leaves `/api/status/stream` snapshot JSON and activity-cycle-ID
+  payloads unchanged for compatibility.
 - A live sell settlement matches Kraken fills by order transaction ID, caps
   confirmed proceeds to observed spendable USD, and stops buys when safe cash
   cannot be confirmed.

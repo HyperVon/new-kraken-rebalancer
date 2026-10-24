@@ -50,6 +50,7 @@ import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -150,6 +151,9 @@ class DashboardController(
             }
 
             route(Routes.API_ROUTE_PREFIX) {
+                sse(Routes.API_DASHBOARD_UPDATES.removePrefix(Routes.API_ROUTE_PREFIX)) {
+                    handleDashboardUpdatesStream()
+                }
                 sse(Routes.API_STATUS_STREAM.removePrefix(Routes.API_ROUTE_PREFIX)) {
                     handleSseStream()
                 }
@@ -614,13 +618,20 @@ class DashboardController(
         call.respondText(json, ContentType.Application.Json, status)
     }
 
-    private suspend fun ServerSSESession.handleSseStream() {
+    private suspend fun ServerSSESession.handleSseStream() = stream(
+        merge(
+            currentPortfolioState.snapshot.filterNotNull().map { objectMapper.writeValueAsString(it) },
+            currentPortfolioState.activityUpdates.filterNotNull().map { it.cycleId },
+        ),
+    )
+
+    private suspend fun ServerSSESession.handleDashboardUpdatesStream() =
+        stream(currentPortfolioState.dashboardRevision)
+
+    private suspend fun ServerSSESession.stream(data: Flow<Any>) {
         try {
-            merge(
-                currentPortfolioState.snapshot.filterNotNull().map { objectMapper.writeValueAsString(it) },
-                currentPortfolioState.activityUpdates.filterNotNull().map { it.cycleId },
-            ).collect { data ->
-                send(ServerSentEvent(data = data))
+            data.collect { message ->
+                send(ServerSentEvent(data = message.toString()))
             }
         } catch (e: CancellationException) {
             throw e

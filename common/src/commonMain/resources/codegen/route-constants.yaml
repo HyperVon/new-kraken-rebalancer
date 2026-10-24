@@ -4,6 +4,7 @@ Routes:
   FRAGMENT_DASHBOARD: "/fragments/dashboard"
   FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW: "/fragments/settings-allocations-preview"
   API_ROUTE_PREFIX: "/api"
+  API_DASHBOARD_UPDATES: "/api/dashboard/updates"
   API_STATUS_STREAM: "/api/status/stream"
   API_HEALTH: "/api/health"
   API_READINESS: "/api/readiness"
