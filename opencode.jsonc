@@ -18,6 +18,12 @@
         "type": "remote",
         "url": "https://mcp.grep.app"
       },
+      "intellij": {
+        "type": "remote",
+        "url": "http://127.0.0.1:64342/stream",
+        "oauth": false,
+        "codemode": false
+      },
       "zvec_grep": {
         "type": "local",
         "command": ["zg", "server", "--stdio"],

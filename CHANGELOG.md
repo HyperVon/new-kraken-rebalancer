@@ -20,9 +20,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **OpenCode development setup**: Require OpenCode V2, load the canonical
   project guidance and skills, replace the V1-only VibeGuard plugin with
-  Rehydra, and rely on OpenCode's native PTY support instead of the optional
-  plugin. The project config no longer contains a machine-specific IntelliJ
-  MCP path. OpenCode V1 is unsupported.
+  Rehydra, configure the local IntelliJ MCP HTTP Stream endpoint without a
+  checkout-specific path, and rely on OpenCode's native PTY support instead of
+  the optional plugin. OpenCode V1 is unsupported.
 - **Storage**: removed the History database. The remaining execution journal is
   required for durable live-order intent and restart recovery. Kraken
   TradesHistory remains in use only for current sell-fill settlement.

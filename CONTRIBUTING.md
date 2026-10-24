@@ -106,12 +106,13 @@ When changing always-on norms, update **OPERATING.md** and the matching
 
 OpenCode contributors must use V2. The checked-in `opencode.jsonc` loads the
 canonical `.agents` guidance, discovers `.agents/skills`, and configures the
-V2 Rehydra plugin. OpenCode V2 provides native persistent PTY support, so the
-project does not load the optional third-party PTY plugin. This repository does
-not maintain a V1-compatible configuration. For Codex or another harness
-without automatic project discovery, direct it to read `.agents/AGENTS.md`,
-`.agents/OPERATING.md`, and the smallest matching skill. Keep new harness
-adapters thin rather than duplicating the portable rules.
+V2 Rehydra plugin and local IntelliJ MCP HTTP Stream endpoint. Enable the
+IntelliJ IDE MCP server to connect. OpenCode V2 provides native persistent PTY
+support, so the project does not load the optional third-party PTY plugin. This
+repository does not maintain a V1-compatible configuration. For Codex or
+another harness without automatic project discovery, direct it to read
+`.agents/AGENTS.md`, `.agents/OPERATING.md`, and the smallest matching skill.
+Keep new harness adapters thin rather than duplicating the portable rules.
 
 ## Code Guidelines
 
