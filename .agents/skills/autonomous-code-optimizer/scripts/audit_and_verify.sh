@@ -59,16 +59,18 @@ else
 fi
 
 echo ""
-echo "--- 4. Scanning code and scripts for actionable TODO/FIXME markers ---"
-TODO_MATCHES=$(git grep -n -I -E '\b(TODO|FIXME)\b' -- '*.kt' '*.kts' '*.sh' '*.py' '*.gradle' '*.gradle.kts' | \
-    grep -vE '(/build/|improvement-backlog\.md|quality-backlog\.md|^\.agents/skills/autonomous-code-optimizer/scripts/audit_and_verify\.sh:)' || true)
+echo "--- 4. Scanning code and scripts for actionable work markers ---"
+# POSIX ERE has no \b; split the marker names so the scanner does not match its own pattern.
+MARKER_PATTERN='(^|[^[:alnum:]_])(TO''DO|FIX''ME)([^[:alnum:]_]|$)'
+TODO_MATCHES=$(git grep -n -I -E "$MARKER_PATTERN" -- '*.kt' '*.kts' '*.sh' '*.py' '*.gradle' '*.gradle.kts' | \
+    grep -vE '(/build/|improvement-backlog\.md|quality-backlog\.md)' || true)
 if [ -n "$TODO_MATCHES" ]; then
     TODO_COUNT=$(printf '%s\n' "$TODO_MATCHES" | wc -l | tr -d ' ')
-    echo "[!] Found $TODO_COUNT actionable TODO/FIXME marker(s):"
+    echo "[!] Found $TODO_COUNT actionable work marker(s):"
     printf '%s\n' "$TODO_MATCHES"
     ERRORS_FOUND=$((ERRORS_FOUND + TODO_COUNT))
 else
-    echo "[✓] No actionable TODO/FIXME markers found in code or scripts."
+    echo "[✓] No actionable work markers found in code or scripts."
 fi
 
 echo ""
