@@ -6,7 +6,6 @@
     ".agents/OPERATING.md"
   ],
   "plugins": [
-    "opencode-pty/v2",
     "@rehydra/opencode@0.16.0"
   ],
   "mcp": {
