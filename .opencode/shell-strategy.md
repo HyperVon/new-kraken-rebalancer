@@ -253,3 +253,22 @@ This repository registers the optional Kilo Context Mode plugin in
 If Context Mode is unavailable in another harness, use bounded native commands
 and continue without assuming the `ctx_*` tools exist. The standard Gradle,
 test, and shell safety rules remain authoritative.
+
+## 9. Rehydra-safe user questions (OpenCode)
+
+This project's OpenCode configuration loads `@rehydra/opencode`. A controlled
+check in this workspace found that the built-in `functions.question` tool fails
+with `Attempted to assign to readonly property` while Rehydra is loaded, but
+works after Rehydra is removed and the config reload is confirmed. This is an
+observed compatibility issue; it does not establish which component owns the
+underlying defect.
+
+Until a compatible OpenCode/Rehydra fix is identified and verified:
+
+1. Ask the user directly in ordinary assistant messages; do not call
+   `functions.question`.
+2. Keep Rehydra enabled during ordinary work to preserve its PII/secret
+   protection. Change its configuration only for a user-requested, controlled
+   diagnostic, then restore it immediately.
+3. Do not assume MCP Code Mode fixes this path: it routes configured MCP
+   servers, while `functions.question` is a built-in tool.

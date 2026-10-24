@@ -29,6 +29,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Rehydra, configure the local IntelliJ MCP HTTP Stream endpoint without a
   checkout-specific path, and rely on OpenCode's native PTY support instead of
   the optional plugin. OpenCode V1 is unsupported.
+- **OpenCode question fallback**: use ordinary chat instead of the built-in
+  question tool until it is verified compatible with Rehydra; keep Rehydra
+  enabled to preserve PII and secret protection.
 - **Storage**: removed the History database. The remaining execution journal is
   required for durable live-order intent and restart recovery. Kraken
   TradesHistory remains in use only for current sell-fill settlement.
