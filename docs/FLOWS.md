@@ -9,7 +9,7 @@ Dashboard updates, and live-order safety.
 | --- | --- | --- |
 | Cold Flow | Kraken API retries and sell-settlement polling | Runs when collected; each collection performs its own request or polling sequence. |
 | Hot SharedFlow | Configuration changes | Publishes saved settings to the running portfolio loop. |
-| Hot StateFlow + bounded memory | CurrentPortfolioState | Exposes the latest completed cycle and retains up to 24 same-source snapshots in process memory for the Dashboard hero chart; clears the window when simulation mode or credential scope changes. |
+| Hot StateFlow + bounded memory | CurrentPortfolioState | Exposes the latest completed cycle and retains up to 2,880 same-source snapshots in process memory for the Dashboard hero chart (about 24 hours of configured delay at 30 seconds between cycles, plus cycle execution time); clears the window when simulation mode or credential scope changes. |
 
 ## System map
 
@@ -122,8 +122,10 @@ sequenceDiagram
 ```
 
 CurrentPortfolioState exposes the latest completed cycle through a StateFlow
-and retains up to 24 recent snapshots from the same portfolio source in a
-bounded in-memory window for the Dashboard hero chart. The source combines
+and retains up to 2,880 recent snapshots from the same portfolio source in a
+bounded in-memory window for the Dashboard hero chart (about 24 hours of
+configured delay at 30 seconds between cycles, plus cycle execution time). The
+source combines
 simulation mode with the adapter's non-secret credential scope, and a change
 clears the window. The window starts empty on process startup. The chart appears
 after two comparable cycles and resets when the process restarts or the source

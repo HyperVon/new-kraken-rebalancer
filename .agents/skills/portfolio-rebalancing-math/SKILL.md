@@ -116,9 +116,11 @@ rounding. Sell volume cannot exceed the cycle-entry holding.
 ## Current portfolio surfaces and persistence
 
 `CurrentPortfolioState` exposes the latest completed cycle snapshot through an
-in-memory `StateFlow` and retains up to 24 same-source snapshots for the
-Dashboard hero trend. The trend clears when simulation mode or credential scope
-changes; it is process-local and is not a retrospective persisted timeline.
+in-memory `StateFlow` and retains up to 2,880 same-source snapshots for the
+Dashboard hero trend (about 24 hours of configured delay at 30 seconds between
+cycles, plus cycle execution time). The trend clears when simulation mode or
+credential scope changes; it is process-local and is not a retrospective
+persisted timeline.
 Dashboard and SSE expose current-cycle state and actions. There is no
 retrospective portfolio or account activity page. Simulation values use a
 process-scoped source and emulator activity is not presented as account

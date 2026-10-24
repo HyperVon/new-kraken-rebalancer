@@ -258,9 +258,10 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 
 ### Live Dashboard
 
-- Shows the latest completed cycle and a trend of up to 24 same-source cycles
-  captured in memory during this application run; the trend clears on restart
-  and when simulation mode or credential scope changes.
+- Shows the latest completed cycle and a trend of up to 2,880 same-source cycles
+  captured in memory during this application run (about 24 hours of configured
+  delay at 30 seconds between cycles, plus cycle execution time); the trend
+  clears on restart and when simulation mode or credential scope changes.
 - Pushes current-cycle updates over Server-Sent Events.
 - Shows asset allocation bars and a sortable holdings table with price, value,
   target/current allocation, deviation, quantity, and optional quality score.

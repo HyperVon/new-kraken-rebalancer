@@ -96,11 +96,11 @@ that.
 ### Portfolio overview
 
 The Dashboard displays the latest completed rebalance cycle: a hero portfolio
-value with a short trailing chart plus two tiles:
+value with a trailing chart plus two tiles:
 
 | Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** (hero) | Mark-to-market value of the tracked assets in the latest completed cycle. The adjacent chart shows up to 24 recent completed cycles captured during this application run. |
+| **Total Portfolio** (hero) | Mark-to-market value of the tracked assets in the latest completed cycle. The adjacent chart shows up to 2,880 recent completed cycles (about 24 hours of configured delay at 30 seconds between cycles, plus cycle execution time) captured during this application run. |
 | **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, the configured USD target, and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 

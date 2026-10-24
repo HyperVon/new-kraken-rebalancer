@@ -21,11 +21,11 @@ class CurrentPortfolioStateTest : StringSpec() {
             view.activitySourceId shouldBe ""
         }
 
-        "dashboard view retains only the latest 24 completed snapshots in publish order" {
+        "dashboard view retains only the latest 2,880 completed snapshots in publish order" {
             val state = CurrentPortfolioState()
             val start = Instant.parse("2026-10-11T12:00:00Z")
 
-            repeat(CurrentPortfolioState.MAX_RECENT_SNAPSHOTS + 3) { index ->
+            repeat(2_883) { index ->
                 state.publish(
                     TestFixtures.emptySnapshot(
                         timestamp = start.plusSeconds(index.toLong()),
@@ -36,10 +36,10 @@ class CurrentPortfolioStateTest : StringSpec() {
             }
 
             val view = state.readDashboardView()
-            view.recentSnapshots shouldHaveSize CurrentPortfolioState.MAX_RECENT_SNAPSHOTS
+            view.recentSnapshots shouldHaveSize 2_880
             view.recentSnapshots.first().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("3"))
             view.latest shouldBe view.recentSnapshots.last()
-            view.recentSnapshots.last().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("26"))
+            view.recentSnapshots.last().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("2882"))
         }
 
         "dashboard trend clears when the portfolio source changes" {
@@ -93,7 +93,7 @@ class CurrentPortfolioStateTest : StringSpec() {
             }
 
             val view = state.readDashboardView()
-            view.recentSnapshots shouldHaveSize CurrentPortfolioState.MAX_RECENT_SNAPSHOTS
+            view.recentSnapshots shouldHaveSize 130
             view.recentActivities shouldHaveSize CurrentPortfolioState.MAX_RECENT_ACTIVITIES
             view.recentActivities.first().cycleId shouldBe "cycle-129"
             view.recentActivities.last().cycleId shouldBe "cycle-10"

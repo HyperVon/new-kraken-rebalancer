@@ -52,7 +52,7 @@ class OverviewGridComponent {
                     +ViewText.TOTAL_PORTFOLIO
                 }
                 div(CssClass.Hero.Value) { +"$${Formatter.formatCurrency(latest.totalValueUSD)}" }
-                renderTrendDelta(recentSnapshots.takeLast(MAX_TREND_SAMPLES))
+                renderTrendDelta(recentSnapshots)
             }
             renderTrend(recentSnapshots)
         }
@@ -76,7 +76,7 @@ class OverviewGridComponent {
     }
 
     private fun DIV.renderTrend(recentSnapshots: List<PortfolioSnapshot>) {
-        val samples = recentSnapshots.takeLast(MAX_TREND_SAMPLES)
+        val samples = recentSnapshots
         div(CssClass.Hero.Trend) {
             div(CssClass.Hero.TrendHeader) {
                 span(CssClass.Hero.TrendTitle) { +ViewText.DASHBOARD_TREND_TITLE }
@@ -215,7 +215,6 @@ class OverviewGridComponent {
     }
 }
 
-private const val MAX_TREND_SAMPLES = 24
 private const val SVG_WIDTH = 520.0
 private const val SVG_HEIGHT = 150.0
 private const val PLOT_LEFT = 8.0
