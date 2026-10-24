@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.20.8] - 2026-10-23
 
+### Fixed
+
+- **OpenCode MCP tools**: route IntelliJ, Zvec, Playwright, and Context Mode through
+  Code Mode to avoid Rehydra's read-only array argument errors while keeping
+  privacy protection enabled.
+
 ### Removed
 
 - **History reporting**: removed the History page, account-history synchronization,

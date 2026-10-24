@@ -22,12 +22,12 @@
         "type": "remote",
         "url": "http://127.0.0.1:64342/stream",
         "oauth": false,
-        "codemode": false
+        "codemode": true
       },
       "zvec_grep": {
         "type": "local",
         "command": ["zg", "server", "--stdio"],
-        "codemode": false,
+        "codemode": true,
         "timeout": {
           "catalog": 600000,
           "execution": 600000
@@ -36,13 +36,13 @@
       "playwright": {
         "type": "local",
         "command": ["npx", "-y", "@playwright/mcp"],
-        "codemode": false,
+        "codemode": true,
         "timeout": { "startup": 120000 }
       },
       "context-mode": {
         "type": "local",
         "command": ["npx", "-y", "context-mode"],
-        "codemode": false,
+        "codemode": true,
         "timeout": { "startup": 120000 }
       }
     }
