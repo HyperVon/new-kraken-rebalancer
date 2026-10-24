@@ -62,8 +62,8 @@ echo ""
 echo "--- 4. Scanning code and scripts for actionable work markers ---"
 # POSIX ERE has no \b; split the marker names so the scanner does not match its own pattern.
 MARKER_PATTERN='(^|[^[:alnum:]_])(TO''DO|FIX''ME)([^[:alnum:]_]|$)'
-TODO_MATCHES=$(git grep -n -I -E "$MARKER_PATTERN" -- '*.kt' '*.kts' '*.sh' '*.py' '*.gradle' '*.gradle.kts' | \
-    grep -vE '(/build/)' || true)
+TODO_MATCHES=$(git grep -n -I -E "$MARKER_PATTERN" -- '*.kt' '*.kts' '*.sh' '*.py' '*.js' '*.bat' '*.gradle' '*.gradle.kts' '.github/workflows/*.yml' | \
+    grep -vE '^(build/|.*/build/|backend/src/main/resources/static/vendor/)[^:]+:[0-9]+:' || true)
 if [ -n "$TODO_MATCHES" ]; then
     TODO_COUNT=$(printf '%s\n' "$TODO_MATCHES" | wc -l | tr -d ' ')
     echo "[!] Found $TODO_COUNT actionable work marker(s):"
