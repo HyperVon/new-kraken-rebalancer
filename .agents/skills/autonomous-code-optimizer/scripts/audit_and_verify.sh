@@ -20,7 +20,9 @@ ERRORS_FOUND=0
 
 echo ""
 echo "--- 1. Scanning for inline FQNs in Kotlin sources ---"
-FQN_MATCHES=$(git grep -n -I -E 'com\.gemini\.krakenbot\.|java\.(io|math|time|nio)\.|io\.kotest\.|org\.w3c\.dom\.|org\.jetbrains\.kotlin\.gradle\.' -- '*.kt' '*.kts' 2>/dev/null | grep -vE ':(package|import)[[:space:]]' | grep -vE ':[[:space:]]*(//|\*)' | grep -vE 'Class\.forName|Main-Class|className|mainClass\.set' || true)
+# KSP processors must identify annotations / generated packages by FQN strings;
+# these are generated-source metadata, not Kotlin type references.
+FQN_MATCHES=$(git grep -n -I -E 'com\.gemini\.krakenbot\.|java\.(io|math|time|nio)\.|io\.kotest\.|org\.w3c\.dom\.|org\.jetbrains\.kotlin\.gradle\.' -- '*.kt' '*.kts' 2>/dev/null | grep -vE ':(package|import)[[:space:]]' | grep -vE ':[[:space:]]*(//|\*)' | grep -vE 'Class\.forName|Main-Class|className|mainClass\.set' | grep -vE '^codegen/src/main/kotlin/com/gemini/krakenbot/codegen/processor/(ApiMapper|CssClass|StringConstant)Processor\.kt:[0-9]+:private (const )?val (ANNOTATION_NAME|ASSET_NAME|PACKAGE_NAME|CSS_THEME_VARS_IMPORT) =' || true)
 if [ -n "$FQN_MATCHES" ]; then
     FQN_COUNT=$(echo "$FQN_MATCHES" | wc -l | tr -d ' ')
     echo "[!] Found $FQN_COUNT inline FQN reference(s) in Kotlin source code:"
@@ -58,7 +60,8 @@ fi
 
 echo ""
 echo "--- 4. Scanning code and scripts for actionable TODO/FIXME markers ---"
-TODO_MATCHES=$(git grep -n -I -E '\b(TODO|FIXME)\b' -- '*.kt' '*.kts' '*.sh' '*.py' '*.gradle' '*.gradle.kts' | grep -vE '(/build/|improvement-backlog\.md|quality-backlog\.md)' || true)
+TODO_MATCHES=$(git grep -n -I -E '\b(TODO|FIXME)\b' -- '*.kt' '*.kts' '*.sh' '*.py' '*.gradle' '*.gradle.kts' | \
+    grep -vE '(/build/|improvement-backlog\.md|quality-backlog\.md|^\.agents/skills/autonomous-code-optimizer/scripts/audit_and_verify\.sh:)' || true)
 if [ -n "$TODO_MATCHES" ]; then
     TODO_COUNT=$(printf '%s\n' "$TODO_MATCHES" | wc -l | tr -d ' ')
     echo "[!] Found $TODO_COUNT actionable TODO/FIXME marker(s):"

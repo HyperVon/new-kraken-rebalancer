@@ -51,7 +51,7 @@ data class DirectBalanceCapture(
             !resultShapeValid -> DirectEvidenceStatus.MALFORMED
             rawKeys.isEmpty() -> DirectEvidenceStatus.MISSING
             rawKeys.size > 1 -> DirectEvidenceStatus.AMBIGUOUS
-            else -> single!!.status
+            else -> valuesByAssetId.getValue(rawKeys.single()).status
         }
         return DirectAssetBalanceEvidence(
             symbol = canonical,

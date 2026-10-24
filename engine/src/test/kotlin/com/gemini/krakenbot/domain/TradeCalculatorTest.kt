@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
@@ -163,8 +164,8 @@ class TradeCalculatorTest : StringSpec() {
                 usdAmount = BigDecimal("5000.00"),
                 prices = emptyMap(),
             )
-            trade.expectedPrice shouldBe BigDecimal.ZERO
-            trade.slippagePercent shouldBe BigDecimal.ZERO
+            trade.expectedPrice.shouldNotBeNull().shouldBeEqualComparingTo(BigDecimal.ZERO)
+            trade.slippagePercent.shouldNotBeNull().shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "createTradeRecord propagates order outcome and cycle provenance into the durable record" {

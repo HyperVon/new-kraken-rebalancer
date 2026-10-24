@@ -1,9 +1,11 @@
 package com.gemini.krakenbot
 
+import com.gemini.krakenbot.config.DataDirectoryConfig
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
+import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
@@ -26,6 +28,7 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import org.koin.test.KoinTest
 import org.koin.test.inject
+import java.nio.file.Files
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @Suppress("unused")
@@ -36,10 +39,10 @@ class KrakenRebalancerApplicationTest :
 
     init {
         "verify koin modules" {
-            val previousDataDir = System.getProperty(com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY)
-            val tempDir = java.nio.file.Files.createTempDirectory("rebalancer-app-test-")
-            com.gemini.krakenbot.config.DataDirectoryConfig.initializeDataDirectory(tempDir)
-            System.setProperty(com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY, tempDir.toString())
+            val previousDataDir = System.getProperty(DataDirectoryConfig.DATA_DIR_PROPERTY)
+            val tempDir = Files.createTempDirectory("rebalancer-app-test-")
+            DataDirectoryConfig.initializeDataDirectory(tempDir)
+            System.setProperty(DataDirectoryConfig.DATA_DIR_PROPERTY, tempDir.toString())
             try {
                 stopKoin()
                 val config = mockk<ConfigService>(relaxed = true)
@@ -53,7 +56,7 @@ class KrakenRebalancerApplicationTest :
                 }
                 val pm: PortfolioManager by inject()
                 pm.shouldBeInstanceOf<PortfolioManagerImpl>()
-                val analyzer: com.gemini.krakenbot.service.PortfolioAnalyzer by inject()
+                val analyzer: PortfolioAnalyzer by inject()
                 analyzer.shouldBeInstanceOf<PortfolioAnalyzerImpl>()
                 val currentState: CurrentPortfolioState by inject()
                 currentState.snapshot.value shouldBe null
@@ -63,11 +66,11 @@ class KrakenRebalancerApplicationTest :
                 stopKoin()
                 if (previousDataDir != null) {
                     System.setProperty(
-                        com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY,
+                        DataDirectoryConfig.DATA_DIR_PROPERTY,
                         previousDataDir,
                     )
                 } else {
-                    System.clearProperty(com.gemini.krakenbot.config.DataDirectoryConfig.DATA_DIR_PROPERTY)
+                    System.clearProperty(DataDirectoryConfig.DATA_DIR_PROPERTY)
                 }
                 tempDir.toFile().deleteRecursively()
             }

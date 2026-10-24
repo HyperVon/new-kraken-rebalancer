@@ -65,8 +65,8 @@ class EngineModelTest : StringSpec() {
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
-                volume = java.math.BigDecimal.ONE,
-                usdAmount = java.math.BigDecimal("50000.00"),
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
             )
             valid.hasValidEconomicFields() shouldBe true
             valid.copy(hasValidVolume = false).hasValidEconomicFields() shouldBe false
@@ -549,10 +549,10 @@ class EngineModelTest : StringSpec() {
                 effectiveUsdTargetPercent = BigDecimal("5.0"),
             )
             snapshot.timestamp shouldBe timestamp
-            snapshot.totalValueUSD shouldBe BigDecimal("15000.50")
+            snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("15000.50"))
             snapshot.assets shouldBe emptyMap()
             snapshot.actions shouldBe listOf("cycle complete")
-            snapshot.effectiveUsdTargetPercent shouldBe BigDecimal("5.0")
+            snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("5.0"))
             snapshot.balancesObservedAt shouldBe timestamp
 
             val trade = TradeRecord(
@@ -578,7 +578,7 @@ class EngineModelTest : StringSpec() {
                 weightedScore = BigDecimal("7.5"),
                 maxWeightPercent = BigDecimal("50.0"),
                 effectiveAssetCount = BigDecimal("2.0"),
-            ).effectiveAssetCount shouldBe BigDecimal("2.0")
+            ).effectiveAssetCount.shouldBeEqualComparingTo(BigDecimal("2.0"))
 
             OrderFillReconciler.AggregatedFills(
                 fills = emptyList(),
@@ -586,7 +586,7 @@ class EngineModelTest : StringSpec() {
                 totalUsd = BigDecimal.ZERO,
                 totalFee = BigDecimal("0.05"),
                 isComplete = true,
-            ).totalFee shouldBe BigDecimal("0.05")
+            ).totalFee.shouldBeEqualComparingTo(BigDecimal("0.05"))
         }
     }
 }

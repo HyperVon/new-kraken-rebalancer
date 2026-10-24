@@ -164,7 +164,8 @@ class RebalancerEngineTest : StringSpec() {
 
         "calculateCryptoScaleFactor returns ONE when all allocations are USD" {
             val allUsd = listOf(Allocation(Asset.USD, 100.0))
-            RebalancerEngine.calculateCryptoScaleFactor(BigDecimal("100.00"), allUsd) shouldBe BigDecimal.ONE
+            RebalancerEngine.calculateCryptoScaleFactor(BigDecimal("100.00"), allUsd)
+                .shouldBeEqualComparingTo(BigDecimal.ONE)
         }
 
         "distributeFiatCorrection sells overweights on USD withdrawal" {

@@ -77,7 +77,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("100.00"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             metrics.symbol shouldBe Asset(Asset.BTC)
             metrics.baseTargetPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
@@ -129,7 +129,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             // Target $500, current $500.40 → $0.40 dust
             metrics.isSignificant.shouldBeFalse()
@@ -144,7 +144,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             // Target $500, current $501.00 → |deviation| == $1.00 dust boundary
             metrics.isSignificant.shouldBeTrue()
@@ -159,7 +159,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             // Target $500, current $500.99 → |deviation| == $0.99 below dust boundary
             metrics.isSignificant.shouldBeFalse()
@@ -174,7 +174,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             metrics.isSignificant.shouldBeTrue()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("100.00"))
@@ -190,7 +190,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             // Target $500, current $499.00 → |deviation| == $1.00 dust boundary
             metrics.isSignificant.shouldBeTrue()
@@ -205,7 +205,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                minimumOrderSizeUSD = 1.0,
+                minimumOrderSizeUSD = BigDecimal("1.00"),
             )
             // Target $500, current $499.01 → |deviation| == $0.99 below dust boundary
             metrics.isSignificant.shouldBeFalse()
@@ -236,7 +236,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("10000.00"),
                 effectiveUsdTarget = BigDecimal("20.00"),
                 cryptoScaleFactor = BigDecimal("1.0"),
-                minimumOrderSizeUSD = 5.0,
+                minimumOrderSizeUSD = BigDecimal("5.00"),
             )
             val snapshot = PortfolioCalculations.createAssetSnapshot(
                 symbol = Asset.BTC,

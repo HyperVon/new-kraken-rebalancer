@@ -3,6 +3,7 @@ package com.gemini.krakenbot.config
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -58,7 +59,7 @@ class DataDirectoryIdentity(dataDirectory: Path, private val hasAccountEvidence:
                 while (content.hasRemaining()) channel.write(content)
                 channel.force(true)
             }
-        } catch (e: java.nio.file.FileAlreadyExistsException) {
+        } catch (e: FileAlreadyExistsException) {
             check(readIdentity() == accountIdentityDigest) {
                 "The active data directory is already bound to a different Kraken account."
             }

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.service.CurrentCycleOutcome
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
@@ -36,9 +37,9 @@ class CurrentPortfolioStateTest : StringSpec() {
 
             val view = state.readDashboardView()
             view.recentSnapshots shouldHaveSize CurrentPortfolioState.MAX_RECENT_SNAPSHOTS
-            view.recentSnapshots.first().totalValueUSD shouldBe BigDecimal("3")
+            view.recentSnapshots.first().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("3"))
             view.latest shouldBe view.recentSnapshots.last()
-            view.recentSnapshots.last().totalValueUSD shouldBe BigDecimal("26")
+            view.recentSnapshots.last().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("26"))
         }
 
         "dashboard trend clears when the portfolio source changes" {
@@ -58,7 +59,9 @@ class CurrentPortfolioStateTest : StringSpec() {
                 sourceScope = "live:credential-generation-b",
             )
 
-            state.readDashboardView().recentSnapshots.map { it.totalValueUSD } shouldBe listOf(BigDecimal("115"))
+            val accountBView = state.readDashboardView()
+            accountBView.recentSnapshots shouldHaveSize 1
+            accountBView.recentSnapshots.single().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("115"))
 
             state.publish(
                 TestFixtures.emptySnapshot(start.plusSeconds(3), BigDecimal("20")),
@@ -66,7 +69,8 @@ class CurrentPortfolioStateTest : StringSpec() {
             )
 
             val view = state.readDashboardView()
-            view.recentSnapshots.map { it.totalValueUSD } shouldBe listOf(BigDecimal("20"))
+            view.recentSnapshots shouldHaveSize 1
+            view.recentSnapshots.single().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("20"))
             view.latest shouldBe view.recentSnapshots.single()
         }
 
