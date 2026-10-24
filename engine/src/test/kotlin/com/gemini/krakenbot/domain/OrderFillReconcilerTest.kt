@@ -46,6 +46,21 @@ class OrderFillReconcilerTest : StringSpec() {
         orderTxid = orderTxid,
     )
 
+    private fun evaluateLinkSell(
+        candidateFills: List<TradeRecord>,
+        orderVolume: BigDecimal = BigDecimal("6.50000000"),
+        orderUsdAmount: BigDecimal = BigDecimal("56.44"),
+        orderTxid: String = "O1",
+    ) = OrderFillReconciler.evaluateAuthoritativeFills(
+        orderSymbol = "LINK",
+        orderSide = "SELL",
+        orderPair = "LINKUSD",
+        orderVolume = orderVolume,
+        orderUsdAmount = orderUsdAmount,
+        orderTxid = orderTxid,
+        candidateFills = candidateFills,
+    )
+
     init {
         "isInstrumentCompatible matches exact symbol, pair, and normalized side" {
             val fill = sampleFill(tradeId = "T1", orderTxid = "O1", side = "sell")
@@ -151,15 +166,7 @@ class OrderFillReconcilerTest : StringSpec() {
                     usdAmount = BigDecimal("28.22"),
                 ),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = fills,
-            )
+            val eval = evaluateLinkSell(fills)
             eval.shouldNotBeNull()
             eval.fills.size shouldBe 2
             eval.totalVolume.shouldBeEqualComparingTo(BigDecimal("6.50000000"))
@@ -188,15 +195,7 @@ class OrderFillReconcilerTest : StringSpec() {
                     usdAmount = BigDecimal("21.72"),
                 ),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = fills,
-            )
+            val eval = evaluateLinkSell(fills)
             eval.shouldNotBeNull()
             eval.fills.size shouldBe 3
             eval.totalVolume.shouldBeEqualComparingTo(BigDecimal("6.50000000"))
@@ -212,15 +211,7 @@ class OrderFillReconcilerTest : StringSpec() {
                     usdAmount = BigDecimal("28.22"),
                 ),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = fills,
-            )
+            val eval = evaluateLinkSell(fills)
             eval.shouldNotBeNull()
             eval.fills.size shouldBe 1
             eval.totalVolume.shouldBeEqualComparingTo(BigDecimal("3.25000000"))
@@ -231,35 +222,17 @@ class OrderFillReconcilerTest : StringSpec() {
             val fills = listOf(
                 sampleFill(tradeId = "T1", orderTxid = "O1", symbol = "ETH", pair = "ETHUSD"),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = fills,
-            )
+            val eval = evaluateLinkSell(fills)
             eval.shouldBeNull()
         }
 
         "evaluateAuthoritativeFills returns null on blank or unmatched orderTxid" {
-            OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
+            evaluateLinkSell(
                 orderTxid = "  ",
                 candidateFills = listOf(sampleFill(tradeId = "T1", orderTxid = "O1")),
             ).shouldBeNull()
 
-            OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
+            evaluateLinkSell(
                 orderTxid = "O-DIFFERENT",
                 candidateFills = listOf(sampleFill(tradeId = "T1", orderTxid = "O1")),
             ).shouldBeNull()
@@ -272,25 +245,17 @@ class OrderFillReconcilerTest : StringSpec() {
                 volume = BigDecimal("1.00000000"),
                 usdAmount = BigDecimal("50.00"),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
+            val eval = evaluateLinkSell(
                 orderVolume = BigDecimal.ZERO,
                 orderUsdAmount = BigDecimal("50.00"),
-                orderTxid = "O1",
                 candidateFills = listOf(fill),
             )
             eval.shouldNotBeNull()
             eval.isComplete shouldBe true
 
-            val incompleteUsd = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
+            val incompleteUsd = evaluateLinkSell(
                 orderVolume = BigDecimal.ZERO,
                 orderUsdAmount = BigDecimal("50.00"),
-                orderTxid = "O1",
                 candidateFills = listOf(fill.copy(usdAmount = BigDecimal("49.00"))),
             )
             incompleteUsd.shouldNotBeNull()
@@ -305,13 +270,9 @@ class OrderFillReconcilerTest : StringSpec() {
                 volume = BigDecimal("99.00000000"),
                 usdAmount = BigDecimal("990.00"),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
+            val eval = evaluateLinkSell(
                 orderVolume = BigDecimal("100.00000000"),
                 orderUsdAmount = BigDecimal("1000.00"),
-                orderTxid = "O1",
                 candidateFills = listOf(fill),
             )
             eval.shouldNotBeNull()
@@ -326,13 +287,9 @@ class OrderFillReconcilerTest : StringSpec() {
                 volume = BigDecimal("99.90000000"),
                 usdAmount = BigDecimal("999.00"),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
+            val eval = evaluateLinkSell(
                 orderVolume = BigDecimal("100.00000000"),
                 orderUsdAmount = BigDecimal("1000.00"),
-                orderTxid = "O1",
                 candidateFills = listOf(fill),
             )
             eval.shouldNotBeNull()
@@ -346,15 +303,7 @@ class OrderFillReconcilerTest : StringSpec() {
                 volume = BigDecimal("6.500000004"),
                 usdAmount = BigDecimal("56.44"),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = listOf(fill),
-            )
+            val eval = evaluateLinkSell(listOf(fill))
             eval.shouldNotBeNull()
             eval.isComplete shouldBe true
         }
@@ -366,15 +315,7 @@ class OrderFillReconcilerTest : StringSpec() {
                 volume = BigDecimal("6.51000000"),
                 usdAmount = BigDecimal("56.50"),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = listOf(fill),
-            )
+            val eval = evaluateLinkSell(listOf(fill))
             eval.shouldNotBeNull()
             eval.isComplete shouldBe false
         }
@@ -388,15 +329,7 @@ class OrderFillReconcilerTest : StringSpec() {
                 price = BigDecimal("10.76923076"),
                 timestamp = now.plusSeconds(300),
             )
-            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
-                orderSymbol = "LINK",
-                orderSide = "SELL",
-                orderPair = "LINKUSD",
-                orderVolume = BigDecimal("6.50000000"),
-                orderUsdAmount = BigDecimal("56.44"),
-                orderTxid = "O1",
-                candidateFills = listOf(fill),
-            )
+            val eval = evaluateLinkSell(listOf(fill))
             eval.shouldNotBeNull()
             eval.isComplete shouldBe true
         }

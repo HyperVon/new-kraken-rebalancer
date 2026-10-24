@@ -193,37 +193,7 @@ class SettingsTest : StringSpec() {
         }
 
         "updateAllocationTotal validates totals and USD allocation" {
-            val container = document.createElement("div") as HTMLDivElement
-
-            val totalDisplay = document.createElement("span") as HTMLSpanElement
-            totalDisplay.id = "total-allocated-display"
-            container.appendChild(totalDisplay)
-
-            val saveButton = document.createElement("button") as HTMLButtonElement
-            saveButton.id = "save-button"
-            container.appendChild(saveButton)
-
-            val input1 = document.createElement("input") as HTMLInputElement
-            input1.name = "targets"
-            input1.value = "30.0"
-            container.appendChild(input1)
-
-            val sym1 = document.createElement("input") as HTMLInputElement
-            sym1.name = "symbols"
-            sym1.value = Asset.BTC
-            container.appendChild(sym1)
-
-            val input2 = document.createElement("input") as HTMLInputElement
-            input2.name = "targets"
-            input2.value = "70.0"
-            container.appendChild(input2)
-
-            val sym2 = document.createElement("input") as HTMLInputElement
-            sym2.name = "symbols"
-            sym2.value = Asset.USD
-            container.appendChild(sym2)
-
-            document.body!!.appendChild(container)
+            val (container, totalDisplay, saveButton, input2, sym2) = allocationTotalFixture("30.0", "70.0")
 
             try {
                 updateAllocationTotal()
@@ -250,35 +220,7 @@ class SettingsTest : StringSpec() {
 
         "updateAllocationTotal accepts ±0.01 tolerance edges and rejects outside" {
             // IEEE-safe sums: exact 99.99 (30+69.99) exceeds 0.01 by ulp and fails `<=`.
-            val container = document.createElement("div") as HTMLDivElement
-
-            val totalDisplay = document.createElement("span") as HTMLSpanElement
-            totalDisplay.id = "total-allocated-display"
-            container.appendChild(totalDisplay)
-
-            val saveButton = document.createElement("button") as HTMLButtonElement
-            saveButton.id = "save-button"
-            container.appendChild(saveButton)
-
-            val firstTarget = document.createElement("input") as HTMLInputElement
-            firstTarget.name = "targets"
-            firstTarget.value = "50"
-            container.appendChild(firstTarget)
-            val firstSymbol = document.createElement("input") as HTMLInputElement
-            firstSymbol.name = "symbols"
-            firstSymbol.value = Asset.BTC
-            container.appendChild(firstSymbol)
-
-            val secondTarget = document.createElement("input") as HTMLInputElement
-            secondTarget.name = "targets"
-            secondTarget.value = "49.995"
-            container.appendChild(secondTarget)
-            val secondSymbol = document.createElement("input") as HTMLInputElement
-            secondSymbol.name = "symbols"
-            secondSymbol.value = Asset.USD
-            container.appendChild(secondSymbol)
-
-            document.body!!.appendChild(container)
+            val (container, totalDisplay, saveButton, secondTarget) = allocationTotalFixture("50", "49.995")
 
             try {
                 updateAllocationTotal()
@@ -300,35 +242,7 @@ class SettingsTest : StringSpec() {
         }
 
         "updateAllocationTotal exact boundary: 100.00 ok, 100.01 and 99.99 also ok (CQ-18-11)" {
-            val container = document.createElement("div") as HTMLDivElement
-
-            val totalDisplay = document.createElement("span") as HTMLSpanElement
-            totalDisplay.id = "total-allocated-display"
-            container.appendChild(totalDisplay)
-
-            val saveButton = document.createElement("button") as HTMLButtonElement
-            saveButton.id = "save-button"
-            container.appendChild(saveButton)
-
-            val firstTarget = document.createElement("input") as HTMLInputElement
-            firstTarget.name = "targets"
-            firstTarget.value = "50"
-            container.appendChild(firstTarget)
-            val firstSymbol = document.createElement("input") as HTMLInputElement
-            firstSymbol.name = "symbols"
-            firstSymbol.value = Asset.BTC
-            container.appendChild(firstSymbol)
-
-            val secondTarget = document.createElement("input") as HTMLInputElement
-            secondTarget.name = "targets"
-            secondTarget.value = "50"
-            container.appendChild(secondTarget)
-            val secondSymbol = document.createElement("input") as HTMLInputElement
-            secondSymbol.name = "symbols"
-            secondSymbol.value = Asset.USD
-            container.appendChild(secondSymbol)
-
-            document.body!!.appendChild(container)
+            val (container, totalDisplay, saveButton, secondTarget) = allocationTotalFixture("50", "50")
 
             try {
                 updateAllocationTotal()
@@ -545,6 +459,34 @@ class SettingsTest : StringSpec() {
             }
         }
     }
+}
+
+private data class AllocationTotalFixture(
+    val container: Element,
+    val totalDisplay: Element,
+    val saveButton: HTMLButtonElement,
+    val secondTarget: HTMLInputElement,
+    val secondSymbol: HTMLInputElement,
+)
+
+private fun allocationTotalFixture(first: String, second: String): AllocationTotalFixture {
+    val container = document.createElement("div")
+    container.innerHTML = """
+        <span id="total-allocated-display"></span>
+        <button id="save-button"></button>
+        <input name="targets" value="$first">
+        <input name="symbols" value="BTC">
+        <input name="targets" value="$second">
+        <input name="symbols" value="USD">
+    """.trimIndent()
+    document.body!!.appendChild(container)
+    return AllocationTotalFixture(
+        container,
+        container.querySelector("#total-allocated-display")!!,
+        container.querySelector("#save-button") as HTMLButtonElement,
+        container.querySelectorAll("input[name=targets]").item(1) as HTMLInputElement,
+        container.querySelectorAll("input[name=symbols]").item(1) as HTMLInputElement,
+    )
 }
 
 private fun settingsStateForm(): HTMLFormElement {
