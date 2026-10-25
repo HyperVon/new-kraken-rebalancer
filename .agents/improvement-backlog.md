@@ -44,6 +44,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | SEC-BRACES | S | open | deps | `braces` CVE-2026-93687 (GHSA-vfj7-8cjw-p6xm, high): stack-exhaustion DoS via deeply nested patterns | 32 | Issue #394. Vulnerable `<= 3.0.3`; 3.0.3 is latest published and already resolved in `kotlin-js-store/yarn.lock` — no patch available. Transitive via `chokidar`/`micromatch` in the build toolchain only (not shipped server). Re-check when `braces` > 3.0.3 is published |
+| CI-34-DEP1 | M | deferred | deps | Ktor 3.6.0 upgrade blocked by SSE client-test hang | 34 | With 3.6.0, `SseMultiSubscriberTest` and the SSE case in `DashboardCutoverApiTest` hang until `UncompletedCoroutinesError` (60s `runTest` timeout); 3.5.2 passes. The client SSE request job outlives `session.cancel()` for the infinite server flow. Revisit when upstream KTOR resolves it or migrate the tests deliberately |
 | QO-ARCH01 | M | deferred | architecture | Extract `:backend` subproject & KMP alignment | QO-1 | Roadmap: Next |
 | QO-ARCH02 | S/M | deferred | architecture | Decouple simulation seeding & migration from `SnapshotStore` | QO-1 | Roadmap: Now |
 | QO-ARCH03 | M | deferred | architecture | Consolidated KSP entity mapping pipeline | QO-1 | Roadmap: Later |

@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.13] - 2026-10-24
+
+### Changed
+
+- **Dependency refresh**: Gradle wrapper 9.8.2, Jackson BOM 2.22.4,
+  kotlin-css 2026.10.3, root npm tooling (`markdownlint-cli` 0.50.0 with
+  `js-yaml` 5.5.0), and the quota MCP server's
+  `@modelcontextprotocol/sdk` 1.32.2.
+
+## [6.20.12] - 2026-10-24
+
+### Security
+
+- Raise the Kotlin/JS build-tool floors for `serialize-javascript` to 7.1.3,
+  `fast-uri` to 4.2.3, `body-parser` to 1.20.9 (Karma 1.x) or 2.4.0
+  (Express 5), and `qs` to 6.16.1 to address their open Dependabot
+  advisories.
+- Refresh the root npm dev-tooling lockfile to `body-parser` 2.4.0, `zod`
+  4.6.7, and `ip-address` 10.7.4 to clear its remaining audit findings.
+
 ## [6.20.11] - 2026-10-24
 
 ### Changed
