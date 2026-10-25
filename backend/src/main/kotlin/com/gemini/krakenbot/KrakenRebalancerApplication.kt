@@ -32,6 +32,7 @@ import org.koin.core.context.stopKoin
 import org.koin.core.qualifier.named
 import org.koin.logger.slf4jLogger
 import org.slf4j.LoggerFactory
+import java.util.concurrent.CompletableFuture
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val INITIALIZE_DATA_FLAG = "--initialize-data"
@@ -137,9 +138,11 @@ internal class KrakenRebalancerApplicationLifecycle(
     private val stopContainer: () -> Unit = ::stopKoin,
 ) {
     private val lock = Any()
+    private val shutdownCompleted = CompletableFuture<Unit>()
     private var server: EmbeddedServer<*, *>? = null
     private var workerStarted = false
     private var shuttingDown = false
+    private var shutdownOwner: Thread? = null
 
     fun attachServer(server: EmbeddedServer<*, *>) {
         synchronized(lock) {
@@ -151,52 +154,57 @@ internal class KrakenRebalancerApplicationLifecycle(
     }
 
     fun shutdown() {
-        val attachedServer = synchronized(lock) {
-            if (shuttingDown) return
-            shuttingDown = true
-            server
+        val shouldPerformShutdown = synchronized(lock) {
+            if (shuttingDown) {
+                if (shutdownOwner === Thread.currentThread()) return
+                false
+            } else {
+                shuttingDown = true
+                shutdownOwner = Thread.currentThread()
+                true
+            }
+        }
+        if (!shouldPerformShutdown) {
+            shutdownCompleted.join()
+            return
         }
 
         try {
-            attachedServer?.stop()
-        } catch (exception: Exception) {
-            log.warn("HTTP server shutdown failed; continuing application cleanup.", exception)
-        }
-
-        val stoppedWorker =
+            val attachedServer = synchronized(lock) { server }
             try {
-                portfolioManager.stopRebalancingLoop()
+                attachedServer?.stop()
             } catch (exception: Exception) {
-                log.error("Could not stop the rebalance worker during application shutdown.", exception)
-                null
+                log.warn("HTTP server shutdown failed; continuing application cleanup.", exception)
             }
-        val workerJoined =
-            try {
+
+            val stoppedWorker = portfolioManager.stopRebalancingLoop()
+            val workerJoined =
                 runBlocking {
                     joinRebalancingWorker(
                         workerJob = stoppedWorker,
                         hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
                     )
                 }
-            } catch (exception: Exception) {
-                log.error("Could not confirm rebalance worker shutdown.", exception)
-                false
+            if (!workerJoined) {
+                log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
             }
-        if (!workerJoined) {
-            log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
-        }
 
-        applicationScope.cancel()
-        try {
-            httpClient.close()
-        } catch (exception: Exception) {
-            log.error("Could not close the HTTP client during application shutdown.", exception)
+            applicationScope.cancel()
+            try {
+                httpClient.close()
+            } catch (exception: Exception) {
+                log.error("Could not close the HTTP client during application shutdown.", exception)
+            }
+            try {
+                stopContainer()
+            } catch (exception: Exception) {
+                log.error("Could not stop the dependency container during application shutdown.", exception)
+            }
+        } catch (failure: Throwable) {
+            shutdownCompleted.completeExceptionally(failure)
+            throw failure
         }
-        try {
-            stopContainer()
-        } catch (exception: Exception) {
-            log.error("Could not stop the dependency container during application shutdown.", exception)
-        }
+        shutdownCompleted.complete(Unit)
     }
 
     private fun startWorker() {
