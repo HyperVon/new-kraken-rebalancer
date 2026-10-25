@@ -69,8 +69,7 @@ class ExecutionJournalBootstrap(
             statement.executeQuery("SELECT id, state FROM order_intents").use { resultSet ->
                 while (resultSet.next()) {
                     val id = resultSet.getInt("id")
-                    val state = resultSet.getString("state")
-                    when (state) {
+                    when (val state = resultSet.getString("state")) {
                         "PENDING", "UNCERTAIN" -> error(
                             "Legacy order intent $id is $state; reconcile it before live submission.",
                         )
@@ -96,8 +95,7 @@ class ExecutionJournalBootstrap(
             ).use { resultSet ->
                 while (resultSet.next()) {
                     val id = resultSet.getInt("id")
-                    val state = resultSet.getString("submission_state")
-                    when (state) {
+                    when (val state = resultSet.getString("submission_state")) {
                         "PENDING", "UNCERTAIN" -> error(
                             "Legacy live trade $id is $state; reconcile it before live submission.",
                         )

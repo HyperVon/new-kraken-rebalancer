@@ -9,12 +9,10 @@ import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
-import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.RecentActivityText
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
-import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
@@ -22,7 +20,6 @@ import kotlinx.html.button
 import kotlinx.html.details
 import kotlinx.html.id
 import kotlinx.html.summary
-import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale

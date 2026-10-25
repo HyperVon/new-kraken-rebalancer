@@ -18,23 +18,12 @@ fun Map<String, Double>.toBigDecimalMap(): Map<String, BigDecimal> = this.mapVal
  */
 object TestFixtures {
 
-    /** Longer-format API key used in integration/E2E/fuzz tests. */
-    const val TEST_API_KEY = "apiKey"
-
-    /** Server-side credentials stub used in DashboardController integration tests. */
-    const val TEST_SERVER_API_KEY = "server-key"
-    const val TEST_SERVER_API_SECRET = "server-secret"
-
-    /** Kraken service credentials used by isolated authentication tests. */
-    const val KRAKEN_TEST_API_KEY = "test-api-key"
-
     /** Base64 of `test-private-key` — Kraken private keys must decode as Base64. */
     const val KRAKEN_TEST_API_SECRET = "dGVzdC1wcml2YXRlLWtleQ=="
 
     /** Trading side constants (lowercase matching OrderSide.apiValue, uppercase for display/models). */
     const val BUY = "buy"
     const val SELL = "sell"
-    const val BUY_UPPER = "BUY"
 
     /** Order type constants. */
     const val MARKET = "market"
@@ -47,7 +36,6 @@ object TestFixtures {
     const val USD = "USD"
     const val XETHZUSD = "XETHZUSD"
     const val ADAEUR = "ADAEUR"
-    const val DOGEUSD = "DOGEUSD"
     const val ETH = "ETH"
     const val BTC_LOWER = "btc"
     const val ETH_LOWER = "eth"
@@ -60,18 +48,11 @@ object TestFixtures {
 
     /** HTTP content type constants. */
     const val APPLICATION_JSON = "application/json"
-    const val TEXT_HTML = "text/html"
 
     /** Generic credential / key constants. */
     const val SECRET = "secret"
 
-    /** Generic test key/value constants. */
-    const val TEST_KEY = "test_key"
-    const val TEST_VALUE = "test_value"
-    const val TEST_VALUE_2 = "test_value2"
-
-    /** Misc test string constants. */
-    const val PASS = "PASS"
+    @Suppress("unused")
     const val INVALID = "invalid"
     const val GZIP = "gzip"
     const val TEST = "test"

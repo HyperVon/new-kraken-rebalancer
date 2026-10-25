@@ -8,7 +8,6 @@ import com.gemini.krakenbot.service.DirectTickerRequest
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
-import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal

@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
@@ -5,7 +7,6 @@ import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import io.kotest.core.spec.IsolationMode
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -19,13 +20,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.formUrlEncode
 import io.ktor.http.parametersOf
-import io.ktor.server.application.Application
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.mockk.every
-import kotlinx.html.div
-import kotlinx.html.stream.createHTML
 
 class ServerFeaturesIntegrationTest : DashboardControllerTestBase() {
     override fun isolationMode() = IsolationMode.InstancePerTest

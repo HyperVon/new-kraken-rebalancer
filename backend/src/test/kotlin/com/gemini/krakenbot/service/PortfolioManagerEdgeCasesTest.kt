@@ -8,20 +8,15 @@ import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.every
-import io.mockk.slot
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
-import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {

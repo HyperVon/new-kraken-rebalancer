@@ -127,9 +127,6 @@ value class Asset(val value: String) {
         fun matchesUsdQuotedPair(pairKey: String, symbol: String): Boolean =
             pairKey.uppercase() in acceptedUsdQuotedPairs(symbol)
 
-        /** Quote assets the historical replay universe can settle; unknown quotes fail closed. */
-        val SUPPORTED_QUOTE_ASSETS: Set<String> = setOf(USD, USDT, USDC)
-
         /**
          * Split a stored Kraken market pair into base and quote assets. The longest known quote
          * suffix wins (`USDGUSDC` → USDG/USDC, `USDTZUSD` → USDT/USD, `ATOMUSDT` → ATOM/USDT);

@@ -1,11 +1,9 @@
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.CurrentCycleActivity
 import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.CurrentCycleOutcome
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.ktor.client.plugins.sse.sse

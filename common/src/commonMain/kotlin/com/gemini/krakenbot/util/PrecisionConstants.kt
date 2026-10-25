@@ -38,5 +38,4 @@ object PrecisionConstants {
     const val ALLOCATION_STEP_PERCENT = 0.1
 
     const val DEFAULT_USD_TARGET_PERCENT = 5.0
-    const val MIN_CRYPTO_DECIMAL_PLACES = 4
 }

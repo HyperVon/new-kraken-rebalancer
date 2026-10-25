@@ -96,19 +96,19 @@ class CommonAssetTest {
 
     @Test
     fun splitTradingPairResolvesKnownQuotes() {
-        assertEquals(TradingPairSplit("SEI", "USD", "SEIUSD"), Asset.splitTradingPair("SEIUSD"))
-        assertEquals(TradingPairSplit("BTC", "USD", "XXBTZUSD"), Asset.splitTradingPair("XXBTZUSD"))
-        assertEquals(TradingPairSplit("ATOM", "USDT", "ATOMUSDT"), Asset.splitTradingPair("ATOMUSDT"))
-        assertEquals(TradingPairSplit("USDG", "USDC", "USDGUSDC"), Asset.splitTradingPair("USDGUSDC"))
-        assertEquals(TradingPairSplit("USDT", "USD", "USDTZUSD"), Asset.splitTradingPair("USDTZUSD"))
-        assertEquals(TradingPairSplit("SOL", "USDT", "SOLUSDT"), Asset.splitTradingPair("solusdt"))
+        assertEquals(Asset.splitTradingPair("SEIUSD"), TradingPairSplit("SEI", "USD", "SEIUSD"))
+        assertEquals(Asset.splitTradingPair("XXBTZUSD"), TradingPairSplit("BTC", "USD", "XXBTZUSD"))
+        assertEquals(Asset.splitTradingPair("ATOMUSDT"), TradingPairSplit("ATOM", "USDT", "ATOMUSDT"))
+        assertEquals(Asset.splitTradingPair("USDGUSDC"), TradingPairSplit("USDG", "USDC", "USDGUSDC"))
+        assertEquals(Asset.splitTradingPair("USDTZUSD"), TradingPairSplit("USDT", "USD", "USDTZUSD"))
+        assertEquals(Asset.splitTradingPair("solusdt"), TradingPairSplit("SOL", "USDT", "SOLUSDT"))
     }
 
     @Test
     fun splitTradingPairKeepsModernBasesEndingInZ() {
-        assertEquals(TradingPairSplit("CHZ", "USD", "CHZUSD"), Asset.splitTradingPair("CHZUSD"))
-        assertEquals(TradingPairSplit("XTZ", "USD", "XTZUSD"), Asset.splitTradingPair("XTZUSD"))
-        assertEquals(TradingPairSplit("STRC", "USD", "STRCZUSD"), Asset.splitTradingPair("STRCZUSD"))
+        assertEquals(Asset.splitTradingPair("CHZUSD"), TradingPairSplit("CHZ", "USD", "CHZUSD"))
+        assertEquals(Asset.splitTradingPair("XTZUSD"), TradingPairSplit("XTZ", "USD", "XTZUSD"))
+        assertEquals(Asset.splitTradingPair("STRCZUSD"), TradingPairSplit("STRC", "USD", "STRCZUSD"))
     }
 
     @Test

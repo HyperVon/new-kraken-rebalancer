@@ -37,7 +37,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
@@ -551,9 +550,9 @@ class ConfigServiceTest : StringSpec() {
 
             val strategy = NioConfigFilePermissionStrategy(
                 attributeViews = object : ConfigFileAttributeViews {
-                    override fun posix(path: Path): PosixFileAttributeView? = posixView
+                    override fun posix(path: Path): PosixFileAttributeView = posixView
 
-                    override fun acl(path: Path): AclFileAttributeView? =
+                    override fun acl(path: Path): AclFileAttributeView =
                         error("ACL must not be consulted while POSIX permissions are available")
 
                     override fun owner(path: Path): UserPrincipal =

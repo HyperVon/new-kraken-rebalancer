@@ -2,51 +2,27 @@ package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.css.Align
-import kotlinx.css.BorderStyle
 import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FlexDirection
-import kotlinx.css.FontWeight
 import kotlinx.css.GridTemplateColumns
-import kotlinx.css.Overflow
 import kotlinx.css.Padding
-import kotlinx.css.QuotedString
-import kotlinx.css.TextAlign
 import kotlinx.css.alignItems
-import kotlinx.css.background
-import kotlinx.css.borderBottomStyle
-import kotlinx.css.borderRadius
-import kotlinx.css.color
 import kotlinx.css.columnGap
-import kotlinx.css.content
 import kotlinx.css.display
 import kotlinx.css.flexDirection
-import kotlinx.css.flexGrow
 import kotlinx.css.flexShrink
 import kotlinx.css.fontSize
-import kotlinx.css.fontWeight
 import kotlinx.css.gap
 import kotlinx.css.gridTemplateColumns
 import kotlinx.css.header
 import kotlinx.css.marginBottom
-import kotlinx.css.marginLeft
-import kotlinx.css.marginRight
-import kotlinx.css.marginTop
-import kotlinx.css.minHeight
-import kotlinx.css.minWidth
-import kotlinx.css.overflowX
 import kotlinx.css.padding
 import kotlinx.css.paddingBottom
-import kotlinx.css.paddingLeft
-import kotlinx.css.paddingRight
-import kotlinx.css.paddingTop
 import kotlinx.css.pct
-import kotlinx.css.px
 import kotlinx.css.rem
 import kotlinx.css.rowGap
-import kotlinx.css.textAlign
 import kotlinx.css.width
 
 object MediaQueries {
@@ -292,7 +268,7 @@ object MediaQueries {
                 }
             }
 
-            "${CssClass.Activity.CycleHeader.querySelector}" {
+            CssClass.Activity.CycleHeader.querySelector {
                 display = Display.grid
                 gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
                 alignItems = Align.start
@@ -317,6 +293,4 @@ object MediaQueries {
             }
         }
     }
-
-    private fun quoted(value: String) = QuotedString(value)
 }

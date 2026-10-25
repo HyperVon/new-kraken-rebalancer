@@ -4,7 +4,6 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentCycleActivity

@@ -9,7 +9,6 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.RecentActivityText
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window

@@ -9,7 +9,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import kotlinx.coroutines.test.runTest
-import java.math.BigDecimal
 
 class PortfolioManagerZeroAllocationTest : StringSpec() {
 

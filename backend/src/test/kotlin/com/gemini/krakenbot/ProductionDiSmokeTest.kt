@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot
 
 import com.fasterxml.jackson.databind.ObjectMapper

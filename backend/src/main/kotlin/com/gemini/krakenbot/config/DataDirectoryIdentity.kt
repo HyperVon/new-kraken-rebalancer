@@ -59,7 +59,7 @@ class DataDirectoryIdentity(dataDirectory: Path, private val hasAccountEvidence:
                 while (content.hasRemaining()) channel.write(content)
                 channel.force(true)
             }
-        } catch (e: FileAlreadyExistsException) {
+        } catch (_: FileAlreadyExistsException) {
             check(readIdentity() == accountIdentityDigest) {
                 "The active data directory is already bound to a different Kraken account."
             }

@@ -6,7 +6,6 @@ import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FlexDirection
 import kotlinx.css.FontWeight
-import kotlinx.css.Padding
 import kotlinx.css.TextAlign
 import kotlinx.css.alignItems
 import kotlinx.css.borderRadius
@@ -17,9 +16,7 @@ import kotlinx.css.fontSize
 import kotlinx.css.fontWeight
 import kotlinx.css.gap
 import kotlinx.css.height
-import kotlinx.css.marginBottom
 import kotlinx.css.maxWidth
-import kotlinx.css.padding
 import kotlinx.css.pct
 import kotlinx.css.properties.deg
 import kotlinx.css.properties.rotate

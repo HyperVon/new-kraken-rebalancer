@@ -14,8 +14,6 @@ import com.gemini.krakenbot.joinRebalancingWorker
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.service.OrderAttemptTracker
-import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
@@ -30,18 +28,15 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch

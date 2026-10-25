@@ -245,6 +245,7 @@ private fun handleSettingsSaveResponse(event: Event) {
     if (submitted.requestId != latestSubmittedSettingsRequestId) return
     if ((xhr.status as? Int)?.let { it in 200..299 } != true) return
 
+    // The raw js() expression below refers to this local by name; Kotlin cannot validate that reference.
     val responseText = xhr.responseText as? String ?: return
     val response = try {
         js("JSON.parse(responseText)")

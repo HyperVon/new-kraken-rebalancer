@@ -135,8 +135,7 @@ private fun TradeRecord.hasCompatibleAuthoritativeIdentity(other: TradeRecord): 
     if (thisTradeId != null && otherTradeId != null && thisTradeId != otherTradeId) return false
     val thisOrderTxid = orderTxid?.takeIf(String::isNotBlank)
     val otherOrderTxid = other.orderTxid?.takeIf(String::isNotBlank)
-    if (thisOrderTxid != null && otherOrderTxid != null && thisOrderTxid != otherOrderTxid) return false
-    return true
+    return !(thisOrderTxid != null && otherOrderTxid != null && thisOrderTxid != otherOrderTxid)
 }
 
 /** Correlation ids may narrow a heuristic match, but a missing id is not a conflict. */
@@ -153,8 +152,7 @@ private fun TradeRecord.hasCompatibleCorrelationIdentity(other: TradeRecord): Bo
     if (thisCycle != null && otherCycle != null && thisCycle != otherCycle) return false
     val thisClient = clientOrderId?.takeIf(String::isNotBlank)
     val otherClient = other.clientOrderId?.takeIf(String::isNotBlank)
-    if (thisClient != null && otherClient != null && thisClient != otherClient) return false
-    return true
+    return !(thisClient != null && otherClient != null && thisClient != otherClient)
 }
 
 fun TradeRecord.hasAuthoritativeIdentity(): Boolean = tradeId?.isNotBlank() == true || orderTxid?.isNotBlank() == true

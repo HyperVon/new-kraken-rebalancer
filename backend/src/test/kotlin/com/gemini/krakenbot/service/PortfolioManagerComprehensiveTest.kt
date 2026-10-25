@@ -4,9 +4,6 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.CurrentCycleOutcome
-import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.view.util.ViewText

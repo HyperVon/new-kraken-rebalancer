@@ -15,13 +15,11 @@ import com.gemini.krakenbot.service.DirectTickerCapture
 import com.gemini.krakenbot.service.DirectTickerMark
 import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.DirectValueEvidence
-import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
 object KrakenParsers {
-    private val log = LoggerFactory.getLogger(KrakenParsers::class.java)
 
     /** Parses the recent Kraken trade page used for order-fill confirmation. */
     fun parseTradePage(result: JsonNode): ExchangeTradePage {
@@ -221,7 +219,7 @@ object KrakenParsers {
                 )
 
                 else -> {
-                    val (responsePair, ticker) = candidates.single()
+                    val (responsePair, _) = candidates.single()
                     val lastTradePrice = candidateValues.getValue(responsePair)
                     DirectTickerMark(
                         symbol = symbol,

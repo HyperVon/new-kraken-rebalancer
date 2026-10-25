@@ -6,7 +6,6 @@ import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.coVerify
 import io.mockk.every
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal

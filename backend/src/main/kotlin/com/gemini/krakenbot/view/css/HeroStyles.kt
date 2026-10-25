@@ -3,7 +3,6 @@ package com.gemini.krakenbot.view.css
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import kotlinx.css.Align
-import kotlinx.css.BorderStyle
 import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FlexDirection
@@ -14,11 +13,7 @@ import kotlinx.css.Position
 import kotlinx.css.TextAlign
 import kotlinx.css.alignItems
 import kotlinx.css.background
-import kotlinx.css.backgroundColor
-import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
-import kotlinx.css.borderStyle
-import kotlinx.css.borderWidth
 import kotlinx.css.color
 import kotlinx.css.display
 import kotlinx.css.flexDirection

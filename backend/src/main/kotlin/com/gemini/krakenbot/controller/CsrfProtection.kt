@@ -80,14 +80,10 @@ internal object CsrfProtection {
         val cookieToken = call.request.cookies[COOKIE_NAME] ?: return false
         val formTokens = parameters.getAll(FormFields.CSRF_TOKEN) ?: return false
         val formToken = formTokens.singleOrNull() ?: return false
-        if (!MessageDigest.isEqual(
-                cookieToken.toByteArray(Charsets.UTF_8),
-                formToken.toByteArray(Charsets.UTF_8),
-            )
-        ) {
-            return false
-        }
-        return isWellFormedToken(cookieToken) && !isAuthenticToken(cookieToken)
+        return MessageDigest.isEqual(
+            cookieToken.toByteArray(Charsets.UTF_8),
+            formToken.toByteArray(Charsets.UTF_8),
+        ) && isWellFormedToken(cookieToken) && !isAuthenticToken(cookieToken)
     }
 
     /** True only when a single explicit local/private Origin or Referer exactly matches the request. */
@@ -217,10 +213,10 @@ internal object CsrfProtection {
         return explicitPort in 1..65535 && explicitPort == parsedPort
     }
 
-    private fun effectivePort(scheme: String, port: Int): Int? = when {
-        port in 1..65535 -> port
-        port == -1 && scheme == "http" -> 80
-        port == -1 && scheme == "https" -> 443
+    private fun effectivePort(scheme: String, port: Int): Int? = when (port) {
+        in 1..65535 -> port
+        -1 if scheme == "http" -> 80
+        -1 if scheme == "https" -> 443
         else -> null
     }
 
@@ -247,8 +243,8 @@ internal object CsrfProtection {
         val decoder = Base64.getUrlDecoder()
         val nonce = runCatching { decoder.decode(token.substring(0, separator)) }.getOrNull() ?: return false
         val signature = runCatching { decoder.decode(token.substring(separator + 1)) }.getOrNull() ?: return false
-        if (nonce.size != TOKEN_BYTES || signature.size != TOKEN_BYTES) return false
-        return MessageDigest.isEqual(sign(nonce), signature)
+        return !(nonce.size != TOKEN_BYTES || signature.size != TOKEN_BYTES) &&
+            MessageDigest.isEqual(sign(nonce), signature)
     }
 
     private fun isWellFormedToken(token: String): Boolean {

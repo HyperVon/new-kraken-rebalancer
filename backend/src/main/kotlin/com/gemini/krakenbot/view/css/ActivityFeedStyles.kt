@@ -13,7 +13,6 @@ import kotlinx.css.background
 import kotlinx.css.borderLeftColor
 import kotlinx.css.borderLeftStyle
 import kotlinx.css.borderLeftWidth
-import kotlinx.css.borderRadius
 import kotlinx.css.borderTopColor
 import kotlinx.css.borderTopStyle
 import kotlinx.css.borderTopWidth
@@ -27,10 +26,8 @@ import kotlinx.css.gap
 import kotlinx.css.marginTop
 import kotlinx.css.padding
 import kotlinx.css.paddingLeft
-import kotlinx.css.properties.TextDecoration
 import kotlinx.css.px
 import kotlinx.css.rem
-import kotlinx.css.textDecoration
 
 object ActivityFeedStyles {
     // DASH-3: cycle-grouped activity feed replaces the flat log dump.

@@ -7,6 +7,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 
+@Suppress("unused")
 class FakeKrakenServiceTest :
     StringSpec({
         isolationMode = IsolationMode.InstancePerTest
