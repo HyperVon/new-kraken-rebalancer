@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
@@ -17,7 +19,6 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.request.get

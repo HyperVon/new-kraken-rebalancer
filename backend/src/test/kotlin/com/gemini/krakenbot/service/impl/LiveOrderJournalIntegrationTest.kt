@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
@@ -7,13 +9,13 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.repository.impl.SqliteExecutionOrderIntentRepositoryImpl
-import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.FakeKrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
@@ -393,7 +395,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
                 shouldThrow<IllegalStateException> {
-                    runBlocking {
+                    coroutineScope {
                         ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
                     }
                 }
@@ -418,7 +420,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
                 shouldThrow<IllegalStateException> {
-                    runBlocking {
+                    coroutineScope {
                         ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
                     }
                 }
@@ -444,7 +446,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
                 shouldThrow<IllegalStateException> {
-                    runBlocking {
+                    coroutineScope {
                         ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
                     }
                 }
@@ -462,7 +464,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
                 shouldThrow<IllegalStateException> {
-                    runBlocking {
+                    coroutineScope {
                         ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
                     }
                 }
@@ -491,7 +493,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                 val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
                 val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
-                runBlocking {
+                coroutineScope {
                     ExecutionJournalBootstrap(database, repository, legacyPath.toString()).initialize()
                 }
                 database.ensureReadyForSubmission()
@@ -504,9 +506,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             val database = ExecutionDatabase.initialize(":memory:")
             val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
-            runBlocking {
-                ExecutionJournalBootstrap(database, repository, ":memory:").initialize()
-            }
+            ExecutionJournalBootstrap(database, repository, ":memory:").initialize()
 
             val error = shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
             error.message shouldBe "Live order submission requires a file-backed execution journal."
@@ -525,7 +525,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
         return LiveJournal(
             executionPath = executionPath,
             database = database,
-            intentService = OrderIntentServiceImpl(repository, ExecutionAccountBindingVerifier { }),
+            intentService = OrderIntentServiceImpl(repository) { },
         )
     }
 
@@ -548,7 +548,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
 
     private fun liveSettings() = TestFixtures.settings(dryRun = false, simulation = false)
 
-    private fun readIntentState(databasePath: Path, pair: String): String? = readIntent(databasePath, pair).state
+    private fun readIntentState(databasePath: Path, pair: String): String = readIntent(databasePath, pair).state
 
     private fun readIntentId(databasePath: Path, pair: String): Int =
         DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->

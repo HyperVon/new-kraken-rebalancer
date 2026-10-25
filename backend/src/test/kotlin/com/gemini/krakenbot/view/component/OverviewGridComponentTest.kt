@@ -11,6 +11,7 @@ import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class OverviewGridComponentTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

@@ -12,19 +12,15 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeInstanceOf
-import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.io.IOException
 import java.lang.reflect.Field
 import java.math.BigDecimal
-import kotlin.coroutines.cancellation.CancellationException
 
 class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
 

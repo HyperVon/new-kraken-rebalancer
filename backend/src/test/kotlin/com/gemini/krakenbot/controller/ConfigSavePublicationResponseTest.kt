@@ -21,6 +21,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import java.time.Instant
 
+@Suppress("unused")
 class ConfigSavePublicationResponseTest : DashboardControllerTestBase() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

@@ -8,7 +8,6 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.service.ConfigService
@@ -21,7 +20,6 @@ import com.gemini.krakenbot.service.ObservedPrices
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.readBalancesWithCapture
 import com.gemini.krakenbot.service.readTickerPricesWithCapture
-import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant

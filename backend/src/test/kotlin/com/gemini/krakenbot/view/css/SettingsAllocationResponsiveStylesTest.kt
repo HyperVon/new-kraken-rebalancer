@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.css.FormStyles.applyFormStyles

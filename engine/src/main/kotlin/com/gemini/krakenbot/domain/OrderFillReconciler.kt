@@ -47,12 +47,13 @@ object OrderFillReconciler {
         }
         val orderAllocSymbol = Asset.fromTradingPair(orderPair, allocations) ?: orderSymbol
         val fillAllocSymbol = Asset.fromTradingPair(apiFill.pair, allocations) ?: apiFill.symbol
-        if (!orderAllocSymbol.equals(fillAllocSymbol, ignoreCase = true)) return false
-
-        return apiFill.pair.equals(orderPair, ignoreCase = true) ||
+        return orderAllocSymbol.equals(fillAllocSymbol, ignoreCase = true) &&
             (
-                Asset.matchesUsdQuotedPair(orderPair, orderSymbol) &&
-                    Asset.matchesUsdQuotedPair(apiFill.pair, orderSymbol)
+                apiFill.pair.equals(orderPair, ignoreCase = true) ||
+                    (
+                        Asset.matchesUsdQuotedPair(orderPair, orderSymbol) &&
+                            Asset.matchesUsdQuotedPair(apiFill.pair, orderSymbol)
+                        )
                 )
     }
 

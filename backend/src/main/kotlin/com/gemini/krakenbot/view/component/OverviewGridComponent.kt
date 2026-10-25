@@ -76,25 +76,24 @@ class OverviewGridComponent {
     }
 
     private fun DIV.renderTrend(recentSnapshots: List<PortfolioSnapshot>) {
-        val samples = recentSnapshots
         div(CssClass.Hero.Trend) {
             div(CssClass.Hero.TrendHeader) {
                 span(CssClass.Hero.TrendTitle) { +ViewText.DASHBOARD_TREND_TITLE }
                 span(CssClass.Hero.TrendSummary) {
                     val suffix =
-                        if (samples.size == 1) {
+                        if (recentSnapshots.size == 1) {
                             ViewText.DASHBOARD_TREND_CYCLE_SINGULAR
                         } else {
                             ViewText.DASHBOARD_TREND_CYCLE_PLURAL
                         }
-                    +"${samples.size}$suffix"
+                    +"${recentSnapshots.size}$suffix"
                 }
             }
-            if (samples.size < 2) {
+            if (recentSnapshots.size < 2) {
                 div(CssClass.Hero.TrendEmpty) { +ViewText.DASHBOARD_TREND_COLLECTING }
             } else {
                 div(CssClass.Hero.TrendChart) {
-                    unsafe { +renderTrendSvg(samples) }
+                    unsafe { +renderTrendSvg(recentSnapshots) }
                 }
             }
         }

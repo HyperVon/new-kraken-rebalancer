@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.TestFixtures

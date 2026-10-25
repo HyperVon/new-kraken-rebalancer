@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.config.ExecutionDatabase
@@ -10,10 +12,11 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.nio.file.Files
-import java.nio.file.Path
 import java.time.Instant
 
 class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
@@ -230,7 +233,9 @@ class SqliteExecutionOrderIntentRepositoryImplTest : StringSpec() {
     private suspend fun withRepository(
         block: suspend (ExecutionDatabase, SqliteExecutionOrderIntentRepositoryImpl) -> Unit,
     ) {
-        val directory = Files.createTempDirectory("execution-intent-repository-")
+        val directory = withContext(Dispatchers.IO) {
+            Files.createTempDirectory("execution-intent-repository-")
+        }
         try {
             val database = ExecutionDatabase.initialize(directory.resolve("execution.db").toString())
             database.markReadyForSubmission()

@@ -1,7 +1,8 @@
+@file:Suppress("unused")
+
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.service.CurrentCycleOutcome
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize

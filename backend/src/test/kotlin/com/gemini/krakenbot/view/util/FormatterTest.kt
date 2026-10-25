@@ -53,8 +53,8 @@ class FormatterTest : StringSpec() {
         }
 
         "formatUsdOrDash places the sign before the currency symbol" {
-            Formatter.formatUsdOrDash(BigDecimal("-200.0"), 2, 2) shouldBe "-\$200.00"
-            Formatter.formatUsdOrDash(BigDecimal("200.0"), 2, 2) shouldBe "\$200.00"
+            Formatter.formatUsdOrDash(BigDecimal("-200.0"), 2, 2) shouldBe $$"-$200.00"
+            Formatter.formatUsdOrDash(BigDecimal("200.0"), 2, 2) shouldBe $$"$200.00"
         }
 
         "price and fee helpers dash absent or zero values" {
@@ -64,8 +64,8 @@ class FormatterTest : StringSpec() {
         }
 
         "formatSignedUsd prefixes positives without a sign" {
-            Formatter.formatSignedUsd(BigDecimal("200.0")) shouldBe "\$200.00"
-            Formatter.formatSignedUsd(BigDecimal("-200.0")) shouldBe "-\$200.00"
+            Formatter.formatSignedUsd(BigDecimal("200.0")) shouldBe $$"$200.00"
+            Formatter.formatSignedUsd(BigDecimal("-200.0")) shouldBe $$"-$200.00"
         }
     }
 }

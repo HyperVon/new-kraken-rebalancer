@@ -24,9 +24,6 @@ import kotlinx.css.borderBottomWidth
 import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
 import kotlinx.css.borderStyle
-import kotlinx.css.borderTopColor
-import kotlinx.css.borderTopStyle
-import kotlinx.css.borderTopWidth
 import kotlinx.css.borderWidth
 import kotlinx.css.color
 import kotlinx.css.content
@@ -52,7 +49,6 @@ import kotlinx.css.overflow
 import kotlinx.css.padding
 import kotlinx.css.paddingBottom
 import kotlinx.css.paddingRight
-import kotlinx.css.paddingTop
 import kotlinx.css.pct
 import kotlinx.css.position
 import kotlinx.css.properties.TextDecoration

@@ -82,7 +82,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                         )
                     },
                 )
-                try {
+                client.use { client ->
                     val transport = KrakenTransport(
                         configService = mockk(relaxed = true),
                         objectMapper = jacksonObjectMapper(),
@@ -95,8 +95,6 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                         .path("result")
                         .path("unixtime")
                         .asInt() shouldBe 1
-                } finally {
-                    client.close()
                 }
             }
         }

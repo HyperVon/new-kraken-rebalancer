@@ -12,6 +12,7 @@ import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class PerformanceTableComponentTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

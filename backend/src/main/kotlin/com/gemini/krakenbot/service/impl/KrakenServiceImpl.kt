@@ -254,10 +254,6 @@ class KrakenServiceImpl(
         return fresh
     }
 
-    fun clearAssetMetadataCache() {
-        cachedMetadata = null
-    }
-
     override suspend fun executeOrder(
         pair: String,
         type: String,
