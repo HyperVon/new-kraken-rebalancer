@@ -32,7 +32,8 @@ identifiers fake.
 Use runTest for suspending functions and advanceUntilIdle for Flow or loop
 events. Do not resolve races with arbitrary sleeps or longer fixed delays.
 
-For SSE, assert the initial snapshot and subsequent flow events. For settings
+For SSE, assert the initial revision and subsequent Dashboard invalidations,
+plus compatibility of the legacy snapshot/activity stream. For settings
 changes, verify collectLatest cancels an idle delay and restarts with the new
 configuration. Cancellation must not be recorded as a cycle failure.
 

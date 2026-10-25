@@ -5,20 +5,30 @@ import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.CurrentPortfolioState
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.ktor.client.HttpClient
+import io.ktor.server.application.ApplicationStopped
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -28,7 +38,14 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import org.koin.test.KoinTest
 import org.koin.test.inject
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.nio.file.Files
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @Suppress("unused")
@@ -176,5 +193,189 @@ class KrakenRebalancerApplicationTest :
                 cleanupFinished.isCompleted shouldBe true
             }
         }
+
+        "trading starts after server readiness and shutdown drains before dependencies close" {
+            val events = mutableListOf<String>()
+            val worker = Job().apply { complete() }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val manager = mockk<PortfolioManager>()
+            every { manager.startRebalancingLoop(scope) } answers {
+                events += "worker-start"
+                worker
+            }
+            every { manager.stopRebalancingLoop() } answers {
+                events += "worker-stop"
+                worker
+            }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers {
+                events += "client-close"
+            }
+            val lifecycle =
+                KrakenRebalancerApplicationLifecycle(
+                    portfolioManager = manager,
+                    orderIntentService = mockk<OrderIntentService>(),
+                    applicationScope = scope,
+                    httpClient = client,
+                    stopContainer = { events += "container-stop" },
+                )
+            val server = embeddedServer(Netty, port = 0, host = "127.0.0.1") {}
+            server.monitor.subscribe(ApplicationStopped) { events += "server-stopped" }
+            lifecycle.attachServer(server)
+
+            server.start(wait = false)
+            events shouldBe listOf("worker-start")
+
+            lifecycle.shutdown()
+            lifecycle.shutdown()
+
+            events shouldBe listOf("worker-start", "server-stopped", "worker-stop", "client-close", "container-stop")
+            verify(exactly = 1) { manager.startRebalancingLoop(scope) }
+            verify(exactly = 1) { manager.stopRebalancingLoop() }
+        }
+
+        "concurrent shutdown caller waits for cleanup to complete" {
+            val events = mutableListOf<String>()
+            val stopStarted = CountDownLatch(1)
+            val releaseStop = CountDownLatch(1)
+            val worker = Job().apply { complete() }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val manager = mockk<PortfolioManager>()
+            every { manager.stopRebalancingLoop() } answers {
+                events += "worker-stop"
+                stopStarted.countDown()
+                releaseStop.await()
+                worker
+            }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers {
+                events += "client-close"
+            }
+            val lifecycle =
+                KrakenRebalancerApplicationLifecycle(
+                    portfolioManager = manager,
+                    orderIntentService = mockk<OrderIntentService>(),
+                    applicationScope = scope,
+                    httpClient = client,
+                    stopContainer = { events += "container-stop" },
+                )
+            val firstShutdown = CompletableFuture.runAsync(lifecycle::shutdown)
+            val secondThread = AtomicReference<Thread>()
+            var secondShutdown: CompletableFuture<Void>? = null
+            try {
+                stopStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                val secondStarted = CountDownLatch(1)
+                secondShutdown =
+                    CompletableFuture.runAsync {
+                        secondThread.set(Thread.currentThread())
+                        secondStarted.countDown()
+                        lifecycle.shutdown()
+                    }
+                secondStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                awaitWaitingForShutdown(checkNotNull(secondThread.get())) shouldBe true
+            } finally {
+                releaseStop.countDown()
+            }
+            firstShutdown.join()
+            checkNotNull(secondShutdown).join()
+
+            events shouldBe listOf("worker-stop", "client-close", "container-stop")
+            verify(exactly = 1) { manager.stopRebalancingLoop() }
+        }
+
+        "worker stop failure remains visible and does not release dependencies" {
+            val events = mutableListOf<String>()
+            val stopStarted = CountDownLatch(1)
+            val releaseStop = CountDownLatch(1)
+            val manager = mockk<PortfolioManager>()
+            every { manager.stopRebalancingLoop() } answers {
+                events += "worker-stop"
+                stopStarted.countDown()
+                releaseStop.await()
+                throw IllegalStateException("worker stop failed")
+            }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers { events += "client-close" }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val lifecycle =
+                KrakenRebalancerApplicationLifecycle(
+                    portfolioManager = manager,
+                    orderIntentService = mockk<OrderIntentService>(),
+                    applicationScope = scope,
+                    httpClient = client,
+                    stopContainer = { events += "container-stop" },
+                )
+            val firstShutdown = CompletableFuture.runAsync(lifecycle::shutdown)
+            val secondThread = AtomicReference<Thread>()
+            var secondShutdown: CompletableFuture<Void>? = null
+            try {
+                stopStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                val secondStarted = CountDownLatch(1)
+                secondShutdown =
+                    CompletableFuture.runAsync {
+                        secondThread.set(Thread.currentThread())
+                        secondStarted.countDown()
+                        lifecycle.shutdown()
+                    }
+                secondStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                awaitWaitingForShutdown(checkNotNull(secondThread.get())) shouldBe true
+            } finally {
+                releaseStop.countDown()
+            }
+
+            shouldThrow<CompletionException> { firstShutdown.join() }.cause.shouldBeInstanceOf<IllegalStateException>()
+            shouldThrow<CompletionException> { checkNotNull(secondShutdown).join() }.cause
+                .shouldBeInstanceOf<IllegalStateException>()
+
+            events shouldBe listOf("worker-stop")
+            scope.coroutineContext[Job]?.isActive shouldBe true
+            verify(exactly = 1) { manager.stopRebalancingLoop() }
+            verify(exactly = 0) { client.close() }
+        }
+
+        "failed server bind does not start trading and still releases dependencies" {
+            val events = mutableListOf<String>()
+            val worker = Job().apply { complete() }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val manager = mockk<PortfolioManager>()
+            every { manager.startRebalancingLoop(scope) } answers {
+                events += "worker-start"
+                worker
+            }
+            every { manager.stopRebalancingLoop() } answers {
+                events += "worker-stop"
+                worker
+            }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers {
+                events += "client-close"
+            }
+            val lifecycle =
+                KrakenRebalancerApplicationLifecycle(
+                    portfolioManager = manager,
+                    orderIntentService = mockk<OrderIntentService>(),
+                    applicationScope = scope,
+                    httpClient = client,
+                    stopContainer = { events += "container-stop" },
+                )
+
+            ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { occupiedPort ->
+                val server = embeddedServer(Netty, port = occupiedPort.localPort, host = "127.0.0.1") {}
+                lifecycle.attachServer(server)
+
+                shouldThrow<Exception> { server.start(wait = false) }
+                lifecycle.shutdown()
+            }
+
+            events shouldBe listOf("worker-stop", "client-close", "container-stop")
+            verify(exactly = 0) { manager.startRebalancingLoop(any()) }
+            verify(exactly = 1) { manager.stopRebalancingLoop() }
+        }
     }
+}
+
+private fun awaitWaitingForShutdown(thread: Thread): Boolean {
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+    while (thread.state == Thread.State.RUNNABLE && System.nanoTime() < deadline) Thread.yield()
+    return thread.state == Thread.State.WAITING
 }

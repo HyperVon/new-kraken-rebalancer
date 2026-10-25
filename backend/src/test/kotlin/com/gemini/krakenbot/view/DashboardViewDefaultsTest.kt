@@ -36,6 +36,8 @@ class DashboardViewDefaultsTest :
                 with(this) { dashboardView.renderDashboardShell(config.settings) }
             }
             shell shouldContain "id=\"mode-plate\""
+            shell shouldContain "sse-connect=\"/api/dashboard/updates\""
+            shell shouldNotContain "sse-connect=\"/api/status/stream\""
 
             val settings = createHTML(prettyPrint = false).html {
                 with(this) {

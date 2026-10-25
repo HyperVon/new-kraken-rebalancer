@@ -80,11 +80,12 @@ execution time); the window resets when that source changes. Before the first
 completed cycle, the fragment shows a waiting state.
 
 `DashboardShellComponent` loads HTMX plus its SSE extension. The shell connects
-to `/api/status/stream`; `sse:message` triggers a refreshed
-`/fragments/dashboard`. `CurrentPortfolioState` retains the latest snapshot
-and a source-scoped bounded window for the hero chart. The JS client updates
-age/freshness and preserves table sorting; it does not open `EventSource` or
-reconstruct reports.
+to `/api/dashboard/updates`, whose replaying revision events trigger a refreshed
+`/fragments/dashboard`. `CurrentPortfolioState` retains the latest snapshot,
+revision, and a source-scoped bounded window for the hero chart. The legacy
+`/api/status/stream` retains its snapshot-JSON and activity-cycle-ID payloads.
+The JS client updates age/freshness and preserves table sorting; it does not
+open `EventSource` or reconstruct reports.
 
 ## HTMX and static assets
 

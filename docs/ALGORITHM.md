@@ -113,8 +113,9 @@ volume is submitted.
    minimum-order and volume checks again after budget adjustment.
 6. **Publish.** Build a snapshot with the cycle actions, final available
    valuation, configured targets, and deviations. Publish it to in-memory
-   `CurrentPortfolioState` as the latest Dashboard and SSE snapshot; the state
-   also maintains the bounded, source-scoped hero trend window.
+   `CurrentPortfolioState` as the latest Dashboard snapshot and advance its
+   revision for fragment refresh; the state also maintains the bounded,
+   source-scoped hero trend window.
 7. **Wait.** Sleep for loopDelaySeconds, unless a settings update replaces the
    idle delay after the active cycle session exits.
 
@@ -153,7 +154,9 @@ delay at 30 seconds between cycles, plus cycle execution time). The source
 combines simulation mode with the adapter's non-secret credential scope; a
 source change clears the trend. It appears after the second comparable cycle,
 resets on restart, and does not read persisted portfolio snapshots.
-`/api/status/stream` sends current snapshots over SSE. The Dashboard's
+`/api/dashboard/updates` sends revision-only SSE invalidations that cause HTMX
+to fetch the current fragment. `/api/status/stream` remains available with its
+existing snapshot-JSON and activity-cycle-ID messages. The Dashboard's
 STREAM/STALE chip describes feed freshness and remains separate from the
 persistent Simulation / Dry Run / Live Trading mode plate.
 

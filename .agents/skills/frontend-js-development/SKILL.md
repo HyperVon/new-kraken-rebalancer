@@ -21,9 +21,10 @@ Dashboard and Settings; server-rendered HTML owns page content.
 
 ## SSE and lifecycle
 
-The HTMX SSE extension connects to the status stream and requests a Dashboard
-fragment after current-cycle snapshots arrive. Kotlin/JS does not open
-EventSource or parse SSE payloads.
+The HTMX SSE extension connects to the revision-only Dashboard updates stream
+and requests a Dashboard fragment when state changes. Kotlin/JS does not open
+EventSource or parse SSE payloads; the fragment carries the current snapshot
+and activity.
 
 Update snapshot age after fragment swaps and on its timer. STREAM/STALE reports
 feed freshness; the server-rendered mode plate reports simulation, dryRun, or

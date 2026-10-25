@@ -9,7 +9,7 @@ Dashboard updates, and live-order safety.
 | --- | --- | --- |
 | Cold Flow | Kraken API retries and sell-settlement polling | Runs when collected; each collection performs its own request or polling sequence. |
 | Hot SharedFlow | Configuration changes | Publishes saved settings to the running portfolio loop. |
-| Hot StateFlow + bounded memory | CurrentPortfolioState | Exposes the latest completed cycle and retains up to 2,880 same-source snapshots in process memory for the Dashboard hero chart (about 24 hours of configured delay at 30 seconds between cycles, plus cycle execution time); clears the window when simulation mode or credential scope changes. |
+| Hot StateFlow + bounded memory | CurrentPortfolioState | Exposes the latest completed cycle, a dashboard invalidation revision, and up to 2,880 same-source snapshots in process memory for the hero chart; clears the window when simulation mode or credential scope changes. |
 
 ## System map
 
@@ -53,7 +53,8 @@ flowchart TB
     OrderIntent --> ExecutionDB
     Manager -->|publish latest completed snapshot| Current
     Current -->|latest snapshot and recent in-memory window| Controller
-    Current -->|snapshot JSON| SSE
+    Current -->|dashboard revision| Controller
+    Controller -->|revision or legacy status SSE| SSE
     SSE --> Dashboard
     Controller --> Health
     Identity --> ExecutionDB
@@ -95,7 +96,7 @@ published for later cycles after the active execution session exits.
 ## Current-cycle Dashboard updates
 
 Path: PortfolioManagerImpl → CurrentPortfolioState → Dashboard fragment and
-/api/status/stream → browser
+/api/dashboard/updates → browser
 
 ```mermaid
 sequenceDiagram
@@ -112,14 +113,25 @@ sequenceDiagram
         Controller-->>Browser: current Dashboard fragment
     end
 
-    Browser->>Controller: GET /api/status/stream
-    loop each completed cycle
-        PM->>State: publish(snapshot)
-        State-->>Controller: StateFlow emits latest snapshot
-        Controller-->>Browser: SSE snapshot JSON
+    Browser->>Controller: GET /api/dashboard/updates
+    loop each published snapshot or activity
+        PM->>State: publish(snapshot, activity) or publishActivity(activity)
+        State->>State: update state then advance revision once
+        State-->>Controller: replaying StateFlow emits latest revision
+        Controller-->>Browser: SSE invalidation revision
         Browser->>Controller: request refreshed Dashboard fragment
     end
 ```
+
+The Dashboard stream carries only a revision used to invalidate the current
+fragment. It does not serialize snapshot data; the fragment remains the source
+of truth. Snapshot publication with activity advances the revision once, and an
+activity-only publication (such as a failed cycle without a snapshot) also
+advances it so the activity feed refreshes.
+
+`/api/status/stream` remains available with its existing snapshot-JSON and
+activity-cycle-ID messages for compatibility. The Dashboard shell uses the
+revision-only `/api/dashboard/updates` endpoint.
 
 CurrentPortfolioState exposes the latest completed cycle through a StateFlow
 and retains up to 2,880 recent snapshots from the same portfolio source in a
@@ -138,7 +150,8 @@ state, cycle timestamps and error, latest snapshot, active mode, and unresolved
 live-order intent status. Readiness is unavailable until the loop runs,
 configuration and diagnostics are available, a cycle snapshot exists, the
 latest cycle has no operational error, and no unresolved live-order intent
-remains. SSE carries current-cycle snapshots only.
+remains. The dashboard invalidation SSE carries revisions; the legacy status
+stream retains current-cycle snapshot JSON and activity-cycle IDs.
 
 ## Live-order intent and readiness
 

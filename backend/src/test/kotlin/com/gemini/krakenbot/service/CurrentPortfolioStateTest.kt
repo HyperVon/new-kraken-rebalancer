@@ -21,6 +21,39 @@ class CurrentPortfolioStateTest : StringSpec() {
             view.activitySourceId shouldBe ""
         }
 
+        "dashboard revision advances once per published state and exposes the latest value" {
+            val state = CurrentPortfolioState()
+            val timestamp = Instant.parse("2026-10-11T12:00:00Z")
+            state.dashboardRevision.value shouldBe 0L
+
+            state.publish(
+                TestFixtures.emptySnapshot(timestamp, BigDecimal("100")),
+                sourceScope = "live:credential-generation-a",
+                activity =
+                CurrentCycleActivity(
+                    cycleId = "completed-cycle",
+                    occurredAt = timestamp,
+                    mode = CurrentCycleActivityMode.LIVE,
+                    outcome = CurrentCycleOutcome.NO_TRADE,
+                    actions = emptyList(),
+                ),
+            )
+            state.dashboardRevision.value shouldBe 1L
+
+            state.publishActivity(
+                CurrentCycleActivity(
+                    cycleId = "failed-cycle",
+                    occurredAt = timestamp.plusSeconds(1),
+                    mode = CurrentCycleActivityMode.LIVE,
+                    outcome = CurrentCycleOutcome.PROBLEM,
+                    actions = listOf("ERROR: price lookup failed"),
+                ),
+                sourceScope = "live:credential-generation-a",
+            )
+
+            state.dashboardRevision.value shouldBe 2L
+        }
+
         "dashboard view retains only the latest 2,880 completed snapshots in publish order" {
             val state = CurrentPortfolioState()
             val start = Instant.parse("2026-10-11T12:00:00Z")

@@ -90,5 +90,40 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 }
             }
         }
+
+        "dashboard invalidation stream replays current revision and emits activity-only changes" {
+            val initial = TestFixtures.emptySnapshot(Instant.parse("2026-10-10T12:00:00Z"), BigDecimal("10000.00"))
+            currentPortfolioState.publish(initial, "test-source")
+
+            testApplication {
+                val client = createClient { install(ClientSSE) }
+                application { configureTestEnv() }
+                val firstEventSeen = CompletableDeferred<Unit>()
+                val received = mutableListOf<String>()
+                val subscriber = async {
+                    client.sse("/api/dashboard/updates") {
+                        incoming.take(2).onEach { event ->
+                            received.add(event.data.orEmpty())
+                            if (received.size == 1) firstEventSeen.complete(Unit)
+                        }.toList()
+                    }
+                }
+
+                firstEventSeen.await()
+                currentPortfolioState.publishActivity(
+                    CurrentCycleActivity(
+                        cycleId = "failed-without-snapshot",
+                        occurredAt = Instant.parse("2026-10-10T12:01:00Z"),
+                        mode = CurrentCycleActivityMode.LIVE,
+                        outcome = CurrentCycleOutcome.PROBLEM,
+                        actions = listOf("ERROR: price lookup failed"),
+                    ),
+                    "test-source",
+                )
+                subscriber.await()
+
+                received shouldContainExactly listOf("1", "2")
+            }
+        }
     }
 }

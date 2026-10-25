@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.11] - 2026-10-24
+
+### Changed
+
+- **Dashboard refresh stream**: use replaying revision-only SSE invalidations to
+  refresh the server-rendered Dashboard, while keeping `/api/status/stream`'s
+  existing snapshot and activity payloads intact.
+- **Application lifecycle**: start trading only after the HTTP server is ready;
+  shut the server down before draining the worker and releasing its dependencies.
+
 ## [6.20.10] - 2026-10-24
 
 ### Changed

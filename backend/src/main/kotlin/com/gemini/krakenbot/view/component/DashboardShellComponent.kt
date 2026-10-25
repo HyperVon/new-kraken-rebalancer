@@ -48,7 +48,7 @@ class DashboardShellComponent {
                 }
                 div {
                     attributes[HtmxAttrs.HX_EXT] = HtmxValues.EXT_SSE
-                    attributes[HtmxAttrs.SSE_CONNECT] = Routes.API_STATUS_STREAM
+                    attributes[HtmxAttrs.SSE_CONNECT] = Routes.API_DASHBOARD_UPDATES
 
                     div {
                         attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_DASHBOARD
