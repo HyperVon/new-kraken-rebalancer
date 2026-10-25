@@ -94,15 +94,15 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 
 | Layer           | Technology                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Language**    | Kotlin 2.4.20 (Kotlin Multiplatform: JVM + JS)                                                               |
-| **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.3                                                   |
+| **Language**    | Kotlin 2.4.21 (Kotlin Multiplatform: JVM + JS)                                                               |
+| **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.4                                                   |
 | **Database**    | SQLite (JDBC execution journal for live order safety)                                                        |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Kotlin/JS interactions for all pages |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
-| **Testing**     | Kotest 6.2.5 + MockK 1.14.11; backend JaCoCo 95% lines/85% branches (temp), engine 95/90; Karma 90/80/75     |
-| **Build**       | Gradle 9.8.0 (Kotlin DSL), Spotless 8.10.3 + ktlint 1.8.0                                                    |
+| **Testing**     | Kotest 6.2.6 + MockK 1.14.11; backend JaCoCo 95% lines/85% branches (temp), engine 95/90; Karma 90/80/75     |
+| **Build**       | Gradle 9.8.2 (Kotlin DSL), Spotless 8.10.4 + ktlint 1.8.0                                                    |
 | **Engine**      | Pure Kotlin JVM domain calculation library with independent JaCoCo 95/90 coverage gates                      |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
@@ -219,13 +219,13 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 | **Languages**          | Kotlin 2.4 (current), Kotlin 2.x, Java 25, Go 1.26, TypeScript (all phases documented in CHANGELOG)                                   |
 | **Backend Frameworks** | Ktor 3.5.2 (current), Spring Boot 4, Ktor 2.3, NestJS, Express, Go `net/http`                                                         |
 | **DI / IoC**           | Koin 4.2.2 (current), Spring IoC (`@Autowired`), Koin 3.5, NestJS modules                                                             |
-| **Build Systems**      | Gradle 9.8.0 Kotlin DSL (current), Maven, npm / yarn, Go modules                                                                      |
+| **Build Systems**      | Gradle 9.8.2 Kotlin DSL (current), Maven, npm / yarn, Go modules                                                                      |
 | **Frontend**           | Kotlin/JS + kotlinx.html + HTMX (current), React, Angular (explored), Tailwind CSS v4, Chart.js                                       |
 | **HTTP Clients**       | Ktor CIO Client (current), OkHttp, Node.js native `fetch`, Go `net/http`                                                              |
 | **Concurrency**        | Kotlin Coroutines (current), Java `ScheduledExecutorService`, Go goroutines, Node.js event loop                                       |
 | **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
 | **Coverage**           | Backend JaCoCo 95% line/method/instruction + 85% branch temporarily; engine 95%/90%; Karma/Istanbul 90/80/90/75 (current)             |
-| **Serialization**      | Jackson 2.22.3, Go `encoding/json`, Zod schema validation                                                                             |
+| **Serialization**      | Jackson 2.22.4, Go `encoding/json`, Zod schema validation                                                                             |
 | **Real-Time**          | Ktor SSE, Kotlin `SharedFlow` (config) + `StateFlow` (snapshot/revision), HTMX SSE stream                                             |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
 | **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                             |
