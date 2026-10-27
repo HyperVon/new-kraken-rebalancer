@@ -309,36 +309,20 @@ non-readiness.
 
 ## Known dependency advisories
 
-### GHSA-vfj7-8cjw-p6xm — `braces` stack-exhaustion DoS (npm, high)
+### GHSA-vfj7-8cjw-p6xm — `braces` stack-exhaustion DoS (withdrawn)
 
-**Status: open, no patched release available upstream.** Tracked as
-[Dependabot alert #153](https://github.com/HyperVon/new-kraken-rebalancer/security/dependabot/153)
-against `kotlin-js-store/yarn.lock`.
+**Status: withdrawn by GitHub on 2026-10-23 as not practically exploitable.**
+Reviewed on 2026-10-26 against the
+[official GitHub advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+The advisory retains its original description and version range for reference,
+but the withdrawn status supersedes the earlier high-severity assessment.
 
-Evidence gathered when this was last reviewed:
+`kotlin-js-store/yarn.lock` still resolves `braces` 3.0.3 as build- and
+test-time tooling for the Kotlin/JS toolchain. The npm registry listed 3.0.3 as
+the latest release on the review date. It is not compiled into
+`/static/rebalancer.js` or served by the dashboard. The prior review found its
+brace-pattern inputs limited to build and test configuration, not network or
+user input; the withdrawn advisory does not call for a dependency override.
 
-- The advisory range is `<= 3.0.3` with `first_patched_version: null`. The
-  latest published `braces` release **is** `3.0.3`, so every published version
-  is in range and no upgrade can clear the alert.
-- Upstream `micromatch/braces` has no tag after `3.0.3`. Commits since that tag
-  cover unpaired-quote handling, a Node.js engine floor, and CI — none address
-  the nested-pattern stack exhaustion.
-- `braces` is transitive through `micromatch@4.0.8` (which still requires
-  `braces@^3.0.3`), `chokidar@3.6.0`, and the Karma test runner. There is no
-  combination of current releases that removes it.
-
-**Exposure in this project.** `braces` is build- and test-time tooling resolved
-into `kotlin-js-store/yarn.lock` for the Kotlin/JS toolchain (webpack and Karma).
-It is not compiled into `/static/rebalancer.js`, which is built from Kotlin/JS
-output, and it is not served by the dashboard. The vulnerable code path is
-brace-pattern parsing, and the patterns it sees here come from build and test
-configuration (watch globs, Karma file lists), not from network or user input.
-
-**Why this is accepted rather than fixed.** Fixing requires an upstream release;
-until one exists the options are to pin an unpublished Git SHA that also does not
-contain a fix, or to accept the finding. This project accepts it and records the
-fact here rather than closing the alert silently.
-
-**Revisit when** `braces` publishes a release past `3.0.3`, or when `micromatch`
-drops the dependency. At that point bump the transitive version and dismiss the
-alert as resolved.
+Revisit if GitHub reinstates the advisory or publishes new evidence that changes
+its status.

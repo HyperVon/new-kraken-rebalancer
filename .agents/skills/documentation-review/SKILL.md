@@ -57,7 +57,7 @@ Copy this checklist and track progress:
 
 ```text
 - [ ] Step 0: Inventory code truth
-- [ ] Step 0.5: Decide parallel tracks and obtain route/serial approval
+- [ ] Step 0.5: Choose bounded parallel tracks or parent-owned serial work
 - [ ] Step 1: Audit each doc (missing / wrong / stale)
 - [ ] Step 2: Produce findings report
 - [ ] Step 3: Apply doc fixes
@@ -96,10 +96,11 @@ Use `rg`, package listings, and targeted file reads. Prefer evidence over memory
 
 ### Parallel audit handoff
 
-The Step 0 code-truth inventory and model selection are different concerns. After
-the parent has captured a bounded source/build fact sheet, a broad audit with at
-least two disjoint evidence tracks must reach an explicit parallel-or-serial
-decision before Step 1. Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md):
+After the parent has captured a bounded source/build fact sheet, decide whether
+the audit has independent evidence tracks or should stay parent-owned. Follow
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) and
+[`OPERATING.md`](../../OPERATING.md) for host-native delegation; do not select or
+request a provider/model route:
 
 | Track | Scope |
 | :--- | :--- |
@@ -108,48 +109,30 @@ decision before Step 1. Use [parallel-multi-agent](../parallel-multi-agent/SKILL
 | Agent guidance | `.agents/`, `.cursor/rules/`, harness entrypoints, skill links |
 | Build / configuration | `build.gradle.kts`, CI, templates, scripts, dependency/tooling claims |
 
-Before launching, select a host-supported route and effort when exposed for each
-track. Kilo sessions inherit `kilo/openai/gpt-6-luna` from `.kilo/kilo.json`;
-select a stronger host route for high-risk or disputed documentation claims.
-Kilo chooses its underlying model server-side, so do not claim a specific
-underlying model or recreate its catalog and fallback logic in repository
-scripts. If a host Task accepts only a role and cannot expose a usable route,
-keep the audit parent-owned; never use an unverified role-only worker.
-Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
-not select or probe models.
-The host prints the track matrix, route, effort, and quota evidence before
-launching. The user's request for this read-only audit authorizes the
-bounded discovery fan-out; use `question` only when a hard availability or scope
-decision remains unresolved.
-Size each track to the auditor's iteration cap and reserve the final step for
-its report. Split a multi-document track before launch when its evidence reads
-and checks cannot fit while preserving that final report step; a running worker
-without a final report does not count as completed parallel coverage.
+Use the host's native parallel task surface for bounded, read-only tracks when
+the work is independent; delegated agents inherit the parent session's model.
+Do not pin or select a provider/model for a track, and do not treat a role label
+as a model choice. Size each track to the auditor's iteration cap and reserve
+its final step for a concise report. Split a multi-document track when its
+evidence reads and checks cannot fit while preserving that final report step; a
+running worker without a report is not completed coverage.
+
 Workers report evidence and paths only; the parent deduplicates findings,
-applies edits, runs Mermaid/Markdown/build checks, and owns the final report.
+applies edits, runs Mermaid/Markdown/build checks, and owns the final report. If
+a native launch fails transiently, retry that bounded track. When no native
+worker can run it, the parent may cover the track serially and record that
+substitution; ask the user only when a hard availability or scope decision
+remains unresolved. Small or coupled scopes may stay parent-owned.
 
-If native route selection remains unavailable, that is a delegation limitation,
-not an incomplete code-truth inventory. When a broad audit was requested, use
-`question` to ask whether to continue parent-owned serially or stop while route
-support is configured; do not silently pre-authorize that fallback. Never
-substitute an unverified role or `general` for a model. A small or coupled scope
-may proceed without this handoff.
+Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
+not select or probe models. Complete the track matrix before any parent-wide
+Context Mode or regex/search inventory; parent scans are follow-up evidence,
+not a substitute for delegated reports when independent work was launched.
 
-For Kilo broad audits, launch the bounded read-only audit tracks through the
-host's native parallel task surface; subagents inherit the parent session's model.
-
-The command prints the track matrix before launching; the read-only
-workflow is authorized to launch its evidence
-tracks. The host owns only read-only evidence tracks; the parent remains
-responsible for findings, edits, and gates.
-Do this handoff before a parent-wide Context Mode or regex/search inventory;
-parent-owned scans are follow-up evidence, not a substitute for the routed
-track reports.
-
-For a second-pass adversarial review of this audit, launch a distinct-route
-review track with the parent findings in the task context. Launch all three
-tracks concurrently in the background-capable host, then inspect the route
-report before accepting any claim of independent-model confirmation.
+For a second-pass adversarial review, use the host's native reviewer surface and
+pass the parent findings as context. Do not assume or claim a distinct model
+route unless the host explicitly reports one; inspect available route evidence
+before describing the review as independent-model confirmation.
 
 ## Evidence and claims
 

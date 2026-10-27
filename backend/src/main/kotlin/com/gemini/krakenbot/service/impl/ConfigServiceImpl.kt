@@ -250,10 +250,6 @@ class ConfigServiceImpl internal constructor(
      * only those outer quotes yields the safe in-place content.
      */
     private fun escapeJsonStringValue(value: String): String {
-        // Substitute through Jackson rather than a hand-maintained table so every JSON string
-        // control character (quote, backslash, newline, carriage return, tab, backspace, U+0000..001F)
-        // is escaped correctly. Jackson emits a fully escaped JSON string literal including the
-        // surrounding double quotes; strip only those outer quotes to leave the in-place content.
         val escaped = objectMapper.writeValueAsString(value)
         return escaped.substring(1, escaped.length - 1)
     }

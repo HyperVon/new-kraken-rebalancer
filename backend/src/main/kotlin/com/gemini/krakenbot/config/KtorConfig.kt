@@ -3,6 +3,7 @@ package com.gemini.krakenbot.config
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.gemini.krakenbot.util.isAllowAllOriginsEnabled
 import com.gemini.krakenbot.util.isLocalOrPrivateOrigin
+import com.gemini.krakenbot.util.parseAllowedOriginsFromEnv
 import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -32,8 +33,10 @@ fun Application.configureSerialization() {
     }
 }
 
-fun Application.configureCORS() {
-    if (isAllowAllOriginsEnabled()) {
+fun Application.configureCORS() = configureCORS(parseAllowedOriginsFromEnv(), isAllowAllOriginsEnabled())
+
+internal fun Application.configureCORS(allowedOrigins: Set<String>, allowAll: Boolean) {
+    if (allowAll) {
         log.warn(
             "REBALANCER_ALLOW_ALL_ORIGINS=true disables ALL dashboard origin checks. " +
                 "Any website you visit can call this dashboard's API from your browser. " +
@@ -46,7 +49,7 @@ fun Application.configureCORS() {
         // `REBALANCER_ALLOWED_ORIGINS` / `REBALANCER_ALLOW_ALL_ORIGINS` extend the private-network
         // predicate without widening `*.local` — see `isLocalOrPrivateOrigin`.
         allowOrigins { origin ->
-            isLocalOrPrivateOrigin(origin)
+            isLocalOrPrivateOrigin(origin, allowedOrigins, allowAll)
         }
         allowMethod(HttpMethod.Options)
         allowMethod(HttpMethod.Put)

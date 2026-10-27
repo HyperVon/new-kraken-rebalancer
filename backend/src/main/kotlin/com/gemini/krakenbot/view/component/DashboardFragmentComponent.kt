@@ -88,8 +88,17 @@ class DashboardFragmentComponent(
     }
 
     context(div: DIV)
-    fun renderWaiting(settings: Settings, recentActivities: List<CurrentCycleActivity>, activitySourceId: String) {
+    fun renderWaiting(
+        settings: Settings,
+        unresolvedIntents: List<OrderIntent>,
+        csrfToken: String?,
+        recentActivities: List<CurrentCycleActivity>,
+        activitySourceId: String,
+    ) {
         div.modePlate(settings, outOfBand = true)
+        if (unresolvedIntents.isNotEmpty()) {
+            renderUnresolvedIntentsBanner(unresolvedIntents, csrfToken)
+        }
         div.div(CssClass.Loading.SpinnerContainer) {
             div(CssClass.Loading.Spinner) {}
             h2(CssClass.Dashboard.WaitingTitle.value) { +ViewText.WAITING_FIRST_CYCLE }

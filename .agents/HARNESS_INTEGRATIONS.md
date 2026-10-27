@@ -9,13 +9,19 @@ Cloud VM deltas only. Canonical setup is the README Getting Started section;
 the dry-run-and-simulation skill owns mode flags.
 
 - Temurin 25 is the default java; no JAVA_HOME is required for ./gradlew.
-- For simulation, copy rebalancer-config-template.json to
-  rebalancer-config.json, set simulation=true, and run ./gradlew run in the
-  background. Poll /api/health until 200; first boot may block on seeding.
-  Prefer an isolated RUN_DIR plus fatJar for UI QA and screenshots.
+- For isolated UI QA, build `./gradlew :backend:fatJar`, then run the JAR from a
+  private disposable `RUN_DIR`. Copy the template into that directory only;
+  keep its placeholder credentials, set both `simulation=true` and `dryRun=true`,
+  and set `KRAKEN_DATA_DIR` to disposable data. Do not overwrite the repository's
+  `rebalancer-config.json` or use `./gradlew run` for this isolated recipe; its
+  configured working directory is the repository root. Start the process in the
+  background, poll local `/api/health`, track its PID, and stop only that process
+  before removing only the generated `RUN_DIR`. Follow `.kilo/run-script` for
+  the existing private-config and cleanup pattern.
 - ./gradlew build covers Gradle gates; also run markdownlint when editing docs.
 - Settings saves restart the rebalance loop; manual config edits require a
-  restart. Kotlin, SSR, and frontend changes require restarting ./gradlew run.
+  restart. Kotlin, SSR, and frontend changes require restarting the application;
+  use the isolated recipe above for UI QA.
 - Parse every numeric trading field and allocation row strictly; reject
   missing, non-finite, malformed, or mismatched values rather than defaulting
   or truncating.

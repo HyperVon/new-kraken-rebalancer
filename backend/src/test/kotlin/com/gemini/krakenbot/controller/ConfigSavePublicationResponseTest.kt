@@ -57,8 +57,10 @@ class ConfigSavePublicationResponseTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HtmxHeaders.HX_REDIRECT] shouldBe null
                 val json = objectMapper.readTree(response.bodyAsText())
-                json.fieldNames().asSequence().toSet() shouldBe setOf("configPublicationPending", "savedAt")
+                json.fieldNames().asSequence().toSet() shouldBe
+                    setOf("configPublicationPending", "activeMode", "savedAt")
                 json["configPublicationPending"].asBoolean() shouldBe true
+                json["activeMode"].asText() shouldBe "DRY_RUN"
                 json["savedAt"].asText().shouldNotBeBlank()
                 Instant.parse(json["savedAt"].asText())
             }
@@ -74,14 +76,20 @@ class ConfigSavePublicationResponseTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.OK
                 val json = objectMapper.readTree(response.bodyAsText())
                 json["configPublicationPending"].asBoolean() shouldBe false
+                json["activeMode"].asText() shouldBe "SIMULATION"
                 Instant.parse(json["savedAt"].asText())
             }
         }
     }
 
     private fun everyStub(publicationPending: Boolean) {
-        every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
-        coEvery { configService.updateConfig(any()) } returns Unit
+        var activeConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+            settings = TestFixtures.DEFAULT_TEST_CONFIG.settings.copy(simulation = false, dryRun = true),
+        )
+        every { configService.getConfig() } answers { activeConfig }
+        coEvery { configService.updateConfig(any()) } coAnswers {
+            if (!publicationPending) activeConfig = firstArg()
+        }
         coEvery { configService.isConfigPublicationPending() } returns publicationPending
     }
 }

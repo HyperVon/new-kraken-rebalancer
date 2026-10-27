@@ -105,9 +105,10 @@ volume is submitted.
 4. **Settle cash.** In a non-dry-run cycle with a successful sell, confirm the
    available USD before buying. Matching Kraken fills are preferred when
    transaction IDs are available; observed spendable balance caps confirmed
-   proceeds. A bounded USD balance poll is the fallback when fill evidence is
-   missing or materially short. If no positive spendable USD is confirmed, the
-   buy phase stops.
+   proceeds. If the spendable-balance peek fails, confirmed proceeds are capped
+   to projected post-sell cash instead. A bounded USD balance poll is the
+   fallback when fill evidence is missing or materially short. If no positive
+   spendable USD is confirmed, the buy phase stops.
 5. **Buy.** Limit the entire buy batch to 99% of post-sell cash, rounded down
    to cents. Each successful buy reduces the remaining cycle budget. Apply the
    minimum-order and volume checks again after budget adjustment.

@@ -116,7 +116,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Typed planning events | `domain/RebalancePlan` (`:engine`) + presentation action-log adapter |
 | Shared math | `PortfolioCalculations` (`:engine`) |
 | Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) + `OrderSettleHelper` + `RebalanceSessionContext` |
-| Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
+| Live-order recovery | `OrderIntentService` → `SqliteExecutionOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **20**, decay **0.5**) + `PublicRateLimiter` |
 | Dashboard snapshot state | `CurrentPortfolioState` (`StateFlow` of the latest cycle plus up to 2,880 recent in-memory snapshots for the hero trend; the window clears when simulation mode or credential scope changes) |

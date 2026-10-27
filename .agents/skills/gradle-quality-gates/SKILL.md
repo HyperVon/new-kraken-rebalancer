@@ -32,8 +32,9 @@ description: >-
 
 - `org.gradle.parallel=true` and `org.gradle.caching=true`; configuration cache
   is also enabled.
-- JVM tests use up to two forks by default. Override with `-PtestForks=1` and
-  `-PtestMaxHeap=1g` on constrained hosts.
+- JVM tests default to one fork per three available processors, with a minimum
+  of one. Override with `-PtestForks=<n>` or use `-PtestMaxHeap=1g` on
+  constrained hosts.
 - Routine release build: `./gradlew build :backend:fatJar` (no `clean`). Use `clean` only
   when diagnosing stale outputs; it discards Kotlin/JS, Webpack, compile, and
   test caches.

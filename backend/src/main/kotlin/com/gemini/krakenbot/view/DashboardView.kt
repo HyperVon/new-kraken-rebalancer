@@ -98,9 +98,11 @@ class DashboardView(
     context(div: DIV)
     fun renderDashboardWaitingFragment(
         settings: Settings,
+        unresolvedIntents: List<OrderIntent>,
+        csrfToken: String?,
         recentActivities: List<CurrentCycleActivity>,
         activitySourceId: String,
     ) {
-        fragmentComponent.renderWaiting(settings, recentActivities, activitySourceId)
+        fragmentComponent.renderWaiting(settings, unresolvedIntents, csrfToken, recentActivities, activitySourceId)
     }
 }

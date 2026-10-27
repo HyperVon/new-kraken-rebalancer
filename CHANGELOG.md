@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.15] - 2026-10-26
+
+### Fixed
+
+- **Settings mode plate**: show the server-published trading mode after immediate saves and refresh it after deferred
+  publication without replacing unsaved edits. Cancel superseded refreshes before they can overwrite the latest save.
+- **Dashboard recovery**: render unresolved live-order recovery before the first portfolio snapshot.
+- **Allocation preview errors**: retain submitted settings, allocation rows, scores, and preview controls.
+
+### Changed
+
+- Enforce the existing Markdown lint command in CI and document the withdrawn `braces` advisory status.
+
 ## [6.20.14] - 2026-10-25
 
 ### Fixed

@@ -42,16 +42,25 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      # CodeQL's Kotlin extractor currently supports versions below 2.4.20.
-      # Use the latest supported compiler only for this temporary analysis build.
+      # This SHA-pinned action bundles CodeQL 2.26.3, whose Java/Kotlin pack
+      # supports Kotlin through 2.4.10. Keep extraction on that supported compiler
+      # and fail closed when the project pin changes so the override is reviewed.
+      # https://github.com/github/codeql/blob/codeql-cli/v2.26.3/java/ql/lib/CHANGELOG.md
       - name: Use CodeQL-supported Kotlin compiler
         if: matrix.language == 'java-kotlin'
         run: |
-          if ! grep -qE '^kotlin = "2\.4\.20(-RC[0-9]*)?"$' gradle/libs.versions.toml; then
-            echo "kotlin pin unrecognized; leaving version unchanged for CodeQL analysis" >&2
-            exit 0
-          fi
-          sed -i -E 's/^kotlin = "2\.4\.20(-RC[0-9]*)?"$/kotlin = "2.4.10"/' gradle/libs.versions.toml
+          kotlin_pin=$(sed -nE 's/^kotlin = "([^"]+)"$/\1/p' gradle/libs.versions.toml)
+          case "$kotlin_pin" in
+            2.4.21)
+              sed -i 's/^kotlin = "2\.4\.21"$/kotlin = "2.4.10"/' gradle/libs.versions.toml
+              ;;
+            2.4.10)
+              ;;
+            *)
+              echo "Unsupported Kotlin pin for CodeQL extraction: '$kotlin_pin'; review the CodeQL support table." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Build Kotlin backend
         if: matrix.language == 'java-kotlin'

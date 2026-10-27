@@ -174,9 +174,10 @@ Path: OrderExecutorImpl → OrderSettleHelper → Kraken API
 After successful sells, the executor confirms available USD before issuing
 buys. When Kraken returns sell transaction IDs, settlement checks matching
 TradesHistory fills, caps confirmed proceeds to observed spendable USD, and
-falls back to bounded USD balance polling when fills are missing or materially
-short. This is order-specific fill confirmation. If safe cash cannot be
-confirmed, buys are stopped for that cycle.
+uses projected post-sell cash as the cap if the spendable-balance peek fails.
+Settlement falls back to bounded USD balance polling when fill evidence is
+missing or materially short. This is order-specific fill confirmation. If safe
+cash cannot be confirmed, buys are stopped for that cycle.
 
 The exchange reads and polling use cold flows. A collection starts the work;
 normal coroutine cancellation stops it. The cycle-wide execution session keeps

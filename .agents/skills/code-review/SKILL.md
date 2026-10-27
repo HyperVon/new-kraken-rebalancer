@@ -161,7 +161,7 @@ not treat this skill’s checklist as a substitute.
 
 ### 7. Quality gates
 
-- JVM: 95% line/method/instruction, 90% branch.
+- Backend JVM: 95% line/method/instruction, 85% branch during recovery; engine JVM: 95% line/method/instruction, 90% branch.
 - JS: 90% statements/lines, 80% functions, 75% branches.
 - Spotless 120-char; `allWarningsAsErrors`.
 - CodeQL Java/Kotlin analysis runs on `main`; verify the workflow's Action/bundle
