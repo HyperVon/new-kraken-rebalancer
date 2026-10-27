@@ -41,7 +41,7 @@ internal fun isLocalOrPrivateOrigin(origin: String, allowedOrigins: Set<String>,
     return host.endsWith(".local", ignoreCase = true) && isValidLocalHostname(host)
 }
 
-private fun parseAllowedOriginsFromEnv(): Set<String> {
+internal fun parseAllowedOriginsFromEnv(): Set<String> {
     val raw = System.getenv("REBALANCER_ALLOWED_ORIGINS") ?: return emptySet()
     return raw.split(',').map { it.trim().removeSuffix("/") }.filter { it.isNotEmpty() }.toSet()
 }

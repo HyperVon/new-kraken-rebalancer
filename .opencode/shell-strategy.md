@@ -4,36 +4,39 @@
 
 **Context:** OpenCode's shell environment is strictly **non-interactive**. It lacks a TTY/PTY, meaning any command that waits for user input, confirmation, or launches a UI (editor/pager) will hang indefinitely and timeout.
 
-**Goal:** Achieve parity with Claude Code's shell capabilities through internalized knowledge of non-interactive flags and environment variables.
+**Goal:** Use non-interactive commands for authorized work while preserving the
+same scope checks, confirmation boundaries, and host-verification defaults as an
+interactive session.
 
 ## Cognitive & Behavioral Standards
 
-To match the high-agency, autonomous capabilities of advanced models (like Claude Sonnet), this strategy enforces strict cognitive patterns. These are not just shell tips; they are **behavioral requirements** for success in this environment.
+The shell has no TTY, so commands that wait for input or launch a UI cannot be
+used. Non-interactive execution does not grant permission to widen a command's
+scope, suppress a safety check, or confirm an unreviewed action.
 
-**Goal:** Eliminate "human-in-the-loop" dependency during task execution.
+**Goal:** Complete clear, authorized work unattended and ask the user when scope,
+authorization, or an irreversible choice is unresolved.
 
 **Key Behaviors:**
 
-1. **Process Continuity (Turn-Taking):**
-   - **Rule:** Never stop after a tool output to "wait for instructions" unless the task is complete.
-   - **Why:** The environment is non-interactive. You must drive the workflow.
-   - **Mechanism:** Commands expecting input MUST use timeouts or explicit "yes" pipes.
+1. **Process Continuity:**
+   - Continue after tool output when the next action is within the user's request.
+   - Stop and ask when a required decision or destructive authorization is missing.
+   - Use bounded waits for commands that may hang; do not auto-answer unknown prompts.
 
-2. **Explicit Action Framing (Positive Constraints):**
-   - **Rule:** Follow "GOOD" (positive) instructions, ignore "BAD" (negative) assumptions.
-   - **Why:** Models follow explicit directives ("Use -y") better than prohibitions ("Don't prompt").
-   - **Mechanism:** Always preemptively supply non-interactive flags.
+2. **Scoped Non-Interactive Flags:**
+   - Use a command-specific non-interactive option only for a reviewed, authorized operation.
+   - Never add `--force`, `-f`, `--yes`, or `-y` merely to suppress a confirmation.
 
-3. **Environment Rigor (Context Awareness):**
-   - **Rule:** Assume a headless CI environment where any prompt = failure.
-   - **Why:** There is no TTY. "Asking the user" via a shell prompt causes a hang.
-   - **Mechanism:** Strictly avoid editors, pagers, and interactive modes.
+3. **Environment Rigor:**
+   - Treat the shell as headless and use bounded commands with explicit inputs where appropriate.
+   - Preserve SSH host-key verification and fail closed when trusted host information is absent.
 
 ## 1. Core Mandates
 
 1. **Assume `CI=true`**: Act as if running in a headless CI/CD pipeline.
 2. **No Editors/Pagers**: `vim`, `nano`, `less`, `more`, `man` are BANNED.
-3. **Force & Yes**: Always preemptively supply "yes" or "force" flags.
+3. **Confirm scope before changes**: inspect paths and targets; do not bypass a destructive confirmation.
 4. **Use Tools**: Prefer `Read`/`Write`/`Edit` tools over shell manipulation (`sed`, `echo`, `cat`).
 5. **No Interactive Modes**: Never use `-i` or `-p` flags that require user input.
 
@@ -51,53 +54,44 @@ These environment variables help prevent interactive prompts:
 | `PAGER` | `cat` | Disable system pager |
 | `GCM_INTERACTIVE` | `never` | Git credential manager |
 | `HOMEBREW_NO_AUTO_UPDATE` | `1` | Homebrew updates |
-| `npm_config_yes` | `true` | NPM prompts |
 | `PIP_NO_INPUT` | `1` | Pip prompts |
-| `YARN_ENABLE_IMMUTABLE_INSTALLS` | `false` | Yarn lockfile |
 
 ## 3. Command Reference
 
 ### Package Managers
 
-| Tool | Interactive (BAD) | Non-Interactive (GOOD) |
-| ------ | ------------------- | ------------------------ |
-| **NPM** | `npm init` | `npm init -y` |
-| **NPM** | `npm install` | `npm install --yes` |
-| **Yarn** | `yarn install` | `yarn install --non-interactive` |
-| **PNPM** | `pnpm install` | `pnpm install --reporter=silent` |
-| **Bun** | `bun init` | `bun init -y` |
-| **APT** | `apt-get install pkg` | `apt-get install -y pkg` |
-| **APT** | `apt-get upgrade` | `apt-get upgrade -y` |
-| **PIP** | `pip install pkg` | `pip install --no-input pkg` |
-| **Homebrew** | `brew install pkg` | `HOMEBREW_NO_AUTO_UPDATE=1 brew install pkg` |
+| Operation | Non-interactive approach |
+| ---------- | ------------------------ |
+| **NPM in a locked repo** | `npm ci` |
+| **Yarn** | `yarn install --non-interactive` when supported by the installed Yarn version |
+| **Pip** | `pip install --no-input <package>` for an explicitly authorized install |
+| **APT** | Use `apt-get install -y <package>` only for a specifically authorized package install |
+| **Homebrew** | `HOMEBREW_NO_AUTO_UPDATE=1 brew install <package>` only for an authorized install |
+
+Avoid initialization or bulk-upgrade commands unless they are explicitly part of
+the task. Do not use a blanket yes setting to answer prompts.
 
 ### Git Operations
 
-| Action | Interactive (BAD) | Non-Interactive (GOOD) |
-| -------- | ------------------- | ------------------------ |
-| **Commit** | `git commit` | `git commit -m "msg"` |
-| **Merge** | `git merge branch` | `git merge --no-edit branch` |
-| **Pull** | `git pull` | `git pull --no-edit` |
-| **Rebase** | `git rebase -i` | `git rebase` (non-interactive) |
-| **Add** | `git add -p` | `git add .` or `git add <file>` |
-| **Stash** | `git stash pop` (conflicts) | `git stash pop` or handle manually |
-| **Log** | `git log` (pager) | `git log --no-pager` or `git log -n 10` |
-| **Diff** | `git diff` (pager) | `git diff --no-pager` or `git --no-pager diff` |
+| Action | Non-interactive approach |
+| ------ | ------------------------ |
+| **Commit** | `git commit -m "msg"` only when committing is authorized |
+| **Merge / pull** | Use `--no-edit` only when the operation is authorized and its scope is clear |
+| **Rebase** | `git rebase <branch>` only when authorized; do not use interactive rebase |
+| **Stage** | `git add <explicit-path>`; inspect the staged diff before committing |
+| **Log** | `git --no-pager log -n 10` |
+| **Diff** | `git --no-pager diff` |
 
 ### System & Files
 
-| Tool | Interactive (BAD) | Non-Interactive (GOOD) |
-| ------ | ------------------- | ------------------------ |
-| **RM** | `rm file` (prompts) | `rm -f file` |
-| **RM** | `rm -i file` | `rm -f file` |
-| **CP** | `cp -i a b` | `cp -f a b` |
-| **MV** | `mv -i a b` | `mv -f a b` |
-| **Unzip** | `unzip file.zip` | `unzip -o file.zip` |
-| **Tar** | `tar xf file.tar` | `tar xf file.tar` (usually safe) |
-| **SSH** | `ssh host` | `ssh -o BatchMode=yes -o StrictHostKeyChecking=no host` |
-| **SCP** | `scp file host:` | `scp -o BatchMode=yes file host:` |
-| **Curl** | `curl url` | `curl -fsSL url` |
-| **Wget** | `wget url` | `wget -q url` |
+| Tool | Safe non-interactive guidance |
+| ---- | ----------------------------- |
+| **RM / CP / MV** | Review exact paths; do not add force flags to bypass overwrite or deletion checks |
+| **Unzip** | Avoid overwrite options unless replacing those exact files is authorized |
+| **Tar** | Extract only into a reviewed destination |
+| **SSH / SCP** | Use `-o BatchMode=yes -o StrictHostKeyChecking=yes`; require a trusted `known_hosts` entry |
+| **Curl** | `curl -fsSL <url>` for an explicitly requested fetch |
+| **Wget** | `wget -q <url>` for an explicitly requested fetch |
 
 ### Docker
 
@@ -129,15 +123,9 @@ These commands **will hang indefinitely** - never use them:
 
 ## 5. Handling Prompts
 
-When a command doesn't have a non-interactive flag:
-
-### The "Yes" Pipe
-
-```bash
-yes | ./install_script.sh
-```
-
-### Heredoc Input
+When a command has no suitable non-interactive option, do not feed blind `yes`
+responses or credentials to it. Use a heredoc only when the exact inputs and
+effects are understood and authorized:
 
 ```bash
 ./configure.sh <<EOF
@@ -146,25 +134,21 @@ option2
 EOF
 ```
 
-### Echo Pipe
+If an unavoidable confirmation controls a destructive or privileged action, stop
+and ask rather than bypassing it.
+
+### Timeout
 
 ```bash
-echo "password" | sudo -S command
-```
-
-### Timeout Wrapper (last resort)
-
-```bash
-timeout 30 ./potentially_hanging_script.sh || echo "Timed out"
+timeout 30 ./potentially_hanging_script.sh
 ```
 
 ## 6. Best Practices
 
-1. **Always test commands** mentally for interactive prompts before running
-2. **Check man pages** (via web search) for `-y`, `--yes`, `--non-interactive`, `-f`, `--force` flags
-3. **Use `--help`** to discover non-interactive options: `cmd --help | grep -i "non-interactive\|force\|yes"`
-4. **Prefer OpenCode tools** over shell commands for file operations
-5. **Set timeout** for any command that might unexpectedly prompt
+1. Inspect command targets and side effects before execution.
+2. Use `--help` or official documentation to find supported non-interactive options; do not assume force/yes flags are safe.
+3. Prefer OpenCode tools over shell commands for file operations.
+4. Set a timeout for commands that might unexpectedly block; check and report the actual exit status.
 
 ---
 
@@ -180,19 +164,16 @@ Large Language Models (LLMs) often struggle with:
 
 ### Strategy 1: Explicit Action Framing (BAD vs GOOD)
 
-This plugin uses the **BAD vs GOOD** pattern to enforce positive constraints. Instead of saying "Don't use interactive flags", we provide a concrete "Good" alternative.
-
-**Why it works:**
-
-- "BAD: npm init" → Model identifies the failure pattern.
-- "GOOD: npm init -y" → Model receives a specific, executable instruction.
-- **Result:** Reduces hallucination of interactive commands by providing a verified substitute.
+Explicit examples can clarify intent, but examples for commands that change or
+delete state must include authorization and scope constraints. Non-interactive
+is not synonymous with safe.
 
 ### Strategy 2: Process Continuity
 
 In non-interactive environments, the agent must drive the process forward.
 
-**The Rule:** Never stop after a tool execution unless the task is complete.
+**The Rule:** Continue when the next step is clear and authorized. Ask before
+acting when the user's intent or the target scope remains ambiguous.
 
 **Pattern:**
 

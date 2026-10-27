@@ -165,5 +165,46 @@ class CORSConfigTest : StringSpec() {
                 response.headers[HttpHeaders.AccessControlAllowOrigin].shouldBeNull()
             }
         }
+
+        "explicit CORS allowlist matches one exact origin and rejects other public origins" {
+            testApplication {
+                application {
+                    configureCORS(setOf("https://trusted.example.com"), allowAll = false)
+                    routing {
+                        get("/test") { call.respondText("OK") }
+                    }
+                }
+
+                val allowed = client.get("/test") {
+                    header(HttpHeaders.Origin, "https://trusted.example.com")
+                }
+                allowed.status shouldBe HttpStatusCode.OK
+                allowed.headers[HttpHeaders.AccessControlAllowOrigin] shouldBe "https://trusted.example.com"
+
+                val unlisted = client.get("/test") {
+                    header(HttpHeaders.Origin, "https://trusted.example.com.evil.test")
+                }
+                unlisted.status shouldBe HttpStatusCode.Forbidden
+                unlisted.headers[HttpHeaders.AccessControlAllowOrigin].shouldBeNull()
+            }
+        }
+
+        "allow-all CORS override permits public origins at the plugin boundary" {
+            testApplication {
+                application {
+                    configureCORS(emptySet(), allowAll = true)
+                    routing {
+                        get("/test") { call.respondText("OK") }
+                    }
+                }
+
+                val response = client.get("/test") {
+                    header(HttpHeaders.Origin, "https://public.example.com")
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.AccessControlAllowOrigin] shouldBe "https://public.example.com"
+            }
+        }
     }
 }

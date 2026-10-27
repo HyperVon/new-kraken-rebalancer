@@ -95,17 +95,18 @@ PR verification patterns) — but **coding/architecture skills come first**.
 - [ ] Step 2: Content enrichment pass (PRIMARY)
 - [ ] Step 3: Meta pass (if meta/full)
 - [ ] Step 4: Filter, severity, draft text
-- [ ] Step 5: Report (+ canvas when ≥8 Apply-able findings); stop for picks
+- [ ] Step 5: Report findings and choices; stop for picks
 ```
 
 ### Optional parallel content pass
 
 When the scope spans many independent skills, fan out read-only content tracks
-through the host's native parallel task surface for
-coding/architecture, trading/persistence, UI/KMP, and workflow/meta. The parent
-deduplicates findings into the required report or Canvas. Workers must not edit
-skills or rules. If route selection is unavailable, review in the parent; do not
-substitute a generic role.
+through the host's native parallel task surface for coding/architecture,
+trading/persistence, UI/KMP, and workflow/meta. Delegated agents inherit the
+parent session's model; do not select or infer a route from a role label. The
+parent deduplicates findings and owns the report. Workers must not edit skills
+or rules. Retry transient launch failures, then cover a track in the parent when
+no native worker can run it.
 
 ### Step 2: Content enrichment (PRIMARY)
 
@@ -211,16 +212,17 @@ actionable P2 in `full` mode.
 1. …
 ```
 
-### Decisions canvas + backlog file
+### Optional decisions canvas and backlog file
 
-When ≥8 content findings (or user wants triage), open a canvas with
-**Apply / Keep / Defer / Skip** per finding. Prefer grouping by target skill.
+When ≥8 content findings (or the user wants triage), provide **Apply / Keep /
+Defer / Skip** choices per finding. Use a host-supported Canvas only when
+available and authorized; otherwise put the choices in chat. Prefer grouping by
+target skill.
 
-**Always** write paste-ready drafts to a durable file (not only chat), e.g.
-`.agents/skill-content-backlog.md` (or a dated section under it), and link each
-canvas card to that file via `openFile` (with line selection when possible).
-After the user applies findings, mark the backlog **APPLIED** / prune — do not
-leave drafts only in conversation history.
+Write paste-ready drafts to a durable file only when the user requests or
+authorizes that artifact. Otherwise include drafts in the report. When a
+backlog file is authorized, link Canvas cards to it where the host supports
+file links; after application, mark drafts **APPLIED** or prune them.
 
 ---
 

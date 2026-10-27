@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.HealthStatusKeys
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -14,6 +15,9 @@ import kotlin.js.js
 
 class SettingsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
+
+    private fun saveResponse(publicationPending: Boolean, activeMode: String, savedAt: String) =
+        """{"configPublicationPending":$publicationPending,"activeMode":"$activeMode","savedAt":"$savedAt"}"""
 
     init {
         "settings dirty state confirms navigation only while values differ from baseline" {
@@ -86,7 +90,7 @@ class SettingsTest : StringSpec() {
                 dispatchSettingsInput(input, "62")
                 val inFlightEdit = dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:40:00Z\"}",
+                    response = saveResponse(false, "LIVE", "2026-10-19T14:40:00Z"),
                     xhr = inFlightSaveXhr,
                 )
                 (inFlightEdit.shouldSwap as Boolean).shouldBeFalse()
@@ -99,7 +103,7 @@ class SettingsTest : StringSpec() {
                 val previewXhr = dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
                 val previewEdit = dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:41:00Z\"}",
+                    response = saveResponse(false, "LIVE", "2026-10-19T14:41:00Z"),
                     xhr = previewXhr,
                     contentType = "text/html; charset=UTF-8",
                 )
@@ -117,7 +121,7 @@ class SettingsTest : StringSpec() {
                 val deferredSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 val deferredSave = dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":true,\"savedAt\":\"2026-10-19T14:42:00Z\"}",
+                    response = saveResponse(true, "LIVE", "2026-10-19T14:42:00Z"),
                     xhr = deferredSaveXhr,
                 )
                 (deferredSave.shouldSwap as Boolean).shouldBeFalse()
@@ -145,14 +149,14 @@ class SettingsTest : StringSpec() {
 
                 dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:43:00Z\"}",
+                    response = saveResponse(false, "LIVE", "2026-10-19T14:43:00Z"),
                     xhr = firstSaveXhr,
                 )
 
                 status.textContent shouldBe "Unsaved changes"
                 dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:44:00Z\"}",
+                    response = saveResponse(false, "LIVE", "2026-10-19T14:44:00Z"),
                     xhr = secondSaveXhr,
                 )
 
@@ -165,7 +169,7 @@ class SettingsTest : StringSpec() {
                 val latestSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:46:00Z\"}",
+                    response = saveResponse(false, "LIVE", "2026-10-19T14:46:00Z"),
                     xhr = latestSaveXhr,
                 )
                 status.textContent shouldBe "Saved and active"
@@ -173,11 +177,110 @@ class SettingsTest : StringSpec() {
 
                 dispatchSettingsResponse(
                     status = 200,
-                    response = "{\"configPublicationPending\":false,\"savedAt\":\"2026-10-19T14:45:00Z\"}",
+                    response = saveResponse(false, "SIMULATION", "2026-10-19T14:45:00Z"),
                     xhr = olderSaveXhr,
                 )
                 status.textContent shouldBe "Saved and active"
                 status.getAttribute("datetime") shouldBe "2026-10-19T14:46:00Z"
+            } finally {
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "settings mode plate follows active mode and waits for deferred publication" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val simulation = form.querySelector("input[name=simulation]") as HTMLInputElement
+            val modeLabel = form.querySelector("#mode-plate-label") as HTMLElement
+            val modePlate = form.querySelector("#mode-plate") as HTMLElement
+            val originalHtmx = window.asDynamic().htmx
+            val originalSetTimeout = window.asDynamic().setTimeout
+            val requests = mutableListOf<dynamic>()
+            var scheduledRefresh: dynamic = null
+            val fakeHtmx = js("({})")
+            fakeHtmx.ajax = { method: String, path: String, options: dynamic ->
+                method shouldBe "GET"
+                path shouldBe "/fragments/dashboard"
+                (options.target as String) shouldBe "body"
+                (options.swap as String) shouldBe "none"
+                val promise =
+                    js(
+                        "({ then: function(callback) { this.onFulfilled = callback; return this; }, catch: function(callback) { this.onRejected = callback; return this; } })",
+                    )
+                requests.add(promise)
+                promise
+            }
+            window.asDynamic().htmx = fakeHtmx
+            window.asDynamic().setTimeout = { callback: dynamic, _: Int ->
+                scheduledRefresh = callback
+                1
+            }
+
+            try {
+                registerSettingsGlobals()
+                initSettings()
+                simulation.checked = true
+                val deferredXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = saveResponse(true, "SIMULATION", "2026-10-19T14:47:00Z"),
+                    xhr = deferredXhr,
+                )
+
+                modeLabel.textContent shouldBe "LIVE TRADING"
+                modePlate.getAttribute("class") shouldBe "mode-plate mode-live"
+                requests.size shouldBe 1
+
+                requests[0].onFulfilled(null)
+                val firstRefresh = scheduledRefresh
+                scheduledRefresh = null
+                firstRefresh()
+                requests.size shouldBe 2
+
+                updateModePlate(HealthStatusKeys.MODE_SIMULATION)
+                requests[1].onFulfilled(null)
+                modeLabel.textContent shouldBe "SIMULATION"
+                modePlate.getAttribute("class") shouldBe "mode-plate mode-simulation"
+                modePlate.getAttribute("title") shouldBe "Simulation mode — no real orders are placed"
+                (scheduledRefresh == null).shouldBeTrue()
+            } finally {
+                window.asDynamic().htmx = originalHtmx
+                window.asDynamic().setTimeout = originalSetTimeout
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "stale settings save response cannot replace the current mode plate" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val simulation = form.querySelector("input[name=simulation]") as HTMLInputElement
+            val dryRun = form.querySelector("input[name=dryRun]") as HTMLInputElement
+            val modeLabel = form.querySelector("#mode-plate-label") as HTMLElement
+
+            try {
+                registerSettingsGlobals()
+                initSettings()
+                simulation.checked = true
+                val older = dispatchSettingsBeforeRequest("/settings", form)
+                simulation.checked = false
+                dryRun.checked = true
+                val latest = dispatchSettingsBeforeRequest("/settings", form)
+
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = saveResponse(false, "DRY_RUN", "2026-10-19T14:48:00Z"),
+                    xhr = latest,
+                )
+                modeLabel.textContent shouldBe "DRY RUN"
+
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = saveResponse(false, "SIMULATION", "2026-10-19T14:49:00Z"),
+                    xhr = older,
+                )
+                modeLabel.textContent shouldBe "DRY RUN"
             } finally {
                 document.body!!.removeChild(form)
                 initSettings()
@@ -492,9 +595,14 @@ private fun allocationTotalFixture(first: String, second: String): AllocationTot
 private fun settingsStateForm(): HTMLFormElement {
     val form = document.createElement("form") as HTMLFormElement
     form.id = "settings-form"
-    form.setAttribute("data-settings-baseline", "16:loopDelaySeconds2:60")
+    form.setAttribute("data-settings-baseline", "16:loopDelaySeconds2:6010:simulation5:false6:dryRun5:false")
     form.innerHTML = """
         <input name="loopDelaySeconds" value="60">
+        <input type="checkbox" name="simulation">
+        <input type="checkbox" name="dryRun">
+        <span id="mode-plate" class="mode-plate mode-live" title="Live trading — real orders execute with real funds">
+            <span id="mode-plate-label">LIVE TRADING</span>
+        </span>
         <span id="total-allocated-display"></span>
         <button id="save-button"></button>
         <time id="settings-save-status" class="hidden"></time>

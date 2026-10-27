@@ -4,10 +4,10 @@ description: >-
   Third-party full-system architecture review — discovers the product from code
   with no loyalty to the current design, then brainstorms meaningful alternative
   architectures, stacks, module boundaries, and redesigns that improve quality,
-  security, readability, or maintainability. Ends with an interactive Cursor
-  Canvas so the user picks Keep / Evolve / Replace / Skip per finding before any
-  implementation. Use when the user asks for an architecture review, system
-  redesign brainstorm, greenfield rethink, tech-stack rethink, or “fresh eyes” /
+  security, readability, or maintainability. Ends with explicit Keep / Evolve /
+  Replace / Skip choices before any implementation; use a host-supported
+  interactive canvas only when available and authorized. Use when the user asks
+  for an architecture review, system redesign brainstorm, greenfield rethink, tech-stack rethink, or “fresh eyes” /
   outside-architect critique. Recommend only; do not implement.
 ---
 
@@ -20,14 +20,14 @@ full redesign and reimplementation — **but only when the recommendation is
 meaningful and impactful**.
 
 This skill is **recommend-only**. Do not edit application code, open PRs, or
-start a rewrite unless the user explicitly asks **after** choosing paths in the
-decisions canvas (or an equivalent written acceptance).
+start a rewrite unless the user explicitly asks **after** choosing paths in
+chat or an optional decisions canvas.
 
 ## How this differs from nearby skills
 
 | Skill | Role |
 | :--- | :--- |
-| **architecture-review** (this) | Fresh-eyes system design; alternatives up to greenfield; **decisions canvas** |
+| **architecture-review** (this) | Fresh-eyes system design; alternatives up to greenfield; **per-finding decisions** |
 | [product-opportunity-review](../product-opportunity-review/SKILL.md) | New user capabilities, unmet needs, and feature roadmap; **product strategy** |
 | [code-review](../code-review/SKILL.md) | Diff/PR audit **against current project conventions** |
 | [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Multi-pass cleanup **inside** the existing architecture |
@@ -80,7 +80,8 @@ recommendation:
   including “keep current,” evidence, reversibility, and validation signal.
 
 This discipline improves the review report; it does not authorize implementation.
-The decisions Canvas and recommend-only boundary in Step 6 remain mandatory.
+The per-finding choices and recommend-only boundary in Step 6 remain mandatory;
+the Canvas is optional and conditional on host support and write authorization.
 
 ---
 
@@ -93,7 +94,7 @@ The decisions Canvas and recommend-only boundary in Step 6 remain mandatory.
 - [ ] Step 3: Stress-test against review dimensions
 - [ ] Step 4: Brainstorm alternatives (including redesign / greenfield)
 - [ ] Step 5: Filter to meaningful recommendations only
-- [ ] Step 6: Deliver the report **and** a decisions Canvas; stop for picks
+- [ ] Step 6: Deliver the report and per-finding choices; stop for picks
 ```
 
 ### Step 0: Scope
@@ -110,9 +111,10 @@ After scope confirmation, fan out bounded, read-only discovery tracks through
 the host's native parallel task surface:
 backend/domain/trading/persistence; HTTP/SSR/frontend/flows; and
 product/security/operations. The parent owns the as-is architecture map,
-cross-track synthesis, alternatives, recommendations, and the mandatory
-decisions Canvas. Do not parallelize implementation or the final decision step;
-if route selection is unavailable, continue the discovery in the parent.
+cross-track synthesis, alternatives, recommendations, and final choices. Agents
+inherit the parent session's model; do not select a route based on a role label.
+Do not parallelize implementation or the final decision step. If a launch fails,
+retry it and cover the track in the parent when no native worker can run it.
 
 ### Step 1: Product & constraint discovery
 
@@ -317,18 +319,21 @@ Severity for included items:
 
 Prefer fewer, sharper findings over a long laundry list.
 
-### Step 6: Deliver report + decisions Canvas (mandatory)
+### Step 6: Deliver report + decisions
 
 1. **Report** — Present the architecture review in chat (and optionally a
    read-only summary canvas). Use the output template below.
-2. **Decisions Canvas (required)** — Always write an interactive Cursor Canvas
-   so the user can choose a path per finding **before** any implementation.
-   If present, read and follow `~/.cursor/skills-cursor/canvas/SKILL.md` when authoring.
+2. **Choices** — Present Keep / Evolve / Replace / Skip options for each finding
+   in chat. Create an interactive Canvas only when the host supports it and the
+   user has authorized writing that artifact. If present, read and follow
+   `~/.cursor/skills-cursor/canvas/SKILL.md` when authoring.
 3. **Stop** — Do **not** start coding, open PRs, or draft an implementation
-   plan until the user returns selections (via the canvas “Send decisions”
-   action, a paste of the summary, or an explicit written accept list).
+   plan until the user returns selections in chat or via the Canvas.
 
-#### Decisions Canvas requirements
+#### Optional Decisions Canvas requirements
+
+Apply these only when a Canvas is supported and writing it is authorized. Chat
+choices are the default fallback and do not require a separate artifact.
 
 Create:
 
@@ -402,7 +407,7 @@ domain + adapters”, “greenfield rewrite in X”) with recommendation and
 kill-criteria.
 
 ## Suggested decision order
-Ordered SHORT-IDs for the user to accept/reject in the decisions Canvas.
+Ordered SHORT-IDs for the user to accept/reject in the report or Canvas.
 ```
 
 ---
@@ -413,8 +418,8 @@ When the user returns selections (canvas handoff or chat):
 
 1. Treat **Keep** and **Defer / skip** as out of scope.
 2. Turn accepted **Evolve / Replace / Greenfield** items into an **implementation
-   plan** (PR sequence, file ownership, risks) — prefer another canvas for the
-   plan when it is multi-PR.
+   plan** (PR sequence, file ownership, risks). Use a host-supported Canvas for
+   the plan only when available and authorized.
 3. Only then implement if the user asks to proceed (or says “do them all”).
 
 ---
@@ -426,7 +431,7 @@ When the user returns selections (canvas handoff or chat):
 - SaaS multi-tenant / Kubernetes / microservices theater for a local tool
 - Listing 30 minor cleanups and calling it an architecture review
 - Implementing during the review pass
-- Delivering recommendations **without** the decisions Canvas
+- Delivering recommendations without clear per-finding choices
 - Treating UI visual polish as architecture (hand to ui-visual-review)
 - Ignoring LIVE trading and no-auth dashboard implications
 
@@ -439,5 +444,5 @@ When the user returns selections (canvas handoff or chat):
 - [ ] Each recommendation passes the impact/evidence/cost filter
 - [ ] Keep-as-is and non-issues sections present
 - [ ] Alternatives include “keep current” where relevant
-- [ ] Decisions Canvas written under managed `canvases/` with Select per SHORT-ID
-- [ ] Chat links the canvas and stops for user picks — no drive-by rewrite
+- [ ] Per-finding choices delivered in chat or an authorized host-supported Canvas
+- [ ] Stop for user picks — no drive-by rewrite

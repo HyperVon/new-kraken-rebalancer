@@ -196,9 +196,11 @@ class DashboardController(
         }
 
         val configPublicationPending = configService.isConfigPublicationPending()
+        val activeSettings = configService.getConfig().settings
         respondJson(
             mapOf(
                 "configPublicationPending" to configPublicationPending,
+                HealthStatusKeys.ACTIVE_MODE to activeMode(activeSettings),
                 "savedAt" to Instant.now().toString(),
             ),
         )
@@ -221,7 +223,10 @@ class DashboardController(
         val preview = try {
             computeAllocationPreview(params)
         } catch (e: IllegalArgumentException) {
-            respondAllocationsPreviewError(e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK)
+            respondAllocationsPreviewError(
+                message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
+                params = params,
+            )
             return
         }
 
@@ -364,7 +369,7 @@ class DashboardController(
      * container. Retargeting the response at the body is what puts the message where the operator
      * can see it, and mirrors the expired-CSRF path above.
      */
-    private suspend fun RoutingContext.respondAllocationsPreviewError(message: String) {
+    private suspend fun RoutingContext.respondAllocationsPreviewError(message: String, params: Parameters) {
         call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
         call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
         respondSettingsFormError(
@@ -373,6 +378,7 @@ class DashboardController(
             csrfToken = CsrfProtection.currentToken(call),
             paused = portfolioManager.isLoopPaused(),
             status = HttpStatusCode.UnprocessableEntity,
+            formValues = params.toSettingsFormValues(QualityAllocation.FALLBACK_EMPHASIS),
         )
     }
 
@@ -576,11 +582,15 @@ class DashboardController(
         val latest = dashboardState.latest
         val config = configService.getConfig()
         val allocations = config.allocations
+        val unresolvedIntents = orderIntentService.getUnresolvedIntents()
+        val csrfToken = unresolvedIntents.takeIf { it.isNotEmpty() }?.let { CsrfProtection.issueToken(call) }
 
         if (latest == null) {
             val noSnapshotHtml = createHTML(prettyPrint = false).div {
                 dashboardView.renderDashboardWaitingFragment(
                     settings = config.settings,
+                    unresolvedIntents = unresolvedIntents,
+                    csrfToken = csrfToken,
                     recentActivities = dashboardState.recentActivities,
                     activitySourceId = dashboardState.activitySourceId,
                 )
@@ -589,8 +599,6 @@ class DashboardController(
             return
         }
 
-        val unresolvedIntents = orderIntentService.getUnresolvedIntents()
-        val csrfToken = CsrfProtection.issueToken(call)
         val html =
             createHTML(prettyPrint = false).div {
                 dashboardView.renderDashboardFragment(
@@ -828,17 +836,19 @@ class DashboardController(
             HealthStatusKeys.READINESS to
                 if (ready) HealthStatusKeys.STATUS_READY else HealthStatusKeys.STATUS_NOT_READY,
             HealthStatusKeys.READINESS_REASON to readinessReason,
-            HealthStatusKeys.ACTIVE_MODE to when {
-                settings?.simulation == true -> HealthStatusKeys.MODE_SIMULATION
-                settings?.dryRun == true -> HealthStatusKeys.MODE_DRY_RUN
-                settings != null -> HealthStatusKeys.MODE_LIVE
-                else -> HealthStatusKeys.MODE_UNKNOWN
-            },
+            HealthStatusKeys.ACTIVE_MODE to activeMode(settings),
             HealthStatusKeys.LOOP_RUNNING to loopRunning,
             HealthStatusKeys.LAST_CYCLE_STARTED_AT to (cycleStatus?.lastCycleStartedAt?.toString() ?: "N/A"),
             HealthStatusKeys.LAST_CYCLE_COMPLETED_AT to (cycleStatus?.lastCycleCompletedAt?.toString() ?: "N/A"),
             HealthStatusKeys.LAST_CYCLE_ERROR to (cycleStatus?.lastCycleError ?: "N/A"),
             HealthStatusKeys.UNRESOLVED_ORDER_INTENTS to unresolvedOrderIntents,
         ) to ready
+    }
+
+    private fun activeMode(settings: Settings?): String = when {
+        settings?.simulation == true -> HealthStatusKeys.MODE_SIMULATION
+        settings?.dryRun == true -> HealthStatusKeys.MODE_DRY_RUN
+        settings != null -> HealthStatusKeys.MODE_LIVE
+        else -> HealthStatusKeys.MODE_UNKNOWN
     }
 }

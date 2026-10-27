@@ -17,10 +17,10 @@ import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -38,6 +38,26 @@ import io.mockk.every
 import io.mockk.slot
 import java.math.BigDecimal
 import java.time.Instant
+
+private const val INVALID_ALLOCATION_FIELDS_TEXT =
+    "Invalid allocation fields: symbols must be valid and unique, and symbols, targets, colors, " +
+        "and scores must have matching entries."
+private const val INVALID_ALLOCATION_TARGET_TEXT =
+    "Invalid settings field: every allocation target is required and must be a finite number."
+private const val INVALID_ALLOCATION_SCORE_TEXT =
+    "Invalid allocation fields: a quality score must be finite and between 0 and 10; 0 or blank clears it."
+private const val INVALID_DEVIATION_TRIGGER_TEXT =
+    "Invalid settings field: deviation trigger percent is required and must be a finite number."
+private const val INVALID_MINIMUM_ORDER_SIZE_TEXT =
+    "Invalid settings field: minimum order size USD is required and must be a finite number."
+private const val INVALID_ALLOCATION_EMPHASIS_TEXT =
+    "Invalid allocation fields: score emphasis must be between 1 and 8."
+private const val INVALID_ALLOCATION_COLOR_TEXT =
+    "Invalid allocation fields: supplied colors must use six-digit hex format."
+private const val INVALID_LOOP_DELAY_TEXT =
+    "Invalid settings field: loop delay is required and must be an integer."
+private const val CSRF_SESSION_EXPIRED_TEXT =
+    "This page's security token is invalid or expired. Your action was not applied. Please try again."
 
 class DashboardMutationRoutesTest : DashboardControllerTestBase() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -140,7 +160,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     csrf.cookie,
                 )
                 malformed.status shouldBe HttpStatusCode.UnprocessableEntity
-                malformed.bodyAsText() shouldContain ViewText.INVALID_LOOP_DELAY
+                malformed.bodyAsText() shouldContain INVALID_LOOP_DELAY_TEXT
                 malformed.bodyAsText() shouldContain "value=\"nope\""
 
                 coEvery { configService.updateConfig(any()) } throws InvalidConfigurationException("allocation total")
@@ -181,7 +201,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     csrf.cookie,
                 )
                 fallback.status shouldBe HttpStatusCode.UnprocessableEntity
-                fallback.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK
+                fallback.bodyAsText() shouldContain "Invalid configuration"
                 coVerify(exactly = 2) { configService.updateConfig(any()) }
             }
         }
@@ -209,45 +229,47 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                             FormFields.COLORS to emptyList(),
                             FormFields.SCORES to emptyList(),
                         )
-                        ) to ViewText.INVALID_ALLOCATION_FIELDS,
+                        ) to INVALID_ALLOCATION_FIELDS_TEXT,
                     (validValues + (FormFields.SYMBOLS to listOf("BTC", "ETH", "BTC!"))) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     (validValues + (FormFields.TARGETS to listOf("50", "30"))) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     (validValues + (FormFields.SYMBOLS to listOf("BTC"))) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     (validValues + (FormFields.COLORS to listOf("#ff0000", "#00ff00"))) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     (validValues + (FormFields.SCORES to listOf("9.5", "8.5"))) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     (validValues + (FormFields.TARGETS to listOf("-5", "30", "75"))) to
-                        ViewText.INVALID_ALLOCATION_TARGET,
+                        INVALID_ALLOCATION_TARGET_TEXT,
                     (validValues + (FormFields.TARGETS to listOf("1e10000", "0", "0"))) to
-                        ViewText.INVALID_ALLOCATION_TARGET,
+                        INVALID_ALLOCATION_TARGET_TEXT,
                     (validValues + (FormFields.COLORS to listOf("#ff0000", "bad-color", "#0000ff"))) to
-                        ViewText.INVALID_ALLOCATION_COLOR,
+                        INVALID_ALLOCATION_COLOR_TEXT,
                     (validValues + (FormFields.SCORES to listOf("15.0", "8.5", ""))) to
-                        ViewText.INVALID_ALLOCATION_SCORE,
+                        INVALID_ALLOCATION_SCORE_TEXT,
                     (validValues + (FormFields.SCORES to listOf("-1", "8.5", ""))) to
-                        ViewText.INVALID_ALLOCATION_SCORE,
+                        INVALID_ALLOCATION_SCORE_TEXT,
                     (validValues + (FormFields.SCORES to listOf("1e10000", "8.5", ""))) to
-                        ViewText.INVALID_ALLOCATION_SCORE,
+                        INVALID_ALLOCATION_SCORE_TEXT,
                     (validValues + (FormFields.SYMBOLS to listOf("BTC", "BTC", "USD"))) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
-                    (validValues - FormFields.DEVIATION_TRIGGER_PERCENT) to ViewText.INVALID_DEVIATION_TRIGGER,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
+                    (validValues - FormFields.DEVIATION_TRIGGER_PERCENT) to
+                        INVALID_DEVIATION_TRIGGER_TEXT,
                     (validValues + (FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2", "3"))) to
-                        ViewText.INVALID_DEVIATION_TRIGGER,
+                        INVALID_DEVIATION_TRIGGER_TEXT,
                     (validValues + (FormFields.DEVIATION_TRIGGER_PERCENT to listOf("NaN"))) to
-                        ViewText.INVALID_DEVIATION_TRIGGER,
+                        INVALID_DEVIATION_TRIGGER_TEXT,
                     (validValues + (FormFields.DEVIATION_TRIGGER_PERCENT to listOf("not-a-number"))) to
-                        ViewText.INVALID_DEVIATION_TRIGGER,
+                        INVALID_DEVIATION_TRIGGER_TEXT,
                     (validValues + (FormFields.MINIMUM_ORDER_SIZE_USD to listOf("Infinity"))) to
-                        ViewText.INVALID_MINIMUM_ORDER_SIZE,
+                        INVALID_MINIMUM_ORDER_SIZE_TEXT,
                     (validValues + (FormFields.MINIMUM_ORDER_SIZE_USD to listOf("not-a-number"))) to
-                        ViewText.INVALID_MINIMUM_ORDER_SIZE,
-                    (validValues - FormFields.LOOP_DELAY_SECONDS) to ViewText.INVALID_LOOP_DELAY,
+                        INVALID_MINIMUM_ORDER_SIZE_TEXT,
+                    (validValues - FormFields.LOOP_DELAY_SECONDS) to
+                        INVALID_LOOP_DELAY_TEXT,
                     (validValues + (FormFields.LOOP_DELAY_SECONDS to listOf("60", "90"))) to
-                        ViewText.INVALID_LOOP_DELAY,
+                        INVALID_LOOP_DELAY_TEXT,
                 )
 
                 invalidCases.forEach { (values, message) ->
@@ -276,33 +298,40 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 html shouldContain "2.75"
                 html shouldContain "of the whole book"
                 html shouldContain "scored assets only"
-                html shouldContain ViewText.ALLOCATION_PREVIEW_WARNING
+                html shouldContain "Preview only — nothing is saved until you save the form."
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
 
                 val invalidCases = listOf(
-                    allocationFields(csrf.value, targets = listOf("50")) to ViewText.INVALID_ALLOCATION_FIELDS,
+                    allocationFields(csrf.value, targets = listOf("50")) to
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     allocationFields(csrf.value, symbols = listOf("BTC", "XBT", "USD")) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     allocationFields(csrf.value, symbols = listOf("BTC!", "ETH", "USD")) to
-                        ViewText.INVALID_ALLOCATION_FIELDS,
+                        INVALID_ALLOCATION_FIELDS_TEXT,
                     allocationFields(csrf.value, targets = listOf("-1", "30", "71")) to
-                        ViewText.INVALID_ALLOCATION_TARGET,
+                        INVALID_ALLOCATION_TARGET_TEXT,
                     allocationFields(csrf.value, colors = listOf("oops", "#00ff00", "#0000ff")) to
-                        ViewText.INVALID_ALLOCATION_COLOR,
+                        INVALID_ALLOCATION_COLOR_TEXT,
                     allocationFields(csrf.value, scores = listOf("bad", "8.5", "")) to
-                        ViewText.INVALID_ALLOCATION_SCORE,
+                        INVALID_ALLOCATION_SCORE_TEXT,
                     allocationFields(csrf.value, scores = listOf("11", "8.5", "")) to
-                        ViewText.INVALID_ALLOCATION_SCORE,
+                        INVALID_ALLOCATION_SCORE_TEXT,
                     allocationFields(csrf.value, scores = listOf("", "", "")) to
-                        ViewText.ALLOCATION_SCORE_REQUIRED,
-                    allocationFields(csrf.value, emphasis = "not-int") to ViewText.INVALID_ALLOCATION_EMPHASIS,
-                    allocationFields(csrf.value, emphasis = "0") to ViewText.INVALID_ALLOCATION_EMPHASIS,
-                    allocationFields(csrf.value, emphasis = "99") to ViewText.INVALID_ALLOCATION_EMPHASIS,
-                    allocationFields(csrf.value, sleeve = "-1") to ViewText.INVALID_ALLOCATION_TARGET,
-                    allocationFields(csrf.value, sleeve = "0") to ViewText.INVALID_ALLOCATION_TARGET,
-                    allocationFields(csrf.value, sleeve = "150") to ViewText.INVALID_ALLOCATION_TARGET,
+                        "Enter a quality score for at least one asset before calculating",
+                    allocationFields(csrf.value, emphasis = "not-int") to
+                        INVALID_ALLOCATION_EMPHASIS_TEXT,
+                    allocationFields(csrf.value, emphasis = "0") to
+                        INVALID_ALLOCATION_EMPHASIS_TEXT,
+                    allocationFields(csrf.value, emphasis = "99") to
+                        INVALID_ALLOCATION_EMPHASIS_TEXT,
+                    allocationFields(csrf.value, sleeve = "-1") to
+                        INVALID_ALLOCATION_TARGET_TEXT,
+                    allocationFields(csrf.value, sleeve = "0") to
+                        INVALID_ALLOCATION_TARGET_TEXT,
+                    allocationFields(csrf.value, sleeve = "150") to
+                        INVALID_ALLOCATION_TARGET_TEXT,
                     allocationFields(csrf.value, targets = listOf("25", "25", "50"), sleeve = "60") to
-                        ViewText.INVALID_ALLOCATION_TARGET,
+                        INVALID_ALLOCATION_TARGET_TEXT,
                     allocationFields(
                         csrf.value,
                         symbols = listOf("BTC", "USD"),
@@ -310,7 +339,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                         colors = listOf("#ff0000", "#0000ff"),
                         scores = listOf("9", ""),
                         sleeve = "",
-                    ) to ViewText.INVALID_ALLOCATION_TARGET,
+                    ) to INVALID_ALLOCATION_TARGET_TEXT,
                 )
                 invalidCases.forEach { (params, message) ->
                     val response = client.postForm(Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW, params, csrf.cookie)
@@ -342,7 +371,99 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     csrf.cookie,
                 )
                 zeroWeightAndScore.status shouldBe HttpStatusCode.OK
-                zeroWeightAndScore.bodyAsText() shouldContain ViewText.ALLOCATION_QUALITY_SCORE
+                zeroWeightAndScore.bodyAsText() shouldContain "Weighted quality score"
+            }
+        }
+
+        "failed allocation preview retains submitted settings and allocation controls" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.postForm(
+                    Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW,
+                    requestFields(
+                        csrf.value,
+                        mapOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("91"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("8.25"),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SYMBOLS to listOf("SOL", "ETH", "USD"),
+                            FormFields.TARGETS to listOf("44", "not-a-number", "18"),
+                            FormFields.COLORS to listOf("#123456", "#abcdef", "#fedcba"),
+                            FormFields.SCORES to listOf("7.25", "6.5", ""),
+                            FormFields.SCORE_EMPHASIS to listOf("6"),
+                            FormFields.SCORE_SLEEVE_PERCENT to listOf("70"),
+                        ),
+                    ),
+                    csrf.cookie,
+                )
+                val html = response.bodyAsText()
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                html shouldContain INVALID_ALLOCATION_TARGET_TEXT
+                html shouldContain "value=\"91\""
+                html shouldContain "value=\"3.5\""
+                html shouldContain "value=\"8.25\""
+                html shouldContain "value=\"SOL\""
+                html shouldContain "value=\"not-a-number\""
+                html shouldContain "value=\"#123456\""
+                html shouldContain "value=\"7.25\""
+                html shouldContain "value=\"6.5\""
+                html shouldContain "value=\"6\""
+                html shouldContain "value=\"70\""
+                Regex("""<input[^>]*name=\"simulation\"[^>]*>""")
+                    .find(html)!!.value.shouldNotContain("checked")
+                Regex("""<input[^>]*name=\"dryRun\"[^>]*>""")
+                    .find(html)!!.value shouldContain "checked"
+                html shouldContain "name=\"csrfToken\" value=\""
+            }
+        }
+
+        "unresolved intent recovery remains available without a snapshot while paused" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            var paused = false
+            every { portfolioManager.isLoopPaused() } answers { paused }
+            every { portfolioManager.pauseLoop() } answers { paused = true }
+
+            val pendingIntent = OrderIntent(
+                id = 19,
+                cycleId = "cycle-pending",
+                clientOrderId = "client-pending",
+                pair = "XXBTZUSD",
+                symbol = "BTC",
+                side = "buy",
+                volume = BigDecimal("0.01"),
+                usdAmount = BigDecimal("100"),
+                expectedPrice = BigDecimal("10000"),
+                createdAt = Instant.parse("2026-10-10T12:00:00Z"),
+                state = OrderIntentState.PENDING,
+            )
+            coEvery { orderIntentService.getUnresolvedIntents() } returns emptyList()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                client.postForm(Routes.API_PAUSE, requestFields(csrf.value), csrf.cookie).status shouldBe
+                    HttpStatusCode.OK
+                portfolioManager.isLoopPaused() shouldBe true
+
+                val ordinaryWaiting = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
+                ordinaryWaiting shouldContain "Waiting for first rebalance cycle"
+                ordinaryWaiting shouldNotContain "Action Required: Unresolved Live Order Intent"
+
+                coEvery { orderIntentService.getUnresolvedIntents() } returns listOf(pendingIntent)
+                val recovery = client.get(Routes.FRAGMENT_DASHBOARD).bodyAsText()
+
+                recovery shouldContain "Waiting for first rebalance cycle"
+                recovery shouldContain "Action Required: Unresolved Live Order Intent"
+                recovery shouldContain "State: PENDING"
+                recovery shouldContain "value=\"CONFIRMED\""
+                recovery shouldContain "value=\"REJECTED\""
+                recovery shouldNotContain "value=\"PENDING\""
+                recovery shouldContain "name=\"csrfToken\" value=\""
             }
         }
 
@@ -493,7 +614,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 )
                 invalidCsrf.status shouldBe HttpStatusCode.Forbidden
                 invalidCsrf.headers["X-Rebalancer-Error-Fragment"] shouldBe "order-intent"
-                invalidCsrf.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                invalidCsrf.bodyAsText() shouldContain CSRF_SESSION_EXPIRED_TEXT
 
                 coVerify(exactly = 0) {
                     orderIntentService.resolve(0, any(), any(), any())
@@ -516,7 +637,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 )
                 staleHtmxPair.status shouldBe HttpStatusCode.Forbidden
                 staleHtmxPair.headers["X-Rebalancer-CSRF-Session-Expired"] shouldBe "true"
-                staleHtmxPair.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                staleHtmxPair.bodyAsText() shouldContain CSRF_SESSION_EXPIRED_TEXT
 
                 val nativeFailure = client.postForm(
                     path,
@@ -526,7 +647,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 nativeFailure.status shouldBe HttpStatusCode.Forbidden
                 nativeFailure.headers[HttpHeaders.ContentType].orEmpty() shouldContain "application/json"
                 nativeFailure.bodyAsText() shouldContain "\"error\""
-                nativeFailure.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                nativeFailure.bodyAsText() shouldContain CSRF_SESSION_EXPIRED_TEXT
 
                 val noOrigin = client.post(path) {
                     header("HX-Request", "true")
@@ -567,7 +688,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     csrf.cookie,
                 )
                 native.status shouldBe HttpStatusCode.Forbidden
-                native.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                native.bodyAsText() shouldContain CSRF_SESSION_EXPIRED_TEXT
                 native.bodyAsText() shouldContain "value=\"88\""
                 native.bodyAsText() shouldContain "value=\"4.25\""
                 native.bodyAsText() shouldContain "value=\"BTC\""
@@ -606,7 +727,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                     csrf.cookie,
                 )
                 preview.status shouldBe HttpStatusCode.Forbidden
-                preview.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                preview.bodyAsText() shouldContain CSRF_SESSION_EXPIRED_TEXT
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }

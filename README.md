@@ -392,6 +392,7 @@ cycle does not mix configuration values.
 
 ```text
 ├── .agents/                    # Repository agent rules and skills
+├── codegen/                     # Gradle-time KSP processors for shared catalogs
 ├── common/                     # Shared KMP configuration, models, and UI catalogs
 ├── engine/                     # Pure portfolio valuation, allocation, and order-planning math
 ├── frontend-js/                # Kotlin/JS interactions for Dashboard and Settings
@@ -399,8 +400,13 @@ cycle does not mix configuration values.
 │   └── src/main/kotlin/com/gemini/krakenbot/
 │       ├── config/             # DI, data directory, execution journal, and startup wiring
 │       ├── controller/         # Dashboard, Settings, health, and SSE routes
+│       ├── domain/             # Backend-specific planning and quality-score logic
+│       ├── model/              # Portfolio snapshots and order-intent models
+│       ├── repository/         # Durable execution-order intent persistence
+│       │   └── impl/
 │       ├── service/            # Current portfolio state and application services
 │       │   └── impl/           # Configuration, analysis, execution, and loop services
+│       ├── util/               # Network, precision, and runtime helpers
 │       └── view/               # Dashboard and Settings HTML and CSS
 ├── docs/                       # User, architecture, security, and evaluation guides
 ├── rebalancer-config-template.json
@@ -496,9 +502,9 @@ java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=AL
 
 For a local quality-gated release build, use `./gradlew build :backend:fatJar` without
 `clean` so Gradle can reuse compilation, Kotlin/JS, Webpack, and test outputs.
-Reserve `clean` for troubleshooting stale outputs. Gradle runs independent
-projects in parallel and uses up to two JVM test forks by default; override on
-smaller machines with `-PtestForks=1` or `-PtestMaxHeap=1g`.
+Reserve `clean` for troubleshooting stale outputs. JVM tests default to one
+fork per three available processors, with a minimum of one; override with
+`-PtestForks=<n>` or reduce memory with `-PtestMaxHeap=1g`.
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
 To bind a different port, pass the JVM property `-Dkraken.server.port=<port>`
@@ -535,6 +541,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `minimumOrderSizeUSD`            | `Double`  | `5.0`               | Min significant USD deviation (order generation) and min order notional (execution)   |
 | `dryRun`                         | `Boolean` | — (template `true`) | Required in JSON; suppresses order placement on the active backend (live or emulator) |
 | `simulation`                     | `Boolean` | `false`             | If true, routes exchange calls to the offline emulator; no Kraken key is required     |
+| `settings.qualityScores`         | object    | `{}` in template    | Optional asset-symbol scores in `(0, 10]`; in Settings, blank or `0` clears a score   |
 
 The live-order intent journal uses one SQLite file, execution.db, in the
 active data directory. The directory defaults to rebalancer-data-v1; set
@@ -587,7 +594,8 @@ CI (`.github/workflows/ci.yml`) runs `./gradlew build`, which transitively
 runs the JaCoCo coverage gate via the `check` task
 (`tasks.check dependsOn jacocoTestCoverageVerification`).
 
-`check` also depends on `:frontend-js:jsBrowserTest` (Karma/Istanbul).
+`check` also depends on `:frontend-js:jsBrowserTest` (Karma/Istanbul). CI runs
+the locked Markdown linter through `npm run lint:md` as a separate job.
 
 ### Backend JVM Tests
 
@@ -596,9 +604,9 @@ via JaCoCo: **95% instruction, 85% branch, 95% line, and 95% method** during
 the recovery. The engine retains its independent **90% branch** threshold.
 Exclusions are narrow and mirror `coverageExcludes` in `backend/build.gradle.kts`:
 framework bootstrap (`KtorConfig`), execution SQLite plumbing
-(`ExecutionDatabase`), SQLite JDBC execution repositories, selected thin service interfaces
-(`KrakenService*`, `ConfigService`, `OrderExecutor`), and repository interfaces
-(concrete implementations remain measured),
+(`ExecutionDatabase`), selected thin service interfaces (`KrakenService*`,
+`ConfigService`, `OrderExecutor`, `PortfolioManager`), and repository interfaces
+(`*Repository`; concrete SQLite implementations remain measured),
 generated HTML-extension lambdas, CSS DSL, and `KrakenRebalancerApplication`.
 
 To run JVM tests only:
