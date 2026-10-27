@@ -40,6 +40,7 @@ private var settingsResponseListenerInstalled = false
 private var beforeUnloadListenerInstalled = false
 private val submittedSettingsSnapshots = js("new WeakMap()")
 private var latestSubmittedSettingsRequestId = 0L
+private var activeModePlateRefreshXhr: dynamic = null
 private const val MODE_PLATE_REFRESH_INTERVAL_MS = 1000
 private val beforeUnloadListener: (Event) -> Unit = { event ->
     event.preventDefault()
@@ -76,6 +77,10 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
         ?: target.getAttribute("hx-post")
         ?: target.getAttribute("hx-get")
         ?: return
+    if (isModePlateRefreshRequest(target, path, requestConfig)) {
+        activeModePlateRefreshXhr = detail.xhr
+        return
+    }
     if (requestConfig?.verb?.toString()?.equals("post", ignoreCase = true) == false) return
     if (path.substringBefore('?').trimEnd('/') != Routes.SETTINGS.trimEnd('/')) return
     val xhr = detail.xhr ?: return
@@ -279,6 +284,7 @@ private fun handleSettingsSaveResponse(event: Event) {
     }
     status.setAttribute("datetime", savedAt)
     status.classList.remove(CssClass.Utility.Hidden.value)
+    cancelActiveModePlateRefresh()
     if (!configPublicationPending) activeMode?.let(::updateModePlate)
     if (configPublicationPending) refreshModePlateAfterSave(submitted)
     // Edits made while the request was in flight are not covered by the acknowledgement.
@@ -317,10 +323,12 @@ internal fun updateModePlate(activeMode: String) {
 private fun refreshModePlateAfterSave(submitted: SubmittedSettingsSnapshot) {
     if (submitted.requestId != latestSubmittedSettingsRequestId) return
     val htmx = window.asDynamic().htmx ?: return
+    val options = js("({ target: 'body', swap: 'none' })")
+    options.source = document.getElementById(SettingsState.FORM_ID)
     val request: dynamic = htmx.ajax(
         "GET",
         Routes.FRAGMENT_DASHBOARD,
-        js("({ target: 'body', swap: 'none' })"),
+        options,
     )
     request.then({ _: dynamic ->
         if (modePlateIsOutOfDate(submitted)) scheduleModePlateRefresh(submitted)
@@ -329,6 +337,17 @@ private fun refreshModePlateAfterSave(submitted: SubmittedSettingsSnapshot) {
         if (modePlateIsOutOfDate(submitted)) scheduleModePlateRefresh(submitted)
         null
     })
+}
+
+private fun isModePlateRefreshRequest(target: Element, path: String, requestConfig: dynamic): Boolean =
+    target.id == SettingsState.FORM_ID &&
+        requestConfig?.verb?.toString()?.equals("get", ignoreCase = true) == true &&
+        path.substringBefore('?').trimEnd('/') == Routes.FRAGMENT_DASHBOARD.trimEnd('/')
+
+private fun cancelActiveModePlateRefresh() {
+    val xhr = activeModePlateRefreshXhr ?: return
+    activeModePlateRefreshXhr = null
+    xhr.abort()
 }
 
 private fun modePlateIsOutOfDate(submitted: SubmittedSettingsSnapshot): Boolean {

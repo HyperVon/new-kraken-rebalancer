@@ -10,7 +10,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Settings mode plate**: show the server-published trading mode after immediate saves and refresh it after deferred publication without replacing unsaved edits.
+- **Settings mode plate**: show the server-published trading mode after immediate saves and refresh it after deferred
+  publication without replacing unsaved edits. Cancel superseded refreshes before they can overwrite the latest save.
 - **Dashboard recovery**: render unresolved live-order recovery before the first portfolio snapshot.
 - **Allocation preview errors**: retain submitted settings, allocation rows, scores, and preview controls.
 

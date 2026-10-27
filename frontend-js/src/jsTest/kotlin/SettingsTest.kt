@@ -252,6 +252,72 @@ class SettingsTest : StringSpec() {
             }
         }
 
+        "newer save cancels its superseded deferred mode refresh" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val simulation = form.querySelector("input[name=simulation]") as HTMLInputElement
+            val dryRun = form.querySelector("input[name=dryRun]") as HTMLInputElement
+            val modeLabel = form.querySelector("#mode-plate-label") as HTMLElement
+            val originalHtmx = window.asDynamic().htmx
+            val originalSetTimeout = window.asDynamic().setTimeout
+            val requests = mutableListOf<dynamic>()
+            var scheduledRefresh: dynamic = null
+            val fakeHtmx = js("({})")
+            fakeHtmx.ajax = { method: String, path: String, options: dynamic ->
+                method shouldBe "GET"
+                path shouldBe "/fragments/dashboard"
+                (options.target as String) shouldBe "body"
+                (options.swap as String) shouldBe "none"
+                (options.source as HTMLFormElement).id shouldBe "settings-form"
+                val xhr = dispatchModePlateRefreshBeforeRequest(form)
+                val promise =
+                    js(
+                        "({ then: function(callback) { this.onFulfilled = callback; return this; }, catch: function(callback) { this.onRejected = callback; return this; } })",
+                    )
+                promise.xhr = xhr
+                requests.add(promise)
+                promise
+            }
+            window.asDynamic().htmx = fakeHtmx
+            window.asDynamic().setTimeout = { callback: dynamic, _: Int ->
+                scheduledRefresh = callback
+                1
+            }
+
+            try {
+                registerSettingsGlobals()
+                initSettings()
+                simulation.checked = true
+                val firstSave = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = saveResponse(true, "SIMULATION", "2026-10-19T14:50:00Z"),
+                    xhr = firstSave,
+                )
+                requests.size shouldBe 1
+                (requests[0].xhr.abortCalled as Boolean).shouldBeFalse()
+
+                simulation.checked = false
+                dryRun.checked = true
+                val latestSave = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(
+                    status = 200,
+                    response = saveResponse(false, "DRY_RUN", "2026-10-19T14:51:00Z"),
+                    xhr = latestSave,
+                )
+
+                (requests[0].xhr.abortCalled as Boolean).shouldBeTrue()
+                modeLabel.textContent shouldBe "DRY RUN"
+                requests[0].onRejected(null)
+                (scheduledRefresh == null).shouldBeTrue()
+            } finally {
+                window.asDynamic().htmx = originalHtmx
+                window.asDynamic().setTimeout = originalSetTimeout
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
         "stale settings save response cannot replace the current mode plate" {
             val form = settingsStateForm()
             document.body!!.appendChild(form)
@@ -622,6 +688,20 @@ private fun dispatchSettingsBeforeRequest(path: String, target: Element): dynami
     val requestConfig = js("({})")
     requestConfig.path = path
     requestConfig.verb = "post"
+    val detail = js("({})")
+    detail.xhr = xhr
+    detail.requestConfig = requestConfig
+    val event = document.createEvent("CustomEvent")
+    event.asDynamic().initCustomEvent("htmx:beforeRequest", true, true, detail)
+    target.dispatchEvent(event)
+    return xhr
+}
+
+private fun dispatchModePlateRefreshBeforeRequest(target: Element): dynamic {
+    val xhr = js("({ abortCalled: false, abort: function() { this.abortCalled = true; } })")
+    val requestConfig = js("({})")
+    requestConfig.path = "/fragments/dashboard"
+    requestConfig.verb = "get"
     val detail = js("({})")
     detail.xhr = xhr
     detail.requestConfig = requestConfig
