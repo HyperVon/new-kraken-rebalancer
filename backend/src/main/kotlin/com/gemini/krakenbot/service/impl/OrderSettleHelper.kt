@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.domain.resolveBalance
-import com.gemini.krakenbot.domain.resolveBalanceOrNull
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ExchangeTradeFill
@@ -106,7 +105,7 @@ internal object OrderSettleHelper {
 
     private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal? = try {
         val balances = backend.getSpendableBalancesForSettlement()
-        resolveBalanceOrNull(Asset.USD, balances)
+        resolveBalance(Asset.USD, balances)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

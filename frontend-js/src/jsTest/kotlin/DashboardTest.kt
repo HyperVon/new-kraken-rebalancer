@@ -119,6 +119,28 @@ class DashboardTest : StringSpec() {
             merged.last().cycleId shouldBe "cycle-10"
         }
 
+        "activity swaps discard expansion state for evicted cycles" {
+            resetRecentActivityClientState()
+            val items = (0 until 120).map { activity("cycle-$it", it.toDouble()) }
+            recentActivityUiState = RecentActivityUiState(
+                sourceId = "bounded-source",
+                items = items,
+                expandedCycleIds = mutableSetOf("cycle-0", "cycle-119"),
+            )
+            val root = activityDom(
+                "bounded-source",
+                listOf(activity("cycle-120", 120.0, "ORDERS_ATTEMPTED", listOf("BUY BTC"))),
+            )
+            try {
+                restoreRecentActivityState()
+                recentActivityUiState.expandedCycleIds shouldBe setOf("cycle-119", "cycle-120")
+                recentActivityUiState.items.size shouldBe 120
+            } finally {
+                removeActivityDom(root)
+                resetRecentActivityClientState()
+            }
+        }
+
         "recent activity filters before applying the 20-cycle limit" {
             val newestNoTrades = (0 until 20).map { activity("check-$it", 100.0 - it) }
             val olderOrders = (0 until 15).map {
@@ -543,7 +565,8 @@ class DashboardTest : StringSpec() {
                 <table>
                     <thead>
                         <tr>
-                            <th>C0</th><th>C1</th><th>C2</th><th>C3</th><th>C4</th>
+                            <th class="sortable">C0</th><th class="sortable">C1</th>
+                            <th class="sortable">C2</th><th class="sortable">C3</th><th class="sortable">C4</th>
                             <th class="sortable">Target</th>
                         </tr>
                     </thead>
@@ -560,7 +583,7 @@ class DashboardTest : StringSpec() {
             document.body!!.appendChild(container)
             try {
                 val headers = container.querySelectorAll("th.sortable")
-                val targetHeader = headers.item(0) as HTMLElement
+                val targetHeader = headers.item(5) as HTMLElement
 
                 sortTable(targetHeader, 5, "asc")
 
@@ -571,6 +594,9 @@ class DashboardTest : StringSpec() {
                 rows = container.querySelectorAll("tbody tr")
                 rows.item(0)!!.textContent!!.shouldContain("A")
 
+                val tbody = container.querySelector("tbody")!!
+                tbody.appendChild(rows.item(0)!!)
+                container.querySelector("tbody tr")!!.textContent!!.shouldContain("B")
                 reapplySort()
                 rows = container.querySelectorAll("tbody tr")
                 rows.item(0)!!.textContent!!.shouldContain("A")

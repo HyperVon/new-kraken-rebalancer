@@ -36,6 +36,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.slot
+import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -552,6 +553,29 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                         evidence = "operator matched Kraken order",
                     )
                 }
+            }
+        }
+
+        "order intent resolution propagates cancellation instead of reporting a conflict" {
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            coEvery { orderIntentService.resolve(7, OrderIntentState.REJECTED, any(), null) } throws
+                CancellationException("resolution cancelled")
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.postForm(
+                    "/api/order-intents/7/resolve",
+                    requestFields(
+                        csrf.value,
+                        mapOf(
+                            FormFields.ORDER_INTENT_STATE to listOf("REJECTED"),
+                            FormFields.ORDER_INTENT_EVIDENCE to listOf("operator confirmed no order"),
+                        ),
+                    ),
+                    csrf.cookie,
+                )
+                response.status shouldBe HttpStatusCode.InternalServerError
+                response.headers["X-Rebalancer-Error-Fragment"] shouldBe null
             }
         }
 

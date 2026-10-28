@@ -19,8 +19,31 @@ import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
 import java.time.Instant
 
-class DashboardViewDefaultsTest :
-    StringSpec({
+class DashboardViewDefaultsTest : StringSpec() {
+    init {
+        "waiting fragment replaces previous source freshness without retaining its timestamp" {
+            val component = DashboardFragmentComponent(
+                overviewGridComponent = OverviewGridComponent(),
+                allocationChartComponent = AllocationChartComponent(),
+                performanceTableComponent = PerformanceTableComponent(),
+                recentActivityComponent = RecentActivityComponent(),
+            )
+            val fragment = createHTML(prettyPrint = false).div {
+                with(this) {
+                    component.renderWaiting(
+                        settings = TestFixtures.DEFAULT_TEST_CONFIG.settings,
+                        unresolvedIntents = emptyList(),
+                        csrfToken = null,
+                        recentActivities = emptyList(),
+                        activitySourceId = "new-source",
+                    )
+                }
+            }
+            fragment shouldContain "id=\"header-status\" hx-swap-oob=\"true\""
+            fragment shouldContain ">STALE</div>"
+            fragment shouldNotContain "data-epoch"
+        }
+
         "view entrypoints render screens with optional UI values omitted" {
             val config = TestFixtures.DEFAULT_TEST_CONFIG
             val dashboardView = DashboardView(
@@ -95,4 +118,5 @@ class DashboardViewDefaultsTest :
             }
             performance shouldContain "Asset Performance"
         }
-    })
+    }
+}

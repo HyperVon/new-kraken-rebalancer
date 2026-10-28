@@ -189,7 +189,11 @@ class SqliteExecutionAccountBindingRepositoryImpl(private val database: Executio
                 connection.commit()
                 result
             } catch (e: Exception) {
-                connection.rollback()
+                try {
+                    connection.rollback()
+                } catch (rollbackFailure: Exception) {
+                    e.addSuppressed(rollbackFailure)
+                }
                 throw IllegalStateException("Could not $operation in the execution journal.", e)
             }
         }

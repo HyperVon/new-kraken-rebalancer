@@ -96,6 +96,13 @@ class DashboardFragmentComponent(
         activitySourceId: String,
     ) {
         div.modePlate(settings, outOfBand = true)
+        div.div(CssClass.Layout.HeaderStatus) {
+            id = HtmlIds.HEADER_STATUS
+            attributes[HtmxAttrs.HX_SWAP_OOB] = HtmxValues.TRUE
+            div(CssClass.StatusCard.Delayed) { +ViewText.STREAM_STALE }
+            span(CssClass.DataAge.Value) { +"…" }
+            span(CssClass.DataAge.Time) {}
+        }
         if (unresolvedIntents.isNotEmpty()) {
             renderUnresolvedIntentsBanner(unresolvedIntents, csrfToken)
         }

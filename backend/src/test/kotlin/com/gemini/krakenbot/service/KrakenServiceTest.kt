@@ -701,11 +701,10 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
-        "queryPrivate_NullResponse" {
+        "queryPrivate rejects a missing balance result" {
             runTest {
                 val service = createService("{}")
-                val balances = service.getBalances()
-                balances.isEmpty().shouldBeTrue()
+                shouldThrow<IllegalArgumentException> { service.getBalances() }
             }
         }
 

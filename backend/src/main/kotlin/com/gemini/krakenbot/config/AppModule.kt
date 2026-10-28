@@ -44,6 +44,7 @@ import kotlinx.coroutines.SupervisorJob
 import org.koin.core.module.dsl.singleOf
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
+import org.koin.dsl.onClose
 
 // Koin qualifier shared with the application entrypoint, which resolves the same scope by name.
 const val APPLICATION_SCOPE_QUALIFIER = "applicationScope"
@@ -72,7 +73,8 @@ val coreModule =
                 get<ExecutionDatabase>().hasAccountEvidence()
             }
         }
-        single { ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath().toString()) }
+        single { ExecutionDatabase.init(DataDirectoryConfig.executionDatabasePath().toString()) } onClose
+            { it?.close() }
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         single { CurrentPortfolioState() }

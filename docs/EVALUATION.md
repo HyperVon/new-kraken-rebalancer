@@ -11,7 +11,7 @@ coverage areas; it is not a record of a particular test run.
 | Sell-first execution, settled cash limits, and live submission safety | PortfolioManagerOrderExecutionTest, OrderExecutorFillSettlementTest, OrderExecutorCashCapTest, OrderExecutorSubmissionSafetyTest |
 | Current-cycle Dashboard snapshot, revision invalidation and legacy SSE compatibility, health, readiness, and in-memory activity | DashboardCutoverApiTest, SseMultiSubscriberTest, CurrentPortfolioStateTest, RecentActivityComponentTest |
 | Active Settings, configuration validation, and hot reload | ConfigServiceTest, ConfigServiceNestedSessionTest, SettingsFormComponentTest |
-| Kraken signing, fill parsing, retries, and endpoint rate costs | KrakenServiceTest, KrakenTradeFillParserTest, KrakenRetryAndRateLimitTest |
+| Kraken signing, balance/fill parsing, retries, and endpoint rate costs | KrakenServiceTest, KrakenParsersTest, KrakenTradeFillParserTest, KrakenRetryAndRateLimitTest |
 | Exchange metadata validation before trading | PortfolioAnalyzerImplTest |
 | Data-directory initialization and account binding | DataDirectoryConfigTest, DataDirectoryIdentityTest, ExecutionDatabaseLifecycleTest |
 | Offline exchange simulation and live/simulation routing | SimulatedKrakenServiceTest, DynamicKrakenServiceTest |
@@ -41,7 +41,12 @@ trades or ledgers for retrospective reports or persist portfolio snapshots.
   payloads unchanged for compatibility.
 - A live sell settlement matches Kraken fills by order transaction ID, caps
   confirmed proceeds to observed spendable USD, and stops buys when safe cash
-  cannot be confirmed.
+  cannot be confirmed. OrderSettleHelperTest covers absent and zero spendable USD;
+  KrakenParsersTest rejects malformed balances and required held-amount fields.
+- ExecutionDatabaseLifecycleTest checks that closing an in-memory journal releases
+  its keeper connection, including after a second initialization fails.
+- SettingsTest keeps deferred mode polling active after a later save fails, while
+  a newer acknowledged save still supersedes the previous refresh.
 - An ambiguous live AddOrder response is persisted before submission becomes
   uncertain; later live orders remain blocked until operator resolution.
 - Saving Settings preserves active controls and removes retired settings fields

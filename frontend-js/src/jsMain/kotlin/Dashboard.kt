@@ -219,6 +219,7 @@ internal fun captureRecentActivityState() {
     val openIds = readOpenCycleIds(root)
     recentActivityUiState.expandedCycleIds.removeAll(visibleIds)
     recentActivityUiState.expandedCycleIds.addAll(openIds)
+    recentActivityUiState.expandedCycleIds.retainAll(recentActivityUiState.items.map { it.cycleId }.toSet())
 }
 
 internal fun restoreRecentActivityState() {
@@ -238,6 +239,7 @@ internal fun restoreRecentActivityState() {
         recentActivityUiState.items = mergeRecentActivityItems(recentActivityUiState.items, renderedItems)
     }
     recentActivityUiState.expandedCycleIds.addAll(newActivityIds)
+    recentActivityUiState.expandedCycleIds.retainAll(recentActivityUiState.items.map { it.cycleId }.toSet())
     renderRecentActivity(root)
     if (recentActivityUiState.pageScrollY > 0.0) window.scrollTo(window.scrollX, recentActivityUiState.pageScrollY)
 }

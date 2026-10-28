@@ -762,6 +762,8 @@ class DashboardController(
                 e.message ?: "Invalid order intent resolution.",
                 HttpStatusCode.UnprocessableEntity,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IllegalStateException) {
             respondOrderIntentError(
                 e.message ?: "Order intent could not be resolved.",

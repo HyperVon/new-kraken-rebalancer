@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.KrakenAssetMetadata
 import com.gemini.krakenbot.service.DirectEvidenceStatus
 import com.gemini.krakenbot.service.DirectTickerRequest
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -51,7 +52,7 @@ class KrakenParsersTest : StringSpec() {
                 """.trimIndent(),
             )
             val balances = KrakenParsers.parseBalances(
-                balanceResult,
+                objectMapper.readTree("""{"XXBT":"2.50000000","USD":"100.00","ZERO":"0","NEGATIVE":"-1"}"""),
             )
             balances.keys shouldBe setOf("XXBT", "USD")
             balances["XXBT"]!!.shouldBeEqualComparingTo(BigDecimal("2.5"))
@@ -169,8 +170,7 @@ class KrakenParsersTest : StringSpec() {
                     {
                       "ZUSD": {"balance": "100.00", "credit": "5.00", "credit_used": "2.00", "hold_trade": "30.00"},
                       "XXBT": {"balance": "1.00", "hold_trade": "0.25"},
-                      "ZERO": {"balance": "1.00", "hold_trade": "1.00"},
-                      "BAD": "not-an-object"
+                      "ZERO": {"balance": "1.00", "hold_trade": "1.00"}
                     }
                     """.trimIndent(),
                 ),
@@ -179,7 +179,33 @@ class KrakenParsersTest : StringSpec() {
             balances["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("73.00"))
             balances["XXBT"]!!.shouldBeEqualComparingTo(BigDecimal("0.75"))
             balances.containsKey("ZERO").shouldBeFalse()
-            balances.containsKey("BAD").shouldBeFalse()
+        }
+
+        "rejects malformed balance containers and holdings instead of treating them as zero" {
+            listOf("[]", "null", """{"USD":"invalid"}""", """{"USD":null}""", """{"USD":{}}""")
+                .forEach { json ->
+                    shouldThrow<IllegalArgumentException> {
+                        KrakenParsers.parseBalances(objectMapper.readTree(json))
+                    }
+                }
+        }
+
+        "rejects malformed extended balance fields while allowing absent credit fields" {
+            listOf("[]", "null", """{"USD":"invalid"}""", """{"USD":{"balance":"100"}}""")
+                .forEach { json ->
+                    shouldThrow<IllegalArgumentException> {
+                        KrakenParsers.parseSpendableBalances(objectMapper.readTree(json))
+                    }
+                }
+            listOf("balance", "credit", "credit_used", "hold_trade").forEach { field ->
+                listOf("\"invalid\"", "null", "{}", "true").forEach { invalid ->
+                    val malformed = objectMapper.createObjectNode().put("balance", "100").put("hold_trade", "0")
+                    malformed.replace(field, objectMapper.readTree(invalid))
+                    shouldThrow<IllegalArgumentException> {
+                        KrakenParsers.parseSpendableBalances(objectMapper.createObjectNode().set("USD", malformed))
+                    }
+                }
+            }
         }
 
         "parses direct ticker capture edge cases including malformed root, missing, ambiguous, and non-positive marks" {

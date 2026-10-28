@@ -175,6 +175,8 @@ After successful sells, the executor confirms available USD before issuing
 buys. When Kraken returns sell transaction IDs, settlement checks matching
 TradesHistory fills, caps confirmed proceeds to observed spendable USD, and
 uses projected post-sell cash as the cap if the spendable-balance peek fails.
+An absent or zero USD entry in a successful balance read is zero spendable cash,
+not a failed peek eligible for the projected-cash fallback.
 Settlement falls back to bounded USD balance polling when fill evidence is
 missing or materially short. This is order-specific fill confirmation. If safe
 cash cannot be confirmed, buys are stopped for that cycle.
