@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenAssetMetadata
@@ -43,10 +42,9 @@ class DynamicKrakenServiceTest : StringSpec() {
         minimumOrderSizeUSD = 5.0,
     )
 
-    private fun appConfig(simulation: Boolean, dryRun: Boolean = false) = AppConfig(
+    private fun appConfig(simulation: Boolean, dryRun: Boolean = false) = TestFixtures.config(
         kraken = KrakenCredentials("test-api-key", "test-private-key"),
         settings = settings(simulation, dryRun),
-        allocations = emptyList(),
     )
 
     init {

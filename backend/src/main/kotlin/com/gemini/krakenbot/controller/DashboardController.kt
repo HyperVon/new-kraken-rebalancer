@@ -477,8 +477,7 @@ class DashboardController(
             parseQualityScore(rows.scores[index])?.let { qualityScores[symbol] = it.toDouble() }
         }
 
-        return AppConfig(
-            kraken = currentConfig.kraken,
+        return currentConfig.copy(
             settings = settings.copy(qualityScores = qualityScores),
             allocations = allocations,
         )

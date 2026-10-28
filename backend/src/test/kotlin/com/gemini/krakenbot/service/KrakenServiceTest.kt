@@ -3,7 +3,6 @@ package com.gemini.krakenbot.service
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.ApiKey
-import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.PrivateKey
 import com.gemini.krakenbot.model.Asset
@@ -389,10 +388,9 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                         .encodeToString(TestConstants.API_SECRET.toByteArray()),
                 )
                 val settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L)
-                every { configService.getConfig() } returns AppConfig(
+                every { configService.getConfig() } returns TestFixtures.config(
                     kraken = credentials,
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 val mockEngine = MockEngine { request ->
                     capturedBody = (request.body as TextContent).text
@@ -673,13 +671,12 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         "queryPrivate_ApiKeyNull" {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val config = AppConfig(
+                val config = TestFixtures.config(
                     kraken = KrakenCredentials(
                         apiKey = "",
                         privateKey = TestFixtures.SECRET,
                     ),
                     settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                    allocations = emptyList(),
                 )
                 every { mockConfigService.getConfig() } returns config
 
@@ -715,13 +712,12 @@ class KrakenServiceTest : KrakenServiceTestBase() {
         "queryPrivate_InvalidPrivateKeyBase64" {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val config = AppConfig(
+                val config = TestFixtures.config(
                     kraken = KrakenCredentials(
                         apiKey = "apiKey",
                         privateKey = "invalid_base64_!@#$",
                     ),
                     settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                    allocations = emptyList(),
                 )
                 every { mockConfigService.getConfig() } returns config
 
@@ -765,13 +761,12 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val validSecret =
                     Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray())
-                val config = AppConfig(
+                val config = TestFixtures.config(
                     kraken = KrakenCredentials(
                         apiKey = "k",
                         privateKey = validSecret,
                     ),
                     settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                    allocations = emptyList(),
                 )
                 every { mockConfigService.getConfig() } returns config
 
@@ -807,13 +802,12 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val validSecret =
                     Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray())
-                val config = AppConfig(
+                val config = TestFixtures.config(
                     kraken = KrakenCredentials(
                         apiKey = "k",
                         privateKey = validSecret,
                     ),
                     settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                    allocations = emptyList(),
                 )
                 every { mockConfigService.getConfig() } returns config
 

@@ -18,6 +18,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Enforce the existing Markdown lint command in CI and document the withdrawn `braces` advisory status.
+- **Code-size cleanup**: reuse shared configuration fixtures and simplify config copying and staged credential-rotation test setup without reducing coverage or changing runtime behavior.
+
+### Removed
+
+- Remove unused Chart.js, zoom-plugin, and Hammer bundles plus their chart-only generated settings; the retained Dashboard and Settings pages do not load them.
 
 ## [6.20.14] - 2026-10-25
 

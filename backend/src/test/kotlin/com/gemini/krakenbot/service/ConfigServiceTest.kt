@@ -120,6 +120,41 @@ class ConfigServiceTest : StringSpec() {
         )
     }
 
+    private suspend fun assertStagedCredentialRotationPreserved(rotateApiKey: Boolean, loopDelaySeconds: Long) {
+        val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
+        val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
+        writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
+        val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+        val activeConfig = service.getConfig()
+        val rotatedCredentials = if (rotateApiKey) {
+            KrakenCredentials("rotated-api-key", activeConfig.kraken.privateKey.value)
+        } else {
+            KrakenCredentials(activeConfig.kraken.apiKey.value, "rotated-private-key")
+        }
+        val expectedPersistedApiKey = if (rotateApiKey) "rotated-api-key" else apiPlaceholder
+        val expectedPersistedPrivateKey = if (rotateApiKey) privatePlaceholder else "rotated-private-key"
+
+        service.beginExecutionSession()
+        service.updateConfig(activeConfig.copy(kraken = rotatedCredentials))
+        service.updateConfig(
+            activeConfig.copy(settings = activeConfig.settings.copy(loopDelaySeconds = loopDelaySeconds)),
+        )
+
+        val stagedConfig = objectMapper.readValue(tempFile, AppConfig::class.java)
+        stagedConfig.kraken.apiKey.value shouldBe expectedPersistedApiKey
+        stagedConfig.kraken.privateKey.value shouldBe expectedPersistedPrivateKey
+        service.endExecutionSession()
+
+        val publishedConfig = service.getConfig()
+        publishedConfig.kraken.apiKey.value shouldBe if (rotateApiKey) "rotated-api-key" else "api-default"
+        publishedConfig.kraken.privateKey.value shouldBe if (rotateApiKey) "private-default" else "rotated-private-key"
+        publishedConfig.settings.loopDelaySeconds shouldBe loopDelaySeconds
+
+        val persistedConfig = objectMapper.readValue(tempFile, AppConfig::class.java)
+        persistedConfig.kraken.apiKey.value shouldBe expectedPersistedApiKey
+        persistedConfig.kraken.privateKey.value shouldBe expectedPersistedPrivateKey
+    }
+
     private fun configServiceWithWriter(
         readConfig: AppConfig = TestFixtures.config(
             kraken = KrakenCredentials("a", "b"),
@@ -649,66 +684,13 @@ class ConfigServiceTest : StringSpec() {
 
         "updateConfig preserves a staged credential rotation across a stale second update" {
             runTest {
-                val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
-                val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
-                writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
-                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-                val activeConfig = service.getConfig()
-
-                service.beginExecutionSession()
-                service.updateConfig(
-                    activeConfig.copy(
-                        kraken = KrakenCredentials("rotated-api-key", activeConfig.kraken.privateKey.value),
-                    ),
-                )
-                service.updateConfig(
-                    activeConfig.copy(
-                        settings = activeConfig.settings.copy(loopDelaySeconds = 61L),
-                    ),
-                )
-
-                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
-                rawSaved.kraken.apiKey.value shouldBe "rotated-api-key"
-                rawSaved.kraken.privateKey.value shouldBe privatePlaceholder
-                service.endExecutionSession()
-
-                service.getConfig().kraken.apiKey.value shouldBe "rotated-api-key"
-                service.getConfig().settings.loopDelaySeconds shouldBe 61L
-                objectMapper.readValue(tempFile, AppConfig::class.java).kraken.apiKey.value shouldBe "rotated-api-key"
+                assertStagedCredentialRotationPreserved(rotateApiKey = true, loopDelaySeconds = 61L)
             }
         }
 
         "updateConfig preserves a staged private-key rotation across a stale second update" {
             runTest {
-                val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
-                val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
-                writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
-                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-                val activeConfig = service.getConfig()
-
-                service.beginExecutionSession()
-                service.updateConfig(
-                    activeConfig.copy(
-                        kraken = KrakenCredentials(activeConfig.kraken.apiKey.value, "rotated-private-key"),
-                    ),
-                )
-                service.updateConfig(
-                    activeConfig.copy(
-                        settings = activeConfig.settings.copy(loopDelaySeconds = 62L),
-                    ),
-                )
-
-                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
-                rawSaved.kraken.apiKey.value shouldBe apiPlaceholder
-                rawSaved.kraken.privateKey.value shouldBe "rotated-private-key"
-                service.endExecutionSession()
-
-                service.getConfig().kraken.apiKey.value shouldBe "api-default"
-                service.getConfig().kraken.privateKey.value shouldBe "rotated-private-key"
-                service.getConfig().settings.loopDelaySeconds shouldBe 62L
-                val persisted = objectMapper.readValue(tempFile, AppConfig::class.java)
-                persisted.kraken.apiKey.value shouldBe apiPlaceholder
-                persisted.kraken.privateKey.value shouldBe "rotated-private-key"
+                assertStagedCredentialRotationPreserved(rotateApiKey = false, loopDelaySeconds = 62L)
             }
         }
 
