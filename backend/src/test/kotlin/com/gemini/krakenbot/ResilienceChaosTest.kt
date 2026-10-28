@@ -2,7 +2,6 @@ package com.gemini.krakenbot
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.ConfigService
@@ -25,26 +24,16 @@ import java.io.IOException
 class ResilienceChaosTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private fun testConfig() = TestFixtures.config(
+        kraken = KrakenCredentials(apiKey = "apiKey", privateKey = "c2VjcmV0"),
+        settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+        allocations = listOf(Allocation(Asset.BTC, 50.0)),
+    )
+
     init {
         "propagates ResponseException when Kraken API returns 502 Bad Gateway" {
             runTest {
-                val appConfig =
-                    AppConfig(
-                        kraken =
-                        KrakenCredentials(
-                            apiKey = "apiKey",
-                            privateKey = "c2VjcmV0",
-                        ),
-                        settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                        allocations =
-                        listOf(
-                            Allocation(
-                                symbol = Asset.BTC,
-                                targetPercent = 50.0,
-                            ),
-                        ),
-                    )
+                val appConfig = testConfig()
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 
@@ -85,23 +74,7 @@ class ResilienceChaosTest : StringSpec() {
 
         "propagates IOException on network failure" {
             runTest {
-                val appConfig =
-                    AppConfig(
-                        kraken =
-                        KrakenCredentials(
-                            apiKey = "apiKey",
-                            privateKey = "c2VjcmV0",
-                        ),
-                        settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                        allocations =
-                        listOf(
-                            Allocation(
-                                symbol = Asset.BTC,
-                                targetPercent = 50.0,
-                            ),
-                        ),
-                    )
+                val appConfig = testConfig()
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 

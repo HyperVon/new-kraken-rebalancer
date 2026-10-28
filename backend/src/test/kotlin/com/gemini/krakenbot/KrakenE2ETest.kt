@@ -23,28 +23,19 @@ import java.util.*
 class KrakenE2ETest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private fun testConfig() = TestFixtures.config(
+        kraken = KrakenCredentials(
+            apiKey = "apiKey",
+            privateKey = Base64.getEncoder().encodeToString("secret".toByteArray()),
+        ),
+        settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+        allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+    )
+
     init {
         "should execute a full rebalance cycle end-to-end" {
             runTest {
-                val validSecret =
-                    Base64
-                        .getEncoder()
-                        .encodeToString("secret".toByteArray())
-                val appConfig =
-                    AppConfig(
-                        kraken =
-                        KrakenCredentials(
-                            apiKey = "apiKey",
-                            privateKey = validSecret,
-                        ),
-                        settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                        allocations =
-                        listOf(
-                            Allocation(Asset.BTC, 50.0),
-                            Allocation(Asset.USD, 50.0),
-                        ),
-                    )
+                val appConfig = testConfig()
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
@@ -149,23 +140,7 @@ class KrakenE2ETest : StringSpec() {
 
         "should execute a full rebalance cycle end-to-end and trigger a trade" {
             runTest {
-                val validSecret =
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
-                val appConfig =
-                    AppConfig(
-                        kraken =
-                        KrakenCredentials(
-                            apiKey = "apiKey",
-                            privateKey = validSecret,
-                        ),
-                        settings =
-                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                        allocations =
-                        listOf(
-                            Allocation(Asset.BTC, 50.0),
-                            Allocation(Asset.USD, 50.0),
-                        ),
-                    )
+                val appConfig = testConfig()
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig

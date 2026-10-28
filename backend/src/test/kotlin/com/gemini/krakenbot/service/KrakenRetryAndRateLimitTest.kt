@@ -4,7 +4,6 @@ package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
@@ -43,10 +42,9 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             "k",
             Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
         )
-        every { mockConfigService.getConfig() } returns AppConfig(
-            credentials,
-            TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-            emptyList(),
+        every { mockConfigService.getConfig() } returns TestFixtures.config(
+            kraken = credentials,
+            settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
         )
         return KrakenServiceImpl(
             configService = mockConfigService,
@@ -481,10 +479,9 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                     "k",
                     Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
                 )
-                every { mockConfigService.getConfig() } returns AppConfig(
-                    credentials,
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
-                    emptyList(),
+                every { mockConfigService.getConfig() } returns TestFixtures.config(
+                    kraken = credentials,
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
                 )
 
                 val service = KrakenServiceImpl(

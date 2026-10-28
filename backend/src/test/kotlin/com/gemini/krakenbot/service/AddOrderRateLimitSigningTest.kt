@@ -2,7 +2,6 @@ package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
@@ -45,10 +44,9 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
             apiKey = TestConstants.API_KEY,
             privateKey = Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
         )
-        every { configService.getConfig() } returns AppConfig(
+        every { configService.getConfig() } returns TestFixtures.config(
             kraken = credentials,
             settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-            allocations = emptyList(),
         )
         var callIndex = 0
         val capturedBodies = mutableListOf<String>()
@@ -79,10 +77,9 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                     apiKey = TestConstants.API_KEY,
                     privateKey = Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
                 )
-                every { configService.getConfig() } returns AppConfig(
+                every { configService.getConfig() } returns TestFixtures.config(
                     kraken = credentials,
                     settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                    allocations = emptyList(),
                 )
                 val mockEngine = MockEngine { request ->
                     capturedApiKey = request.headers[KrakenApiConstants.HEADER_API_KEY]
@@ -154,10 +151,9 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                     apiKey = TestConstants.API_KEY,
                     privateKey = Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
                 )
-                every { configService.getConfig() } returns AppConfig(
+                every { configService.getConfig() } returns TestFixtures.config(
                     kraken = credentials,
                     settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                    allocations = emptyList(),
                 )
                 val mockEngine = MockEngine { _ ->
                     requestCount++

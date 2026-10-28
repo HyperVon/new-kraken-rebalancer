@@ -2,8 +2,6 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
@@ -29,21 +27,11 @@ class PortfolioManagerDogeTest : StringSpec() {
         "testDogeMapping" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "k",
-                        privateKey = "s",
-                    ),
+                val config = TestFixtures.config(
                     settings = settings,
                     allocations = listOf(
-                        Allocation(
-                            symbol = Asset.DOGE,
-                            targetPercent = 50.0,
-                        ),
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 50.0,
-                        ),
+                        Allocation(Asset.DOGE, 50.0),
+                        Allocation(Asset.USD, 50.0),
                     ),
                 )
                 every { configService.getConfig() } returns config
@@ -67,21 +55,11 @@ class PortfolioManagerDogeTest : StringSpec() {
         "testBtcMapping" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)
-                val config = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "k",
-                        privateKey = "s",
-                    ),
+                val config = TestFixtures.config(
                     settings = settings,
                     allocations = listOf(
-                        Allocation(
-                            symbol = Asset.BTC,
-                            targetPercent = 50.0,
-                        ),
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 50.0,
-                        ),
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0),
                     ),
                 )
                 every { configService.getConfig() } returns config
