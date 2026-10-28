@@ -277,37 +277,19 @@ class OrderExecutorImpl(
         } catch (e: CancellationException) {
             // Persist the durable outcome even when the surrounding cycle has already been cancelled.
             withContext(NonCancellable) {
-                val outcomeStatus = recordIntentOutcomeWithoutMasking(
+                recordIntentOutcomeWithoutMasking(
                     intentId,
                     uncertainResult(pair, side, volume, context.settings, e.message),
                     e,
                 )
-                when (outcomeStatus) {
-                    IntentOutcomeStatus.FAILED -> Unit
-
-                    IntentOutcomeStatus.NOT_CONFIGURED -> Unit
-
-                    IntentOutcomeStatus.APPLIED,
-                    IntentOutcomeStatus.ALREADY_RESOLVED,
-                    -> Unit
-                }
             }
             throw e
         } catch (e: Exception) {
-            val outcomeStatus = recordIntentOutcomeWithoutMasking(
+            recordIntentOutcomeWithoutMasking(
                 intentId,
                 uncertainResult(pair, side, volume, context.settings, e.message),
                 e,
             )
-            when (outcomeStatus) {
-                IntentOutcomeStatus.FAILED -> Unit
-
-                IntentOutcomeStatus.NOT_CONFIGURED -> Unit
-
-                IntentOutcomeStatus.APPLIED,
-                IntentOutcomeStatus.ALREADY_RESOLVED,
-                -> Unit
-            }
             throw e
         }
         val resolvedResult = if (isLiveSubmission && result.success && result.orderTxid.isNullOrBlank()) {
@@ -369,32 +351,16 @@ class OrderExecutorImpl(
         submissionUncertain = true,
     )
 
-    private suspend fun recordIntentOutcomeWithoutMasking(
-        intentId: Int?,
-        result: OrderResult,
-        cause: Exception,
-    ): IntentOutcomeStatus {
-        if (intentId == null) return IntentOutcomeStatus.NOT_CONFIGURED
+    private suspend fun recordIntentOutcomeWithoutMasking(intentId: Int?, result: OrderResult, cause: Exception) {
+        if (intentId == null) return
         try {
-            return if (orderIntentService?.recordOutcome(intentId, result) == true) {
-                IntentOutcomeStatus.APPLIED
-            } else {
-                IntentOutcomeStatus.ALREADY_RESOLVED
-            }
+            orderIntentService?.recordOutcome(intentId, result)
         } catch (e: CancellationException) {
             throw e
         } catch (persistenceFailure: Exception) {
             cause.addSuppressed(persistenceFailure)
             log.error("Failed to persist order intent outcome", persistenceFailure)
-            return IntentOutcomeStatus.FAILED
         }
-    }
-
-    private enum class IntentOutcomeStatus {
-        APPLIED,
-        ALREADY_RESOLVED,
-        FAILED,
-        NOT_CONFIGURED,
     }
 
     private fun shouldAbortAfterFailure(result: OrderResult?): Boolean = result?.submissionUncertain == true

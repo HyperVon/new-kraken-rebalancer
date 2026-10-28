@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.16] - 2026-10-27
+
+### Fixed
+
+- Clear Dashboard freshness when a source reset returns it to the waiting state.
+- Bound remembered activity expansion state to retained cycles, and strengthen the sort-restoration regression test.
+- Preserve cancellation in order-intent resolution instead of rendering it as an operator conflict.
+- Reject malformed Kraken balances rather than silently treating them as zero, and keep zero spendable USD from
+  bypassing the post-sell cash cap.
+- Continue refreshing a deferred Settings mode change when a later save fails.
+- Release in-memory execution database connections with their owners, preserve transaction errors when rollback fails,
+  and move account-identity filesystem work onto the I/O dispatcher.
+
+### Changed
+
+- Remove unused order-outcome status plumbing without changing journal writes or cancellation handling.
+
 ## [6.20.15] - 2026-10-26
 
 ### Fixed

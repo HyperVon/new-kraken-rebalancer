@@ -11,16 +11,23 @@ import java.nio.file.StandardOpenOption
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 
 /** Durable order-submission journal for the active runtime. */
-class ExecutionDatabase internal constructor(val path: String, private val jdbcUrl: String) {
+class ExecutionDatabase internal constructor(
+    val path: String,
+    private val jdbcUrl: String,
+    private val keepAliveConnection: Connection? = null,
+) : AutoCloseable {
     private val readinessLock = Any()
+
+    @Volatile
+    private var closed = false
 
     @Volatile
     private var readyForSubmission = false
 
     fun connect(): Connection {
+        check(!closed) { "Execution database is closed." }
         val connection = DriverManager.getConnection(jdbcUrl)
         try {
             connection.createStatement().use { statement ->
@@ -60,6 +67,15 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
         } catch (e: Exception) {
             connection.close()
             throw e
+        }
+    }
+
+    override fun close() {
+        synchronized(readinessLock) {
+            if (closed) return
+            closed = true
+            readyForSubmission = false
+            keepAliveConnection?.close()
         }
     }
 
@@ -230,7 +246,6 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
         private const val SQLITE_SYNCHRONOUS_FULL = 2
         const val JOURNAL_MARKER_SUFFIX = ".journal-id"
         private val log = LoggerFactory.getLogger(ExecutionDatabase::class.java)
-        private val keepAliveConnections = ConcurrentHashMap<String, Connection>()
         private val REQUIRED_TABLES = setOf(
             "execution_journal_metadata",
             "execution_order_intents",
@@ -314,13 +329,21 @@ class ExecutionDatabase internal constructor(val path: String, private val jdbcU
 
         private fun initializeMemory(executionDbPath: String): ExecutionDatabase {
             val jdbcUrl = buildSqliteUrl(executionDbPath)
-            keepAliveConnections.computeIfAbsent(jdbcUrl) { url ->
-                DriverManager.getConnection(url).also(::configureConnectionPragmas)
+            val keeper = DriverManager.getConnection(jdbcUrl)
+            try {
+                configureConnectionPragmas(keeper)
+                val database = ExecutionDatabase(executionDbPath, jdbcUrl, keeper)
+                database.createFreshSchema()
+                database.verifyInitializedSchema()
+                return database
+            } catch (e: Exception) {
+                try {
+                    keeper.close()
+                } catch (closeFailure: Exception) {
+                    e.addSuppressed(closeFailure)
+                }
+                throw e
             }
-            val database = ExecutionDatabase(executionDbPath, jdbcUrl)
-            database.createFreshSchema()
-            database.verifyInitializedSchema()
-            return database
         }
 
         private fun configureConnectionPragmas(connection: Connection) {

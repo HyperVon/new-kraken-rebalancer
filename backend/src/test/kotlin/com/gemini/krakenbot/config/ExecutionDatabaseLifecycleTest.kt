@@ -9,6 +9,8 @@ import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.SQLException
+import java.util.UUID
 
 class ExecutionDatabaseLifecycleTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -94,8 +96,24 @@ class ExecutionDatabaseLifecycleTest : StringSpec() {
         }
 
         "initialize creates an in-memory database" {
-            val db = ExecutionDatabase.initialize(":memory:")
-            db.journalId().shouldNotBeBlank()
+            ExecutionDatabase.initialize(":memory:").use { db ->
+                val id = db.journalId()
+                id.shouldNotBeBlank()
+                db.journalId() shouldBe id
+            }
+        }
+
+        "closing memory database owners releases keepers including failed initialization" {
+            val url = "jdbc:sqlite:file:lifecycle-${UUID.randomUUID()}?mode=memory&cache=shared"
+            val db = ExecutionDatabase.initialize(url)
+            val id = db.journalId()
+            shouldThrow<SQLException> { ExecutionDatabase.initialize(url) }
+            db.close()
+            db.close()
+            shouldThrow<IllegalStateException> { db.connect() }
+            ExecutionDatabase.initialize(url).use { reopened ->
+                (reopened.journalId() != id) shouldBe true
+            }
         }
 
         "memory database detection recognizes SQLite memory URIs without matching file paths" {
@@ -112,9 +130,10 @@ class ExecutionDatabaseLifecycleTest : StringSpec() {
                 db.markReadyForSubmission()
                 db.ensureReadyForSubmission()
 
-                val memDb = ExecutionDatabase.init(":memory:")
-                memDb.markReadyForSubmission()
-                shouldThrow<IllegalStateException> { memDb.ensureReadyForSubmission() }
+                ExecutionDatabase.init(":memory:").use { memDb ->
+                    memDb.markReadyForSubmission()
+                    shouldThrow<IllegalStateException> { memDb.ensureReadyForSubmission() }
+                }
             }
         }
     }

@@ -232,6 +232,14 @@ class SettingsTest : StringSpec() {
                 modePlate.getAttribute("class") shouldBe "mode-plate mode-live"
                 requests.size shouldBe 1
 
+                simulation.checked = false
+                val failedXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(
+                    status = 500,
+                    response = "{\"error\":\"persistence failed\"}",
+                    xhr = failedXhr,
+                )
+
                 requests[0].onFulfilled(null)
                 val firstRefresh = scheduledRefresh
                 scheduledRefresh = null

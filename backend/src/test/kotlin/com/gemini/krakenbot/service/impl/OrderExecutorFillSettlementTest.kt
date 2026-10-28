@@ -13,6 +13,7 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.math.BigDecimal
 
 @Suppress("unused")
@@ -369,8 +370,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         )
                     }
                 }
-                // Peek empty → cap to projected ($200); net fill would be $199.
-                krakenService.balanceSupplier = { emptyMap() }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("199.00")) }
 
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
@@ -488,7 +488,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 }
                 // Fill records overstate proceeds vs the $100 sell intent.
                 krakenService.tradePageSupplier = pages(fill(sellTxid, cost = "500.00"))
-                krakenService.balanceSupplier = { emptyMap() }
+                krakenService.balanceSupplier = { throw IOException("balance peek unavailable") }
 
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),

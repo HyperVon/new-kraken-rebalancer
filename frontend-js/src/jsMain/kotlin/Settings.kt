@@ -40,6 +40,7 @@ private var settingsResponseListenerInstalled = false
 private var beforeUnloadListenerInstalled = false
 private val submittedSettingsSnapshots = js("new WeakMap()")
 private var latestSubmittedSettingsRequestId = 0L
+private var latestAcknowledgedSettingsRequestId = 0L
 private var activeModePlateRefreshXhr: dynamic = null
 private const val MODE_PLATE_REFRESH_INTERVAL_MS = 1000
 private val beforeUnloadListener: (Event) -> Unit = { event ->
@@ -284,6 +285,7 @@ private fun handleSettingsSaveResponse(event: Event) {
     }
     status.setAttribute("datetime", savedAt)
     status.classList.remove(CssClass.Utility.Hidden.value)
+    latestAcknowledgedSettingsRequestId = submitted.requestId
     cancelActiveModePlateRefresh()
     if (!configPublicationPending) activeMode?.let(::updateModePlate)
     if (configPublicationPending) refreshModePlateAfterSave(submitted)
@@ -321,7 +323,7 @@ internal fun updateModePlate(activeMode: String) {
 }
 
 private fun refreshModePlateAfterSave(submitted: SubmittedSettingsSnapshot) {
-    if (submitted.requestId != latestSubmittedSettingsRequestId) return
+    if (submitted.requestId != latestAcknowledgedSettingsRequestId) return
     val htmx = window.asDynamic().htmx ?: return
     val options = js("({ target: 'body', swap: 'none' })")
     options.source = document.getElementById(SettingsState.FORM_ID)
@@ -351,7 +353,7 @@ private fun cancelActiveModePlateRefresh() {
 }
 
 private fun modePlateIsOutOfDate(submitted: SubmittedSettingsSnapshot): Boolean {
-    if (submitted.requestId != latestSubmittedSettingsRequestId) return false
+    if (submitted.requestId != latestAcknowledgedSettingsRequestId) return false
     return document.getElementById(HtmlIds.MODE_PLATE_LABEL)?.textContent?.trim() != submitted.modeLabel
 }
 

@@ -10,8 +10,10 @@ import com.gemini.krakenbot.service.ExecutionAccountBindingVerifier
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.withExecutionSession
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.util.Locale
@@ -51,7 +53,7 @@ class ExecutionAccountBindingService(
                     }
                 } else {
                     verifyExistingBinding(current)
-                    dataDirectoryIdentity.bindOrVerify(current.accountIdentityDigest)
+                    bindOrVerifyDirectoryIdentity(current.accountIdentityDigest)
                     if (current.credentialGenerationDigest != credentialGenerationDigest) {
                         verifyCredentialRotation(backend, current, credentialGenerationDigest)
                     }
@@ -104,7 +106,7 @@ class ExecutionAccountBindingService(
 
     private suspend fun verifyInitialAccount(backend: KrakenService): InitialAccountProof {
         val accountIdentityDigest = authenticatedAccountIdentityDigest(backend)
-        dataDirectoryIdentity.bindOrVerify(accountIdentityDigest)
+        bindOrVerifyDirectoryIdentity(accountIdentityDigest)
         return InitialAccountProof(accountIdentityDigest)
     }
 
@@ -117,7 +119,7 @@ class ExecutionAccountBindingService(
         if (accountIdentityDigest != current.accountIdentityDigest) {
             fail("configured Kraken account does not match this execution journal's bound account")
         }
-        dataDirectoryIdentity.bindOrVerify(accountIdentityDigest)
+        bindOrVerifyDirectoryIdentity(accountIdentityDigest)
         val updated = current.copy(
             credentialGenerationDigest = credentialGenerationDigest,
             verificationMethod = ROTATION_BINDING_METHOD,
@@ -154,6 +156,10 @@ class ExecutionAccountBindingService(
             ExecutionAccountBindingWriteResult.BLOCKED_BY_PRIOR_BINDING_EVIDENCE,
             -> fail("unexpected execution account credential rotation state")
         }
+    }
+
+    private suspend fun bindOrVerifyDirectoryIdentity(accountIdentityDigest: String) = withContext(Dispatchers.IO) {
+        dataDirectoryIdentity.bindOrVerify(accountIdentityDigest)
     }
 
     private fun verifyExistingBinding(binding: ExecutionAccountBinding) {

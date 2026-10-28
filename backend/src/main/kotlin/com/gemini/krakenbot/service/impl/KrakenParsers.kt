@@ -110,12 +110,13 @@ object KrakenParsers {
         Instant.ofEpochSecond(wholeSeconds, fractionalNanos)
     }.getOrNull()
 
-    fun parseBalances(result: JsonNode): RawBalances = result
-        .properties()
-        .mapNotNull { (key, value) ->
-            val amount = safeParseBigDecimal(value.asText())
+    fun parseBalances(result: JsonNode): RawBalances {
+        require(result.isObject) { "Kraken balance result must be an object." }
+        return result.properties().mapNotNull { (key, value) ->
+            val amount = parseBalanceAmount(value)
             if (amount > BigDecimal.ZERO) key to amount else null
         }.toMap()
+    }
 
     /** Parses a direct Balance response without collapsing absent, zero, or malformed values. */
     fun parseDirectBalanceCapture(
@@ -139,17 +140,24 @@ object KrakenParsers {
         )
     }
 
-    fun parseSpendableBalances(result: JsonNode): RawBalances = result
-        .properties()
-        .mapNotNull { (key, value) ->
-            if (!value.isObject) return@mapNotNull null
-            val balance = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_BALANCE).asText())
-            val credit = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_CREDIT).asText())
-            val creditUsed = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_CREDIT_USED).asText())
-            val holdTrade = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_HOLD_TRADE).asText())
+    fun parseSpendableBalances(result: JsonNode): RawBalances {
+        require(result.isObject) { "Kraken extended balance result must be an object." }
+        return result.properties().mapNotNull { (key, value) ->
+            require(value.isObject) { "Kraken extended balance entry must be an object." }
+            val balance = parseBalanceAmount(value.path(KrakenApiConstants.FIELD_BALANCE))
+            val credit = value.get(KrakenApiConstants.FIELD_CREDIT)?.let(::parseBalanceAmount) ?: BigDecimal.ZERO
+            val creditUsed =
+                value.get(KrakenApiConstants.FIELD_CREDIT_USED)?.let(::parseBalanceAmount) ?: BigDecimal.ZERO
+            val holdTrade = parseBalanceAmount(value.path(KrakenApiConstants.FIELD_HOLD_TRADE))
             val available = balance.add(credit).subtract(creditUsed).subtract(holdTrade)
             if (available > BigDecimal.ZERO) key to available else null
         }.toMap()
+    }
+
+    private fun parseBalanceAmount(value: JsonNode): BigDecimal {
+        require(value.isTextual || value.isNumber) { "Kraken balance amount must be numeric." }
+        return requireNotNull(value.asText().toBigDecimalOrNull()) { "Kraken balance amount is malformed." }
+    }
 
     fun parseTickerPrices(resultNode: JsonNode): RawPrices = resultNode
         .properties()

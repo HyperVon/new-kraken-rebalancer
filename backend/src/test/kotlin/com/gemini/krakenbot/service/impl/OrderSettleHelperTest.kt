@@ -23,6 +23,24 @@ class OrderSettleHelperTest : StringSpec() {
     private val backend = mockk<KrakenService>(relaxed = true)
 
     init {
+        "confirmed fills cannot bypass an empty or zero spendable USD balance" {
+            runTest {
+                coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(
+                    trade(id = "fill-held", txid = "sell-held", cost = "5000.00", fee = "0.00"),
+                )
+                listOf(emptyMap(), mapOf(Asset.USD to BigDecimal.ZERO)).forEach { balances ->
+                    coEvery { backend.getBalances() } returns balances
+                    val settled = OrderSettleHelper.settleUsdAfterSells(
+                        backend = backend,
+                        openingUsd = BigDecimal.ZERO,
+                        projectedCash = BigDecimal("5000.00"),
+                        sellOrderTxids = listOf("sell-held"),
+                    )
+                    settled.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                }
+            }
+        }
+
         "settles only USD fee-denominated fills and caps to spendable USD" {
             runTest {
                 coEvery { backend.getRecentTradePage(any(), any(), any(), any()) } returns page(

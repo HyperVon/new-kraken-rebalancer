@@ -503,13 +503,14 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
         }
 
         "startup skips legacy filesystem inspection for a memory database" {
-            val database = ExecutionDatabase.initialize(":memory:")
-            val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
+            ExecutionDatabase.initialize(":memory:").use { database ->
+                val repository = SqliteExecutionOrderIntentRepositoryImpl(database)
 
-            ExecutionJournalBootstrap(database, repository, ":memory:").initialize()
+                ExecutionJournalBootstrap(database, repository, ":memory:").initialize()
 
-            val error = shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
-            error.message shouldBe "Live order submission requires a file-backed execution journal."
+                val error = shouldThrow<IllegalStateException> { database.ensureReadyForSubmission() }
+                error.message shouldBe "Live order submission requires a file-backed execution journal."
+            }
         }
     }
 

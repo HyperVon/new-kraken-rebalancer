@@ -12,11 +12,15 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.nio.file.Files
+import java.sql.Connection
+import java.sql.SQLException
 import java.time.Instant
 
 class SqliteExecutionAccountBindingRepositoryImplTest : StringSpec() {
@@ -27,6 +31,24 @@ class SqliteExecutionAccountBindingRepositoryImplTest : StringSpec() {
     private val validHashC = "1111111111111111111111111111111111111111111111111111111111111111"
 
     init {
+        "transaction failure remains the cause when rollback also fails" {
+            val database = mockk<ExecutionDatabase>()
+            val connection = mockk<Connection>(relaxed = true)
+            val queryFailure = SQLException("query failed")
+            val rollbackFailure = SQLException("rollback failed")
+            every { database.connect() } returns connection
+            every { connection.prepareStatement(any<String>()) } throws queryFailure
+            every { connection.rollback() } throws rollbackFailure
+
+            val failure = shouldThrow<IllegalStateException> {
+                SqliteExecutionAccountBindingRepositoryImpl(database).createIfPristine(testBinding())
+            }
+
+            val originalFailure = generateSequence<Throwable>(failure) { it.cause }.last()
+            originalFailure.message shouldBe "query failed"
+            originalFailure.suppressed.map { it.message } shouldBe listOf("rollback failed")
+        }
+
         "load returns null on pristine database and hasBindingAnchor returns false" {
             runTest {
                 withRepository { _, repo ->
