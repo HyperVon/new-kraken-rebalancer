@@ -190,18 +190,31 @@ blocks later live submissions. If this occurs:
 
 1. Stop automated live trading while investigating.
 2. Stop the application and back up the complete configured data directory
-   before changing any stored state.
-3. Use the recorded local `client_order_id` as Kraken's `cl_ord_id` to locate the
-   matching open or closed order and obtain its Kraken order transaction ID.
-4. Use that order transaction ID to check TradesHistory fills, which expose
-   `ordertxid` rather than `cl_ord_id`.
-5. Resolve the stored state only after the exchange outcome is known. Review
+   and configuration before changing any stored state. While it is stopped,
+   set `settings.dryRun` to `true` in the active `rebalancer-config.json`;
+   preserve the credentials, their placeholders, and all other settings.
+3. Restart the application using the same configured data directory and confirm
+   dry-run is enabled. Startup
+   converts interrupted `PENDING` rows to `UNCERTAIN` before starting the loop;
+   unresolved intents block live order submission, but a submission may have
+   reached a terminal state during shutdown. Do not rely on the intent block
+   alone: the loop starts automatically. Pause it in the Dashboard as soon as
+   it is available and keep it paused throughout recovery. Pause requests worker
+   cancellation; it does not wait for an in-flight cycle to finish.
+4. Use the recorded local `client_order_id` as Kraken's `cl_ord_id` to locate the
+    matching open or closed order and obtain its Kraken order transaction ID.
+5. Use that order transaction ID to check TradesHistory fills, which expose
+    `ordertxid` rather than `cl_ord_id`.
+6. Resolve the stored state only after the exchange outcome is known and the
+   loop is paused. Review
    unresolved rows with `GET /api/order-intents`, then submit
    `POST /api/order-intents/{id}/resolve` with `state=CONFIRMED` or
    `state=REJECTED`, a concise evidence note, the optional `orderTxid`, and the
    normal CSRF token. A `PENDING` row remains protected while its AddOrder may
    still be in flight; wait for it to become `UNCERTAIN` (or for restart
-   recovery to mark it uncertain) before resolving it.
+   recovery to mark it uncertain) before resolving it. Resolving the last
+   unresolved intent removes the journal's live-order block; do not resume the
+   loop or disable dry-run until you are ready to allow trading again.
 
 #### Operator recovery runbook
 
@@ -218,8 +231,11 @@ Action Required banner and form or programmatically via the
 
 Before sending a resolution request:
 
-1. Pause the loop in the dashboard and leave it paused throughout the review.
-2. Back up the complete configured data directory, including execution.db and its identity files.
+1. Stop the application, back up the complete configured data directory and
+   configuration, and enable dry-run before restarting. Use the same data
+   directory and pause the loop as described above.
+2. Leave the loop paused throughout the review and resolution. Pause requests
+   cancellation but does not wait for an in-flight cycle to finish.
 3. Fetch `GET /api/order-intents` and confirm the exact row is `UNCERTAIN`.
    Do not resolve a `PENDING` row: an AddOrder request may still be in flight.
 4. Match the row's `clientOrderId`, pair, side, volume, and timestamp to Kraken.
