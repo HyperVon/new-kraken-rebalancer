@@ -43,6 +43,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-35-1 | S | deferred | build | Prevent filtered engine tests from triggering whole-module coverage verification | 35 | Issue [#448](https://github.com/HyperVon/new-kraken-rebalancer/issues/448); task-scoped filtering must preserve mixed-invocation coverage gates. |
 | SEC-BRACES | S | open | deps | `braces` CVE-2026-93687 (GHSA-vfj7-8cjw-p6xm, high): stack-exhaustion DoS via deeply nested patterns | 32 | Issue #394. Vulnerable `<= 3.0.3`; 3.0.3 is latest published and already resolved in `kotlin-js-store/yarn.lock` — no patch available. Transitive via `chokidar`/`micromatch` in the build toolchain only (not shipped server). Re-check when `braces` > 3.0.3 is published |
 | CI-34-DEP1 | M | deferred | deps | Ktor 3.6.0 upgrade blocked by SSE client-test hang | 34 | With 3.6.0, `SseMultiSubscriberTest` and the SSE case in `DashboardCutoverApiTest` hang until `UncompletedCoroutinesError` (60s `runTest` timeout); 3.5.2 passes. The client SSE request job outlives `session.cancel()` for the infinite server flow. Revisit when upstream KTOR resolves it or migrate the tests deliberately |
 | QO-ARCH01 | M | deferred | architecture | Extract `:backend` subproject & KMP alignment | QO-1 | Roadmap: Next |
@@ -55,6 +56,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Done (recent)
 
+| CI-35-2 | L | done | docs | Clarify safe restart and pause sequence for live-order intent recovery | 35 | Issue [#447](https://github.com/HyperVon/new-kraken-rebalancer/issues/447); PR on `improve/cycle-35`. |
 | CI-33-R1 | M | done | frontend | Restore History "Staking Rewards" panel (cumulative rewards chart + total) over synced ledger reward events; vestige `SimulatedKrakenService` seeds staking ledger entries for it | 33 | 33 |
 | CI-33-R2 | M | done | frontend | Restore History analytics charts (Asset Holdings Over Time, Allocation Deviation from Target, Cumulative Net Cash Flow) + All-Time High stat tile (Avg Slippage not derivable from current HistoryTrade fields — skipped) | 33 | 33 |
 | CI-33-R3 | S | done | frontend | Restore chart time-scrubbers (range input under each chart to scrub cursor across points) — `queryChartScrubber` / `DATA_CHART_ID` were deleted in 06b7d4f9 while zoom/pan returned in #417 | 33 | 33 |
