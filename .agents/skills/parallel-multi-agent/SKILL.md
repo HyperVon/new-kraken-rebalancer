@@ -9,8 +9,25 @@ description: >-
 
 # Parallel multi-agent playbook
 
-Persistent always-on summary: `.cursor/rules/parallel-multi-agent.mdc`.
+Canonical always-on norms: [OPERATING.md § 3](../../OPERATING.md#3-parallel-multi-agent-work).
 Use this skill for the full split/integrate workflow.
+
+## Delegation modes
+
+Set the mode explicitly in every worker brief:
+
+- **Read-only discovery/review:** inspect assigned evidence and return findings;
+  no edits, builds, servers, Git mutations, or secret/runtime-data inspection.
+- **User-authorized implementation:** edit only the assigned, disjoint files
+  within the user's approved scope. Name allowed and forbidden paths and the
+  acceptance checks. Stop for approval before expanding ownership or making a
+  high-impact change not already authorized. Read-only mode never implicitly
+  grants implementation permission.
+
+The parent owns integration and final verification in both modes. Workers do
+not start servers or inspect secrets/runtime data. Builds remain parent-owned
+unless explicitly assigned to a separate worktree under the serial-build rules
+below; implementation permission alone is not permission for Git mutations.
 
 ## Step 1 — Partition
 
@@ -20,17 +37,16 @@ per independent concern, not one agent per file. For a material audit, keep the
 fan-out bounded (usually 2–6, maximum 8) and reserve a coupled track for files
 that must be reasoned about together.
 
-| Track | Owns (files/dirs) | Risk | Role / host route / effort | Depends on |
+| Track | Owns (files/dirs) | Risk | Mode / role / minimum capability | Depends on |
 | :--- | :--- | :--- | :--- | :--- |
 | A | … | … | … | none / track B output |
 
-For review work, add `risk`, host route/effort evidence, iteration cap, and
-stop condition.
+For review work, include an iteration cap and stop condition.
 The parent owns the full diff and final coverage matrix; each worker receives
 only its assigned paths and minimum dependencies.
 
-- **Independent** → parallel workers launched in the same parent turn (routed
-  launcher under Kilo CLI, native `invoke_subagent` under Antigravity).
+- **Independent** → parallel workers launched in the same parent turn through
+  the host's native parallel task surface (`invoke_subagent` under Antigravity).
 - **Coupled** → one agent or the parent.
 
 ### Parent-model inheritance
@@ -42,15 +58,16 @@ specific provider/model route for a track:
   needed after a launch failure.
 - Treat `subagent_type` as the worker role, not as a model choice from its name.
 - In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute a Kilo-specific launcher.
-- Under Kilo CLI, launch read-only discovery or review fan-out through the host's
+- Under Kilo CLI, launch bounded fan-out through the host's
   native Task surface. Subagents run on the parent session's model; do not
   substitute `ctx_batch_execute`, `ctx_execute`, or an in-process scan for a
   real subagent launch.
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe.
 - For a broad read-only named workflow, perform discovery fan-out natively via the host's parallel task surface.
-- Escalate or add an independent verifier only when the track risk and available
-  capability evidence justify it.
+- Add an independent verifier only when the track risk justifies it; it also
+  inherits the parent's model. Independence comes from a separate bounded review,
+  not a claimed distinct provider/model route.
 
 ## Step 2 — Brief each agent
 
@@ -58,7 +75,7 @@ Every worker prompt must include:
 
 1. Absolute repo path + current branch
 2. Goal and acceptance criteria
-3. Files to edit / files forbidden
+3. Explicit mode, assigned evidence/allowed edit paths, and forbidden files
 4. **Already done** context (so they do not redo or conflict)
 5. Project constraints worth repeating (Spotless 120, `:common` purity, sim-only, etc.)
 6. Substitution record: role, scope, and the reason for any relaunch after a
@@ -73,17 +90,17 @@ required compact report; a worker that consumes its entire iteration budget on
 reads has not completed its track. Split broad work into staged discovery and
 focused follow-ups; the parent retains integration and final verification.
 
-Workers must not perform the whole parent task. They should not receive the
-full repository context, run builds, start servers, edit files, inspect secrets
-or runtime data, or load unrelated skills. If a worker approaches its context
+Workers must not perform the whole parent task, receive the full repository
+context, or load unrelated skills. Apply the permissions for the explicit mode
+above; do not tell an implementation worker both to edit and never to edit.
+If a worker approaches its context
 or iteration limit, it returns a compact partial report and the parent starts a
 new narrower follow-up. Do not use manual compaction as a way to continue the
 same oversized worker task.
 
 Independent tracks must launch concurrently, not one foreground task at a time.
-When the host exposes background process support, launch the single routed
-workflow or each independent process with `run_in_background: true` and poll its
-status/logs. When the host exposes a parallel tool, submit all independent Task
+Use the host's native concurrent/background task mechanism and completion
+notifications when available. When the host exposes a parallel tool, submit all independent Task
 calls in one message. Foreground waiting is reserved for coupled work whose next
 step depends on the result.
 
@@ -102,9 +119,9 @@ step depends on the result.
 For adversarial PR review, the parent should first inventory changed paths and
 high-risk hunks, then assign focused tracks such as CI/build, runtime
 correctness, trading/exchange safety, persistence/security, UI/client behavior,
-and tests/documentation. Use only tracks represented by the diff. A second
-model is a targeted verifier for high-risk or disputed findings, not a reason
-to send two agents the entire PR.
+and tests/documentation. Use only tracks represented by the diff. An independent
+verifier is a bounded track for high-risk or disputed findings, not a reason
+to send two agents the entire PR or select a different model for a worker.
 
 Prefer the repository's specialized types when available: use
 `agent-guidance-auditor` for rules/CI/Kilo guidance,
@@ -114,27 +131,17 @@ other harnesses should map the same roles to their own read-only agents.
 Use `general` only as a last-resort bounded role for a genuinely low-risk,
 non-material single scout. A role label is not a model choice.
 
-Launch independent tracks in one message when possible. Record the track, role,
-host route/effort mapping, model substitution, user approval, iteration cap,
-coverage, and stop reason.
+Launch independent tracks in one message when possible. Record the track, mode,
+role, scope, user approval, iteration cap, coverage, stop reason, and any launch
+failure/relaunch or parent substitution. Do not record per-track model routes.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
 
-For an adversarial re-review of a completed documentation audit, launch a
-distinct-route review track through the host's native parallel surface rather
-than raw role-only Task calls. After it completes, inspect the route report.
-Same-role, same-tier,
-or same-provider labels do not prove independent model reasoning; record the
-actual routes and state explicitly when no independent route was obtained.
-
-### Native Kilo model selection
-
-Kilo sessions inherit the project default `kilo/openai/gpt-6-luna` from
-`.kilo/kilo.json`. Select a stronger host route for a high-risk or disputed
-review, or a smaller one for bounded routine work. Hosts choose their underlying
-models and server-side fallbacks; do not add a launcher, catalog parser,
-connectivity probe, or hardcoded underlying-model pool to reproduce that
-behavior.
+For an adversarial re-review of a completed documentation audit, assign a
+separate bounded read-only track through the host's native parallel surface.
+Subagents still inherit the parent's model; role labels do not establish model
+diversity. Native model selection for the parent remains governed by
+[OPERATING.md § 8](../../OPERATING.md#8-native-model-selection).
 
 If a subagent launch fails for a transient host reason, relaunch the same
 track as a subagent (a corrected role or a host-default-routed subagent); cover
@@ -148,7 +155,8 @@ and final verification:
 
 For named broad workflows, launch the bounded track fan-out through the host's
 native parallel task surface; subagents inherit the parent session's model. The
-parent still owns edits, integration, and final gates.
+parent still owns integration and final gates; workers edit only in explicitly
+authorized implementation mode.
 
 ## Worktree and state isolation
 

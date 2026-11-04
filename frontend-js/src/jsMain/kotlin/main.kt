@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlQueries
+import com.gemini.krakenbot.view.util.HttpWire
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
@@ -16,11 +17,6 @@ import org.w3c.dom.HTMLInputElement
  */
 private const val HTTP_UNPROCESSABLE_ENTITY = 422
 private const val HTTP_CONFLICT = 409
-private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
-private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
-private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
-private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
-private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
 private const val HTML_CONTENT_TYPE = "text/html"
 
 /** Whether a known, server-rendered operator error fragment should be swapped despite its status. */
@@ -33,10 +29,10 @@ internal fun shouldSwapRenderedError(
     if (status == null || responseText.isNullOrBlank()) return false
     if (contentType?.substringBefore(';')?.trim()?.equals(HTML_CONTENT_TYPE, ignoreCase = true) != true) return false
     return when (fragmentKind) {
-        SETTINGS_FORM_ERROR_FRAGMENT ->
+        HttpWire.SETTINGS_FORM_ERROR_FRAGMENT ->
             status == HTTP_UNPROCESSABLE_ENTITY || status == HTTP_CONFLICT || status == 403
 
-        ORDER_INTENT_ERROR_FRAGMENT -> status in 400..499
+        HttpWire.ORDER_INTENT_ERROR_FRAGMENT -> status in 400..499
 
         else -> false
     }
@@ -87,14 +83,14 @@ fun main() {
     document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, { event ->
         val detail = event.asDynamic().detail
         val xhr = detail.xhr
-        val refreshedCsrfToken = xhr.getResponseHeader(CSRF_TOKEN_RESPONSE_HEADER) as? String
+        val refreshedCsrfToken = xhr.getResponseHeader(HttpWire.CSRF_TOKEN_RESPONSE_HEADER) as? String
         if (!refreshedCsrfToken.isNullOrBlank()) {
             val csrfInputs = document.querySelectorAll(HtmlQueries.CSRF_TOKEN_FIELDS)
             repeat(csrfInputs.length) { index ->
                 (csrfInputs.item(index) as? HTMLInputElement)?.value = refreshedCsrfToken
             }
         }
-        val csrfSessionExpired = xhr.getResponseHeader(CSRF_SESSION_EXPIRED_HEADER) == "true"
+        val csrfSessionExpired = xhr.getResponseHeader(HttpWire.CSRF_SESSION_EXPIRED_HEADER) == "true"
         if (csrfSessionExpired) {
             window.alert(ViewText.CSRF_SESSION_EXPIRED)
             // Keep the open form's edited controls in place while the replacement token takes effect.
@@ -104,7 +100,7 @@ fun main() {
             status = xhr.status as? Int,
             responseText = xhr.responseText as? String,
             contentType = xhr.getResponseHeader("Content-Type") as? String,
-            fragmentKind = xhr.getResponseHeader(ERROR_FRAGMENT_HEADER) as? String,
+            fragmentKind = xhr.getResponseHeader(HttpWire.ERROR_FRAGMENT_HEADER) as? String,
         )
         if (shouldSwap) {
             detail.shouldSwap = true

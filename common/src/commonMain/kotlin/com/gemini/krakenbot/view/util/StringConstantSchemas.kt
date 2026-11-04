@@ -14,6 +14,9 @@ internal object CssThemeVarsSchema
 @GenerateStringConstants(fileName = "HtmlAttrs", resource = "codegen/html-attrs.yaml")
 internal object HtmlAttrsSchema
 
+@GenerateStringConstants(fileName = "HttpWire", resource = "codegen/http-wire.yaml")
+internal object HttpWireSchema
+
 @GenerateStringConstants(fileName = "RouteConstants", resource = "codegen/route-constants.yaml")
 internal object RouteConstantsSchema
 

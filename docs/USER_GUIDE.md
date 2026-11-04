@@ -114,12 +114,14 @@ persist portfolio snapshots between runs.
 
 ### Loop control
 
-The header's loop control is the quickest way to stop trading activity without
-changing the saved configuration. When the state reads **RUNNING**, click
-**Pause**; the active loop is cancelled safely and the state changes to
-**PAUSED**. Click **Resume** when you want the configured cycle schedule to
-start again. The control does not alter credentials, allocations, Simulation,
-Dry Run, or Live Trading mode.
+The header's **Pause** control requests cancellation of the active loop and
+prevents new cycles without changing the saved configuration. The state changes
+to **PAUSED** immediately; this does not prove an in-flight cycle has finished,
+and Pause cannot undo orders already submitted to Kraken. For ambiguous live
+orders, follow the [recovery procedure in SECURITY.md](../SECURITY.md#ambiguous-live-order-submissions).
+Click **Resume** when you want the configured cycle schedule to start again.
+The control does not alter credentials, allocations, Simulation, Dry Run, or
+Live Trading mode.
 
 ### Allocation & performance
 

@@ -1,0 +1,6 @@
+HttpWire:
+  ERROR_FRAGMENT_HEADER: "X-Rebalancer-Error-Fragment"
+  CSRF_TOKEN_RESPONSE_HEADER: "X-Rebalancer-CSRF-Token"
+  CSRF_SESSION_EXPIRED_HEADER: "X-Rebalancer-CSRF-Session-Expired"
+  SETTINGS_FORM_ERROR_FRAGMENT: "settings-form"
+  ORDER_INTENT_ERROR_FRAGMENT: "order-intent"

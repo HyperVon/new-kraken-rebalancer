@@ -25,6 +25,7 @@ import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
+import com.gemini.krakenbot.view.util.HttpWire
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.p
@@ -63,11 +64,6 @@ import java.math.BigDecimal
 import java.time.Instant
 
 private const val HX_REQUEST_HEADER = "HX-Request"
-private const val ERROR_FRAGMENT_HEADER = "X-Rebalancer-Error-Fragment"
-private const val CSRF_TOKEN_RESPONSE_HEADER = "X-Rebalancer-CSRF-Token"
-private const val CSRF_SESSION_EXPIRED_HEADER = "X-Rebalancer-CSRF-Session-Expired"
-private const val SETTINGS_FORM_ERROR_FRAGMENT = "settings-form"
-private const val ORDER_INTENT_ERROR_FRAGMENT = "order-intent"
 class DashboardController(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
@@ -496,10 +492,10 @@ class DashboardController(
         }
 
         val token = CsrfProtection.currentToken(call)
-        call.response.header(CSRF_TOKEN_RESPONSE_HEADER, token)
+        call.response.header(HttpWire.CSRF_TOKEN_RESPONSE_HEADER, token)
         if (call.request.headers[HX_REQUEST_HEADER].equals("true", ignoreCase = true)) {
             // A browser can retain all edited controls in place while refreshing their CSRF token.
-            call.response.header(CSRF_SESSION_EXPIRED_HEADER, "true")
+            call.response.header(HttpWire.CSRF_SESSION_EXPIRED_HEADER, "true")
             call.respond(HttpStatusCode.Forbidden)
             return
         }
@@ -561,7 +557,7 @@ class DashboardController(
         status: HttpStatusCode,
         formValues: SettingsFormValues? = null,
     ) {
-        call.response.header(ERROR_FRAGMENT_HEADER, SETTINGS_FORM_ERROR_FRAGMENT)
+        call.response.header(HttpWire.ERROR_FRAGMENT_HEADER, HttpWire.SETTINGS_FORM_ERROR_FRAGMENT)
         val errHtml =
             createHTML(prettyPrint = false).div {
                 dashboardView.renderSettingsFormFragment(
@@ -668,8 +664,8 @@ class DashboardController(
             CsrfProtection.hasExplicitSameOrigin(call)
         ) {
             val token = CsrfProtection.currentToken(call)
-            call.response.header(CSRF_TOKEN_RESPONSE_HEADER, token)
-            call.response.header(CSRF_SESSION_EXPIRED_HEADER, "true")
+            call.response.header(HttpWire.CSRF_TOKEN_RESPONSE_HEADER, token)
+            call.response.header(HttpWire.CSRF_SESSION_EXPIRED_HEADER, "true")
             // The request is rejected. The browser updates its hidden token and explains that the
             // operator must retry, including when an expired cookie and an old form token differ.
             call.respond(HttpStatusCode.Forbidden)
@@ -704,9 +700,9 @@ class DashboardController(
             if (isHtmxRequest) {
                 val staleTokenPair = CsrfProtection.isRefreshableStaleTokenPair(call, params)
                 val token = CsrfProtection.currentToken(call)
-                call.response.header(CSRF_TOKEN_RESPONSE_HEADER, token)
+                call.response.header(HttpWire.CSRF_TOKEN_RESPONSE_HEADER, token)
                 if (staleTokenPair) {
-                    call.response.header(CSRF_SESSION_EXPIRED_HEADER, "true")
+                    call.response.header(HttpWire.CSRF_SESSION_EXPIRED_HEADER, "true")
                 }
             }
             respondOrderIntentError(ViewText.CSRF_SESSION_EXPIRED, HttpStatusCode.Forbidden)
@@ -778,7 +774,7 @@ class DashboardController(
             return
         }
 
-        call.response.header(ERROR_FRAGMENT_HEADER, ORDER_INTENT_ERROR_FRAGMENT)
+        call.response.header(HttpWire.ERROR_FRAGMENT_HEADER, HttpWire.ORDER_INTENT_ERROR_FRAGMENT)
         call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.SWAP_OUTER_HTML)
         call.response.header(HtmxHeaders.HX_RETARGET, "#${HtmlIds.ORDER_INTENT_FEEDBACK}")
         val html = createHTML(prettyPrint = false).div(CssClass.Utility.ErrorBanner.value) {

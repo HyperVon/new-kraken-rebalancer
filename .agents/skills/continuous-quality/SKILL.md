@@ -99,8 +99,24 @@ small. See [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md).
 
 **Test-only override:** pure tests / FakeKraken scenarios that **do not** change
 production code stay **S/M** even when they exercise trading math — unless they
-require changing assertions to match wrong production behavior (then file an **L**
-product fix + keep a failing or `@Ignored` test linked to the issue).
+expose wrong production behavior requiring an **L** fix. In that case, file the
+product fix and follow the deferred-repro policy below; never change assertions
+to match the bug.
+
+### Deferred L reproductions
+
+A failing reproduction for a deferred or unapproved **L** fix stays local and
+unmerged, outside the shippable change. Preserve it separately as a local patch
+or isolated branch/worktree and link its location plus reproduction steps from
+the backlog/issue; do not discard user work or include the failing test in a
+green PR. Continue unrelated work only after its verification scope is isolated
+from that reproduction.
+
+Do not blanket-ignore tests to ship. A tracked skipped regression is an exception
+requiring explicit user approval, a linked open issue, and a recorded reason and
+re-enable condition. Report it as **skipped**, not passed or fixed, including the
+skip count in verification results. Green gates for the shipped slice never
+mean the deferred bug is resolved; keep its backlog item and issue open.
 
 When in doubt between M and L → treat as **L** and ask.
 
@@ -338,6 +354,8 @@ seconds proves nothing about tests you just added or re-enabled:
 
 Confirm the count actually moved (JUnit XML under `build/test-results/test/`) —
 `tests`, `failures`, and `skipped` should all match what you expect.
+Report any approved skipped regression explicitly and distinguish the verified
+shipped slice from local, unmerged failing repros and unresolved deferred bugs.
 
 Also when UI changed or UI findings were in the backlog:
 

@@ -244,7 +244,7 @@ tasks.check {
     dependsOn(tasks.jacocoTestCoverageVerification)
 }
 
-val nettySecurityFloor = "4.2.17.Final"
+val nettySecurityFloor = "4.2.20.Final"
 val nettyVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)\.Final""")
 val (nettySecurityMajor, nettySecurityMinor, nettySecurityPatch) =
     nettyVersionPattern.matchEntire(nettySecurityFloor)!!.destructured
@@ -347,7 +347,7 @@ configurations.all {
                 if (isBelowSecurityFloor) {
                     useVersion(nettySecurityFloor)
                     because(
-                        "Keep Netty at the 4.2.17.Final security floor without downgrading Ktor's Netty 4.2 line",
+                        "Keep Netty at the 4.2.20.Final security floor without downgrading Ktor's Netty 4.2 line",
                     )
                 }
             }
