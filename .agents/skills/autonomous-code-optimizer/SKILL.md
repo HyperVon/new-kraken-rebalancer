@@ -162,7 +162,11 @@ pattern erased “for simplicity.”
 Final pass: `./gradlew build jacocoTestCoverageVerification --rerun-tasks`,
 plus `:frontend-js:jsBrowserTest` when JS changed.
 
-Also expect JaCoCo 95%/90% and Karma 90%/75% gates. Loop to Pass 1 until clean.
+Require the canonical gates in
+[gradle-quality-gates](../gradle-quality-gates/SKILL.md): backend JaCoCo
+95% line/method/instruction and temporarily 85% branch; engine 95%
+line/method/instruction and 90% branch; Karma 90% statements/lines,
+80% functions, 75% branches. Loop to Pass 1 until clean.
 
 ### Do not count as a "clean cycle"
 

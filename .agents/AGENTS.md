@@ -97,13 +97,13 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 - **Language**: Kotlin **2.4.21** (KMP: JVM + JS)
 - **JDK**: **25** (`java.toolchain`)
-- **Backend**: Ktor **3.5.2** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
+- **Backend**: Ktor **3.6.1** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JDBC; `ExecutionDatabase` owns the durable live-order journal
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
 - **Engine**: Pure Kotlin JVM domain calculation library (`:engine`) housing `RebalancerEngine`, `PortfolioCalculations`, and typed planning models with independent 95/90 JaCoCo gates
-- **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.12** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
+- **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.13** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
 - **Testing**: Kotest **6.2.6**, MockK **1.14.11**, Karma/Istanbul
-- **Formatting**: Spotless **8.10.4** + ktlint **1.8.0**, **120**-char line length; `allWarningsAsErrors` in all modules
+- **Formatting**: Spotless **8.11.0** + ktlint **1.8.0**, **120**-char line length; `allWarningsAsErrors` in all modules
 
 ### Architecture names (SRP)
 

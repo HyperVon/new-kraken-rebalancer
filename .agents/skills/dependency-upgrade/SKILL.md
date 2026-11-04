@@ -71,8 +71,10 @@ through the host's native parallel task surface
 such as Kotlin/KSP/Gradle, Ktor/Koin, and testing/frontend/npm. Workers
 may inspect manifests, release notes, and compatibility evidence only; version
 edits, dependency refreshes, package-manager commands, migrations, and all
-builds remain parent-owned and serial. If route selection is unavailable, do
-the detection in the parent rather than using an unverified role.
+builds remain parent-owned and serial. Subagents inherit the parent session's
+model; do not select or record per-track provider/model routes. If a launch
+fails, follow the relaunch and parent-substitution rules in
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md).
 
 ### Step 1: Detect current vs latest
 
@@ -151,7 +153,7 @@ Known migration-sensitive areas in this codebase:
 - **Jackson** — always bump via the `jackson-bom` platform, not individual artifacts.
 - **Kotlin / KSP** — use a KSP release compatible with the configured Kotlin
   compiler; do not assume their version strings must be identical. This
-  repository currently pins KSP **2.3.12** for Kotlin/JS Kotest test discovery.
+  repository currently pins KSP **2.3.13** for Kotlin/JS Kotest test discovery.
 
 ### Step 6: Verify (mandatory)
 
@@ -169,8 +171,10 @@ or manually:
 ./gradlew test :frontend-js:jsBrowserTest
 ```
 
-- Backend coverage (JaCoCo: 95% line/method/instruction, 90% branch) and Kotlin/JS
-  Karma gates (90% statements/lines, 80% functions, 75% branches) must pass.
+- Coverage gates in [gradle-quality-gates](../gradle-quality-gates/SKILL.md)
+  must pass: backend JaCoCo 95% line/method/instruction and temporarily 85%
+  branch; engine 95% line/method/instruction and 90% branch; Kotlin/JS Karma
+  90% statements/lines, 80% functions, 75% branches.
 - **Lockfile churn inspection:** Inspect `git diff kotlin-js-store/yarn.lock` to verify
   that only targeted npm dependencies and their direct trees changed. Reject unexpected
   sweeping changes to unrelated packages.

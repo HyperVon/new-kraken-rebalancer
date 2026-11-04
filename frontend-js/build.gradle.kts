@@ -25,7 +25,7 @@ kotlin {
         getByName("jsMain") {
             dependencies {
                 implementation(project(":common"))
-                implementation(npm("tslib", "2.8.1"))
+                implementation(npm("tslib", "2.9.1"))
             }
         }
         getByName("commonTest") {

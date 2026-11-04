@@ -50,7 +50,18 @@ internal suspend fun joinRebalancingWorker(
         true
     } ?: false
     if (joinedWithinBudget) return true
-    if (hasPendingSubmissions() || hasUnresolvedOrderIntents()) {
+    val submissionsPending = try {
+        hasPendingSubmissions() || hasUnresolvedOrderIntents()
+    } catch (failure: Throwable) {
+        // A failed journal check cannot establish that releasing dependencies is safe.
+        try {
+            workerJob?.join()
+        } catch (joinFailure: Throwable) {
+            if (joinFailure !== failure) failure.addSuppressed(joinFailure)
+        }
+        throw failure
+    }
+    if (submissionsPending) {
         // A live submission (or its journal write) may still be in flight. Releasing the HTTP client
         // and Koin graph now could strand a PENDING/UNCERTAIN record, so extend the wait instead.
         log.warn(
@@ -156,7 +167,7 @@ internal class KrakenRebalancerApplicationLifecycle(
     fun shutdown() {
         val shouldPerformShutdown = synchronized(lock) {
             if (shuttingDown) {
-                if (shutdownOwner === Thread.currentThread()) return
+                if (shutdownOwner === Thread.currentThread() && !shutdownCompleted.isDone) return
                 false
             } else {
                 shuttingDown = true
@@ -169,7 +180,24 @@ internal class KrakenRebalancerApplicationLifecycle(
             return
         }
 
-        try {
+        var shutdownFailure: Throwable? = null
+        var interrupted = false
+        var stoppedWorker: Job? = null
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (failure: Throwable) {
+                if (failure is InterruptedException) interrupted = true
+                val primaryFailure = shutdownFailure
+                if (primaryFailure == null) {
+                    shutdownFailure = failure
+                } else if (primaryFailure !== failure) {
+                    primaryFailure.addSuppressed(failure)
+                }
+            }
+        }
+
+        cleanup {
             val attachedServer = synchronized(lock) { server }
             try {
                 attachedServer?.stop()
@@ -177,7 +205,7 @@ internal class KrakenRebalancerApplicationLifecycle(
                 log.warn("HTTP server shutdown failed; continuing application cleanup.", exception)
             }
 
-            val stoppedWorker = portfolioManager.stopRebalancingLoop()
+            stoppedWorker = portfolioManager.stopRebalancingLoop()
             val workerJoined =
                 runBlocking {
                     joinRebalancingWorker(
@@ -188,19 +216,34 @@ internal class KrakenRebalancerApplicationLifecycle(
             if (!workerJoined) {
                 log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
             }
-
-            applicationScope.cancel()
-            try {
-                httpClient.close()
-            } catch (exception: Exception) {
-                log.error("Could not close the HTTP client during application shutdown.", exception)
+        }
+        if (shutdownFailure != null) {
+            // If stopping failed before returning a worker, cancel and drain the owning scope
+            // instead: it may still contain the worker and its non-cancellable journal write.
+            if (stoppedWorker == null) cleanup { applicationScope.cancel() }
+            val jobToDrain = stoppedWorker ?: applicationScope.coroutineContext[Job]
+            cleanup {
+                // An interrupted runBlocking has a cancelled context. Drain the captured worker in
+                // a fresh context before closing resources needed by its NonCancellable journal write.
+                while (true) {
+                    interrupted = Thread.interrupted() || interrupted
+                    try {
+                        runBlocking { jobToDrain?.join() }
+                        break
+                    } catch (interruption: InterruptedException) {
+                        interrupted = true
+                        shutdownFailure.addSuppressed(interruption)
+                    }
+                }
             }
-            try {
-                stopContainer()
-            } catch (exception: Exception) {
-                log.error("Could not stop the dependency container during application shutdown.", exception)
-            }
-        } catch (failure: Throwable) {
+        }
+        // Keep dependencies alive through the worker's bounded (or journal-extended) drain,
+        // but do not let a failed drain prevent the remaining shutdown phases.
+        cleanup { applicationScope.cancel() }
+        cleanup { httpClient.close() }
+        cleanup { stopContainer() }
+        if (interrupted) Thread.currentThread().interrupt()
+        shutdownFailure?.let { failure ->
             shutdownCompleted.completeExceptionally(failure)
             throw failure
         }

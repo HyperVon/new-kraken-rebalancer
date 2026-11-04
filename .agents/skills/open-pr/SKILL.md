@@ -54,8 +54,11 @@ If one exists, return its URL instead of duplicating.
 ```
 
 Must pass: markdown lint (`.agents/AGENTS.md` + skills), Spotless 120,
-`./gradlew test`, `:frontend-js:jsBrowserTest`, and coverage expectations (JaCoCo
-95%/90%, Karma 90%/75%).
+`./gradlew test`, `:frontend-js:jsBrowserTest`, and coverage gates in
+[gradle-quality-gates](../gradle-quality-gates/SKILL.md): backend JaCoCo
+95% line/method/instruction and temporarily 85% branch; engine 95%
+line/method/instruction and 90% branch; Karma 90% statements/lines,
+80% functions, 75% branches.
 
 ## Step 3: Change-specific verification
 

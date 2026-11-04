@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.18] - 2026-11-03
+
+### Fixed
+
+- Continue application resource cleanup when stopping the rebalance worker or checking its journal fails.
+- Clarify that Dashboard Pause requests cancellation without waiting for an in-flight cycle to finish.
+- Require reviewed explicit staging and staged-diff inspection in the agent commit workflow.
+- Reconcile parallel-work, coverage, and deferred-test guidance, and complete contributor verification instructions.
+
+### Changed
+
+- Raise the Netty security floor to 4.2.20.Final; update Spotless, Kotlin CSS, and JavaScript tooling dependencies.
+- Update vulnerable development dependencies, including follow-redirects and re2js.
+- Share the server/client error-fragment and CSRF header contract through the common generated catalog.
+
 ## [6.20.17] - 2026-10-30
 
 ### Fixed

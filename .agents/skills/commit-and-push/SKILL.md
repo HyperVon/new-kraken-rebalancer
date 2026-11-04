@@ -15,13 +15,20 @@ this workflow in order. Do NOT skip steps.
 ## Step 0: Status & branch
 
 ```bash
-git status
+git status --short --untracked-files=all
+git diff --cached --name-status
+git diff --cached
 git branch --show-current
 git config user.name
 git config user.email
 ```
 
 Ensure you are on the intended branch (not detached HEAD) and author identity matches the user's intended git author. Never use destructive commands (`git reset --hard`, `git clean -fd`) without explicit user direction. If forced updates are authorized on a branch, create a backup branch (`git branch backup/<branch>-$(date +%Y%m%d)`) first.
+
+Inspect pre-staged changes and all untracked paths as well as unstaged work.
+Do not assume an existing index belongs to this task. If it includes unrelated
+work, stop for a staging decision; do not unstage, overwrite, or commit it
+without authorization.
 
 ## Step 1: Documentation
 
@@ -61,20 +68,42 @@ Before staging, inspect the change boundary:
 ```bash
 git diff --check
 git diff --stat
-git diff --name-only
+git diff --name-status
+git status --short --untracked-files=all
+git diff --cached --name-status
+git diff --cached
 ```
 
 Confirm that every changed path is intentional and that no generated file,
 credential, runtime state, or unrelated user change is included. Do not use a
 destructive cleanup command to make the worktree appear clean.
 
-Coverage expectations: JVM JaCoCo 95% line/method/instruction, 90% branch;
-JS Karma 90% statements/lines, 80% functions, 75% branches.
+Read the complete unstaged diff and the contents of each candidate untracked
+file before choosing explicit paths to stage. Do not stage a directory or glob
+that can sweep in unreviewed work.
+
+Coverage expectations are canonical in
+[gradle-quality-gates](../gradle-quality-gates/SKILL.md): backend JaCoCo
+95% line/method/instruction and temporarily 85% branch; engine 95%
+line/method/instruction and 90% branch; JS Karma 90% statements/lines,
+80% functions, 75% branches.
 
 ## Step 3: Commit
 
 ```bash
-git add -A
+git add -- <reviewed-path-1> <reviewed-path-2>
+git diff --cached --name-status
+git diff --cached
+git diff --cached --check
+```
+
+Stage only reviewed, explicitly named paths. Before every commit, inspect the
+**full staged diff** and staged name/status list, and require
+`git diff --cached --check` to pass. Confirm that the entire index contains only
+authorized work, including anything staged before this workflow. Stop on
+unexpected paths or hunks; never use blanket staging.
+
+```bash
 git commit -m "$(cat <<'EOF'
 <type>: <concise description>
 
@@ -134,6 +163,8 @@ SHA check fails, stop and investigate instead of claiming the push succeeded.
 
 - [ ] Docs/CHANGELOG/JaCoCo synced as needed
 - [ ] Lint paths include `.agents/AGENTS.md`, skills, and present top-level docs
+- [ ] Untracked and pre-staged state inspected; only reviewed explicit paths staged
+- [ ] Full staged diff and name/status reviewed; `git diff --cached --check` passed
 - [ ] If an open PR exists: [adversarial-pr-review](../adversarial-pr-review/SKILL.md) converged
 - [ ] If opening a PR next: all Test plan verifications done first ([open-pr](../open-pr/SKILL.md))
 - [ ] Tests green; pushed **current** branch via `gh`

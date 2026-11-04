@@ -19,6 +19,7 @@ import io.ktor.client.HttpClient
 import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -29,6 +30,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -45,6 +48,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -283,8 +287,9 @@ class KrakenRebalancerApplicationTest :
             verify(exactly = 1) { manager.stopRebalancingLoop() }
         }
 
-        "worker stop failure remains visible and does not release dependencies" {
+        "worker stop failure releases dependencies and reaches concurrent and repeated shutdown callers" {
             val events = mutableListOf<String>()
+            val stopFailure = IllegalStateException("worker stop failed")
             val stopStarted = CountDownLatch(1)
             val releaseStop = CountDownLatch(1)
             val manager = mockk<PortfolioManager>()
@@ -292,7 +297,7 @@ class KrakenRebalancerApplicationTest :
                 events += "worker-stop"
                 stopStarted.countDown()
                 releaseStop.await()
-                throw IllegalStateException("worker stop failed")
+                throw stopFailure
             }
             val client = mockk<HttpClient>()
             every { client.close() } answers { events += "client-close" }
@@ -323,14 +328,220 @@ class KrakenRebalancerApplicationTest :
                 releaseStop.countDown()
             }
 
-            shouldThrow<CompletionException> { firstShutdown.join() }.cause.shouldBeInstanceOf<IllegalStateException>()
+            shouldThrow<CompletionException> { firstShutdown.join() }.cause shouldBe stopFailure
             shouldThrow<CompletionException> { checkNotNull(secondShutdown).join() }.cause
-                .shouldBeInstanceOf<IllegalStateException>()
+                .shouldBe(stopFailure)
+            shouldThrow<CompletionException> { lifecycle.shutdown() }.cause shouldBe stopFailure
 
-            events shouldBe listOf("worker-stop")
-            scope.coroutineContext[Job]?.isActive shouldBe true
+            events shouldBe listOf("worker-stop", "client-close", "container-stop")
+            scope.coroutineContext[Job]?.isCancelled shouldBe true
             verify(exactly = 1) { manager.stopRebalancingLoop() }
-            verify(exactly = 0) { client.close() }
+            verify(exactly = 1) { client.close() }
+        }
+
+        "worker stop failure drains the application scope before closing dependencies" {
+            val cleanupStarted = CountDownLatch(1)
+            val releaseCleanup = CompletableDeferred<Unit>()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val worker = scope.launch {
+                try {
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) {
+                        cleanupStarted.countDown()
+                        releaseCleanup.await()
+                    }
+                }
+            }
+            val stopFailure = IllegalStateException("worker stop failed")
+            val manager = mockk<PortfolioManager>()
+            every { manager.stopRebalancingLoop() } throws stopFailure
+            val client = mockk<HttpClient>()
+            every { client.close() } answers { worker.isCompleted shouldBe true }
+            val lifecycle = KrakenRebalancerApplicationLifecycle(
+                portfolioManager = manager,
+                orderIntentService = mockk<OrderIntentService>(),
+                applicationScope = scope,
+                httpClient = client,
+                stopContainer = { worker.isCompleted shouldBe true },
+            )
+            val shutdown = CompletableFuture.runAsync { lifecycle.shutdown() }
+            try {
+                cleanupStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                shutdown.isDone shouldBe false
+                verify(exactly = 0) { client.close() }
+                releaseCleanup.complete(Unit)
+                shouldThrow<CompletionException> { shutdown.orTimeout(5, TimeUnit.SECONDS).join() }.cause shouldBe
+                    stopFailure
+                verify(exactly = 1) { client.close() }
+            } finally {
+                releaseCleanup.complete(Unit)
+                scope.cancel()
+            }
+        }
+
+        "interrupted shutdown drains journal cleanup before releasing dependencies and preserves all failures" {
+            val events = mutableListOf<String>()
+            val clientFailure = IllegalStateException("client close failed")
+            val containerFailure = IllegalStateException("container stop failed")
+            val cleanupStarted = CountDownLatch(1)
+            val releaseCleanup = CompletableDeferred<Unit>()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val worker = scope.launch {
+                try {
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) {
+                        cleanupStarted.countDown()
+                        releaseCleanup.await()
+                        events += "journal-persisted"
+                    }
+                }
+            }
+            val manager = mockk<PortfolioManager>()
+            every { manager.stopRebalancingLoop() } answers {
+                worker.cancel()
+                worker
+            }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers {
+                worker.isCompleted shouldBe true
+                scope.coroutineContext[Job]?.isCancelled shouldBe true
+                events += "client-close"
+                throw clientFailure
+            }
+            val lifecycle = KrakenRebalancerApplicationLifecycle(
+                portfolioManager = manager,
+                orderIntentService = mockk<OrderIntentService>(),
+                applicationScope = scope,
+                httpClient = client,
+                stopContainer = {
+                    events += "container-stop"
+                    throw containerFailure
+                },
+            )
+
+            val shutdown = CompletableFuture<Unit>()
+            val repeatedFailure = AtomicReference<Throwable>()
+            val interruptRestored = AtomicBoolean()
+            val owner = Thread(
+                {
+                    try {
+                        lifecycle.shutdown()
+                        shutdown.complete(Unit)
+                    } catch (failure: Throwable) {
+                        repeatedFailure.set(runCatching { lifecycle.shutdown() }.exceptionOrNull())
+                        interruptRestored.set(Thread.currentThread().isInterrupted)
+                        shutdown.completeExceptionally(failure)
+                    }
+                },
+                "interrupted-shutdown-test",
+            )
+            val concurrentThread = AtomicReference<Thread>()
+            val concurrentStarted = CountDownLatch(1)
+            owner.start()
+            try {
+                cleanupStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                val concurrentShutdown = CompletableFuture.runAsync {
+                    concurrentThread.set(Thread.currentThread())
+                    concurrentStarted.countDown()
+                    lifecycle.shutdown()
+                }
+                concurrentStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                awaitWaitingForShutdown(checkNotNull(concurrentThread.get())) shouldBe true
+                owner.interrupt()
+                awaitWaitingForShutdown(owner) shouldBe true
+                shutdown.isDone shouldBe false
+                concurrentShutdown.isDone shouldBe false
+                scope.coroutineContext[Job]?.isActive shouldBe true
+                events shouldBe emptyList()
+                releaseCleanup.complete(Unit)
+
+                val failure = shouldThrow<CompletionException> {
+                    shutdown.orTimeout(5, TimeUnit.SECONDS).join()
+                }.cause.shouldBeInstanceOf<InterruptedException>()
+                shouldThrow<CompletionException> {
+                    concurrentShutdown.orTimeout(5, TimeUnit.SECONDS).join()
+                }.cause shouldBe failure
+                repeatedFailure.get().shouldBeInstanceOf<CompletionException>().cause shouldBe failure
+                shouldThrow<CompletionException> { lifecycle.shutdown() }.cause shouldBe failure
+                interruptRestored.get() shouldBe true
+
+                failure.suppressed.toList() shouldBe listOf(clientFailure, containerFailure)
+                events shouldBe listOf("journal-persisted", "client-close", "container-stop")
+                verify(exactly = 1) { manager.stopRebalancingLoop() }
+            } finally {
+                releaseCleanup.complete(Unit)
+                owner.join(5_000)
+                scope.coroutineContext[Job]?.cancel()
+            }
+        }
+
+        "journal diagnostic failure drains the worker before cleanup and remains visible on repeated shutdown" {
+            val events = mutableListOf<String>()
+            val diagnosticFailure = IllegalStateException("journal check failed")
+            val diagnosticStarted = CountDownLatch(1)
+            val releaseWorker = CompletableDeferred<Unit>()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val worker = scope.launch {
+                try {
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) {
+                        releaseWorker.await()
+                        events += "worker-drained"
+                    }
+                }
+            }
+            val manager = mockk<PortfolioManager>()
+            every { manager.stopRebalancingLoop() } answers {
+                worker.cancel()
+                worker
+            }
+            val intents = mockk<OrderIntentService>()
+            coEvery { intents.hasUnresolvedIntents() } answers {
+                scope.coroutineContext[Job]?.isActive shouldBe true
+                events += "journal-check"
+                diagnosticStarted.countDown()
+                throw diagnosticFailure
+            }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers {
+                worker.isCompleted shouldBe true
+                scope.coroutineContext[Job]?.isCancelled shouldBe true
+                events += "client-close"
+            }
+            val lifecycle = KrakenRebalancerApplicationLifecycle(
+                portfolioManager = manager,
+                orderIntentService = intents,
+                applicationScope = scope,
+                httpClient = client,
+                stopContainer = { events += "container-stop" },
+            )
+
+            val shutdownThread = AtomicReference<Thread>()
+            val shutdown = CompletableFuture.runAsync {
+                shutdownThread.set(Thread.currentThread())
+                lifecycle.shutdown()
+            }
+            try {
+                diagnosticStarted.await(10, TimeUnit.SECONDS) shouldBe true
+                awaitWaitingForShutdown(checkNotNull(shutdownThread.get())) shouldBe true
+                shutdown.isDone shouldBe false
+                scope.coroutineContext[Job]?.isActive shouldBe true
+                events shouldBe listOf("journal-check")
+                releaseWorker.complete(Unit)
+
+                shouldThrow<CompletionException> { shutdown.orTimeout(5, TimeUnit.SECONDS).join() }.cause
+                    .shouldBe(diagnosticFailure)
+                shouldThrow<CompletionException> { lifecycle.shutdown() }.cause shouldBe diagnosticFailure
+
+                events shouldBe listOf("journal-check", "worker-drained", "client-close", "container-stop")
+                verify(exactly = 1) { manager.stopRebalancingLoop() }
+            } finally {
+                releaseWorker.complete(Unit)
+                scope.coroutineContext[Job]?.cancel()
+            }
         }
 
         "failed server bind does not start trading and still releases dependencies" {
@@ -376,6 +587,10 @@ class KrakenRebalancerApplicationTest :
 
 private fun awaitWaitingForShutdown(thread: Thread): Boolean {
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-    while (thread.state == Thread.State.RUNNABLE && System.nanoTime() < deadline) Thread.yield()
-    return thread.state == Thread.State.WAITING
+    while (System.nanoTime() < deadline) {
+        if (thread.state == Thread.State.WAITING || thread.state == Thread.State.TIMED_WAITING) return true
+        if (!thread.isAlive) return false
+        Thread.yield()
+    }
+    return false
 }

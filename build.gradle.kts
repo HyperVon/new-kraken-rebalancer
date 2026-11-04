@@ -86,8 +86,13 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("**/express/body-parser", ">=2.4.0 <3.0.0")
         // Dependabot #171-#173 — Windows path checks and editor-flag handling; patched in 2.14.2.
         resolution("launch-editor", ">=2.14.2 <3.0.0")
-        // Dependabot #169-#170 — cross-origin credential-header filtering; patched in 1.16.1.
-        resolution("follow-redirects", ">=1.16.1 <2.0.0")
+        // Dependabot #199 — cross-realm credential-header filtering; patched in 1.16.2.
+        resolution("follow-redirects", ">=1.16.2 <2.0.0")
+        // Dependabot #200 — Mocha's glob 10 permits traversal after cancellation.
+        resolution("**/mocha/glob", ">=14.0.2 <15.0.0")
+        // Dependabot #201 — glob pattern amplification; retain legacy callable APIs where needed.
+        resolution("**/mocha/minimatch", ">=11.0.1 <12.0.0")
+        resolution("**/karma-webpack/minimatch", ">=11.0.1 <12.0.0")
         // Body-parser 2.4.0 requires qs ^6.16.1; keep the floor at the latest 6.16 patch.
         resolution("qs", ">=6.16.1 <7.0.0")
         // Dependabot #143 — Engine.IO protocol revision mismatch DoS

@@ -66,13 +66,16 @@ first
    ```
 
 2. Make your changes, keeping commits focused and descriptive
-3. Ensure existing tests and coverage gates pass:
+3. Ensure existing tests, coverage gates, and Markdown lint pass:
 
    ```bash
    ./gradlew build jacocoTestCoverageVerification
+   npm ci --ignore-scripts
+   npm run lint:md
    ```
 
-   (requires a valid `rebalancer-config.json` for local runs that load config).
+   The Markdown commands install locked tooling and run the same lint check as CI
+   (Node.js 22).
    Frontend browser tests are included via `check` → `:frontend-js:jsBrowserTest`.
     **CodeQL** runs Java/Kotlin analysis from `.github/workflows/codeql.yml` on
      `main` pushes and pull requests. The workflow uses CodeQL Action v4.37.7,
