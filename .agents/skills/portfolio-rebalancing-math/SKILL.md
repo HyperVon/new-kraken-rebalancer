@@ -88,13 +88,13 @@ USD is not an order row. If USD is the only triggered asset:
   `totalCounterDev == 0` emits `RebalanceEvent.NoCounterBalancingAssets` and
   creates no orders — never fall back to an equal split.
 
-Fiat-share distribution is a spend-cap case, so shares truncate instead of
-using the usual `HALF_UP` precision rule:
+Fiat-share distribution in `distributeFiatCorrectionPlan` is a spend-cap case:
 
-- `distributeFiatCorrectionPlan` truncates the budget
-  (`remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)`) and
-  clamps each share `deviationAbs × ratio` with `.toUsdScale().min(remaining)`;
-  the shares must never sum above the corrected deviation.
+- Only the budget truncates
+  (`remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)`); each
+  share still rounds `HALF_UP` (`deviationAbs × ratio` then `.toUsdScale()`)
+  and clamps with `.min(remaining)`, so the shares never sum above the
+  corrected deviation.
 - A share that rounds or clamps to `0.00` is skipped (`signum() <= 0`), not
   re-ordered or forced up to the dust minimum; re-run the `minimumOrderSizeUSD`
   gate on every share.

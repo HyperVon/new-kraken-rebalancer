@@ -31,7 +31,7 @@ Wait for one completed cycle; the waiting state is expected before then.
 | DASH-5 | Sort an asset-table column, then wait for an SSE refresh | Sort direction and column remain selected. |
 | DASH-6 | Wait for the next cycle update | Snapshot and age refresh without a broken intermediate page. |
 | DASH-7 | Inspect the deviation legend at 1280–1440px | "Over target" and "Under target" render as two visually separated labels, never concatenated. |
-| DASH-8 | Inspect the hero trend across cycles with missing samples | The trend never draws a continuous line across missing samples or gaps; incomplete evidence is not presented as continuous. |
+| DASH-8 | After a simulation-mode or credential-scope change, inspect the hero trend | The trend window resets (clears) instead of bridging old and new source samples; incomplete evidence is never presented as a continuous line. |
 
 ## Settings
 

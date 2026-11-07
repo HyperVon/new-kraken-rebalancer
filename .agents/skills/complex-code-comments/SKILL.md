@@ -89,8 +89,7 @@ counter = applyDecay(counter)
 
 - `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl`
 - `RateLimiter`, `KrakenServiceImpl` (signing, retry/lockout)
-- `OrderSettleHelper`, `ActualObservationDispatcher`,
-  `ProspectiveBenchmarkService` (forward continuity verification)
+- `OrderSettleHelper`, `OrderIntentService` (live-order journal)
 - Config validation / atomic write paths
 - `:frontend-js` Dashboard freshness/sorting, Settings allocation checks, SSE
 

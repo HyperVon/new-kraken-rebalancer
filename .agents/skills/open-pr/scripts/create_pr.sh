@@ -16,10 +16,16 @@ if [ "$BRANCH" = "main" ]; then
 fi
 
 BODY_FILE="${1:-}"
-if [ -z "$BODY_FILE" ] || [ ! -f "$BODY_FILE" ]; then
-    echo "[!] Missing prepared PR body file. Usage: create_pr.sh <pr-body-file>"
+if [ -z "$BODY_FILE" ] || [ ! -s "$BODY_FILE" ]; then
+    echo "[!] Missing or empty PR body file. Usage: create_pr.sh <pr-body-file>"
     echo "    Prepare it from .agents/skills/open-pr/examples/sample_pr_body.md"
     echo "    after Steps 0-5 (change-specific verification + adversarial review)."
+    exit 1
+fi
+
+if grep -nE '^[[:space:]]*- \[ \]' "$BODY_FILE"; then
+    echo "[!] PR body contains unchecked test-plan items. Every item must be"
+    echo "    checked ([x]) or omitted as N/A before opening the PR."
     exit 1
 fi
 

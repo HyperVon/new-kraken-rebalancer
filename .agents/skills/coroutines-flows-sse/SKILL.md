@@ -70,10 +70,10 @@ sells, outside dry-run:
    — never `ofs` pagination. Net proceeds per fill are `cost − fee` floored at
    0.
 2. Fill validation is all-or-nothing: any fill with a matched `orderTxid` that
-   fails `matchSettlementFill` (non-sell side, non-USD quote or fee currency,
-   invalid fields, non-positive cost) is `Incomplete` and discards the whole
-   fill estimate, falling back to USD balance polling. Never skip a bad fill
-   and keep summing.
+   fails `matchSettlementFill` (non-sell side, non-USD quote, non-USD fee
+   currency when the fee is positive or any negative fee, invalid fields,
+   non-positive cost) is `Incomplete` and discards the whole fill estimate,
+   falling back to USD balance polling. Never skip a bad fill and keep summing.
 3. Dedupe repeated nonblank trade IDs (count once); a repeated `nextCursor`
    aborts the scan, as does a still-live cursor after `MAX_FILL_PAGES` (5).
    Incomplete pagination must never be accepted as the final sum.

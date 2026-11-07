@@ -58,7 +58,7 @@ not treat this skill’s checklist as a substitute.
 | `OrderExecutorImpl` | Plan construction, target percentages | `executeOrder`, order-specific USD settlement, `withStableBackend` |
 | `PortfolioManagerImpl` | Inline rebalance math or raw AddOrder | Orchestrate analyzer → executor → publish current snapshot |
 | `CurrentPortfolioState` | Persist or retain an unbounded cycle timeline | Retain the latest snapshot plus up to 2,880 same-source snapshots in memory; clear the trend when mode or credential scope changes |
-| `ActualObservationDispatcher` | Block the order path on observation persistence | Queue eligible direct evidence for off-cycle storage |
+| `OrderIntentService` / execution journal | Auto-reconcile, prune, or retry ambiguous live intents | Persist `PENDING` before AddOrder; unresolved rows block later live submissions |
 | `view/component/*` | Business rules, Kraken calls | Render DTOs + `:common` constants; receive `Settings` |
 | `:common` `commonMain` | JVM/JS-only imports, SLF4J, `java.math.*` | Routes, IDs, CSS tokens, wire DTOs, KMP-safe models |
 

@@ -13,8 +13,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Require a prepared PR body in `create_pr.sh` and remove its fabricated blanket
   verification claims; the script is documented as no shortcut for the open-pr
   workflow steps.
-- Replace the stale `ActualObservationDispatcher` code anchor in the
-  documentation-review skill with current types.
+- Replace stale `ActualObservationDispatcher` / `ProspectiveBenchmarkService`
+  code anchors in documentation-review, code-review, and complex-code-comments
+  with current types.
 
 ### Changed
 

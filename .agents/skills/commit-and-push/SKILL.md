@@ -49,7 +49,7 @@ Or manually:
 
 ```bash
 ! grep -nE '^##[[:space:]]*\[[Uu]nreleased\]' CHANGELOG.md   # must not match
-npx markdownlint-cli $(git ls-files -- '*.md' '*.mdc')
+git ls-files -z -- '*.md' '*.mdc' | xargs -0 npx markdownlint-cli
 python3 .agents/scripts/validate_skills.py
 ./gradlew spotlessCheck
 ./gradlew build jacocoTestCoverageVerification
@@ -58,9 +58,8 @@ python3 .agents/scripts/validate_skills.py
 
 Prefer `pre_commit_check.sh` — it lints every tracked `*.md` / `*.mdc` via
 `git ls-files` and runs `validate_skills.py` (frontmatter + link validation).
-Do not rely on CI `npm run lint:md` for stub coverage: it covers `**/*.md` only
-and excludes `.mdc`, so `.cursor/rules/*.mdc`, `.clinerules/*.md`, and
-`.kilo/**` stubs must be linted explicitly.
+CI `npm run lint:md` covers `**/*.md` including dot-dirs (`--dot`); only `.mdc`
+files such as `.cursor/rules/*.mdc` need the explicit tracked-file form above.
 
 The script fails fast if `CHANGELOG.md` still has an `## [Unreleased]` heading —
 convert it to a dated SemVer heading (`## [X.Y.Z] - YYYY-MM-DD`) first (see
