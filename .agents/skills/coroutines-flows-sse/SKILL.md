@@ -65,14 +65,26 @@ poll implementation lives in `OrderSettleHelper` and runs after successful
 sells, outside dry-run:
 
 1. When Kraken returned sell order transaction IDs, poll `TradesHistory` for
-   successful matching sell fills and sum net proceeds after fees. Scan up to
-   five pages and deduplicate repeated nonblank trade IDs.
-2. Cap confirmed proceeds to spendable USD when visible; if that read fails,
-   cap to projected cash. Accept the result only at or above 95% of projected
-   cash.
-3. If fills are missing or materially short, or IDs are unavailable, poll the
+   successful matching sell fills and sum net proceeds after fees. The scan
+   window is `now−600s .. now` epoch-seconds in cursor mode (`with_cursor=true`)
+   — never `ofs` pagination. Net proceeds per fill are `cost − fee` floored at
+   0.
+2. Fill validation is all-or-nothing: any fill with a matched `orderTxid` that
+   fails `matchSettlementFill` (non-sell side, non-USD quote or fee currency,
+   invalid fields, non-positive cost) is `Incomplete` and discards the whole
+   fill estimate, falling back to USD balance polling. Never skip a bad fill
+   and keep summing.
+3. Dedupe repeated nonblank trade IDs (count once); a repeated `nextCursor`
+   aborts the scan, as does a still-live cursor after `MAX_FILL_PAGES` (5).
+   Incomplete pagination must never be accepted as the final sum.
+4. Cap confirmed proceeds to spendable USD when visible; if that read fails,
+   cap to projected cash. Accept the result only at or above
+   `EARLY_ACCEPT_PROPORTION` (95%) of projected cash:
+   `min(fillConfirmed, spendable peek)` or `min(fillConfirmed, projectedCash)`
+   when the peek fails.
+5. If fills are missing or materially short, or IDs are unavailable, poll the
    spendable USD balance as a fallback.
-4. Each cold poll is bounded to three attempts with exponential delay starting
+6. Each cold poll is bounded to three attempts with exponential delay starting
    at 250 ms. If safe USD cannot be confirmed, the executor stops buys for the
    cycle.
 

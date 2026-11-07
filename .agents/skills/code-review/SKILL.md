@@ -169,7 +169,7 @@ not treat this skill’s checklist as a substitute.
 
 ### High-risk defect categories
 
-- *Concurrency & atomicity:* unlocked mutexes/locks on early return or exception paths; check-then-act (TOCTOU) races; coroutine/thread leaks without lifecycle termination; unhandled async task failures.
+- *Concurrency & atomicity:* unlocked mutexes/locks on early return or exception paths; check-then-act (TOCTOU) races; coroutine/thread leaks without lifecycle termination; unhandled async task failures. Flag any `GlobalScope` use (coroutines run in application/cycle-scoped scopes only; fire-and-forget `launch` needs a supervised parent and failure handler), `runBlocking` outside `KrakenRebalancerApplication` startup/shutdown (journal bootstrap, drain), and ad-hoc `CoroutineScope(Dispatchers.X)` without lifecycle cancellation.
 - *State transitions & persistence:* partial multi-step persistence writes lacking transaction rollback; missing database connection/file handle release in `finally` blocks; idempotency failures during retries.
 - *Input & boundary validation:* missing bounds, size, or type checks on untrusted payloads; unescaped inputs reaching regex/SQL/shell parsers; sensitive data leaked into log lines.
 - *Error propagation:* swallowed exceptions returning synthetic default values that masquerade as success; missing error wrapping that loses operational root cause.

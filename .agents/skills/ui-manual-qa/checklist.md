@@ -30,6 +30,8 @@ Wait for one completed cycle; the waiting state is expected before then.
 | DASH-4 | Inspect Recent Activity | Current process activity is shown, or a clear no-action state appears. |
 | DASH-5 | Sort an asset-table column, then wait for an SSE refresh | Sort direction and column remain selected. |
 | DASH-6 | Wait for the next cycle update | Snapshot and age refresh without a broken intermediate page. |
+| DASH-7 | Inspect the deviation legend at 1280–1440px | "Over target" and "Under target" render as two visually separated labels, never concatenated. |
+| DASH-8 | Inspect the hero trend across cycles with missing samples | The trend never draws a continuous line across missing samples or gaps; incomplete evidence is not presented as continuous. |
 
 ## Settings
 
@@ -53,8 +55,12 @@ Change only the throwaway simulation configuration. Restore changed values.
 | ERROR-1 | Submit an invalid disposable Settings value | Error and edited values remain visible for correction. |
 | ERROR-2 | If a session expires, submit Settings | The token refreshes and entered values remain. |
 | ERROR-3 | If an uncertain intent is represented in an isolated environment | Dashboard shows evidence-based resolution controls; no live order is placed. |
-| OPT-1 | Open Dashboard and Settings at phone width | Navigation, status, forms, and tables reflow without clipping. |
-| OPT-2 | Compare one page at laptop and desktop widths | Content reflows without hidden controls. |
+| OPT-1 | Open Dashboard and Settings at phone width (~390px) | Navigation, status, forms, and tables reflow without clipping. |
+| OPT-2 | Compare one page at laptop (1280–1440px) and desktop widths | Content reflows without hidden controls. |
+| OPT-3 | Inspect the header status cluster and overview tiles at 1280–1440px | STREAM/STALE + relative age/time cluster stays readable and unsquished; Cash/Crypto summary tiles are not clipped or empty. |
+
+Pin responsive widths numerically: run responsive cases at laptop 1280–1440px
+and phone (~390px), not just "laptop" / "mobile".
 
 ## Maintenance
 

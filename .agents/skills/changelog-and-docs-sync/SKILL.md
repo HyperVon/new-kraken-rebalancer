@@ -58,10 +58,16 @@ Agent rules path is **`.agents/AGENTS.md`** — never assume a root `AGENTS.md`.
 ## Markdown hygiene
 
 ```bash
-npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
+npx markdownlint-cli $(git ls-files -- '*.md' '*.mdc')
+python3 .agents/scripts/validate_skills.py
 ```
 
-Blank lines around lists; consistent heading hierarchy; no trailing whitespace.
+Lint every tracked `*.md` / `*.mdc` (the `git ls-files` form covers
+`.cursor/rules/*.mdc`, `.clinerules/*.md`, and `.kilo/**` stubs that a fixed
+path list misses). CI `npm run lint:md` covers `**/*.md` only and excludes
+`.mdc`, so do not treat it as stub coverage. `validate_skills.py` checks skill
+frontmatter and links as part of the gate. Blank lines around lists; consistent
+heading hierarchy; no trailing whitespace.
 
 ## Mermaid diagrams (ALGORITHM / FLOWS / README)
 

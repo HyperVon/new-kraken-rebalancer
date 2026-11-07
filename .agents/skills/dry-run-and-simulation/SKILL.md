@@ -92,10 +92,17 @@ decision explicitly.
 ## SimulatedKrakenService
 
 - `SimulatedKrakenService`: MARKET orders only; synchronized lazy balance/price
-  init; random-walk prices per ticker fetch; a coroutine `Mutex` makes each
-  non-dry-run balance check, mutation, and trade append atomic.
-- Seeding: in-memory balances and prices are initialized for offline simulation;
-  no snapshots or account trade feed are persisted.
+  init; random-walk prices per ticker fetch (assert ranges or relationships in
+  tests, never exact prices); a coroutine `Mutex` makes each non-dry-run balance
+  check, mutation, and trade append atomic.
+- Seeding is lazy first-touch per configured allocation symbol
+  (`SimulationDefaults.INITIAL_PRICES`, `DEFAULT_PRICE` fallback; unknown ticker
+  pairs fall back to a default price). Balances drift ±25% off configured
+  targets so a fresh sim deliberately needs rebalancing; a symbol added to
+  allocations seeds on its next read or order. No snapshots or account trade
+  feed are persisted.
+- Every emulator fill charges `SIMULATED_FEE_RATE` deducted from USD cash
+  (buys and sells) — do not assert fee-free post-order balances in tests.
 - Still honors `dryRun` (no balance mutation on orders).
 - Dry-run emulator orders omit `orderTxid`. That only matters when settle runs
   (`dryRun=false` with successful sells); when `settings.dryRun` is true, the

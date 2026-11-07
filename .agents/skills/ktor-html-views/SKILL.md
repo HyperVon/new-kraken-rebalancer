@@ -87,6 +87,20 @@ revision, and a source-scoped bounded window for the hero chart. The legacy
 The JS client updates age/freshness and preserves table sorting; it does not
 open `EventSource` or reconstruct reports.
 
+Rendering traps to preserve:
+
+- The hero trend (`OverviewGridComponent.renderTrendSvg`) is one server-rendered
+  `<polyline>` over the sample list; when samples can be missing or gapped,
+  split into per-segment polylines — never draw a continuous line through
+  missing data. X is index-based (`index / lastIndex`), not timestamp-based.
+- SVG coordinates use `String.format(Locale.US, "%.2f")`; keep `Locale.US` or
+  non-US locales emit commas that break `points`.
+- The deviation legend (`PerformanceTableComponent`) renders
+  `LEGEND_OVER_TARGET` / `LEGEND_UNDER_TARGET` as adjacent spans with no
+  separating text node; separation depends entirely on `DevLegend` flex/gap
+  CSS. After any legend or CSS change, verify the labels never read
+  "Over targetUnder target".
+
 ## HTMX and static assets
 
 - Use `HtmxAttrs` and `Routes` for partial requests and swaps.
@@ -120,6 +134,13 @@ the User Guide when user-facing behavior changes. Use
 
 Relevant backend checks include the focused Dashboard route and view-component
 checks. `/history` and retrospective account-history routes are retired.
+
+Retired settings keys (`drawdown*`, `deployment*`, `inception*`,
+`comparisonStart*`) must never reappear in `SettingsFormComponent`, `FormFields`,
+`ViewText`, or saved JSON — the parser drops them on load and a save writes the
+active shape only. Do not add fields, labels, or docs for these concepts even as
+"advanced" or legacy displays, and never copy these keys from old fixtures into
+new test or config fixtures.
 
 ## Checklist
 
