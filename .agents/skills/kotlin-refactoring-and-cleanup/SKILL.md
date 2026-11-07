@@ -41,6 +41,12 @@ and exchange aliases into `common/src/commonMain/` (`ViewText`, `HtmlIds`, `CssC
 - If the constants are used in lookup maps, lists, or helpers, place those in a dedicated
   handwritten `<Name>Mappings.kt` or `<Name>Extensions.kt` file (e.g. `KrakenAssetMappings.kt`,
   `ChartColors.kt`), referencing the generated `const val` properties directly.
+- Reference canonical `:common` constants (`ViewText`, `HtmlIds`, `CssClass`,
+  `HtmlAttrs`, `Routes`, `PrecisionConstants`) directly at the use site; never
+  create a local `val` / `const val` that merely aliases one of them. When
+  moving strings to `:common`, delete the old locals entirely — do not re-point
+  them at the new catalog entry. Legitimate locals are computed values or
+  mappings, not passthrough aliases.
 - Preserve names and compile-time `const val` behavior, and keep catalog entries explicit.
 - Leave mixed semantic objects such as numeric precision data, CSS DSL values, and derived
   API paths manual unless a typed generator has a mechanically checked equivalent.

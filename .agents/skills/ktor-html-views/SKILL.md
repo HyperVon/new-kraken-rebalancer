@@ -87,6 +87,22 @@ revision, and a source-scoped bounded window for the hero chart. The legacy
 The JS client updates age/freshness and preserves table sorting; it does not
 open `EventSource` or reconstruct reports.
 
+Rendering traps to preserve:
+
+- The hero trend (`OverviewGridComponent.renderTrendSvg`) is one server-rendered
+  `<polyline>` over the sample list with index-based X (`index / lastIndex`),
+  not timestamp-based. The bounded same-source deque supplies dense samples and
+  clears on source change, so gap segmentation is not implemented; if missing
+  samples ever become representable, split into per-segment polylines instead
+  of bridging gaps — never present incomplete evidence as a continuous line.
+- SVG coordinates use `String.format(Locale.US, "%.2f")`; keep `Locale.US` or
+  non-US locales emit commas that break `points`.
+- The deviation legend (`PerformanceTableComponent`) renders
+  `LEGEND_OVER_TARGET` / `LEGEND_UNDER_TARGET` as adjacent spans with no
+  separating text node; separation depends entirely on `DevLegend` flex/gap
+  CSS. After any legend or CSS change, verify the labels never read
+  "Over targetUnder target".
+
 ## HTMX and static assets
 
 - Use `HtmxAttrs` and `Routes` for partial requests and swaps.
@@ -120,6 +136,14 @@ the User Guide when user-facing behavior changes. Use
 
 Relevant backend checks include the focused Dashboard route and view-component
 checks. `/history` and retrospective account-history routes are retired.
+
+Retired settings keys (`fiatMaxDrawdown`, `fiatDeploymentExponent`,
+`fiatDeploymentThresholdPercent`, `inceptionDate`, `comparisonStartDate`) must
+never reappear in `SettingsFormComponent`, `FormFields`, `ViewText`, or saved
+JSON — they are tolerated on load (dropped from the model) and a save writes
+the active shape only. Do not add fields, labels, or docs for these concepts
+even as "advanced" or legacy displays, and never copy these keys from old
+fixtures into new test or config fixtures.
 
 ## Checklist
 

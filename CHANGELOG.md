@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.19] - 2026-11-06
+
+### Fixed
+
+- Require a prepared PR body in `create_pr.sh` and remove its fabricated blanket
+  verification claims; the script is documented as no shortcut for the open-pr
+  workflow steps.
+- Replace stale `ActualObservationDispatcher` / `ProspectiveBenchmarkService`
+  code anchors in documentation-review, code-review, and complex-code-comments
+  with current types.
+
+### Changed
+
+- Deepen agent skills with money-safety and correctness contracts: fiat-share
+  truncation, one-way live-order journal transitions, fail-closed fill
+  settlement, and config write-path permissions and rotation detection.
+- Add named test-fidelity traps to write-kotest and dry-run-and-simulation:
+  BigDecimal matcher ban, Kotlin/JS KSP discovery, raw-literal contract
+  assertions, and emulator fee/seeding behavior.
+- Push repository invariants into owning skills: ARIA and alias-constant bans in
+  common-kmp-module, banned coroutine APIs in code-review, and fixed-target hard
+  constraints in architecture-review.
+- Record UI rendering and verification traps (hero-trend polyline gaps, deviation
+  legend separation, laptop-width checks, cache-bust tell) and pin manual-QA
+  responsive widths.
+- Lint tracked `*.md`/`*.mdc` harness stubs and run `validate_skills.py` in the
+  manual commit-gate fallback.
+- Enable Gradle tooling parallel sync and migrate the OpenCode configuration to
+  its current schema.
+
 ## [6.20.18] - 2026-11-03
 
 ### Fixed

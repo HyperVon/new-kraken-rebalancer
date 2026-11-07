@@ -76,7 +76,7 @@ Gather facts from code/build (do not trust docs yet):
    `:common`, `:engine`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
    `PortfolioAnalyzerImpl`, `PortfolioCalculations`, `OrderExecutorImpl`,
    `DynamicKrakenService`, `RateLimiter`, `CurrentPortfolioState`,
-   `ActualObservationDispatcher`, `DashboardController`, view components).
+   `ConfigServiceImpl`, `DashboardController`, view components).
 3. **Config surface** — `Settings`, `AppConfig`, `Allocation`, and
    `rebalancer-config-template.json`; distinguish active controls from retired
    history-only keys discarded on load and removed by Settings save.
@@ -302,7 +302,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | Topic | Code anchors | Doc anchors |
 | :--- | :--- | :--- |
 | Rebalance math | `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl` | `docs/ALGORITHM.md` |
-| Flows / SSE | `ConfigServiceImpl`, `CurrentPortfolioState`, `ActualObservationDispatcher`, `DashboardController` | `docs/FLOWS.md` |
+| Flows / SSE | `ConfigServiceImpl`, `CurrentPortfolioState`, `OrderSettleHelper`, `DashboardController` | `docs/FLOWS.md` |
 | Evaluation | Focused planning, execution-safety, Dashboard, and Settings checks | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
 | Coverage | `backend/build.gradle.kts` JaCoCo, `frontend-js/karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
