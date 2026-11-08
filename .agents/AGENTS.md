@@ -281,7 +281,10 @@ domain skills.
   use independent raw expected strings for contract assertions so a test cannot
   pass just because the implementation and expectation share the same catalog
   entry; typed catalogs remain fine for non-assertion setup.
-- **No ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) into HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS. Rely on standard semantic HTML elements.
+- **No unsolicited ARIA attributes**: Do not introduce `aria-*` attributes into
+  HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS unless
+  the user explicitly requests accessibility work. Rely on semantic HTML and
+  preserve existing metadata outside scope; see [OPERATING.md §5](OPERATING.md#no-unsolicited-accessibility-metadata).
 - **No absolute user paths** or machine-specific hostnames in source/tests.
 - **IntelliJ MCP**: prefer `search_symbol` + `analyze_calls`, `rename_refactoring`,
   and `get_file_problems` for structural work when the IDE server is connected;

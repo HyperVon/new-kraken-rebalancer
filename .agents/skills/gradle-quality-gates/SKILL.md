@@ -32,9 +32,9 @@ description: >-
 
 - `org.gradle.parallel=true` and `org.gradle.caching=true`; configuration cache
   is also enabled.
-- JVM tests default to one fork per three available processors, with a minimum
-  of one. Override with `-PtestForks=<n>` or use `-PtestMaxHeap=1g` on
-  constrained hosts.
+- Backend JVM tests default to one fork per three available processors, with a
+  minimum of one. Override backend test settings with `-PtestForks=<n>` or
+  `-PtestMaxHeap=1g` on constrained hosts; these properties do not tune engine tests.
 - Routine release build: `./gradlew build :backend:fatJar` (no `clean`). Use `clean` only
   when diagnosing stale outputs; it discards Kotlin/JS, Webpack, compile, and
   test caches.
@@ -144,10 +144,16 @@ Node diagnostics.
 
 ## CodeQL
 
-**Enabled** — `.github/workflows/codeql.yml` runs the `java-kotlin` analysis on
-`main` pushes and pull requests using CodeQL Action **v4.37.7**, JDK **25**, and
-`build-mode: manual`. Keep the workflow SHA pin, language, and manual build
-steps aligned with the workflow.
+**Enabled** — `.github/workflows/codeql.yml` runs Python (`build-mode: none`)
+and Java/Kotlin (`build-mode: manual`, JDK **25**) analysis on `main` pushes
+and pull requests using CodeQL Action **v4.37.7**.
+
+The workflow records bundled CodeQL **2.26.3** and its Kotlin compatibility
+limit. For Java/Kotlin extraction only, it temporarily overrides Kotlin
+**2.4.21 → 2.4.10** in the version catalog, failing closed for unreviewed pins.
+Normal builds retain the project pin. When upgrading, review the workflow's
+linked support evidence and guarded override alongside the Action SHA,
+languages, and manual build steps.
 
 ## Checklist
 

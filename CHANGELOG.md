@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.20] - 2026-11-07
+
+### Fixed
+
+- Clarify offline contributor setup and readiness requirements, including failed
+  diagnostics and all unresolved live-order intents.
+- Correct CodeQL language/compiler-override guidance, backend-only test tuning,
+  and dependency-checker coverage limitations; align accessibility guidance with
+  its canonical scope and remove a stale harness reference.
+
 ## [6.20.19] - 2026-11-06
 
 ### Fixed
