@@ -49,9 +49,9 @@ Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadat
 - Preserve public names and `const val` semantics for generated string catalogs.
 - Keep every group/name/value explicit. Do not infer composite CSS classes,
   selectors, routes, or HTML attributes from naming conventions.
-- Never add `aria-*` keys to `HtmlAttrs` / `:common` attribute YAML or generated
-  catalogs — ARIA is banned repo-wide (`.agents/AGENTS.md` §7) and attribute
-  catalogs are where it leaks in.
+- Do not add unsolicited `aria-*` keys to `HtmlAttrs` / `:common` attribute YAML
+  or generated catalogs. Follow the explicit-accessibility-request boundary in
+  [OPERATING.md §5](../../OPERATING.md#no-unsolicited-accessibility-metadata).
 - `CssClass` owns class values; `HtmlQueries` owns selectors that combine class,
   tag, and form-field semantics. Keep those responsibilities separate.
 - Keep mixed semantic catalogs, JVM values, numeric precision rules, and

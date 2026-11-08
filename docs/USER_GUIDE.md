@@ -158,9 +158,10 @@ single-operator/private-LAN deployment model. Treat every device that can reach
 the server as trusted. `GET /api/health` is a liveness and diagnostic check; it
 includes the active mode, loop state, last cycle timestamps/error, and unresolved
 live-order counts. `GET /api/readiness` returns `200` only when the loop is
-running, configuration is available, a current-cycle snapshot exists, the
-latest cycle is not failed, and no ambiguous live-order intent is waiting for
-review. It returns `503` with a `readinessReason` otherwise.
+running and not paused, configuration and diagnostics are available, a
+current-cycle snapshot exists, the latest cycle is not failed, and there are
+no unresolved live-order intents (including `PENDING` and `UNCERTAIN`). It
+returns `503` with a `readinessReason` otherwise.
 
 An unresolved live-order intent appears in an **Action Required: Unresolved Live
 Order Intent** banner at the top of the Dashboard, including before the first

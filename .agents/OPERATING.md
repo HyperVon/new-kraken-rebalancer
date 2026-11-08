@@ -428,9 +428,7 @@ routing, not setup.
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
 Each `.cursor/rules/*.mdc` is a thin pointer to the portable section above; the
-bullets above are the single source of truth, so keep them canonical. Cursor
-tool specifics (`block_until_ms: 0`, `AwaitShell`) live in the portable
-section above, not in the pointer files.
+bullets above are the single source of truth, so keep them canonical.
 
 Commit both this file and `.cursor/rules/` so Cursor clones pick up the
 pointers automatically and other harnesses still have a single portable source.
