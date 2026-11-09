@@ -69,9 +69,9 @@ PRs to move faster; checking a box without having run the step.
 
 When a request involves **multiple independent workstreams**, parallelize bounded
 tracks through the host's native parallel task surface. Subagents inherit the
-parent session's model: do not pin, select, or require a specific provider/model
-route for a delegated track. File disjointness alone is not permission to launch
-role-only workers.
+parent session's model by default; explicitly configured host-native role mappings
+may override it under the policy below. File disjointness alone is not permission
+to launch role-only workers.
 
 The repository is harness-agnostic for ordinary development: any capable host
 can use the application source, tests, Gradle commands, Git workflow, and
@@ -81,7 +81,7 @@ Agent Manager. When running under Google Antigravity (AGY), subagents MUST be
 launched directly through Antigravity's native `invoke_subagent` tool calls;
 do not execute a Kilo-specific launcher there. Other non-Kilo hosts should
 similarly use their built-in native agent fan-out. Under Kilo, use the host's
-native parallel task surface; subagents inherit the parent session's model.
+native parallel task surface and the model-inheritance policy below.
 
 Independent work must be launched concurrently: use one parallel tool message
 or a background process for the complete fan-out, then poll results. Do not
@@ -94,14 +94,18 @@ underlying model will answer a particular request.
 
 ### Parent-model inheritance for subagents
 
-Subagents inherit the parent session's model. Do not pin, select, or require a
-specific provider/model route for a delegated track, and do not treat
-`subagent_type` as a model choice from its name alone. Keep the delegation
-bounded:
+Subagents inherit the parent session's model by default. Explicitly user-configured
+host-native role mappings may select another model within the parent's current
+provider. Switching the parent provider selects that provider's role mappings for
+subsequent launches; existing children retain their launch model. Cross-provider
+routes or per-run exceptions require explicit user instruction. Do not silently
+fall back across providers when a model or quota is unavailable. Keep concrete
+model assignments in the host configuration, not repository skills or scripts.
+Do not infer a model from `subagent_type` or a role name. Keep delegation bounded:
 
 1. Define the task profile and minimum capability for each bounded track.
 2. Launch the bounded track fan-out through the host's native parallel task
-   surface; each subagent runs on the parent's model.
+   surface, following the inheritance or configured role-mapping policy above.
 3. Never persist credentials, prompts, balances, or raw provider errors.
 4. Use the `question` tool or host equivalent when a hard availability, scope,
    editing, or high-risk review decision remains unresolved.
@@ -142,7 +146,7 @@ one change, cross-cutting refactors).
 
 For audits and reviews, choose an adaptive `N` from the actual concerns and
 ownership boundaries rather than defaulting to two full-task agents. Usually
-use 2–6 tracks, at most 8, and add a second model only for a high-risk or
+use 2–6 tracks, at most 8, and use a separate verifier only for a high-risk or
 disputed track. The parent owns the coverage matrix, triage, integration, and
 final verification; workers are bounded scouts, not alternate project owners.
 
@@ -344,11 +348,11 @@ For bounded parallel subagents in Google Antigravity (AGY), launch subagents
 natively via `invoke_subagent` tool calls; do NOT execute a Kilo-specific
 workflow launcher.
 
-Subagents inherit the parent session's model. Launch bounded subagent fan-out
-through the host's native parallel task surface; do not pin, select, or record
-provider/model routes for tracks, and do not treat a role label as a model
-choice. If a subagent launch fails for a transient host reason, relaunch the
-same track as a subagent (a corrected role, another available role, or a
+Launch bounded subagent fan-out through the host's native parallel task surface,
+following the inheritance and configured-role policy in
+[§3](#parent-model-inheritance-for-subagents). Do not duplicate concrete model
+assignments in track briefs or infer a model from a role label. If a subagent
+launch fails for a transient host reason, relaunch the same track as a subagent (a corrected role, another available role, or a
 host-default-routed subagent); cover the track in the parent only when no
 subagent launch can run it, then record the substitution. Named workflow
 fan-outs return per-track reports; inspect those instead of launching a second

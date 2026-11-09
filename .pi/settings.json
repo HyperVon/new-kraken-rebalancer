@@ -1,0 +1,14 @@
+{
+  "subagents": {
+    "agentOverrides": {
+      "reviewer": {
+        "skills": [
+          "code-review"
+        ]
+      },
+      "worker": {
+        "inheritSkills": true
+      }
+    }
+  }
+}

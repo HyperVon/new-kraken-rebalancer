@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.21] - 2026-11-08
+
+### Changed
+
+- Allow explicitly user-configured host-native subagent role mappings within the
+  selected parent provider, preserving model inheritance as the default and
+  requiring explicit instruction for cross-provider or per-run exceptions.
+
 ## [6.20.20] - 2026-11-07
 
 ### Fixed
