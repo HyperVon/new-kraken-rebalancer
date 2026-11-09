@@ -170,9 +170,10 @@ verified Kraken account by the active data-directory identity.
 
 Older JSON may contain retired keys such as `fiatMaxDrawdown`,
 `fiatDeploymentExponent`, `fiatDeploymentThresholdPercent`, `inceptionDate`, and
-`comparisonStartDate`. The parser discards them on load; the next Settings save
-writes active settings without those keys. The execution journal is initialized
-before the rebalance loop; normal startup does not migrate former databases.
+`comparisonStartDate`. Remove them before startup: unknown keys cause
+`UnrecognizedPropertyException`, not silent migration or Settings-save cleanup.
+The execution journal is initialized before the rebalance loop; normal startup
+does not migrate former databases.
 
 ## Test ownership
 
@@ -193,5 +194,5 @@ Do not add retrospective ATH/reconstruction/comparison scenarios.
 - [ ] No zero/negative amount or volume reaches an exchange backend
 - [ ] Ambiguous live AddOrder stays unresolved and blocks later live orders
 - [ ] Dashboard exposes current-cycle state and a bounded, source-scoped hero trend
-- [ ] Retired config fields are dropped and fresh stores fail closed without initialization
+- [ ] Retired config fields are rejected before startup; fresh stores fail closed without initialization
 - [ ] Update `docs/ALGORITHM.md` and focused tests when contracts change

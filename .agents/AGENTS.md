@@ -185,9 +185,9 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   the session, but `appConfig` and `_configFlow` publication wait for the
   outermost session exit. Do not remove that boundary or let one cycle or
   its order-settlement work mix settings or credentials.
-- The config parser drops retired legacy drawdown, deployment, inception,
-  and comparison-start keys before deserialization. A later Settings save
-  writes the active config shape without those keys; do not reintroduce them.
+- The config parser rejects unknown keys, including retired drawdown,
+  deployment, inception, and comparison-start settings. Remove them before
+  startup; there is no silent migration or Settings-save cleanup.
 
 ---
 
@@ -195,7 +195,7 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 See [common-kmp-module](skills/common-kmp-module/SKILL.md).
 
-Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and pure shared configuration, utility, and view models. Current-cycle snapshot state is backend-owned.
+Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and pure shared configuration, utility, and view models. Current-cycle snapshot state is backend-owned.
 
 `commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
 

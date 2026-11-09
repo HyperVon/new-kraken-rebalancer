@@ -134,8 +134,9 @@ creates the journal on first start and resumes an interrupted initialization.
 with `account-identity.sha256`.
 
 Older settings JSON may include retired history-only drawdown, deployment,
-inception, or comparison-start keys. The parser drops these keys before model
-deserialization, and a later Settings save writes only active controls.
+inception, or comparison-start keys. Remove them before startup: the parser
+rejects unknown keys with `UnrecognizedPropertyException`. It does not silently
+migrate older files, so a Settings save cannot repair a file that prevents boot.
 
 File is gitignored — never commit secrets.
 

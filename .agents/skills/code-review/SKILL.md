@@ -125,7 +125,8 @@ not treat this skill’s checklist as a substitute.
   preserve unrelated existing metadata.
 - Dashboard age and STREAM/STALE freshness describe the latest snapshot, not
   trading mode; active table sorting survives fragment refresh.
-- Settings retains active controls and removes retired history-only keys on save.
+- Settings retains active controls. Unknown JSON keys, including retired
+  history-only settings, are rejected on load and must be removed before startup.
 - Dashboard snapshots and activity remain process-local; only current sell
   fills are read from Kraken as order-settlement evidence.
 - Hot `SharedFlow`, latest-value `StateFlow`, and cold settlement polling match
