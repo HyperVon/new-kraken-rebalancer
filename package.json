@@ -14,7 +14,7 @@
     "@modelcontextprotocol/server-memory": "^2026.8.31",
     "@playwright/mcp": "^0.0.83",
     "markdownlint-cli": "^0.50.0",
-    "playwright": "^1.64.1"
+    "playwright": "^1.65.0"
   },
   "overrides": {
     "smol-toml": "^1.9.0",
