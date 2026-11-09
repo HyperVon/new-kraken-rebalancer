@@ -165,7 +165,7 @@ the targeted verification directly and records the substitution here.
 
 | Question | Result |
 | :--- | :--- |
-| Is the corruption-test finding resolved? | Yes. Each case reopens the rejected journal through direct JDBC and asserts the specific corruption remains plus a single surviving account-audit sentinel. The assertion is meaningful because `ExecutionDatabase.init` only calls `verifyInitializedSchema()` (which throws `IllegalStateException`); only `initialize`/`resumeFreshInitialization` delete artifacts, and the test calls neither. |
+| Is the corruption-test finding resolved? | Yes. Each case reopens the rejected journal through direct JDBC and asserts the specific corruption remains plus a single surviving account-audit sentinel. The assertion is meaningful because `ExecutionDatabase.init` never deletes journal artifacts: it verifies the schema and the paired identity marker and throws on mismatch, while deletion exists only in the `initialize` and `resumeFreshInitialization` failure paths, which the test does not call. |
 | Any new defect in the follow-up blast radius? | None found. Sentinel rows are inserted before each mutation, so the audit table exists for every case, and the dropped-table case does not affect the audit table. |
 | Do prior P1/P2 notes still stand? | The excluded-journal P1 and the broad Kraken-facade P2 are closed. Deferred items below remain deferred unchanged. |
 

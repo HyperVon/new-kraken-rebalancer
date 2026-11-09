@@ -603,11 +603,12 @@ The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 85% branch, 95% line, and 95% method** during
 the recovery. The engine retains its independent **90% branch** threshold.
 Exclusions are narrow and mirror `coverageExcludes` in `backend/build.gradle.kts`:
-framework bootstrap (`KtorConfig`), execution SQLite plumbing
-(`ExecutionDatabase`), selected thin service interfaces (`KrakenService*`,
-`ConfigService`, `OrderExecutor`, `PortfolioManager`), and repository interfaces
-(`*Repository`; concrete SQLite implementations remain measured),
-generated HTML-extension lambdas, CSS DSL, and `KrakenRebalancerApplication`.
+framework bootstrap (`KtorConfig`), the thin `KrakenService` interface (the capture
+facade stays measured), `ConfigService`, `OrderExecutor`, `PortfolioManager`, and
+repository interfaces (`*Repository`; concrete SQLite implementations remain
+measured), generated HTML-extension lambdas, CSS DSL, and
+`KrakenRebalancerApplication`. The execution journal (`ExecutionDatabase`) is
+measured, including its account-rebinding evidence guard.
 
 To run JVM tests only:
 
