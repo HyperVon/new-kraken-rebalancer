@@ -450,12 +450,12 @@ Edit `rebalancer-config.json`:
 - `allocations.USD` sets the configured cash percentage; its target dollar amount
   scales with the current portfolio total
 
-Older configuration files and the shipped template may still contain retired
-retired settings keys such as `fiatMaxDrawdown`, `fiatDeploymentExponent`,
+Older configuration files may contain retired settings keys such as
+`fiatMaxDrawdown`, `fiatDeploymentExponent`,
 `fiatDeploymentThresholdPercent`, `inceptionDate`, or `comparisonStartDate`.
-They are discarded when the configuration is read and have no effect on
-orders. The next Settings save writes the active configuration without those
-retired keys.
+Remove these keys before starting the application; the shipped template already
+omits them. Unknown keys cause an `UnrecognizedPropertyException` and prevent
+startup. The parser does not silently migrate older configuration files.
 
 The durable execution journal is created automatically when the application
 first starts in a fresh data directory. This creates execution.db and its

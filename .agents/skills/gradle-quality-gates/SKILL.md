@@ -2,8 +2,8 @@
 name: gradle-quality-gates
 description: >-
   Project quality tooling — Spotless/ktlint 120, allWarningsAsErrors, JaCoCo
-  gates (backend 95/85 temporarily; engine 95/90) and exclusions sync, Karma Istanbul thresholds, CI
-  ./gradlew build jacocoTestCoverageVerification, and CodeQL workflow guidance. Use
+  gates (backend 95/85 temporarily; engine 95/90) and exclusions sync, Karma Istanbul thresholds,
+  CI ./gradlew build (including JaCoCo verification), and CodeQL workflow guidance. Use
   when changing build.gradle.kts, coverage, CI, or verifying a change.
 ---
 
@@ -92,8 +92,7 @@ same `fileTree { exclude(coverageExcludes) }`.
 
 Current backend exclusions:
 
-- `**/config/KtorConfigKt*`, `**/config/ExecutionDatabase*`
-- `**/repository/table/**`, `**/service/KrakenService*`
+- `**/config/KtorConfigKt*`, `**/service/KrakenService.class`
 - `**/service/ConfigService.class`, `**/service/OrderExecutor.class`, `**/service/PortfolioManager.class`
 - `**/repository/*Repository.class`, `**/*$DefaultImpls*`
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`, `**/KrakenRebalancerApplication*`
@@ -123,6 +122,11 @@ tests instead.
 | Branches | 75% |
 
 ## CI / check commands
+
+CI runs `./gradlew build`, which includes JaCoCo verification through backend
+`check` and engine test finalizers, plus the frontend browser tests. The explicit
+`jacocoTestCoverageVerification` task below is useful for local verification;
+it is not an additional command currently present in the CI workflow.
 
 ```bash
 ./gradlew build jacocoTestCoverageVerification

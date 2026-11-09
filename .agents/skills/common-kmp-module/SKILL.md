@@ -2,7 +2,7 @@
 name: common-kmp-module
 description: >-
   Owns what belongs in common/src/commonMain — CssClass, HtmlIds, HtmlAttrs,
-  HtmxAttrs, ViewText, Routes, TimeRange, OrderSide, PrecisionConstants,
+  HtmxAttrs, ViewText, Routes, OrderSide, PrecisionConstants,
   AppConfig/Settings, api wire DTOs — and purity rules (no JVM/JS imports). Use
   when adding UI strings, IDs, CSS class names, or shared models,
   or touching the :common module.

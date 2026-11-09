@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.20.22] - 2026-11-09
+
+### Fixed
+
+- Correct configuration migration guidance: retired keys must be removed before
+  startup, and credential file edits must be made while the application is stopped.
+- Measure the execution journal and Kraken capture helpers in coverage gates; test
+  each account-rebinding evidence source and assert skipped orders are not submitted.
+- Pin conservative single-attempt AddOrder handling for HTTP errors and production
+  request timeouts without weakening unresolved-order safety.
+
+### Removed
+
+- Unused chart border/background color helpers and an obsolete client trading-mode
+  alias; align current ownership and coverage guidance with the source.
+
 ## [6.20.21] - 2026-11-08
 
 ### Changed

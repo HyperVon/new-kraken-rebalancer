@@ -140,10 +140,11 @@ checks. `/history` and retrospective account-history routes are retired.
 Retired settings keys (`fiatMaxDrawdown`, `fiatDeploymentExponent`,
 `fiatDeploymentThresholdPercent`, `inceptionDate`, `comparisonStartDate`) must
 never reappear in `SettingsFormComponent`, `FormFields`, `ViewText`, or saved
-JSON — they are tolerated on load (dropped from the model) and a save writes
-the active shape only. Do not add fields, labels, or docs for these concepts
-even as "advanced" or legacy displays, and never copy these keys from old
-fixtures into new test or config fixtures.
+JSON. The parser rejects unknown keys, so remove retired keys before startup;
+there is no automatic migration, and Settings cannot repair a file that prevents
+boot. Do not add fields, labels, or docs for these concepts even as "advanced"
+or legacy displays. Use retired keys in regression fixtures only to verify their
+rejection, never as valid configuration.
 
 ## Checklist
 
