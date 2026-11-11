@@ -106,20 +106,42 @@ private fun settingsModeLabel(form: HTMLFormElement): String {
 fun updateAllocationTotal() {
     val inputs = document.querySelectorAll(TARGET_INPUTS_QUERY)
     var total = 0.0
+    var hasInvalidTarget = false
+    var hasUnparseableTarget = false
     inputs.forEachInput { input ->
-        total += input.value.toDoubleOrNull() ?: 0.0
+        val target = input.value.toDoubleOrNull()
+        if (target == null || !target.isFinite()) {
+            hasInvalidTarget = true
+            hasUnparseableTarget = true
+        } else {
+            total += target
+            if (target < 0.0 || target > PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) hasInvalidTarget = true
+        }
     }
 
     val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) ?: return
-    totalDisplay.textContent = "${ViewText.TOTAL_PREFIX}${total.toFixed(PrecisionConstants.SCALE_USD)}%"
+    val displayedTotal = if (hasUnparseableTarget) "--" else total.toFixed(PrecisionConstants.SCALE_USD)
+    totalDisplay.textContent = "${ViewText.TOTAL_PREFIX}$displayedTotal%"
 
     val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as? HTMLButtonElement ?: return
-    val isValid =
-        abs(total - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA
-
+    val difference = PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE - total
+    val isValid = !hasInvalidTarget && abs(difference) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA
     val hasUsd = currentAllocationSymbols().contains(Asset.USD)
-
     val isSuccess = isValid && hasUsd
+    val feedback = mutableListOf<String>()
+    when {
+        hasInvalidTarget -> feedback.add(ViewText.ALLOCATION_ENTER_VALID)
+
+        !isValid -> {
+            val action = if (difference > 0) ViewText.ALLOCATION_ADD_PREFIX else ViewText.ALLOCATION_REMOVE_PREFIX
+            feedback.add(
+                action + abs(difference).toFixed(PrecisionConstants.SCALE_USD) + ViewText.ALLOCATION_POINTS_SUFFIX,
+            )
+        }
+    }
+    if (!hasUsd) feedback.add(ViewText.ALLOCATION_USD_REQUIRED)
+    if (isSuccess) feedback.add(ViewText.ALLOCATION_READY)
+    document.getElementById(HtmlIds.ALLOCATION_FEEDBACK)?.textContent = feedback.joinToString(" ")
     totalDisplay.classList.toggle(CssClass.Form.AllocationTotalOk, isSuccess)
     totalDisplay.classList.toggle(CssClass.Form.AllocationTotalBad, !isSuccess)
     saveButton.disabled = !isSuccess

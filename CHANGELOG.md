@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.21.0] - 2026-11-10
 
+### Added
+
+- Explain allocation corrections needed before Settings can be saved.
+
 ### Changed
 
 - Retain recent order and problem cycles separately from routine activity in the Dashboard's in-memory history.
