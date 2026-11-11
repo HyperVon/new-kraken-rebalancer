@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.ActivityClassification
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,7 +69,11 @@ class CurrentPortfolioState {
     private fun appendActivity(activity: CurrentCycleActivity) {
         recentActivities.removeAll { it.cycleId == activity.cycleId }
         recentActivities.addLast(activity)
-        while (recentActivities.size > MAX_RECENT_ACTIVITIES) recentActivities.removeFirst()
+        val retained = ActivityClassification.retain(recentActivities.sortedActivities()) {
+            ActivityClassification.isProtected(it.outcome?.name, it.actions)
+        }
+        recentActivities.clear()
+        recentActivities.addAll(retained)
         mutableActivityUpdate.value = activity
     }
 
@@ -77,7 +82,7 @@ class CurrentPortfolioState {
 
     companion object {
         const val MAX_RECENT_SNAPSHOTS = 2_880
-        const val MAX_RECENT_ACTIVITIES = 120
+        const val MAX_RECENT_ACTIVITIES = ActivityClassification.RETENTION_PER_CLASS * 2
     }
 }
 
