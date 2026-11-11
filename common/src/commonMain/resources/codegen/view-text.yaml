@@ -82,6 +82,8 @@ ViewText:
   DEV_PREFIX: "Dev: "
   ASSETS_SUFFIX: " Assets"
   REMOVE: "Remove"
+  ALLOCATION_REMOVED: "Allocation removed."
+  UNDO: "Undo"
   NEW_SYMBOL_PLACEHOLDER: "New Symbol (e.g. DOT)"
   TOTAL_INITIAL: "Total: 0.00%"
   TOTAL_PREFIX: "Total: "

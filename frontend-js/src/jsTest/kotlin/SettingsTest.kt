@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.HealthStatusKeys
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -442,6 +443,149 @@ class SettingsTest : StringSpec() {
                 saveButton.disabled.shouldBeTrue()
             } finally {
                 document.body!!.removeChild(container)
+            }
+        }
+
+        "undo restores edited allocation at its original position and updates the total" {
+            val host = document.createElement("div") as HTMLElement
+            host.innerHTML = """
+                <div id="allocations-container"></div><div id="allocation-undo-notice" class="hidden"></div>
+                <span id="total-allocated-display"></span><button id="save-button"></button>
+            """.trimIndent()
+            document.body!!.appendChild(host)
+            try {
+                val allocations = document.getElementById("allocations-container") as HTMLElement
+                allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "50") +
+                    AllocationEditor.editRow("BTC", "#222222", "30", "2") +
+                    AllocationEditor.editRow("ETH", "#333333", "20")
+                val row = allocations.children.item(1) as HTMLElement
+                (row.querySelector("input[name=targets]") as HTMLInputElement).value = "35.5"
+                (row.querySelector("input[name=scores]") as HTMLInputElement).value = "7.5"
+                (row.querySelector("input[name=colors]") as HTMLInputElement).value = "#abcdef"
+                removeAllocationRow(row.querySelector("button")!!)
+                document.getElementById("total-allocated-display")!!.textContent shouldBe "Total: 70.00%"
+                undoAllocationRemoval()
+                allocations.children.item(1) shouldBe row
+                (row.querySelector("input[name=symbols]") as HTMLInputElement).value shouldBe "BTC"
+                (row.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "35.5"
+                (row.querySelector("input[name=scores]") as HTMLInputElement).value shouldBe "7.5"
+                (row.querySelector("input[name=colors]") as HTMLInputElement).value shouldBe "#abcdef"
+                document.getElementById("total-allocated-display")!!.textContent shouldBe "Total: 105.50%"
+            } finally {
+                document.body!!.removeChild(host)
+            }
+        }
+
+        "undo remembers only the latest removal and rejects a re-added alias" {
+            val host = document.createElement("div") as HTMLElement
+            host.innerHTML = """
+                <div id="allocations-container"></div><div id="allocation-undo-notice" class="hidden"></div>
+                <input id="new-symbol-input"><span id="total-allocated-display"></span><button id="save-button"></button>
+            """.trimIndent()
+            document.body!!.appendChild(host)
+            try {
+                val allocations = document.getElementById("allocations-container") as HTMLElement
+                allocations.innerHTML = AllocationEditor.editRow("BTC", "#111111", "50") +
+                    AllocationEditor.editRow("ETH", "#222222", "50")
+                removeAllocationRow((allocations.children.item(0) as Element).querySelector("button")!!)
+                removeAllocationRow((allocations.children.item(0) as Element).querySelector("button")!!)
+                undoAllocationRemoval()
+                allocations.children.length shouldBe 1
+                allocations.textContent!!.shouldContain("ETH")
+                val symbolInput = document.getElementById("new-symbol-input") as HTMLInputElement
+                symbolInput.value = "BTC"
+                addAssetRow()
+                removeAllocationRow((allocations.children.item(1) as Element).querySelector("button")!!)
+                symbolInput.value = "XBT"
+                addAssetRow()
+                undoAllocationRemoval()
+                allocations.children.length shouldBe 2
+            } finally {
+                document.body!!.removeChild(host)
+            }
+        }
+
+        "canceled swaps and failed saves preserve allocation undo" {
+            val form = settingsStateForm()
+            val allocations = document.createElement("div") as HTMLElement
+            allocations.id = "allocations-container"
+            allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "100")
+            form.appendChild(allocations)
+            document.body!!.appendChild(form)
+            try {
+                registerSettingsGlobals()
+                removeAllocationRow(allocations.querySelector("button")!!)
+                dispatchModePlateRefreshBeforeRequest(form)
+                val detail = js("({})")
+                detail.target = document.body
+                detail.shouldSwap = true
+                val canceledSwap = document.createEvent("CustomEvent")
+                canceledSwap.asDynamic().initCustomEvent("htmx:beforeSwap", true, true, detail)
+                document.dispatchEvent(canceledSwap)
+                detail.shouldSwap = false
+                val noSwap = document.createEvent("CustomEvent")
+                noSwap.asDynamic().initCustomEvent("htmx:afterSwap", true, true, detail)
+                document.dispatchEvent(noSwap)
+                val failedSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(500, "{}", xhr = failedSaveXhr)
+                undoAllocationRemoval()
+                allocations.children.length shouldBe 1
+            } finally {
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "successful save invalidates only the removal included in its snapshot" {
+            val form = settingsStateForm()
+            val allocations = document.createElement("div") as HTMLElement
+            allocations.id = "allocations-container"
+            allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "50") +
+                AllocationEditor.editRow("BTC", "#222222", "50")
+            form.appendChild(allocations)
+            document.body!!.appendChild(form)
+            try {
+                registerSettingsGlobals()
+                removeAllocationRow((allocations.children.item(0) as Element).querySelector("button")!!)
+                val xhr = dispatchSettingsBeforeRequest("/settings", form)
+                removeAllocationRow((allocations.children.item(0) as Element).querySelector("button")!!)
+                dispatchSettingsResponse(200, saveResponse(false, "LIVE", "2026-10-19T14:40:00Z"), xhr = xhr)
+                undoAllocationRemoval()
+                allocations.children.length shouldBe 1
+                allocations.textContent!!.shouldContain("BTC")
+                removeAllocationRow(allocations.querySelector("button")!!)
+                val nextXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(200, saveResponse(false, "LIVE", "2026-10-19T14:41:00Z"), xhr = nextXhr)
+                undoAllocationRemoval()
+                allocations.children.length shouldBe 0
+            } finally {
+                document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "allocation preview swap invalidates undo" {
+            val host = document.createElement("div") as HTMLElement
+            host.innerHTML = """
+                <div id="allocations-container"></div><div id="allocation-undo-notice" class="hidden"></div>
+                <span id="total-allocated-display"></span><button id="save-button"></button>
+            """.trimIndent()
+            document.body!!.appendChild(host)
+            try {
+                registerSettingsGlobals()
+                val allocations = document.getElementById("allocations-container") as HTMLElement
+                allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "100")
+                removeAllocationRow(allocations.querySelector("button")!!)
+                val detail = js("({})")
+                detail.target = allocations
+                detail.shouldSwap = true
+                val event = document.createEvent("CustomEvent")
+                event.asDynamic().initCustomEvent("htmx:afterSwap", true, true, detail)
+                allocations.dispatchEvent(event)
+                undoAllocationRemoval()
+                allocations.children.length shouldBe 0
+            } finally {
+                document.body!!.removeChild(host)
             }
         }
 

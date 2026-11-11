@@ -274,7 +274,7 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 
 ### Hot-Reload Configuration
 
-- Modify all settings (allocations, thresholds, assets) via the web UI
+- Modify all settings (allocations, thresholds, assets) via the web UI; undo the latest allocation removal before saving
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
 - `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>`, which

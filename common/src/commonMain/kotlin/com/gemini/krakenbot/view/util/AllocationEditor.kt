@@ -17,7 +17,7 @@ object AllocationEditor {
         "this.closest('${CssClass.Form.AllocationEditRow.querySelector}').querySelector(" +
             "'${CssClass.Form.AllocationColorInput.querySelector}').value = this.value"
     private val removeRowJs =
-        "this.closest('${CssClass.Form.AllocationEditRow.querySelector}').remove(); updateAllocationTotal()"
+        "removeAllocationRow(this)"
     private const val UPDATE_TOTAL_JS = "updateAllocationTotal()"
 
     /**
