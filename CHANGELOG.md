@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Undo the most recently removed Settings allocation before saving or recalculating from scores.
+- Explain allocation corrections needed before Settings can be saved.
 
 ### Changed
 

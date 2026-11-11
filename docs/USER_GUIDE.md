@@ -235,6 +235,10 @@ preserve the entered values so you can correct the form without re-entering it.
 
 ### Target allocations
 
+The total shows how many percentage points to add or remove when allocations
+are outside the save tolerance. A message also identifies a missing USD
+allocation or an invalid percentage.
+
 <a href="images/settings-allocations.png"><img src="images/settings-allocations.png" alt="Target allocations and quality-score preview controls" width="960"></a>
 *Settings — target allocations and optional quality-score preview.*
 
