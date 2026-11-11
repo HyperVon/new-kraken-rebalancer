@@ -21,6 +21,7 @@ HtmlEvents:
   INPUT: "input"
   DOM_CONTENT_LOADED: "DOMContentLoaded"
   HTMX_AFTER_SWAP: "htmx:afterSwap"
+  HTMX_AFTER_SETTLE: "htmx:afterSettle"
   HTMX_BEFORE_REQUEST: "htmx:beforeRequest"
   HTMX_BEFORE_SWAP: "htmx:beforeSwap"
   BEFORE_UNLOAD: "beforeunload"

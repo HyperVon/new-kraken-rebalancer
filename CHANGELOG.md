@@ -12,6 +12,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Undo the most recently removed Settings allocation before saving or recalculating from scores.
 - Explain allocation corrections needed before Settings can be saved.
+- Search Recent Activity by asset, action, or outcome alongside the existing filters.
+
+### Fixed
+
+- Hide Show older when no more matching activity is available, and keep search focus during dashboard updates.
 
 ### Changed
 

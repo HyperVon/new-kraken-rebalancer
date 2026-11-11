@@ -144,8 +144,10 @@ Live Trading mode.
 - **Recent Activity** — the newest 20 cycle outcomes with a short summary and
   timestamps. Use **Show older** to page through up to 120 routine cycles and
   120 order or problem cycles retained in memory. Routine cycles cannot evict
-  order or problem cycles. Activity clears on restart or when simulation mode
-  or credential scope changes. Failed cycles without a portfolio snapshot remain visible:
+  order or problem cycles. Use **All**, **Orders**, or **Problems** together with
+  **Search activity** to find an asset, action, or outcome; the count shows matching
+  cycles. Activity clears on restart or when simulation mode or credential scope
+  changes. Failed cycles without a portfolio snapshot remain visible:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
 
 <a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Recent cycle activity and outcomes" width="960"></a>

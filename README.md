@@ -266,8 +266,9 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 - Shows asset allocation bars and a sortable holdings table with price, value,
   target/current allocation, deviation, quantity, and optional quality score.
 - Shows Recent Activity for completed and failed cycles, retaining up to 120 routine
-  cycles and 120 order or problem cycles in memory. Activity clears on restart or
-  when simulation mode or credential scope changes.
+  cycles and 120 order or problem cycles in memory. Use Show older, filters, and
+  search to find activity. Activity clears on restart or when simulation mode or
+  credential scope changes.
 - Displays loop controls, operational status, and the active simulation/dry-run/live mode.
 - Uses HTMX for HTML swaps and form submissions, plus Kotlin/JS for browser interactions.
 

@@ -40,6 +40,12 @@ class DashboardTest : StringSpec() {
             button.setAttribute(RecentActivityText.FILTER_ATTRIBUTE, filter)
             root.appendChild(button)
         }
+        val search = document.createElement("input") as HTMLInputElement
+        search.id = RecentActivityText.SEARCH_ID
+        root.appendChild(search)
+        val count = document.createElement("div") as HTMLElement
+        count.id = RecentActivityText.RESULT_COUNT_ID
+        root.appendChild(count)
         val groups = document.createElement("div") as HTMLElement
         groups.id = RecentActivityText.GROUPS_ID
         items.forEach { item ->
@@ -73,6 +79,119 @@ class DashboardTest : StringSpec() {
     }
 
     init {
+        "activity search combines case insensitive actions and outcomes with filters" {
+            val items = listOf(
+                activity("btc", 3.0, "ORDERS_ATTEMPTED", listOf("BUY BTC")),
+                activity("warning", 2.0, "PROBLEM", listOf("WARNING: BTC delayed")),
+                activity("eth", 1.0, "ORDERS_ATTEMPTED", listOf("SELL ETH")),
+            )
+            filterRecentActivityItems(items, "orders", "bTc").map { it.cycleId } shouldBe listOf("btc")
+            filterRecentActivityItems(items, "problems", "btc").map { it.cycleId } shouldBe listOf("warning")
+            filterRecentActivityItems(items, "all", "orders attempted").map { it.cycleId } shouldBe
+                listOf("btc", "eth")
+            filterRecentActivityItems(items, "orders", "missing") shouldBe emptyList()
+        }
+
+        "search and expansion survive swaps and reset with a new source" {
+            resetRecentActivityClientState()
+            registerDashboardGlobals()
+            val rows = listOf(activity("btc", 1.0, "ORDERS_ATTEMPTED", listOf("BUY BTC")))
+            var root = activityDom("account-a", rows)
+            restoreRecentActivityState()
+            (root.querySelector("button[data-activity-filter='orders']") as HTMLButtonElement).click()
+            val input = root.querySelector("#dashboard-activity-search") as HTMLInputElement
+            input.value = "btc"
+            input.dispatchEvent(Event("input", EventInit(bubbles = true)))
+            root.textContent shouldContain "1 matching cycle"
+            captureRecentActivityState()
+            removeActivityDom(root)
+            root = activityDom("account-a", rows)
+            restoreRecentActivityState()
+            (root.querySelector("#dashboard-activity-search") as HTMLInputElement).value shouldBe "btc"
+            recentActivityUiState.filter shouldBe "orders"
+            recentActivityUiState.expandedCycleIds.contains("btc").shouldBeTrue()
+            val restoredInput = root.querySelector("#dashboard-activity-search") as HTMLInputElement
+            restoredInput.value = "missing"
+            restoredInput.dispatchEvent(Event("input", EventInit(bubbles = true)))
+            root.textContent shouldContain "No cycles match this filter or search."
+            root.textContent shouldContain "0 matching cycles"
+            removeActivityDom(root)
+            root = activityDom("account-b", listOf(activity("eth", 2.0)))
+            restoreRecentActivityState()
+            (root.querySelector("#dashboard-activity-search") as HTMLInputElement).value shouldBe ""
+            recentActivityUiState.filter shouldBe "all"
+            recentActivityUiState.expandedCycleIds.contains("btc").shouldBeFalse()
+            removeActivityDom(root)
+        }
+
+        "paging remains expanded when filtering searching and swapping" {
+            resetRecentActivityClientState()
+            registerDashboardGlobals()
+            val rows = (0 until 35).map { activity("cycle-$it", it.toDouble(), "ORDERS_ATTEMPTED", listOf("BUY BTC")) }
+            var root = activityDom("paging-source", rows)
+            restoreRecentActivityState()
+            val older = root.querySelector("#dashboard-activity-show-older") as HTMLButtonElement
+            older.hidden.shouldBeFalse()
+            older.click()
+            older.hidden.shouldBeTrue()
+            (root.querySelector("button[data-activity-filter='orders']") as HTMLButtonElement).click()
+            val search = root.querySelector("#dashboard-activity-search") as HTMLInputElement
+            search.value = "btc"
+            search.dispatchEvent(Event("input", EventInit(bubbles = true)))
+            recentActivityUiState.visibleCount shouldBe 40
+            root.querySelectorAll("details[data-cycle-id]").length shouldBe 35
+            captureRecentActivityState()
+            removeActivityDom(root)
+            root = activityDom("paging-source")
+            restoreRecentActivityState()
+            root.querySelectorAll("details[data-cycle-id]").length shouldBe 35
+            (root.querySelector("#dashboard-activity-show-older") as HTMLButtonElement).hidden.shouldBeTrue()
+            removeActivityDom(root)
+        }
+
+        "activity search restores focus and selection only when it held focus during the swap" {
+            resetRecentActivityClientState()
+            registerDashboardGlobals()
+            var root = activityDom("focus-source", listOf(activity("btc", 1.0, actions = listOf("BUY BTC"))))
+            restoreRecentActivityState()
+            val search = root.querySelector("#dashboard-activity-search") as HTMLInputElement
+            search.value = "bitcoin"
+            search.dispatchEvent(Event("input", EventInit(bubbles = true)))
+            search.focus()
+            search.setSelectionRange(1, 4)
+            captureRecentActivityState()
+            removeActivityDom(root)
+            root = activityDom("focus-source")
+            restoreRecentActivityState()
+            val restored = root.querySelector("#dashboard-activity-search") as HTMLInputElement
+            (document.activeElement == restored).shouldBeTrue()
+            restored.selectionStart shouldBe 1
+            restored.selectionEnd shouldBe 4
+            val unrelated = document.createElement("button") as HTMLButtonElement
+            document.body!!.appendChild(unrelated)
+            unrelated.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
+            restored.setSelectionRange(7, 7)
+            root.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
+            unrelated.parentNode?.removeChild(unrelated)
+            restored.selectionStart shouldBe 1
+            restored.selectionEnd shouldBe 4
+
+            val other = document.createElement("input") as HTMLInputElement
+            document.body!!.appendChild(other)
+            restoreRecentActivityState()
+            other.focus()
+            root.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
+            (document.activeElement == other).shouldBeTrue()
+            captureRecentActivityState()
+            removeActivityDom(root)
+            root = activityDom("focus-source")
+            restoreRecentActivityState()
+            root.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
+            (document.activeElement == other).shouldBeTrue()
+            other.parentNode?.removeChild(other)
+            removeActivityDom(root)
+        }
+
         "recent activity defaults to 20 newest cycles and shows 20 older per click" {
             resetRecentActivityClientState()
             registerDashboardGlobals()
@@ -102,7 +221,10 @@ class DashboardTest : StringSpec() {
             (groups.querySelector("details[${RecentActivityText.CYCLE_ID_ATTRIBUTE}]") as HTMLElement)
                 .getAttribute(RecentActivityText.CYCLE_ID_ATTRIBUTE) shouldBe "cycle-34"
 
-            (root.querySelector("#${RecentActivityText.SHOW_OLDER_ID}") as HTMLButtonElement).click()
+            val showOlder = root.querySelector("#${RecentActivityText.SHOW_OLDER_ID}") as HTMLButtonElement
+            showOlder.hidden.shouldBeFalse()
+            showOlder.click()
+            showOlder.hidden.shouldBeTrue()
             groups = root.querySelector("#${RecentActivityText.GROUPS_ID}")!!
             groups.querySelectorAll("details").length shouldBe 35
             recentActivityUiState.visibleCount shouldBe 40
