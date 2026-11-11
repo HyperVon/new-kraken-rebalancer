@@ -409,7 +409,7 @@ private fun activityOutcomeLabel(outcome: String?): String = when (outcomeCode(o
 private fun activityModeLabel(mode: String): String = when (mode.uppercase()) {
     "SIMULATION" -> ViewText.MODE_SIMULATION
     "DRY_RUN" -> ViewText.MODE_DRY_RUN
-    "LIVE", "LIVE_TRADING" -> ViewText.MODE_LIVE
+    "LIVE" -> ViewText.MODE_LIVE
     else -> mode
 }
 

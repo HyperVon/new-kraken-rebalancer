@@ -36,6 +36,17 @@ Preserve the selected Dashboard sort column and direction when rows are
 replaced. Numeric columns prefer server-rendered sort values, then parse visible
 text.
 
+- Prefer the server-rendered `data-sort-value` attribute for every new numeric
+  column — add it in the view instead of relying on text parsing.
+- The text-parsing fallback must strip `$`, `%`, thousands separators, and all
+  whitespace variants including `\u00A0` and `\u202F` before `Number(...)`
+  (see `CURRENCY_CLEANUP_REGEX` in `Dashboard.kt`); raw `Number("3,000.00")` is
+  NaN and sorts as 0.0.
+- UI state living outside the swapped fragment must be captured on
+  `htmx:beforeSwap` and restored on `htmx:afterSwap` (see
+  `recentActivityUiState` / `recentActivityHandlersRegistered`); sort state is
+  one instance of this pattern.
+
 The Settings allocation total is valid only when it is within tolerance of
 100% and includes USD. Invalid totals disable Save. Normalize new symbols before
 duplicate checking.

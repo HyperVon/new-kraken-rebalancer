@@ -11,7 +11,8 @@ improve reliability, safety, and functionality are very welcome.
 - JDK 25+
 - Gradle (the `./gradlew` wrapper is included — no separate installation
   required)
-- A Kraken account (for testing with real API — use **dry-run mode**)
+- No Kraken account is required for offline simulation. Testing against the real
+  API requires an account; use **dry-run mode** and Query Funds permissions.
 - Basic familiarity with Kotlin, Ktor, Koin, and kotlinx.html
 
 ### Local Setup
@@ -29,7 +30,9 @@ improve reliability, safety, and functionality are very welcome.
    cp rebalancer-config-template.json rebalancer-config.json
    ```
 
-   Fill in your Kraken API credentials. **Never commit this file.**
+   For offline development, set `"simulation": true` and `"dryRun": true` in
+   `settings`; leave credential placeholders unchanged. **Never commit this file.**
+   Only supply Kraken credentials when deliberately testing against the real API.
 
 3. **Build the project:**
 
@@ -37,8 +40,10 @@ improve reliability, safety, and functionality are very welcome.
    ./gradlew build -x test
    ```
 
-4. **Run in dry-run mode** before enabling live trading:
-   Set `"dryRun": true` in your `rebalancer-config.json`.
+4. **Run in offline simulation** for local development:
+   Keep `"simulation": true` and `"dryRun": true` in `settings` in
+   `rebalancer-config.json`. `dryRun` alone does not prevent Kraken network
+   requests when `simulation` is false.
 
 ## How to Contribute
 
@@ -77,9 +82,12 @@ first
    The Markdown commands install locked tooling and run the same lint check as CI
    (Node.js 22).
    Frontend browser tests are included via `check` → `:frontend-js:jsBrowserTest`.
-    **CodeQL** runs Java/Kotlin analysis from `.github/workflows/codeql.yml` on
-     `main` pushes and pull requests. The workflow uses CodeQL Action v4.37.7,
-     JDK 25, and `build-mode: manual`.
+   **CodeQL** runs Python (`build-mode: none`) and Java/Kotlin
+   (`build-mode: manual`, JDK 25) analysis from `.github/workflows/codeql.yml`
+   on `main` pushes and pull requests, using CodeQL Action v4.37.7. For Kotlin
+   extraction only, the workflow temporarily changes the compiler from 2.4.21
+   to 2.4.10, with a guard that fails for unreviewed pins. See the workflow's
+   compatibility notes; normal builds retain the version-catalog pin.
    Agent-assisted PRs should also follow
    [`.agents/skills/open-pr`](.agents/skills/open-pr/SKILL.md) (including the
    mandatory adversarial review). Human contributors can treat that as optional.

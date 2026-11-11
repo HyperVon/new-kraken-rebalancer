@@ -2,7 +2,7 @@
 name: common-kmp-module
 description: >-
   Owns what belongs in common/src/commonMain — CssClass, HtmlIds, HtmlAttrs,
-  HtmxAttrs, ViewText, Routes, TimeRange, OrderSide, PrecisionConstants,
+  HtmxAttrs, ViewText, Routes, OrderSide, PrecisionConstants,
   AppConfig/Settings, api wire DTOs — and purity rules (no JVM/JS imports). Use
   when adding UI strings, IDs, CSS class names, or shared models,
   or touching the :common module.
@@ -49,6 +49,9 @@ Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadat
 - Preserve public names and `const val` semantics for generated string catalogs.
 - Keep every group/name/value explicit. Do not infer composite CSS classes,
   selectors, routes, or HTML attributes from naming conventions.
+- Do not add unsolicited `aria-*` keys to `HtmlAttrs` / `:common` attribute YAML
+  or generated catalogs. Follow the explicit-accessibility-request boundary in
+  [OPERATING.md §5](../../OPERATING.md#no-unsolicited-accessibility-metadata).
 - `CssClass` owns class values; `HtmlQueries` owns selectors that combine class,
   tag, and form-field semantics. Keep those responsibilities separate.
 - Keep mixed semantic catalogs, JVM values, numeric precision rules, and
@@ -56,6 +59,8 @@ Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadat
   preserve their contracts.
 - Generated output must compile for both common metadata/JVM and JS targets;
   it may not import JVM, Ktor, logging, or browser DOM APIs.
+- The JVM `codegen` module is a build-time KSP processor only — never add it as
+  a `:common` compile dependency.
 
 ### Kraken aliases live in `Asset` (`:common`)
 
@@ -97,8 +102,16 @@ Add or extend `:common` when you introduce:
 Consume from JVM views and Kotlin/JS via the same packages
 (`com.gemini.krakenbot.view.util`, `com.gemini.krakenbot.config`, …).
 
+Reference catalog constants directly at the use site; never introduce a local
+`val` / `const val` that merely aliases `ViewText` / `CssClass` / `HtmlIds` /
+`Routes`. Contract-assertion tests use independent raw expected strings, not
+catalog values.
+
 ## Checklist
 
 - [ ] New shared strings/IDs/CSS land in `:common`, not duplicated
 - [ ] No JVM/JS-only imports in `commonMain`
+- [ ] No `aria-*` keys added to attribute YAML or generated catalogs
+- [ ] Use sites reference catalog constants directly (no local alias `val`s)
+- [ ] `codegen` stays a build-time KSP processor, not a `:common` dependency
 - [ ] Both backend and frontend compile against the change

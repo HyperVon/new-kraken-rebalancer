@@ -235,16 +235,17 @@ If Context Mode is unavailable in another harness, use bounded native commands
 and continue without assuming the `ctx_*` tools exist. The standard Gradle,
 test, and shell safety rules remain authoritative.
 
-## 9. Rehydra-safe user questions (OpenCode)
+## 9. Rehydra-safe user questions (OpenCode — retired)
 
-This project's OpenCode configuration loads `@rehydra/opencode`. A controlled
-check in this workspace found that the built-in `functions.question` tool fails
-with `Attempted to assign to readonly property` while Rehydra is loaded, but
-works after Rehydra is removed and the config reload is confirmed. This is an
-observed compatibility issue; it does not establish which component owns the
-underlying defect.
+**Retired (2026-11-06):** OpenCode v2 and `@rehydra/opencode` are no longer
+used in this workspace; the plugin was removed from `opencode.jsonc` and the
+config migrated to the current schema. The guidance below is historical,
+recorded for the Rehydra-loaded setup only.
 
-Until a compatible OpenCode/Rehydra fix is identified and verified:
+Historical note: while Rehydra was loaded, the built-in `functions.question`
+tool failed with `Attempted to assign to readonly property` but worked after
+Rehydra removal — an observed compatibility issue that did not establish which
+component owned the defect. Until a compatible fix was identified:
 
 1. Ask the user directly in ordinary assistant messages; do not call
    `functions.question`.

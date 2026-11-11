@@ -84,11 +84,24 @@ USD is not an order row. If USD is the only triggered asset:
   to their USD deficits.
 - Cash shortfall is funded by selling overweight non-USD assets in proportion
   to their USD surpluses.
-- Skip corrections when there are no counter-balancing positions.
+- Skip corrections when there are no counter-balancing positions:
+  `totalCounterDev == 0` emits `RebalanceEvent.NoCounterBalancingAssets` and
+  creates no orders — never fall back to an equal split.
 
-If crypto assets already triggered, their plan is used without a second USD
-correction. Recheck minimum order size and positive volume after allocation and
-rounding. Sell volume cannot exceed the cycle-entry holding.
+Fiat-share distribution in `distributeFiatCorrectionPlan` is a spend-cap case:
+
+- Only the budget truncates
+  (`remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)`); each
+  share still rounds `HALF_UP` (`deviationAbs × ratio` then `.toUsdScale()`)
+  and clamps with `.min(remaining)`, so the shares never sum above the
+  corrected deviation.
+- A share that rounds or clamps to `0.00` is skipped (`signum() <= 0`), not
+  re-ordered or forced up to the dust minimum; re-run the `minimumOrderSizeUSD`
+  gate on every share.
+
+If crypto assets already triggered, their plan stands and no correction pass
+runs afterward. Recheck minimum order size and positive volume after allocation
+and rounding. Sell volume cannot exceed the cycle-entry holding.
 
 ## Execution safety
 
@@ -112,6 +125,22 @@ rounding. Sell volume cannot exceed the cycle-entry holding.
 6. **Keep modes distinct.** Simulation selects the offline emulator; dry run
    suppresses placement on the selected backend. A live order is possible only
    when both are off.
+
+### Live-order journal invariants
+
+- Transitions are one-way: `recordOutcome` moves `PENDING` to a terminal state
+  or `UNCERTAIN` only (guarded `WHERE state = 'PENDING'`; never back to
+  `PENDING`); `resolve(id, state, evidence)` moves `UNCERTAIN` to a terminal
+  state only, with non-blank operator evidence.
+- Startup recovery (`recoverInterruptedSubmissions`) reclassifies surviving
+  `PENDING` rows to `UNCERTAIN` and nothing else — recovery is not resolution.
+- Never `DELETE`, prune, age out, or auto-reconcile `execution_order_intents`
+  rows; resolved rows are retained audit evidence.
+- Live placement gates in `OrderExecutorImpl.executeOrders` run before any
+  AddOrder (`ensureReadyForSubmission()`,
+  `ensureAccountBindingForSubmission()`); while any `PENDING`/`UNCERTAIN` row
+  exists, the outcome is `OrderExecutionOutcome(blockedByUnresolvedIntents =
+  true)` — preserve these gates on any new live path.
 
 ## Current portfolio surfaces and persistence
 
@@ -141,9 +170,10 @@ verified Kraken account by the active data-directory identity.
 
 Older JSON may contain retired keys such as `fiatMaxDrawdown`,
 `fiatDeploymentExponent`, `fiatDeploymentThresholdPercent`, `inceptionDate`, and
-`comparisonStartDate`. The parser discards them on load; the next Settings save
-writes active settings without those keys. The execution journal is initialized
-before the rebalance loop; normal startup does not migrate former databases.
+`comparisonStartDate`. Remove them before startup: unknown keys cause
+`UnrecognizedPropertyException`, not silent migration or Settings-save cleanup.
+The execution journal is initialized before the rebalance loop; normal startup
+does not migrate former databases.
 
 ## Test ownership
 
@@ -158,9 +188,11 @@ Do not add retrospective ATH/reconstruction/comparison scenarios.
 - [ ] Fixed configured USD target and relative crypto scaling preserved
 - [ ] Both deviation-percent and minimum-USD gates apply
 - [ ] USD correction runs only when USD alone triggers
+- [ ] Fiat-correction shares truncate to the deviation budget and never sum above it
+- [ ] Journal transitions stay one-way; unresolved rows are never pruned or auto-resolved
 - [ ] Sells precede settled-cash-limited buys; 99% reserve remains
 - [ ] No zero/negative amount or volume reaches an exchange backend
 - [ ] Ambiguous live AddOrder stays unresolved and blocks later live orders
 - [ ] Dashboard exposes current-cycle state and a bounded, source-scoped hero trend
-- [ ] Retired config fields are dropped and fresh stores fail closed without initialization
+- [ ] Retired config fields are rejected before startup; fresh stores fail closed without initialization
 - [ ] Update `docs/ALGORITHM.md` and focused tests when contracts change

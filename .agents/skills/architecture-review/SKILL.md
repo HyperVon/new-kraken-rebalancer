@@ -202,6 +202,19 @@ Cover each dimension. Skip empty sections in the report; do not invent issues.
 
 #### Money-path stress (mandatory before executor/manager/exchange redesign)
 
+Hard constraints — do **not** propose "improving" these:
+
+- Target percentages are fixed configured USD percentages; the target dollar
+  value scales only with the current portfolio total — no ATH, drawdown,
+  volatility, or retrospective-performance inputs.
+- Retired config keys (`drawdown`, `deployment`, `inception`,
+  `comparison-start`) were removed deliberately: the parser strips them and
+  tests assert their absence. Proposing to restore them requires explicit user
+  direction, not review flow.
+- If an alternative changes what *defines* a target (not just how it is
+  enforced), label it a product-constraint change and keep it out of the
+  architecture options.
+
 Trace in code, then answer:
 
 1. **Trigger gate** — both `isSignificant` gates (deviation % + USD dust) required?
