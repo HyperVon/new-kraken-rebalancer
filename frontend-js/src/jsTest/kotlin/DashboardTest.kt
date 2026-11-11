@@ -167,14 +167,22 @@ class DashboardTest : StringSpec() {
             (document.activeElement == restored).shouldBeTrue()
             restored.selectionStart shouldBe 1
             restored.selectionEnd shouldBe 4
+            restored.setSelectionRange(7, 7)
+            document.dispatchEvent(Event("htmx:afterSettle"))
+            restored.selectionStart shouldBe 1
+            restored.selectionEnd shouldBe 4
 
             val other = document.createElement("input") as HTMLInputElement
             document.body!!.appendChild(other)
+            restoreRecentActivityState()
             other.focus()
+            document.dispatchEvent(Event("htmx:afterSettle"))
+            (document.activeElement == other).shouldBeTrue()
             captureRecentActivityState()
             removeActivityDom(root)
             root = activityDom("focus-source")
             restoreRecentActivityState()
+            document.dispatchEvent(Event("htmx:afterSettle"))
             (document.activeElement == other).shouldBeTrue()
             other.parentNode?.removeChild(other)
             removeActivityDom(root)

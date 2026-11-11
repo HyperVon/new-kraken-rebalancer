@@ -41,6 +41,7 @@ fun registerDashboardGlobals() {
     document.addEventListener("input", ::handleRecentActivitySearch)
     document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, { captureRecentActivityState() })
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, { restoreRecentActivityState() })
+    document.addEventListener(HtmlEvents.HTMX_AFTER_SETTLE, { restoreRecentActivitySelectionAfterSettle() })
     restoreRecentActivityState()
 }
 
@@ -175,6 +176,7 @@ internal data class RecentActivityUiState(
     val expandedCycleIds: MutableSet<String> = mutableSetOf(),
     var pageScrollY: Double = 0.0,
     var searchFocused: Boolean = false,
+    var searchSelectionPending: Boolean = false,
     var searchSelectionStart: Int? = null,
     var searchSelectionEnd: Int? = null,
 )
@@ -231,6 +233,7 @@ internal fun captureRecentActivityState() {
         ?.toIntOrNull()?.coerceIn(1, RecentActivityText.MAX_ITEMS.toInt())
         ?: recentActivityUiState.visibleCount
     val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement
+    recentActivityUiState.searchSelectionPending = false
     recentActivityUiState.searchFocused = search != null && document.activeElement == search
     if (recentActivityUiState.searchFocused) {
         recentActivityUiState.searchSelectionStart = search?.selectionStart
@@ -263,16 +266,27 @@ internal fun restoreRecentActivityState() {
     recentActivityUiState.expandedCycleIds.addAll(newActivityIds)
     recentActivityUiState.expandedCycleIds.retainAll(recentActivityUiState.items.map { it.cycleId }.toSet())
     renderRecentActivity(root)
-    val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement
-    if (recentActivityUiState.searchFocused &&
-        (document.activeElement == document.body || document.activeElement == search)
-    ) {
-        search?.focus()
-        val start = recentActivityUiState.searchSelectionStart
-        val end = recentActivityUiState.searchSelectionEnd
-        if (search != null && start != null && end != null) search.setSelectionRange(start, end)
-    }
+    recentActivityUiState.searchSelectionPending = restoreRecentActivitySelection(root, allowFocus = true)
     if (recentActivityUiState.pageScrollY > 0.0) window.scrollTo(window.scrollX, recentActivityUiState.pageScrollY)
+}
+
+private fun restoreRecentActivitySelectionAfterSettle() {
+    if (!recentActivityUiState.searchSelectionPending) return
+    recentActivityUiState.searchSelectionPending = false
+    val root = recentActivityRoot() ?: return
+    restoreRecentActivitySelection(root, allowFocus = false)
+}
+
+private fun restoreRecentActivitySelection(root: Element, allowFocus: Boolean): Boolean {
+    val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement ?: return false
+    if (!recentActivityUiState.searchFocused ||
+        (document.activeElement != search && !(allowFocus && document.activeElement == document.body))
+    ) return false
+    if (document.activeElement != search) search.focus()
+    val start = recentActivityUiState.searchSelectionStart
+    val end = recentActivityUiState.searchSelectionEnd
+    if (start != null && end != null) search.setSelectionRange(start, end)
+    return true
 }
 
 internal fun resetRecentActivityClientState() {
