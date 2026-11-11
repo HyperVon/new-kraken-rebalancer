@@ -17,10 +17,13 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.util.*
@@ -140,6 +143,85 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                     .mapNotNull { Regex(NONCE_REGEX).find(it)?.groupValues?.get(1) }
                 nonces shouldHaveSize 2
                 (nonces[0].toBigInteger() < nonces[1].toBigInteger()).shouldBeTrue()
+            }
+        }
+
+        listOf(HttpStatusCode.TooManyRequests, HttpStatusCode.ServiceUnavailable).forEach { status ->
+            "AddOrder HTTP $status remains uncertain after exactly one submission" {
+                runTest {
+                    var requestCount = 0
+                    configService = mockk(relaxed = true)
+                    every { configService.getConfig() } returns TestFixtures.config(
+                        kraken = KrakenCredentials(
+                            TestConstants.API_KEY,
+                            Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                        ),
+                        settings = TestFixtures.settings(dryRun = false),
+                    )
+                    HttpClient(
+                        MockEngine {
+                            requestCount++
+                            respond(
+                                RATE_LIMIT_BODY,
+                                status,
+                                headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        },
+                    ).use { client ->
+                        val service = KrakenServiceImpl(configService, jacksonObjectMapper(), client)
+                        val result = service.executeOrder(
+                            Asset.BTC_USD_PAIR,
+                            OrderType.MARKET.apiValue,
+                            OrderSide.BUY.apiValue,
+                            BigDecimal("0.1"),
+                            dryRun = false,
+                        )
+
+                        result.success.shouldBeFalse()
+                        result.submissionUncertain.shouldBeTrue()
+                        requestCount shouldBe 1
+                    }
+                }
+            }
+        }
+
+        "the production request timeout leaves AddOrder uncertain without resubmitting" {
+            runTest {
+                var requestCount = 0
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns TestFixtures.config(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false),
+                )
+                val engine = MockEngine {
+                    requestCount++
+                    awaitCancellation()
+                }
+                HttpClient(engine) {
+                    engine { dispatcher = StandardTestDispatcher(testScheduler) }
+                    install(HttpTimeout) {
+                        connectTimeoutMillis = 5000
+                        socketTimeoutMillis = 15000
+                        requestTimeoutMillis = 15000
+                    }
+                }.use { client ->
+                    val service = KrakenServiceImpl(configService, jacksonObjectMapper(), client)
+                    val result = service.executeOrder(
+                        Asset.BTC_USD_PAIR,
+                        OrderType.MARKET.apiValue,
+                        OrderSide.BUY.apiValue,
+                        BigDecimal("0.1"),
+                        dryRun = false,
+                    )
+
+                    result.success.shouldBeFalse()
+                    result.submissionUncertain.shouldBeTrue()
+                    result.errorMessage shouldContain "timeout"
+                    requestCount shouldBe 1
+                }
             }
         }
 

@@ -159,9 +159,10 @@ single-operator/private-LAN deployment model. Treat every device that can reach
 the server as trusted. `GET /api/health` is a liveness and diagnostic check; it
 includes the active mode, loop state, last cycle timestamps/error, and unresolved
 live-order counts. `GET /api/readiness` returns `200` only when the loop is
-running, configuration is available, a current-cycle snapshot exists, the
-latest cycle is not failed, and no ambiguous live-order intent is waiting for
-review. It returns `503` with a `readinessReason` otherwise.
+running and not paused, configuration and diagnostics are available, a
+current-cycle snapshot exists, the latest cycle is not failed, and there are
+no unresolved live-order intents (including `PENDING` and `UNCERTAIN`). It
+returns `503` with a `readinessReason` otherwise.
 
 An unresolved live-order intent appears in an **Action Required: Unresolved Live
 Order Intent** banner at the top of the Dashboard, including before the first
@@ -199,11 +200,12 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. Minimum **0**. |
 | **Minimum Order Size ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. **Minimum `2` (enforced).** |
 
-Older configuration files may contain retired settings values such as
-drawdown, deployment, inception, or comparison-start settings. These values are
-discarded when the file is read and do not affect the active strategy, which
-uses configured allocations directly. The next Settings save removes those
-retired keys from the JSON file.
+Older configuration files may contain retired settings keys such as
+`fiatMaxDrawdown`, `fiatDeploymentExponent`, `fiatDeploymentThresholdPercent`,
+`inceptionDate`, or `comparisonStartDate`. Remove these keys before starting the
+application. Unknown keys cause an `UnrecognizedPropertyException` and prevent
+startup; there is no automatic migration through a Settings save. The active
+strategy uses configured allocations directly.
 
 ### Safety modes
 

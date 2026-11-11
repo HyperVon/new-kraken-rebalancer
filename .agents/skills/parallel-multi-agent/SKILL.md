@@ -51,23 +51,24 @@ only its assigned paths and minimum dependencies.
 
 ### Parent-model inheritance
 
-Subagents inherit the parent session's model; do not pin, select, or require a
-specific provider/model route for a track:
+Subagents inherit the parent session's model by default. Explicitly user-configured
+host-native role mappings follow the provider and exception rules in
+[OPERATING.md §3](../../OPERATING.md#parent-model-inheritance-for-subagents).
+Keep concrete model assignments in the host configuration:
 
 - Record the minimum capability for each bounded track and any substitution
   needed after a launch failure.
 - Treat `subagent_type` as the worker role, not as a model choice from its name.
 - In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute a Kilo-specific launcher.
 - Under Kilo CLI, launch bounded fan-out through the host's
-  native Task surface. Subagents run on the parent session's model; do not
-  substitute `ctx_batch_execute`, `ctx_execute`, or an in-process scan for a
-  real subagent launch.
+  native Task surface and the model policy above; do not substitute
+  `ctx_batch_execute`, `ctx_execute`, or an in-process scan for a real subagent launch.
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe.
 - For a broad read-only named workflow, perform discovery fan-out natively via the host's parallel task surface.
-- Add an independent verifier only when the track risk justifies it; it also
-  inherits the parent's model. Independence comes from a separate bounded review,
-  not a claimed distinct provider/model route.
+- Add an independent verifier only when the track risk justifies it. Follow the
+  model policy above; independence comes from a separate bounded review, not a
+  role label or an unverified claim of a different model.
 
 ## Step 2 — Brief each agent
 
@@ -133,30 +134,31 @@ non-material single scout. A role label is not a model choice.
 
 Launch independent tracks in one message when possible. Record the track, mode,
 role, scope, user approval, iteration cap, coverage, stop reason, and any launch
-failure/relaunch or parent substitution. Do not record per-track model routes.
+failure/relaunch or parent substitution. Do not duplicate host model assignments
+in track reports.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
 
 For an adversarial re-review of a completed documentation audit, assign a
 separate bounded read-only track through the host's native parallel surface.
-Subagents still inherit the parent's model; role labels do not establish model
-diversity. Native model selection for the parent remains governed by
+The model policy above still applies; role labels do not establish model diversity.
+Native model selection for the parent remains governed by
 [OPERATING.md § 8](../../OPERATING.md#8-native-model-selection).
 
 If a subagent launch fails for a transient host reason, relaunch the same
 track as a subagent (a corrected role or a host-default-routed subagent); cover
-it in the parent only when no subagent launch can run it. Never claim that a
-role or profile enforced a model. The parent still owns the review surface, integration,
-and final verification:
+it in the parent only when no subagent launch can run it. Do not infer an enforced
+model from a role name or profile label. The parent still owns the review surface,
+integration, and final verification:
 
 ```bash
 ./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
 ```
 
 For named broad workflows, launch the bounded track fan-out through the host's
-native parallel task surface; subagents inherit the parent session's model. The
-parent still owns integration and final gates; workers edit only in explicitly
-authorized implementation mode.
+native parallel task surface and the model policy above. The parent still owns
+integration and final gates; workers edit only in explicitly authorized
+implementation mode.
 
 ## Worktree and state isolation
 
