@@ -43,11 +43,16 @@ trades or ledgers for retrospective reports or persist portfolio snapshots.
   confirmed proceeds to observed spendable USD, and stops buys when safe cash
   cannot be confirmed. OrderSettleHelperTest covers absent and zero spendable USD;
   KrakenParsersTest rejects malformed balances and required held-amount fields.
-- ExecutionDatabaseLifecycleTest checks that closing an in-memory journal releases
-  its keeper connection, including after a second initialization fails.
+- ExecutionDatabaseLifecycleTest checks journal lifecycle and independent account
+  evidence sources: initialized marker, binding, audit, and order intents.
+  ExecutionDatabaseSafetyTest checks corrupt journals, concurrent marker creation,
+  failed pragma enforcement, and cleanup without replacing existing evidence.
 - SettingsTest keeps deferred mode polling active after a later save fails, while
   a newer acknowledged save still supersedes the previous refresh.
 - An ambiguous live AddOrder response is persisted before submission becomes
   uncertain; later live orders remain blocked until operator resolution.
-- Saving Settings preserves active controls and removes retired settings fields
-  from the saved JSON.
+- ConfigServiceTest verifies that retired settings keys reject startup and reload
+  without changing the active config; remove unknown keys before starting.
+- AddOrderRateLimitSigningTest pins single-attempt uncertain outcomes for HTTP 429,
+  HTTP 503, and the production request-timeout plugin, while structured HTTP-200
+  rate-limit errors remain definite rejections.

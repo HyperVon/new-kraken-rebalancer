@@ -12,6 +12,70 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Preserve newer Settings edits when an earlier score preview completes; prompt to recalculate a stale preview.
 
+## [6.20.22] - 2026-11-09
+
+### Fixed
+
+- Correct configuration migration guidance: retired keys must be removed before
+  startup, and credential file edits must be made while the application is stopped.
+- Measure the execution journal and Kraken capture helpers in coverage gates; test
+  each account-rebinding evidence source and assert skipped orders are not submitted.
+- Pin conservative single-attempt AddOrder handling for HTTP errors and production
+  request timeouts without weakening unresolved-order safety.
+
+### Removed
+
+- Unused chart border/background color helpers and an obsolete client trading-mode
+  alias; align current ownership and coverage guidance with the source.
+
+## [6.20.21] - 2026-11-08
+
+### Changed
+
+- Allow explicitly user-configured host-native subagent role mappings within the
+  selected parent provider, preserving model inheritance as the default and
+  requiring explicit instruction for cross-provider or per-run exceptions.
+
+## [6.20.20] - 2026-11-07
+
+### Fixed
+
+- Clarify offline contributor setup and readiness requirements, including failed
+  diagnostics and all unresolved live-order intents.
+- Correct CodeQL language/compiler-override guidance, backend-only test tuning,
+  and dependency-checker coverage limitations; align accessibility guidance with
+  its canonical scope and remove a stale harness reference.
+
+## [6.20.19] - 2026-11-06
+
+### Fixed
+
+- Require a prepared PR body in `create_pr.sh` and remove its fabricated blanket
+  verification claims; the script is documented as no shortcut for the open-pr
+  workflow steps.
+- Replace stale `ActualObservationDispatcher` / `ProspectiveBenchmarkService`
+  code anchors in documentation-review, code-review, and complex-code-comments
+  with current types.
+
+### Changed
+
+- Deepen agent skills with money-safety and correctness contracts: fiat-share
+  truncation, one-way live-order journal transitions, fail-closed fill
+  settlement, and config write-path permissions and rotation detection.
+- Add named test-fidelity traps to write-kotest and dry-run-and-simulation:
+  BigDecimal matcher ban, Kotlin/JS KSP discovery, raw-literal contract
+  assertions, and emulator fee/seeding behavior.
+- Push repository invariants into owning skills: ARIA and alias-constant bans in
+  common-kmp-module, banned coroutine APIs in code-review, and fixed-target hard
+  constraints in architecture-review.
+- Record UI rendering and verification traps (hero-trend polyline gaps, deviation
+  legend separation, laptop-width checks, cache-bust tell) and pin manual-QA
+  responsive widths.
+- Lint tracked `*.md`/`*.mdc` harness stubs and run `validate_skills.py` in the
+  manual commit-gate fallback.
+- Enable Gradle tooling parallel sync and migrate the OpenCode configuration to
+  its current schema.
+
 ## [6.20.18] - 2026-11-03
 
 ### Fixed
