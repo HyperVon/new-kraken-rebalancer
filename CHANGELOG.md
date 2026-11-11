@@ -14,10 +14,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Explain allocation corrections needed before Settings can be saved.
 - Search Recent Activity by asset, action, or outcome alongside the existing filters.
 
-### Fixed
-
-- Hide Show older when no more matching activity is available, and keep search focus during dashboard updates.
-
 ### Changed
 
 - Retain recent order and problem cycles separately from routine activity in the Dashboard's in-memory history.
@@ -25,6 +21,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Hide Show older when no more matching activity is available, and keep search focus during dashboard updates.
 - Preserve newer Settings edits when an earlier score preview completes; prompt to recalculate a stale preview.
 
 ## [6.20.22] - 2026-11-09
