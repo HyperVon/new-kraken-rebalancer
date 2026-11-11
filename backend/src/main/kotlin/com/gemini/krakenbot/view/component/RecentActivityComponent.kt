@@ -6,8 +6,8 @@ import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.CurrentCycleOutcome
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.util.ActionLogFormatter
-import com.gemini.krakenbot.view.util.ActivityClassification
 import com.gemini.krakenbot.view.util.ActionLogFormat
+import com.gemini.krakenbot.view.util.ActivityClassification
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.RecentActivityText

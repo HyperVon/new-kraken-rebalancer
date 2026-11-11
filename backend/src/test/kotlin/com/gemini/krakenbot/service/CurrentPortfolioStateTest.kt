@@ -149,7 +149,13 @@ class CurrentPortfolioStateTest : StringSpec() {
             val state = CurrentPortfolioState()
             val start = Instant.parse("2026-10-11T12:00:00Z")
             fun activity(id: String, index: Int, outcome: CurrentCycleOutcome?, actions: List<String>) =
-                CurrentCycleActivity(id, start.plusSeconds(index.toLong()), CurrentCycleActivityMode.LIVE, outcome, actions)
+                CurrentCycleActivity(
+                    id,
+                    start.plusSeconds(index.toLong()),
+                    CurrentCycleActivityMode.LIVE,
+                    outcome,
+                    actions,
+                )
 
             state.publishActivity(activity("order", 0, null, listOf("[DRY RUN] BUY BTC")), "a")
             repeat(130) {
