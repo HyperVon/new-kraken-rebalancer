@@ -86,6 +86,7 @@ ViewText:
   ASSETS_SUFFIX: " Assets"
   REMOVE: "Remove"
   ALLOCATION_REMOVED: "Allocation removed."
+  UNDO_AVAILABLE_FOR_PREFIX: "Undo available for "
   UNDO: "Undo"
   NEW_SYMBOL_PLACEHOLDER: "New Symbol (e.g. DOT)"
   TOTAL_INITIAL: "Total: 0.00%"

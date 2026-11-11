@@ -278,6 +278,10 @@ express as a preference. It only ever produces a *preview*: it rewrites the
 target fields in the form and nothing reaches your configuration until you press
 **Save Configuration**.
 
+If you change an allocation, score, emphasis, or sleeve while the calculation
+is in progress, Settings keeps your edits and asks you to calculate again. It
+also preserves any newer settings edits if the calculation returns an error.
+
 **What it does not do.** It never changes what you hold on its own, and it never
 moves money. Until you save, the preview is a calculation you can discard by
 pressing **Calculate from scores** with different inputs, or by reloading the

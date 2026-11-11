@@ -294,6 +294,12 @@ class SettingsFormComponent {
                 }
             }
 
+            p(CssClass.Utility.ScreenReaderOnly) {
+                id = HtmlIds.ALLOCATION_UNDO_STATUS
+                attributes["role"] = "status"
+                attributes["aria-live"] = "polite"
+            }
+
             div(CssClass.Utility.Hidden) {
                 id = HtmlIds.ALLOCATION_UNDO_NOTICE
                 span { +ViewText.ALLOCATION_REMOVED }
@@ -311,6 +317,9 @@ class SettingsFormComponent {
             // The hint leads instead, and each field names itself the way the rows do.
             div(CssClass.Form.AllocationControlRow) {
                 div(CssClass.Form.AllocationControlGroup) {
+                    p(CssClass.Utility.Hidden) {
+                        id = SettingsState.PREVIEW_STATUS_ID
+                    }
                     span(CssClass.Form.AllocationControlHint) { +ViewText.ALLOCATION_SCORE_HINT }
                     div(CssClass.Form.AllocationControlInputs) {
                         div(CssClass.Form.AllocationControlField) {

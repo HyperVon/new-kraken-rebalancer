@@ -278,6 +278,7 @@ Earlier Phase 5 updates integrated a reactive configuration loop (`watchConfigCh
 - Modify all settings (allocations, thresholds, assets) via the web UI; undo the latest allocation removal before saving
 - Add or remove assets without restarting the application
 - Allocation feedback shows adjustments needed to reach 100% and identifies missing USD or invalid targets
+- Score previews preserve newer allocation edits and prompt for recalculation when needed
 - `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>`, which
   `PortfolioManagerImpl` uses to restart its sleeping rebalancing loop with new
   settings without polling. Saves made during an active cycle persist

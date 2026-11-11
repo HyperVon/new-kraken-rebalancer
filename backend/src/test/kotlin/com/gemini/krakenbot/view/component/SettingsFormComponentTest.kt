@@ -36,6 +36,11 @@ class SettingsFormComponentTest : StringSpec() {
             html shouldContain "loopDelaySeconds"
             html shouldContain "deviationTriggerPercent"
             html shouldContain "minimumOrderSizeUSD"
+            val undoStatus = Regex(
+                """<p\b(?=[^>]*id="allocation-undo-status")(?=[^>]*role="status")(?=[^>]*aria-live="polite")[^>]*></p>""",
+            ).find(html)!!.value
+            undoStatus shouldNotContain "hidden"
+            html shouldContain "id=\"settings-preview-status\""
             html.lowercase() shouldNotContain "inception"
             html.lowercase() shouldNotContain "deployment"
             html.lowercase() shouldNotContain "drawdown"
