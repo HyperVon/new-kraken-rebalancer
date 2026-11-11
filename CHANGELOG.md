@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.21.0] - 2026-11-10
+
+### Fixed
+
+- Preserve newer Settings edits when an earlier score preview completes; prompt to recalculate a stale preview.
+
 ## [6.20.18] - 2026-11-03
 
 ### Fixed

@@ -1,6 +1,8 @@
 SettingsState:
   FORM_ID: "settings-form"
   SAVE_STATUS_ID: "settings-save-status"
+  PREVIEW_STATUS_ID: "settings-preview-status"
+  PREVIEW_STALE: "Settings changed while the preview was calculating. Recalculate the preview."
   BASELINE_ATTRIBUTE: "data-settings-baseline"
   UNSAVED_CHANGES: "Unsaved changes"
   SAVED_AND_ACTIVE: "Saved and active"

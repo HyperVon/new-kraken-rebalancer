@@ -35,6 +35,7 @@ class SettingsFormComponentTest : StringSpec() {
             html shouldContain "loopDelaySeconds"
             html shouldContain "deviationTriggerPercent"
             html shouldContain "minimumOrderSizeUSD"
+            html shouldContain "id=\"settings-preview-status\""
             html.lowercase() shouldNotContain "inception"
             html.lowercase() shouldNotContain "deployment"
             html.lowercase() shouldNotContain "drawdown"

@@ -297,6 +297,9 @@ class SettingsFormComponent {
             // The hint leads instead, and each field names itself the way the rows do.
             div(CssClass.Form.AllocationControlRow) {
                 div(CssClass.Form.AllocationControlGroup) {
+                    p(CssClass.Utility.Hidden) {
+                        id = SettingsState.PREVIEW_STATUS_ID
+                    }
                     span(CssClass.Form.AllocationControlHint) { +ViewText.ALLOCATION_SCORE_HINT }
                     div(CssClass.Form.AllocationControlInputs) {
                         div(CssClass.Form.AllocationControlField) {
