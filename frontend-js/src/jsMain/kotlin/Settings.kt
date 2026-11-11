@@ -38,9 +38,17 @@ private val SETTINGS_FIELD_NAMES = setOf(
     FormFields.SCORE_SLEEVE_PERCENT,
 )
 
+private data class RemovedAllocation(val row: Element, val container: Element, val index: Int, val symbol: String)
+private data class FailedSettingsFormRestoration(
+    val allocationRows: List<Element>,
+    val removedAllocation: RemovedAllocation?,
+)
+
+private var removedAllocation: RemovedAllocation? = null
 private var settingsResponseListenerInstalled = false
 private var beforeUnloadListenerInstalled = false
 private val submittedSettingsSnapshots = js("new WeakMap()")
+private val failedSaveUndoRestorations = js("new WeakMap()")
 private val submittedPreviews = js("new WeakMap()")
 private val previewDraftsToRestore = js("new WeakMap()")
 private var latestPreviewRequestId = 0L
@@ -63,8 +71,12 @@ fun initSettings() {
 fun registerSettingsGlobals() {
     window.asDynamic().updateAllocationTotal = { updateAllocationTotal() }
     window.asDynamic().addAssetRow = { addAssetRow() }
+    window.asDynamic().removeAllocationRow = { button: Element -> removeAllocationRow(button) }
+    window.asDynamic().undoAllocationRemoval = { undoAllocationRemoval() }
     if (!settingsResponseListenerInstalled) {
         document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, ::handleSettingsSaveResponse)
+        document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, ::invalidateUndoOnSwap)
+        document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, ::restoreUndoAfterFailedSave)
         document.addEventListener(HtmlEvents.HTMX_BEFORE_REQUEST, ::captureSubmittedSettingsSnapshot)
         document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, ::restorePreviewDraft)
         settingsResponseListenerInstalled = true
@@ -113,6 +125,7 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
             requestId = ++latestSubmittedSettingsRequestId,
             values = settingsSnapshot(form),
             modeLabel = settingsModeLabel(form),
+            removedAllocation = removedAllocation,
         ),
     )
 }
@@ -187,12 +200,54 @@ fun addAssetRow() {
     }
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
+    if (removedAllocation?.symbol == canonical) clearAllocationUndo()
     container.insertAdjacentHTML(
         HtmlEvents.INSERT_ADJACENT_BEFORE_END,
         AllocationEditor.editRow(canonical, pickColorForNewAsset(), DEFAULT_NEW_ALLOCATION_TARGET),
     )
     symbolInput.value = ""
     updateAllocationTotal()
+}
+
+internal fun removeAllocationRow(button: Element) {
+    val row = button.closest(CssClass.Form.AllocationEditRow.querySelector) ?: return
+    val container = row.parentElement ?: return
+    val symbol = (row.querySelector("input[name='${FormFields.SYMBOLS}']") as HTMLInputElement).value
+    val children = container.children
+    val index = (0 until children.length).first { children.item(it) == row }
+    removedAllocation = RemovedAllocation(row, container, index, Asset.canonicalSymbol(symbol.uppercase()))
+    row.remove()
+    document.getElementById(HtmlIds.ALLOCATION_UNDO_NOTICE)?.classList?.remove(CssClass.Utility.Hidden.value)
+    updateAllocationTotal()
+}
+
+internal fun undoAllocationRemoval() {
+    val removed = removedAllocation ?: return
+    if (document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) != removed.container ||
+        currentAllocationSymbols().contains(removed.symbol)
+    ) {
+        clearAllocationUndo()
+        return
+    }
+    removed.container.insertBefore(removed.row, removed.container.children.item(removed.index))
+    clearAllocationUndo()
+    updateAllocationTotal()
+}
+
+private fun clearAllocationUndo() {
+    removedAllocation = null
+    document.getElementById(HtmlIds.ALLOCATION_UNDO_NOTICE)?.classList?.add(CssClass.Utility.Hidden.value)
+}
+
+private fun invalidateUndoOnSwap(event: Event) {
+    val removed = removedAllocation ?: return
+    val detail = event.asDynamic().detail ?: return
+    val target = detail.target as? Element ?: return
+    if (target == removed.container ||
+        document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) != removed.container
+    ) {
+        clearAllocationUndo()
+    }
 }
 
 private const val DEFAULT_NEW_ALLOCATION_TARGET = "0.0"
@@ -237,6 +292,9 @@ private fun currentAllocationSymbols(): List<String> {
 }
 
 private fun initializeSettingsForm() {
+    if (removedAllocation?.container != document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER)) {
+        clearAllocationUndo()
+    }
     val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement
     if (form == null) {
         updateLeaveConfirmation(false)
@@ -365,6 +423,21 @@ private fun handleSettingsSaveResponse(event: Event) {
     val submitted = submittedSettingsSnapshots.get(xhr) as? SubmittedSettingsSnapshot ?: return
     submittedSettingsSnapshots.delete(xhr)
     val contentType = xhr.getResponseHeader("Content-Type") as? String ?: return
+    val responseStatus = xhr.status as? Int
+    val responseBody = xhr.responseText as? String
+    val errorFragment = xhr.getResponseHeader(HttpWire.ERROR_FRAGMENT_HEADER) as? String
+    if (shouldSwapRenderedError(responseStatus, responseBody, contentType, errorFragment)) {
+        val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER)
+        if (container != null) {
+            val rows = mutableListOf<Element>()
+            repeat(container.children.length) { index ->
+                container.children.item(index)?.let(rows::add)
+            }
+            val pendingUndo = removedAllocation?.takeIf { it.container === container }
+            failedSaveUndoRestorations.set(xhr, FailedSettingsFormRestoration(rows, pendingUndo))
+        }
+        return
+    }
     if (!contentType.substringBefore(';').trim().equals("application/json", ignoreCase = true)) return
 
     detail.shouldSwap = false
@@ -382,6 +455,9 @@ private fun handleSettingsSaveResponse(event: Event) {
     val savedAt = response.savedAt as? String ?: return
     val activeMode = response.activeMode as? String
 
+    if (submitted.removedAllocation != null && removedAllocation === submitted.removedAllocation) {
+        clearAllocationUndo()
+    }
     acknowledgedSaveGeneration++
     form.setAttribute(SettingsState.BASELINE_ATTRIBUTE, submitted.values)
     val status = document.getElementById(SettingsState.SAVE_STATUS_ID) as? HTMLElement ?: return
@@ -398,6 +474,23 @@ private fun handleSettingsSaveResponse(event: Event) {
     if (configPublicationPending) refreshModePlateAfterSave(submitted)
     // Edits made while the request was in flight are not covered by the acknowledgement.
     updateSettingsState()
+}
+
+private fun restoreUndoAfterFailedSave(event: Event) {
+    val xhr = event.asDynamic().detail?.xhr ?: return
+    val restoration = failedSaveUndoRestorations.get(xhr) as? FailedSettingsFormRestoration ?: return
+    failedSaveUndoRestorations.delete(xhr)
+    val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
+    while (container.children.length > 0) {
+        container.removeChild(container.children.item(0)!!)
+    }
+    restoration.allocationRows.forEach(container::appendChild)
+    restoration.removedAllocation?.let { removed ->
+        val index = removed.index.coerceAtMost(container.children.length)
+        removedAllocation = RemovedAllocation(removed.row, container, index, removed.symbol)
+        document.getElementById(HtmlIds.ALLOCATION_UNDO_NOTICE)?.classList?.remove(CssClass.Utility.Hidden.value)
+    }
+    updateAllocationTotal()
 }
 
 private fun restorePreviewDraft(event: Event) {
@@ -477,7 +570,12 @@ private fun scheduleModePlateRefresh(submitted: SubmittedSettingsSnapshot) {
     window.setTimeout({ refreshModePlateAfterSave(submitted) }, MODE_PLATE_REFRESH_INTERVAL_MS)
 }
 
-private data class SubmittedSettingsSnapshot(val requestId: Long, val values: String, val modeLabel: String)
+private data class SubmittedSettingsSnapshot(
+    val requestId: Long,
+    val values: String,
+    val modeLabel: String,
+    val removedAllocation: RemovedAllocation?,
+)
 
 private data class SubmittedPreview(
     val requestId: Long,

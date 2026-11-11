@@ -294,6 +294,16 @@ class SettingsFormComponent {
                 }
             }
 
+            div(CssClass.Utility.Hidden) {
+                id = HtmlIds.ALLOCATION_UNDO_NOTICE
+                span { +ViewText.ALLOCATION_REMOVED }
+                +" "
+                button(CssClass.Button.Secondary, type = button) {
+                    attributes[HtmlAttrs.ONCLICK] = "undoAllocationRemoval()"
+                    +ViewText.UNDO
+                }
+            }
+
             // The score controls and the add-asset control used to share one dashed box, which read
             // as a single form of related fields. They are separate jobs, so they are separate
             // groups. This one carries no group title: "scored sleeve" is the name of the second

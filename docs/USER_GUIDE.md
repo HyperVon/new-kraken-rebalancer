@@ -248,7 +248,9 @@ auto-fitting columns sized for all controls. On phone screens, the symbol and
 **Remove** action share the first row, with the swatch, score, and target below;
 the two numeric fields stay labelled so a score is never mistaken for a target.
 The score-preview and Add Asset controls wrap below their fields when space is
-limited.
+limited. After removing a row, use **Undo** to restore its entered values and
+position. Undo applies to the most recent removal and clears when you save,
+replace the allocation list with a score preview, or re-add the same symbol.
 
 Before a rebalance cycle analyzes a configured non-USD asset, Kraken metadata
 must explicitly classify it as `currency`. Missing or unknown metadata and
