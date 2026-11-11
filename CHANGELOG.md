@@ -12,6 +12,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Explain allocation corrections needed before Settings can be saved.
 
+### Changed
+
+- Space Dashboard trend samples by elapsed time and show the observed UTC window.
+
 ## [6.20.22] - 2026-11-09
 
 ### Fixed

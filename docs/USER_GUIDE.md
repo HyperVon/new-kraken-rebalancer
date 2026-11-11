@@ -107,8 +107,9 @@ value with a trailing chart plus two tiles:
 | **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, the configured USD target, and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
-The trend uses only in-memory snapshots from the current application run. It
-appears after the second completed cycle, shows the cycle count and sample
+The trend spaces points by their snapshot times and shows the first and latest
+timestamps in UTC and the observed window. It uses only in-memory snapshots
+from the current application run. It appears after the second completed cycle, shows the cycle count and sample
 times, and resets when the application restarts. The application does not
 persist portfolio snapshots between runs.
 
