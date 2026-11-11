@@ -268,6 +268,10 @@ class SettingsFormComponent {
                 }
             }
 
+            div {
+                id = HtmlIds.ALLOCATION_FEEDBACK
+            }
+
             div(CssClass.Form.AllocationListContainer) {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
                 val allocations = formValues?.allocations ?: config.allocations.map { alloc ->
