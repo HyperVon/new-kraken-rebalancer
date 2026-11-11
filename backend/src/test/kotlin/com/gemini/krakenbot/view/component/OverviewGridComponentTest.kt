@@ -10,6 +10,7 @@ import kotlinx.html.div
 import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.Locale
 
 @Suppress("unused")
 class OverviewGridComponentTest : StringSpec() {
@@ -35,6 +36,38 @@ class OverviewGridComponentTest : StringSpec() {
             twoSamples shouldContain "over shown cycles"
             twoSamples shouldNotContain "this run"
             twoSamples shouldNotContain "aria-label"
+        }
+
+        "trend spacing and window reflect elapsed time under a non-English locale" {
+            val start = Instant.parse("2026-10-11T12:00:00Z")
+            val samples = listOf(0L, 10L, 100L).map {
+                TestFixtures.emptySnapshot(start.plusSeconds(it), BigDecimal("100.00"))
+            }
+            val previous = Locale.getDefault()
+            val html = try {
+                Locale.setDefault(Locale.GERMANY)
+                createHTML().div { OverviewGridComponent().render(samples.last(), samples) }
+            } finally {
+                Locale.setDefault(previous)
+            }
+
+            html shouldContain "points=\"8.00,75.00 58.40,75.00 512.00,75.00\""
+            html shouldContain "First 2026-10-11 12:00:00 UTC"
+            html shouldContain "Latest 2026-10-11 12:01:40 UTC"
+            html shouldContain "Window 1m 40s"
+        }
+
+        "equal timestamps produce a centered trend and zero window" {
+            val timestamp = Instant.parse("2026-10-11T12:00:00Z")
+            val samples = listOf("100.00", "101.00").map {
+                TestFixtures.emptySnapshot(timestamp, BigDecimal(it))
+            }
+            val html = createHTML().div { OverviewGridComponent().render(samples.last(), samples) }
+
+            html shouldContain "points=\"260.00,"
+            html shouldContain " 260.00,"
+            html shouldContain "Window 0s"
+            html shouldNotContain "NaN"
         }
 
         "dashboard hero chart displays more than the previous 24-cycle limit" {
