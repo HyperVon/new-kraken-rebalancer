@@ -16,6 +16,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Hide Show older when no more matching activity is available, and keep search focus during dashboard updates.
 
+### Changed
+
+- Space Dashboard trend samples by elapsed time and show the observed UTC window.
+
 ## [6.20.22] - 2026-11-09
 
 ### Fixed
