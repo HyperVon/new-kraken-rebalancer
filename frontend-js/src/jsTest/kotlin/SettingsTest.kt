@@ -75,7 +75,8 @@ class SettingsTest : StringSpec() {
                 )
                 val stale = dispatchSettingsBeforeRequest(previewPath, form)
                 dispatchSettingsInput(form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement, "61")
-                val staleResponse = dispatchSettingsResponse(422, "<form>invalid</form>", stale, "text/html", errorHeaders)
+                val staleResponse =
+                    dispatchSettingsResponse(422, "<form>invalid</form>", stale, "text/html", errorHeaders)
                 (staleResponse.eventPrevented as Boolean).shouldBeTrue()
                 (form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement).value shouldBe "61"
                 (form.querySelector("input[name=csrfToken]") as HTMLInputElement).value shouldBe "new-token"
@@ -84,7 +85,11 @@ class SettingsTest : StringSpec() {
                 val newSymbol = form.querySelector("#new-symbol-input") as HTMLInputElement
                 newSymbol.value = "ETH"
                 val pendingError = dispatchSettingsResponse(
-                    422, "<form>invalid</form>", pendingSymbol, "text/html", errorHeaders,
+                    422,
+                    "<form>invalid</form>",
+                    pendingSymbol,
+                    "text/html",
+                    errorHeaders,
                 )
                 (pendingError.eventPrevented as Boolean).shouldBeTrue()
                 newSymbol.value shouldBe "ETH"
@@ -102,14 +107,19 @@ class SettingsTest : StringSpec() {
                 val beforeSave = dispatchSettingsBeforeRequest(previewPath, form)
                 val save = dispatchSettingsBeforeRequest("/settings", form)
                 dispatchSettingsResponse(200, saveResponse(false, "LIVE", "2026-10-19T14:40:00Z"), save)
-                val savedError = dispatchSettingsResponse(422, "<form>invalid</form>", beforeSave, "text/html", errorHeaders)
+                val savedError =
+                    dispatchSettingsResponse(422, "<form>invalid</form>", beforeSave, "text/html", errorHeaders)
                 (savedError.eventPrevented as Boolean).shouldBeTrue()
 
                 val beforeReplacement = dispatchSettingsBeforeRequest(previewPath, form)
                 val replacement = settingsStateForm()
                 document.body!!.replaceChild(replacement, form)
                 val replacedError = dispatchSettingsResponse(
-                    422, "<form>invalid</form>", beforeReplacement, "text/html", errorHeaders,
+                    422,
+                    "<form>invalid</form>",
+                    beforeReplacement,
+                    "text/html",
+                    errorHeaders,
                 )
                 (replacedError.eventPrevented as Boolean).shouldBeTrue()
                 replacement.remove()
@@ -141,7 +151,8 @@ class SettingsTest : StringSpec() {
                     input.value = "changed"
                     val detail = dispatchSettingsResponse(200, "preview", xhr, "text/html")
                     (detail.shouldSwap as Boolean).shouldBeFalse()
-                    status.textContent shouldBe "Settings changed while the preview was calculating. Recalculate the preview."
+                    status.textContent shouldBe
+                        "Settings changed while the preview was calculating. Recalculate the preview."
                     status.classList.contains("hidden").shouldBeFalse()
                     input.value = original
                 }
@@ -161,7 +172,14 @@ class SettingsTest : StringSpec() {
                 val beforeSave = dispatchSettingsBeforeRequest(previewPath, form)
                 val save = dispatchSettingsBeforeRequest("/settings", form)
                 dispatchSettingsResponse(200, saveResponse(false, "LIVE", "2026-10-19T14:40:00Z"), save)
-                (dispatchSettingsResponse(200, "preview", beforeSave, "text/html").shouldSwap as Boolean).shouldBeFalse()
+                (
+                    dispatchSettingsResponse(
+                        200,
+                        "preview",
+                        beforeSave,
+                        "text/html",
+                    ).shouldSwap as Boolean
+                    ).shouldBeFalse()
 
                 val error = dispatchSettingsBeforeRequest(previewPath, form)
                 (form.querySelector("input[name=scores]") as HTMLInputElement).value = "2"

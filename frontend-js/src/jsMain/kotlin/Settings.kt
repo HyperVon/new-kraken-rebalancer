@@ -257,8 +257,12 @@ private fun settingsSnapshot(form: HTMLFormElement): String = buildString {
 }
 
 private val PREVIEW_FIELD_NAMES = setOf(
-    FormFields.SYMBOLS, FormFields.COLORS, FormFields.SCORES, FormFields.TARGETS,
-    FormFields.SCORE_EMPHASIS, FormFields.SCORE_SLEEVE_PERCENT,
+    FormFields.SYMBOLS,
+    FormFields.COLORS,
+    FormFields.SCORES,
+    FormFields.TARGETS,
+    FormFields.SCORE_EMPHASIS,
+    FormFields.SCORE_SLEEVE_PERCENT,
 )
 
 private fun previewSnapshot(form: HTMLFormElement): String = buildString {
@@ -309,10 +313,17 @@ private fun handleSettingsSaveResponse(event: Event) {
             xhr.getResponseHeader(HttpWire.ERROR_FRAGMENT_HEADER) as? String,
         )
         if (
-            (success || replacesForm) && (form !== preview.form || preview.requestId != latestPreviewRequestId ||
-                preview.saveGeneration != acknowledgedSaveGeneration ||
-                (if (replacesForm) formReplacementSnapshot(preview.form) != preview.formValues else
-                    previewSnapshot(preview.form) != preview.values))
+            (success || replacesForm) && (
+                form !== preview.form || preview.requestId != latestPreviewRequestId ||
+                    preview.saveGeneration != acknowledgedSaveGeneration ||
+                    (
+                        if (replacesForm) {
+                            formReplacementSnapshot(preview.form) != preview.formValues
+                        } else {
+                            previewSnapshot(preview.form) != preview.values
+                        }
+                        )
+                )
         ) {
             detail.shouldSwap = false
             event.preventDefault()
