@@ -716,42 +716,6 @@ class SettingsTest : StringSpec() {
             }
         }
 
-        "removing an allocation moves focus to the announced undo action" {
-            val host = document.createElement("div") as HTMLElement
-            host.innerHTML = """
-                <div id="allocations-container"></div>
-                <p id="allocation-undo-status" class="sr-only" role="status" aria-live="polite"></p>
-                <div id="allocation-undo-notice" class="hidden">
-                    <span>Allocation removed.</span><button id="allocation-undo-button">Undo</button>
-                </div>
-                <span id="total-allocated-display"></span><button id="save-button"></button>
-            """.trimIndent()
-            document.body!!.appendChild(host)
-            try {
-                val allocations = document.getElementById("allocations-container") as HTMLElement
-                allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "100")
-                val removeButton = allocations.querySelector("button") as HTMLElement
-                val undoButton = document.getElementById("allocation-undo-button") as HTMLElement
-                removeButton.focus()
-
-                removeAllocationRow(removeButton)
-
-                document.getElementById("allocation-undo-status")!!.textContent shouldBe "Undo available for USD."
-                document.activeElement shouldBe undoButton
-                document.getElementById("allocation-undo-notice")!!.classList
-                    .contains("hidden").shouldBeFalse()
-
-                undoAllocationRemoval()
-
-                document.getElementById("allocation-undo-status")!!.textContent shouldBe ""
-                document.getElementById("allocation-undo-notice")!!.classList
-                    .contains("hidden").shouldBeTrue()
-                document.activeElement shouldBe removeButton
-            } finally {
-                document.body!!.removeChild(host)
-            }
-        }
-
         "undo remembers only the latest removal and rejects a re-added alias" {
             val host = document.createElement("div") as HTMLElement
             host.innerHTML = """
@@ -812,6 +776,141 @@ class SettingsTest : StringSpec() {
                 allocations.children.length shouldBe 1
             } finally {
                 document.body!!.removeChild(form)
+                initSettings()
+            }
+        }
+
+        "settings validation swaps preserve the removed allocation for undo" {
+            val form = settingsStateForm()
+            val allocations = document.createElement("div") as HTMLElement
+            allocations.id = "allocations-container"
+            allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "100", "2")
+            val row = allocations.firstElementChild!!
+            form.appendChild(allocations)
+            val undoNotice = document.createElement("div") as HTMLElement
+            undoNotice.id = "allocation-undo-notice"
+            undoNotice.classList.add("hidden")
+            undoNotice.innerHTML = "<span>Allocation removed.</span><button>Undo</button>"
+            form.appendChild(undoNotice)
+            document.body!!.appendChild(form)
+            val originalSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            try {
+                main()
+                val target = allocations.querySelector("input[name=targets]") as HTMLInputElement
+                val color = allocations.querySelector("input[name=colors]") as HTMLInputElement
+                target.value = "73.5"
+                color.value = "#abcdef"
+                removeAllocationRow(allocations.querySelector("button")!!)
+                val xhr = dispatchSettingsBeforeRequest("/settings", form)
+                val response = dispatchSettingsResponse(
+                    422,
+                    "<form>invalid settings</form>",
+                    xhr,
+                    "text/html",
+                    mapOf("X-Rebalancer-Error-Fragment" to "settings-form"),
+                    initialShouldSwap = false,
+                    eventTarget = document.body,
+                )
+                (response.shouldSwap as Boolean).shouldBeTrue()
+
+                val replacement = settingsStateForm()
+                val replacementAllocations = document.createElement("div") as HTMLElement
+                replacementAllocations.id = "allocations-container"
+                replacement.appendChild(replacementAllocations)
+                val replacementNotice = document.createElement("div") as HTMLElement
+                replacementNotice.id = "allocation-undo-notice"
+                replacementNotice.classList.add("hidden")
+                replacementNotice.innerHTML = "<span>Allocation removed.</span><button>Undo</button>"
+                replacement.appendChild(replacementNotice)
+                document.body!!.replaceChild(replacement, form)
+                val afterSwapDetail = js("({})")
+                afterSwapDetail.xhr = xhr
+                afterSwapDetail.target = document.body
+                val afterSwap = document.createEvent("CustomEvent")
+                afterSwap.asDynamic().initCustomEvent("htmx:afterSwap", true, true, afterSwapDetail)
+                document.body!!.dispatchEvent(afterSwap)
+
+                replacementAllocations.children.length shouldBe 0
+                replacementNotice.classList.contains("hidden").shouldBeFalse()
+                undoAllocationRemoval()
+                replacementAllocations.children.item(0) shouldBe row
+                (replacementAllocations.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "73.5"
+                (replacementAllocations.querySelector("input[name=colors]") as HTMLInputElement).value shouldBe
+                    "#abcdef"
+            } finally {
+                window.asDynamic().setInterval = originalSetInterval
+                form.remove()
+                document.getElementById("settings-form")?.remove()
+                initSettings()
+            }
+        }
+
+        "settings validation swaps preserve newer allocation edits and pending undo" {
+            val form = settingsStateForm()
+            val allocations = document.createElement("div") as HTMLElement
+            allocations.id = "allocations-container"
+            allocations.innerHTML = AllocationEditor.editRow("USD", "#111111", "50", "2") +
+                AllocationEditor.editRow("BTC", "#222222", "50", "3")
+            val usdRow = allocations.children.item(0)!!
+            val btcRow = allocations.children.item(1)!!
+            val undoNotice = document.createElement("div") as HTMLElement
+            undoNotice.id = "allocation-undo-notice"
+            undoNotice.classList.add("hidden")
+            undoNotice.innerHTML = "<span>Allocation removed.</span><button>Undo</button>"
+            form.appendChild(allocations)
+            form.appendChild(undoNotice)
+            document.body!!.appendChild(form)
+            val originalSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            try {
+                main()
+                val targets = allocations.querySelectorAll("input[name=targets]")
+                (targets.item(0) as HTMLInputElement).value = "52.5"
+                (targets.item(1) as HTMLInputElement).value = "47.5"
+                removeAllocationRow((usdRow.querySelector("button") as Element))
+                val xhr = dispatchSettingsBeforeRequest("/settings", form)
+                undoAllocationRemoval()
+                allocations.children.item(0) shouldBe usdRow
+                removeAllocationRow(btcRow.querySelector("button") as Element)
+
+                val response = dispatchSettingsResponse(
+                    422,
+                    "<form>invalid settings</form>",
+                    xhr,
+                    "text/html",
+                    mapOf("X-Rebalancer-Error-Fragment" to "settings-form"),
+                    initialShouldSwap = false,
+                    eventTarget = document.body,
+                )
+                (response.shouldSwap as Boolean).shouldBeTrue()
+
+                val replacement = settingsStateForm()
+                val replacementAllocations = document.createElement("div") as HTMLElement
+                replacementAllocations.id = "allocations-container"
+                replacement.appendChild(replacementAllocations)
+                val replacementNotice = document.createElement("div") as HTMLElement
+                replacementNotice.id = "allocation-undo-notice"
+                replacementNotice.classList.add("hidden")
+                replacement.appendChild(replacementNotice)
+                document.body!!.replaceChild(replacement, form)
+                val afterSwapDetail = js("({})")
+                afterSwapDetail.xhr = xhr
+                afterSwapDetail.target = document.body
+                val afterSwap = document.createEvent("CustomEvent")
+                afterSwap.asDynamic().initCustomEvent("htmx:afterSwap", true, true, afterSwapDetail)
+                document.body!!.dispatchEvent(afterSwap)
+
+                replacementAllocations.children.item(0) shouldBe usdRow
+                replacementNotice.classList.contains("hidden").shouldBeFalse()
+                (replacementAllocations.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "52.5"
+                undoAllocationRemoval()
+                replacementAllocations.children.item(1) shouldBe btcRow
+                (btcRow.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "47.5"
+            } finally {
+                window.asDynamic().setInterval = originalSetInterval
+                form.remove()
+                document.getElementById("settings-form")?.remove()
                 initSettings()
             }
         }

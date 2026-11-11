@@ -162,7 +162,6 @@ Navigation:
   Link: "nav-link"
   LinkActive: "nav-link active"
 Utility:
-  ScreenReaderOnly: "sr-only"
   TextDanger: "text-danger"
   TextOverweight: "text-overweight"
   TextUnderweight: "text-underweight"

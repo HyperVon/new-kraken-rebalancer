@@ -294,12 +294,6 @@ class SettingsFormComponent {
                 }
             }
 
-            p(CssClass.Utility.ScreenReaderOnly) {
-                id = HtmlIds.ALLOCATION_UNDO_STATUS
-                attributes["role"] = "status"
-                attributes["aria-live"] = "polite"
-            }
-
             div(CssClass.Utility.Hidden) {
                 id = HtmlIds.ALLOCATION_UNDO_NOTICE
                 span { +ViewText.ALLOCATION_REMOVED }

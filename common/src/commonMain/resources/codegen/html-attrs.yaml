@@ -82,7 +82,6 @@ HtmlIds:
   SAVE_BUTTON: "save-button"
   LOOP_CONTROL: "loop-control"
   ALLOCATION_UNDO_NOTICE: "allocation-undo-notice"
-  ALLOCATION_UNDO_STATUS: "allocation-undo-status"
   TOTAL_ALLOCATED_DISPLAY: "total-allocated-display"
   ALLOCATION_FEEDBACK: "allocation-feedback"
   ALLOCATIONS_CONTAINER: "allocations-container"
