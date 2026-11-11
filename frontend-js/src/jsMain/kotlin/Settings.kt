@@ -196,7 +196,9 @@ private fun invalidateUndoOnSwap(event: Event) {
     val target = detail.target as? Element ?: return
     if (target == removed.container ||
         document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) != removed.container
-    ) clearAllocationUndo()
+    ) {
+        clearAllocationUndo()
+    }
 }
 
 private const val DEFAULT_NEW_ALLOCATION_TARGET = "0.0"
