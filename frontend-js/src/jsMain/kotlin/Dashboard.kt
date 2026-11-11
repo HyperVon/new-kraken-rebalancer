@@ -41,7 +41,7 @@ fun registerDashboardGlobals() {
     document.addEventListener("input", ::handleRecentActivitySearch)
     document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, { captureRecentActivityState() })
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, { restoreRecentActivityState() })
-    document.addEventListener(HtmlEvents.HTMX_AFTER_SETTLE, { restoreRecentActivitySelectionAfterSettle() })
+    document.addEventListener(HtmlEvents.HTMX_AFTER_SETTLE, ::restoreRecentActivitySelectionAfterSettle)
     restoreRecentActivityState()
 }
 
@@ -270,10 +270,12 @@ internal fun restoreRecentActivityState() {
     if (recentActivityUiState.pageScrollY > 0.0) window.scrollTo(window.scrollX, recentActivityUiState.pageScrollY)
 }
 
-private fun restoreRecentActivitySelectionAfterSettle() {
+private fun restoreRecentActivitySelectionAfterSettle(event: DomEvent) {
     if (!recentActivityUiState.searchSelectionPending) return
-    recentActivityUiState.searchSelectionPending = false
     val root = recentActivityRoot() ?: return
+    val target = event.target as? Element ?: return
+    if (!target.contains(root)) return
+    recentActivityUiState.searchSelectionPending = false
     restoreRecentActivitySelection(root, allowFocus = false)
 }
 

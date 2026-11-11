@@ -167,8 +167,12 @@ class DashboardTest : StringSpec() {
             (document.activeElement == restored).shouldBeTrue()
             restored.selectionStart shouldBe 1
             restored.selectionEnd shouldBe 4
+            val unrelated = document.createElement("button") as HTMLButtonElement
+            document.body!!.appendChild(unrelated)
+            unrelated.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
             restored.setSelectionRange(7, 7)
-            document.dispatchEvent(Event("htmx:afterSettle"))
+            root.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
+            unrelated.parentNode?.removeChild(unrelated)
             restored.selectionStart shouldBe 1
             restored.selectionEnd shouldBe 4
 
@@ -176,13 +180,13 @@ class DashboardTest : StringSpec() {
             document.body!!.appendChild(other)
             restoreRecentActivityState()
             other.focus()
-            document.dispatchEvent(Event("htmx:afterSettle"))
+            root.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
             (document.activeElement == other).shouldBeTrue()
             captureRecentActivityState()
             removeActivityDom(root)
             root = activityDom("focus-source")
             restoreRecentActivityState()
-            document.dispatchEvent(Event("htmx:afterSettle"))
+            root.dispatchEvent(Event("htmx:afterSettle", EventInit(bubbles = true)))
             (document.activeElement == other).shouldBeTrue()
             other.parentNode?.removeChild(other)
             removeActivityDom(root)
