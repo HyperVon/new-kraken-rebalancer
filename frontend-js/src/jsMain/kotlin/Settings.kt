@@ -304,8 +304,8 @@ private fun handleSettingsSaveResponse(event: Event) {
     if (preview != null) {
         submittedPreviews.delete(xhr)
         val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement
-        val success = (xhr.status as? Int)?.let { it in 200..299 } == true
-        val status = xhr.status as? Int
+        val status = xhr.status as Int
+        val success = status in 200..299
         val replacesForm = (status == 409 || status == 422) && shouldSwapRenderedError(
             status,
             xhr.responseText as? String,
