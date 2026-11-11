@@ -131,6 +131,7 @@ fun updateAllocationTotal() {
     val feedback = mutableListOf<String>()
     when {
         hasInvalidTarget -> feedback.add(ViewText.ALLOCATION_ENTER_VALID)
+
         !isValid -> {
             val action = if (difference > 0) ViewText.ALLOCATION_ADD_PREFIX else ViewText.ALLOCATION_REMOVE_PREFIX
             feedback.add(
