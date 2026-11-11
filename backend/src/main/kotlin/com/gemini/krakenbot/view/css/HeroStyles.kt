@@ -89,7 +89,6 @@ object HeroStyles {
             fontFamily = CssTheme.fontMono
             fontSize = 0.6875.rem
             color = CssTheme.colorTextMuted
-            whiteSpaceRaw("nowrap")
         }
 
         CssClass.Hero.TrendChart.querySelector {
