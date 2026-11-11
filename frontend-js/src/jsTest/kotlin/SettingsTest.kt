@@ -585,14 +585,22 @@ class SettingsTest : StringSpec() {
             try {
                 updateAllocationTotal()
                 totalDisplay.textContent shouldBe "Total: 100.00%"
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe "Allocations are ready to save."
                 saveButton.disabled.shouldBeFalse()
                 totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
 
                 input2.value = "60.0"
                 updateAllocationTotal()
                 totalDisplay.textContent shouldBe "Total: 90.00%"
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe
+                    "Add 10.00 percentage points to reach 100%."
                 saveButton.disabled.shouldBeTrue()
                 totalDisplay.classList.contains("allocation-total-bad").shouldBeTrue()
+
+                input2.value = "80.0"
+                updateAllocationTotal()
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe
+                    "Remove 10.00 percentage points to reach 100%."
 
                 input2.value = "70.0"
                 sym2.value = Asset.ETH
@@ -600,6 +608,27 @@ class SettingsTest : StringSpec() {
                 saveButton.disabled.shouldBeTrue()
                 totalDisplay.classList.contains("allocation-total-bad").shouldBeTrue()
                 totalDisplay.textContent shouldBe "Total: 100.00%"
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe "Add a USD allocation."
+
+                input2.value = ""
+                updateAllocationTotal()
+                totalDisplay.textContent shouldBe "Total: --%"
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe
+                    "Enter a valid percentage for each allocation. Add a USD allocation."
+                saveButton.disabled.shouldBeTrue()
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "updateAllocationTotal rejects out-of-range targets even when they sum to 100" {
+            val (container, totalDisplay, saveButton) = allocationTotalFixture("110", "-10")
+            try {
+                updateAllocationTotal()
+                totalDisplay.textContent shouldBe "Total: 100.00%"
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe
+                    "Enter a valid percentage for each allocation."
+                saveButton.disabled.shouldBeTrue()
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -613,6 +642,7 @@ class SettingsTest : StringSpec() {
                 updateAllocationTotal()
                 totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
                 saveButton.disabled.shouldBeFalse()
+                container.querySelector("#allocation-feedback")!!.textContent shouldBe "Allocations are ready to save."
 
                 secondTarget.value = "50.005"
                 updateAllocationTotal()
@@ -860,6 +890,7 @@ private fun allocationTotalFixture(first: String, second: String): AllocationTot
     val container = document.createElement("div")
     container.innerHTML = """
         <span id="total-allocated-display"></span>
+        <span id="allocation-feedback"></span>
         <button id="save-button"></button>
         <input name="targets" value="$first">
         <input name="symbols" value="BTC">

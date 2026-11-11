@@ -29,6 +29,7 @@ class SettingsFormComponentTest : StringSpec() {
                 SettingsFormComponent().renderForm(this, config, null, "csrf-token")
             }
 
+            html shouldContain "id=\"allocation-feedback\""
             html shouldContain "Simulation Mode"
             html shouldContain "Dry Run Mode"
             html shouldContain "value=\"50.0\""
