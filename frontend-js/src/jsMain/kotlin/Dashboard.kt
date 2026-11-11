@@ -283,7 +283,9 @@ private fun restoreRecentActivitySelection(root: Element, allowFocus: Boolean): 
     val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement ?: return false
     if (!recentActivityUiState.searchFocused ||
         (document.activeElement != search && !(allowFocus && document.activeElement == document.body))
-    ) return false
+    ) {
+        return false
+    }
     if (document.activeElement != search) search.focus()
     val start = recentActivityUiState.searchSelectionStart
     val end = recentActivityUiState.searchSelectionEnd
