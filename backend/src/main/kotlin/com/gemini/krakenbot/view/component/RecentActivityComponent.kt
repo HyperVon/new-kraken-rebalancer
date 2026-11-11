@@ -16,9 +16,12 @@ import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
+import kotlinx.html.InputType
 import kotlinx.html.button
 import kotlinx.html.details
 import kotlinx.html.id
+import kotlinx.html.input
+import kotlinx.html.label
 import kotlinx.html.summary
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -64,6 +67,18 @@ class RecentActivityComponent {
                     renderFilterButton(RecentActivityText.FILTER_VALUE_ALL, RecentActivityText.FILTER_ALL, true)
                     renderFilterButton(RecentActivityText.FILTER_VALUE_ORDERS, RecentActivityText.FILTER_ORDERS)
                     renderFilterButton(RecentActivityText.FILTER_VALUE_PROBLEMS, RecentActivityText.FILTER_PROBLEMS)
+                }
+                div(CssClass.Activity.FeedFooter) {
+                    label {
+                        +RecentActivityText.SEARCH_LABEL
+                        input(type = InputType.search, classes = CssClass.Form.InputGlass.value) {
+                            id = RecentActivityText.SEARCH_ID
+                            placeholder = RecentActivityText.SEARCH_PLACEHOLDER
+                        }
+                    }
+                }
+                div(CssClass.Activity.FeedFooter) {
+                    id = RecentActivityText.RESULT_COUNT_ID
                 }
                 div {
                     id = RecentActivityText.GROUPS_ID

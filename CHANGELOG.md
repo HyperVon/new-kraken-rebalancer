@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.21.0] - 2026-11-10
+
+### Added
+
+- Search Recent Activity by asset, action, or outcome alongside the existing filters.
+
+### Fixed
+
+- Hide Show older when no more matching activity is available, and keep search focus during dashboard updates.
+
 ## [6.20.18] - 2026-11-03
 
 ### Fixed

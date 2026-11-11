@@ -38,6 +38,7 @@ fun registerDashboardGlobals() {
     if (recentActivityHandlersRegistered) return
     recentActivityHandlersRegistered = true
     document.addEventListener("click", ::handleRecentActivityClick)
+    document.addEventListener("input", ::handleRecentActivitySearch)
     document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, { captureRecentActivityState() })
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, { restoreRecentActivityState() })
     restoreRecentActivityState()
@@ -169,9 +170,13 @@ internal data class RecentActivityUiState(
     var sourceId: String? = null,
     var items: List<RecentActivityItem> = emptyList(),
     var filter: String = RecentActivityText.FILTER_VALUE_ALL,
+    var query: String = "",
     var visibleCount: Int = RecentActivityText.PAGE_SIZE.toInt(),
     val expandedCycleIds: MutableSet<String> = mutableSetOf(),
     var pageScrollY: Double = 0.0,
+    var searchFocused: Boolean = false,
+    var searchSelectionStart: Int? = null,
+    var searchSelectionEnd: Int? = null,
 )
 
 internal fun mergeRecentActivityItems(
@@ -185,8 +190,12 @@ internal fun mergeRecentActivityItems(
         .take(RecentActivityText.MAX_ITEMS.toInt())
 }
 
-internal fun filterRecentActivityItems(items: List<RecentActivityItem>, filter: String): List<RecentActivityItem> =
-    when (filter) {
+internal fun filterRecentActivityItems(
+    items: List<RecentActivityItem>,
+    filter: String,
+    query: String = "",
+): List<RecentActivityItem> {
+    val filtered = when (filter) {
         RecentActivityText.FILTER_VALUE_ORDERS -> items.filter { item ->
             outcomeCode(item.outcome) in setOf("DRY_RUN_PLAN", "ORDERS_ATTEMPTED") ||
                 item.actions.any(::isOrderAction)
@@ -198,6 +207,14 @@ internal fun filterRecentActivityItems(items: List<RecentActivityItem>, filter: 
 
         else -> items
     }
+    val term = query.trim()
+    return filtered.filter { item ->
+        term.isEmpty() || item.actions.any { it.contains(term, ignoreCase = true) } ||
+            item.displayedActions.any { it.contains(term, ignoreCase = true) } ||
+            activityOutcomeLabel(item.outcome).contains(term, ignoreCase = true) ||
+            item.outcome.orEmpty().contains(term, ignoreCase = true)
+    }
+}
 
 internal fun captureRecentActivityState() {
     val root = recentActivityRoot() ?: return
@@ -214,6 +231,12 @@ internal fun captureRecentActivityState() {
     recentActivityUiState.visibleCount = root.getAttribute(RecentActivityText.VISIBLE_COUNT_ATTRIBUTE)
         ?.toIntOrNull()?.coerceIn(1, RecentActivityText.MAX_ITEMS.toInt())
         ?: recentActivityUiState.visibleCount
+    val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement
+    recentActivityUiState.searchFocused = search != null && document.activeElement == search
+    if (recentActivityUiState.searchFocused) {
+        recentActivityUiState.searchSelectionStart = search?.selectionStart
+        recentActivityUiState.searchSelectionEnd = search?.selectionEnd
+    }
     recentActivityUiState.pageScrollY = window.scrollY
     val visibleIds = renderedItems.mapTo(mutableSetOf()) { it.cycleId }
     val openIds = readOpenCycleIds(root)
@@ -241,6 +264,15 @@ internal fun restoreRecentActivityState() {
     recentActivityUiState.expandedCycleIds.addAll(newActivityIds)
     recentActivityUiState.expandedCycleIds.retainAll(recentActivityUiState.items.map { it.cycleId }.toSet())
     renderRecentActivity(root)
+    val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement
+    if (recentActivityUiState.searchFocused &&
+        (document.activeElement == document.body || document.activeElement == search)
+    ) {
+        search?.focus()
+        val start = recentActivityUiState.searchSelectionStart
+        val end = recentActivityUiState.searchSelectionEnd
+        if (search != null && start != null && end != null) search.setSelectionRange(start, end)
+    }
     if (recentActivityUiState.pageScrollY > 0.0) window.scrollTo(window.scrollX, recentActivityUiState.pageScrollY)
 }
 
@@ -252,9 +284,17 @@ private fun resetRecentActivitySource(sourceId: String, initialItems: List<Recen
     recentActivityUiState = RecentActivityUiState(
         sourceId = sourceId,
         items = mergeRecentActivityItems(emptyList(), initialItems),
-        filter = recentActivityUiState.filter,
         pageScrollY = recentActivityUiState.pageScrollY,
     )
+}
+
+private fun handleRecentActivitySearch(event: DomEvent) {
+    val input = event.target as? HTMLInputElement ?: return
+    if (input.id != RecentActivityText.SEARCH_ID) return
+    val root = input.closest("#${RecentActivityText.FEED_ID}") as? HTMLElement ?: return
+    captureRecentActivityState()
+    recentActivityUiState.query = input.value
+    renderRecentActivity(root)
 }
 
 private fun handleRecentActivityClick(event: DomEvent) {
@@ -262,6 +302,7 @@ private fun handleRecentActivityClick(event: DomEvent) {
     val root = clicked.closest("#${RecentActivityText.FEED_ID}") as? HTMLElement ?: return
     val filter = clicked.getAttribute(RecentActivityText.FILTER_ATTRIBUTE)
     if (filter != null) {
+        captureRecentActivityState()
         recentActivityUiState.filter = filter
         renderRecentActivity(root)
     } else if (clicked.id == RecentActivityText.SHOW_OLDER_ID) {
@@ -273,7 +314,15 @@ private fun handleRecentActivityClick(event: DomEvent) {
 }
 
 private fun renderRecentActivity(root: Element) {
-    val rows = filterRecentActivityItems(recentActivityUiState.items, recentActivityUiState.filter)
+    val rows = filterRecentActivityItems(
+        recentActivityUiState.items,
+        recentActivityUiState.filter,
+        recentActivityUiState.query,
+    )
+    val search = root.querySelector("#${RecentActivityText.SEARCH_ID}") as? HTMLInputElement
+    if (search != null && search.value != recentActivityUiState.query) search.value = recentActivityUiState.query
+    val countLabel = if (rows.size == 1) RecentActivityText.RESULT_COUNT_ONE else RecentActivityText.RESULT_COUNT_MANY
+    root.querySelector("#${RecentActivityText.RESULT_COUNT_ID}")?.textContent = "${rows.size} $countLabel"
     val visible = rows.take(recentActivityUiState.visibleCount)
     val groups = root.querySelector("#${RecentActivityText.GROUPS_ID}") ?: return
     while (groups.firstChild != null) groups.removeChild(groups.firstChild!!)

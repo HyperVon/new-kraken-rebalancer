@@ -32,6 +32,15 @@ class RecentActivityComponentTest : StringSpec() {
     private fun visibleText(html: String) = html.replace(Regex("<[^>]*>"), "")
 
     init {
+        "activity includes search and result count controls" {
+            val html = renderActions("BUY BTC")
+
+            html shouldContain "id=\"dashboard-activity-search\""
+            html shouldContain "Search activity"
+            html shouldContain "Asset, action or outcome"
+            html shouldContain "id=\"dashboard-activity-result-count\""
+        }
+
         "legacy live cost row humanizes and hides raw cost markers" {
             val htmlString = renderActions($$"BUY BTC Volume: 0.1 Cost: $5000.00")
 

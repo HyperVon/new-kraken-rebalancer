@@ -142,7 +142,9 @@ Live Trading mode.
   legend sits above the table.
 - **Recent Activity** — the newest 20 cycle outcomes with a short summary and
   timestamps. Use **Show older** to page through in-memory cycle outcomes, which are
-  capped at 120 cycles. Failed cycles without a portfolio snapshot remain
+  capped at 120 cycles. Use **All**, **Orders**, or **Problems** together with
+  **Search activity** to find an asset, action, or outcome; the count shows matching
+  cycles. Failed cycles without a portfolio snapshot remain
   visible:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
 

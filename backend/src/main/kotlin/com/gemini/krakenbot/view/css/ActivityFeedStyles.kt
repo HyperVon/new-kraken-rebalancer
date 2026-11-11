@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.RecentActivityText
 import kotlinx.css.Align
 import kotlinx.css.BorderStyle
 import kotlinx.css.CssBuilder
@@ -32,6 +33,10 @@ import kotlinx.css.rem
 object ActivityFeedStyles {
     // DASH-3: cycle-grouped activity feed replaces the flat log dump.
     fun CssBuilder.applyActivityFeedStyles() {
+        "#${RecentActivityText.SHOW_OLDER_ID}[hidden]" {
+            display = Display.none
+        }
+
         ".${CssClass.Activity.Feed.value}" {
             display = Display.flex
             flexDirection = FlexDirection.column
