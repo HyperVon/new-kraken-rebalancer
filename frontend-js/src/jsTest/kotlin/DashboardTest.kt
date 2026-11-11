@@ -129,12 +129,44 @@ class DashboardTest : StringSpec() {
             )
             val root = activityDom(
                 "bounded-source",
-                listOf(activity("cycle-120", 120.0, "ORDERS_ATTEMPTED", listOf("BUY BTC"))),
+                listOf(activity("cycle-120", 120.0)),
             )
             try {
                 restoreRecentActivityState()
-                recentActivityUiState.expandedCycleIds shouldBe setOf("cycle-119", "cycle-120")
+                recentActivityUiState.expandedCycleIds shouldBe setOf("cycle-119")
                 recentActivityUiState.items.size shouldBe 120
+            } finally {
+                removeActivityDom(root)
+                resetRecentActivityClientState()
+            }
+        }
+
+        "older orders survive routine cycles and each retention class is bounded" {
+            val order = activity("order", 0.0, "RECORDED", listOf("[DRY RUN] SELL BTC"))
+            val routine = (1..130).map { activity("routine-$it", it.toDouble()) }
+            val merged = mergeRecentActivityItems(listOf(order), routine)
+            merged.size shouldBe 121
+            filterRecentActivityItems(merged, RecentActivityText.FILTER_VALUE_ORDERS).map { it.cycleId } shouldBe
+                listOf("order")
+            val problems = (1..120).map {
+                activity("problem-$it", 200.0 + it, "RECORDED", listOf("WARNING: issue"))
+            }
+            val bounded = mergeRecentActivityItems(merged, problems)
+            bounded.size shouldBe 240
+            bounded.any { it.cycleId == "order" } shouldBe false
+            val updated = activity("problem-120", 400.0, "NO_TRADE")
+            mergeRecentActivityItems(bounded, listOf(updated)).count { it.cycleId == "problem-120" } shouldBe 1
+        }
+
+        "fresh page restores an older order after many routine cycles" {
+            resetRecentActivityClientState()
+            val order = activity("older-order", 0.0, "ORDERS_ATTEMPTED", listOf("BUY BTC"))
+            val items = (1..120).map { activity("routine-$it", it.toDouble()) } + order
+            val root = activityDom("fresh-source", items)
+            try {
+                restoreRecentActivityState()
+                filterRecentActivityItems(recentActivityUiState.items, RecentActivityText.FILTER_VALUE_ORDERS)
+                    .map { it.cycleId } shouldBe listOf("older-order")
             } finally {
                 removeActivityDom(root)
                 resetRecentActivityClientState()

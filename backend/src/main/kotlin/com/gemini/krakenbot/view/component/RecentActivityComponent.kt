@@ -6,6 +6,7 @@ import com.gemini.krakenbot.service.CurrentCycleActivityMode
 import com.gemini.krakenbot.service.CurrentCycleOutcome
 import com.gemini.krakenbot.service.CurrentPortfolioState
 import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.view.util.ActivityClassification
 import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
@@ -97,9 +98,8 @@ class RecentActivityComponent {
 
     private fun DIV.renderCycle(activity: CurrentCycleActivity, hidden: Boolean) {
         val outcome = activity.outcome.toLabel()
-        val orders = activity.actions.any { TradeAction.from(it) != TradeAction.INFO } ||
-            activity.outcome in setOf(CurrentCycleOutcome.DRY_RUN_PLAN, CurrentCycleOutcome.ORDERS_ATTEMPTED)
-        val problem = activity.outcome == CurrentCycleOutcome.PROBLEM || activity.actions.any(::isProblemAction)
+        val orders = ActivityClassification.hasOrders(activity.outcome?.name, activity.actions)
+        val problem = ActivityClassification.hasProblem(activity.outcome?.name, activity.actions)
         val actions = activity.actions
         details(CssClass.Activity.Cycle.value) {
             if (hidden) attributes["hidden"] = "hidden"
@@ -170,12 +170,6 @@ class RecentActivityComponent {
             CurrentCycleActivityMode.SIMULATION -> ViewText.MODE_SIMULATION
             CurrentCycleActivityMode.DRY_RUN -> ViewText.MODE_DRY_RUN
             CurrentCycleActivityMode.LIVE -> ViewText.MODE_LIVE
-        }
-
-        fun isProblemAction(action: String): Boolean {
-            val normalized = action.uppercase(Locale.ROOT).trimStart()
-            return normalized.startsWith("ERROR") || normalized.startsWith("FAILED") ||
-                normalized.startsWith("WARNING")
         }
     }
 }
