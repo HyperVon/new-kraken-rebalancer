@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.21.0] - 2026-11-10
 
+### Changed
+
+- Space Dashboard trend samples by elapsed time and show the observed UTC window.
+
 ### Fixed
 
 - Preserve newer Settings edits when an earlier score preview completes; prompt to recalculate a stale preview.
