@@ -20,6 +20,40 @@ class SettingsTest : StringSpec() {
         """{"configPublicationPending":$publicationPending,"activeMode":"$activeMode","savedAt":"$savedAt"}"""
 
     init {
+        "unmarked or non HTML preview failures cannot replace the settings form" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            try {
+                main()
+                val marker = mapOf("X-Rebalancer-Error-Fragment" to "settings-form")
+                val cases = listOf(
+                    Triple(422, "text/html", emptyMap()),
+                    Triple(422, "application/json", marker),
+                    Triple(500, "text/html", marker),
+                )
+                cases.forEach { (status, contentType, headers) ->
+                    val xhr = dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
+                    val response = dispatchSettingsResponse(
+                        status,
+                        "error",
+                        xhr,
+                        contentType,
+                        headers,
+                        initialShouldSwap = false,
+                        eventTarget = document.body,
+                    )
+                    (response.eventPrevented as Boolean).shouldBeFalse()
+                    (response.shouldSwap as Boolean).shouldBeFalse()
+                }
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                form.remove()
+                initSettings()
+            }
+        }
+
         "fresh preview error restores an unadded symbol after the form swap" {
             val form = settingsStateForm()
             form.insertAdjacentHTML("beforeend", "<input id='new-symbol-input' value='ETH'>")
