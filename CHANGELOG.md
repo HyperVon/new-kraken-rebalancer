@@ -10,6 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Retain recent order and problem cycles separately from routine activity in the Dashboard's in-memory history.
 - Space Dashboard trend samples by elapsed time and show the observed UTC window.
 
 ### Fixed
