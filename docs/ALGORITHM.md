@@ -183,9 +183,9 @@ cycle has an operational error, or an unresolved live-order intent remains.
 Older JSON may contain retired settings fields such as
 `fiatMaxDrawdown`, `fiatDeploymentExponent`,
 `fiatDeploymentThresholdPercent`, `inceptionDate`, and `comparisonStartDate`.
-The config parser discards these fields when loading; the next Settings save
-writes the active configuration without them. They do not affect current
-rebalance targets.
+Remove these fields before startup. The config parser rejects unknown keys
+with `UnrecognizedPropertyException`; it does not silently migrate older files.
+Current rebalance targets use only the active configuration.
 
 ## Precision
 

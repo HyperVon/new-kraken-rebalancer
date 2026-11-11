@@ -109,7 +109,8 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
 
         "executeOrders skips orders with zero ticker price" {
             runTest {
-                OrderExecutorImpl(FakeKrakenService()).executeOrders(
+                val kraken = FakeKrakenService()
+                OrderExecutorImpl(kraken).executeOrders(
                     buyOrders = mapOf(Asset.BTC to BigDecimal("50.00")),
                     sellOrders = emptyMap(),
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
@@ -117,12 +118,14 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                     settings = TestFixtures.settings(),
                     actionLog = mutableListOf(),
                 )
+                kraken.executedOrders.shouldBeEmpty()
             }
         }
 
         "executeOrders skips a sell whose available volume rounds down to zero" {
             runTest {
-                OrderExecutorImpl(FakeKrakenService()).executeOrders(
+                val kraken = FakeKrakenService()
+                OrderExecutorImpl(kraken).executeOrders(
                     buyOrders = emptyMap(),
                     sellOrders = mapOf(Asset.BTC to BigDecimal("10.00")),
                     currentValuesUSD = mapOf(Asset.BTC to BigDecimal("0.000000001")),
@@ -131,6 +134,7 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                     settings = TestFixtures.settings(),
                     actionLog = mutableListOf(),
                 )
+                kraken.executedOrders.shouldBeEmpty()
             }
         }
 

@@ -122,6 +122,59 @@ class ExecutionDatabaseLifecycleTest : StringSpec() {
             ExecutionDatabase.isMemoryDatabase("C:\\data\\mode=memory\\legacy.db") shouldBe false
         }
 
+        "an empty journal has no account evidence" {
+            ExecutionDatabase.init(":memory:").use { db ->
+                db.hasAccountEvidence() shouldBe false
+            }
+        }
+
+        "the initialized account marker remains evidence even without account rows" {
+            ExecutionDatabase.init(":memory:").use { db ->
+                db.connect().use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.executeUpdate(
+                            "UPDATE execution_journal_metadata SET account_binding_initialized = 1",
+                        )
+                    }
+                }
+                db.hasAccountEvidence() shouldBe true
+            }
+        }
+
+        listOf(
+            "account binding" to """
+                INSERT INTO execution_account_binding VALUES (1, 'account', 'credentials', 1, 'test', 0)
+            """.trimIndent(),
+            "binding audit" to """
+                INSERT INTO execution_account_binding_audit
+                    (account_identity_digest, credential_generation_digest, verification_method, verified_at)
+                VALUES ('account', 'credentials', 'test', 0)
+            """.trimIndent(),
+            "order intent" to """
+                INSERT INTO execution_order_intents
+                    (pair, symbol, side, volume, usd_amount, created_at, state)
+                VALUES ('XBTUSD', 'BTC', 'BUY', '0.01', '100', 0, 'CONFIRMED')
+            """.trimIndent(),
+        ).forEach { (source, insert) ->
+            "$source alone prevents rebinding an unmarked journal" {
+                ExecutionDatabase.init(":memory:").use { db ->
+                    db.connect().use { connection ->
+                        connection.createStatement().use { it.executeUpdate(insert) }
+                    }
+                    db.hasAccountEvidence() shouldBe true
+                }
+            }
+        }
+
+        "missing account metadata fails closed rather than reporting no evidence" {
+            ExecutionDatabase.init(":memory:").use { db ->
+                db.connect().use { connection ->
+                    connection.createStatement().use { it.executeUpdate("DELETE FROM execution_journal_metadata") }
+                }
+                shouldThrow<IllegalStateException> { db.hasAccountEvidence() }
+            }
+        }
+
         "ensureReadyForSubmission enforces readiness and file-backed storage" {
             withTempDirectory { directory ->
                 val path = directory.resolve("execution.db")

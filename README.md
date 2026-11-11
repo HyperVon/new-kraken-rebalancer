@@ -451,12 +451,12 @@ Edit `rebalancer-config.json`:
 - `allocations.USD` sets the configured cash percentage; its target dollar amount
   scales with the current portfolio total
 
-Older configuration files and the shipped template may still contain retired
-retired settings keys such as `fiatMaxDrawdown`, `fiatDeploymentExponent`,
+Older configuration files may contain retired settings keys such as
+`fiatMaxDrawdown`, `fiatDeploymentExponent`,
 `fiatDeploymentThresholdPercent`, `inceptionDate`, or `comparisonStartDate`.
-They are discarded when the configuration is read and have no effect on
-orders. The next Settings save writes the active configuration without those
-retired keys.
+Remove these keys before starting the application; the shipped template already
+omits them. Unknown keys cause an `UnrecognizedPropertyException` and prevent
+startup. The parser does not silently migrate older configuration files.
 
 The durable execution journal is created automatically when the application
 first starts in a fresh data directory. This creates execution.db and its
@@ -604,11 +604,12 @@ The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 85% branch, 95% line, and 95% method** during
 the recovery. The engine retains its independent **90% branch** threshold.
 Exclusions are narrow and mirror `coverageExcludes` in `backend/build.gradle.kts`:
-framework bootstrap (`KtorConfig`), execution SQLite plumbing
-(`ExecutionDatabase`), selected thin service interfaces (`KrakenService*`,
-`ConfigService`, `OrderExecutor`, `PortfolioManager`), and repository interfaces
-(`*Repository`; concrete SQLite implementations remain measured),
-generated HTML-extension lambdas, CSS DSL, and `KrakenRebalancerApplication`.
+framework bootstrap (`KtorConfig`), the thin `KrakenService` interface (the capture
+facade stays measured), `ConfigService`, `OrderExecutor`, `PortfolioManager`, and
+repository interfaces (`*Repository`; concrete SQLite implementations remain
+measured), generated HTML-extension lambdas, CSS DSL, and
+`KrakenRebalancerApplication`. The execution journal (`ExecutionDatabase`) is
+measured, including its account-rebinding evidence guard.
 
 To run JVM tests only:
 

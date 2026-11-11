@@ -1,10 +1,31 @@
 #!/usr/bin/env bash
 set -e
 
+# Not a shortcut for the open-pr skill workflow (Steps 0-5). This script only
+# runs pre_commit_check.sh and opens the PR. Complete change-specific
+# verification and the mandatory adversarial review first, then pass a body
+# prepared from .agents/skills/open-pr/examples/sample_pr_body.md whose Test
+# plan lines are all checked or omitted as N/A. Never claim "PASSED" for a
+# check you did not run for this change.
+
 BRANCH=$(git branch --show-current)
 
 if [ "$BRANCH" = "main" ]; then
     echo "[!] Cannot open a Pull Request from 'main'. Please checkout a feature branch."
+    exit 1
+fi
+
+BODY_FILE="${1:-}"
+if [ -z "$BODY_FILE" ] || [ ! -s "$BODY_FILE" ]; then
+    echo "[!] Missing or empty PR body file. Usage: create_pr.sh <pr-body-file>"
+    echo "    Prepare it from .agents/skills/open-pr/examples/sample_pr_body.md"
+    echo "    after Steps 0-5 (change-specific verification + adversarial review)."
+    exit 1
+fi
+
+if grep -nE '^[[:space:]]*- \[ \]' "$BODY_FILE"; then
+    echo "[!] PR body contains unchecked test-plan items. Every item must be"
+    echo "    checked ([x]) or omitted as N/A before opening the PR."
     exit 1
 fi
 
@@ -24,41 +45,14 @@ fi
 echo "--- Step 1: Running Pre-PR Quality Verification ---"
 ./.agents/skills/commit-and-push/scripts/pre_commit_check.sh
 
-# Step 3: Extract commit summary and CHANGELOG for PR body
+# Step 3: Title from the latest commit subject
 LAST_COMMIT_MSG=$(git log -1 --pretty=%B | head -n 1)
 TITLE="$LAST_COMMIT_MSG"
 
-COMMIT_LOGS=$(git log origin/main..HEAD --pretty=format:"- %s")
-
-CHANGELOG_SUMMARY=$(sed -n '/^## \[/!d; p; q' CHANGELOG.md 2>/dev/null || echo "")
-LATEST_VERSION_BLOCK=$(awk '/^## \[/{if (count++) exit} count{print}' CHANGELOG.md 2>/dev/null || echo "")
-
-BODY=$(cat <<EOF
-## Overview
-
-Pull Request created automatically for branch \`$BRANCH\`.
-
-## Commits Included
-
-$COMMIT_LOGS
-
-## Release Notes (\`CHANGELOG.md\`)
-
-$LATEST_VERSION_BLOCK
-
-## Verification Results
-
-- **Markdown Linting**: PASSED
-- **JVM Backend Unit Tests**: PASSED
-- **JaCoCo Coverage Verification**: PASSED
-- **Kotlin/JS Client Tests**: PASSED
-EOF
-)
-
-# Step 4: Create PR via gh CLI
+# Step 4: Create PR via gh CLI with the prepared body
 echo "--- Step 2: Creating GitHub Pull Request ---"
 gh auth setup-git
-PR_URL=$(env -u GITHUB_TOKEN gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY")
+PR_URL=$(env -u GITHUB_TOKEN gh pr create --base main --head "$BRANCH" --title "$TITLE" --body-file "$BODY_FILE")
 
 echo ""
 echo "================================================="

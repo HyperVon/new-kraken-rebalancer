@@ -4,6 +4,8 @@ package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.ObjectWriter
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
@@ -188,6 +190,24 @@ class ConfigServiceTest : StringSpec() {
             runTest {
                 configService.loadConfig()
                 configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
+            }
+        }
+
+        "retired settings keys reject startup and reload instead of silently migrating" {
+            runTest {
+                val original = configService.getConfig()
+                val document = objectMapper.readTree(tempFile)
+                val settings = document.get("settings") as ObjectNode
+                settings.put("fiatMaxDrawdown", 0.0)
+                objectMapper.writeValue(tempFile, document)
+
+                shouldThrow<UnrecognizedPropertyException> {
+                    ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                }.propertyName shouldBe "fiatMaxDrawdown"
+                shouldThrow<UnrecognizedPropertyException> { configService.loadConfig() }
+                    .propertyName shouldBe "fiatMaxDrawdown"
+                configService.getConfig() shouldBe original
+                objectMapper.readTree(tempFile).get("settings").has("fiatMaxDrawdown") shouldBe true
             }
         }
 
