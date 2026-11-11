@@ -34,4 +34,4 @@ RecentActivityText:
   UNKNOWN_REASON: "Unknown cycle error"
   PAGE_SIZE: "20"
   PAGE_INCREMENT: "20"
-  MAX_ITEMS: "120"
+  MAX_ITEMS: "240"

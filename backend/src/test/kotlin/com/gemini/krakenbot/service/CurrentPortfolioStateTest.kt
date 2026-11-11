@@ -112,7 +112,7 @@ class CurrentPortfolioStateTest : StringSpec() {
             val state = CurrentPortfolioState()
             val start = Instant.parse("2026-10-11T12:00:00Z")
 
-            repeat(CurrentPortfolioState.MAX_RECENT_ACTIVITIES + 10) { index ->
+            repeat(130) { index ->
                 state.publish(
                     TestFixtures.emptySnapshot(start.plusSeconds(index.toLong()), BigDecimal("100")),
                     sourceScope = "live:credential-generation-a",
@@ -128,7 +128,7 @@ class CurrentPortfolioStateTest : StringSpec() {
 
             val view = state.readDashboardView()
             view.recentSnapshots shouldHaveSize 130
-            view.recentActivities shouldHaveSize CurrentPortfolioState.MAX_RECENT_ACTIVITIES
+            view.recentActivities shouldHaveSize 120
             view.recentActivities.first().cycleId shouldBe "cycle-129"
             view.recentActivities.last().cycleId shouldBe "cycle-10"
 
@@ -143,6 +143,35 @@ class CurrentPortfolioStateTest : StringSpec() {
             state.readDashboardView().recentActivities.first() shouldBe failed
             state.readDashboardView().latest shouldBe view.latest
             state.activityUpdates.value shouldBe failed
+        }
+
+        "routine cycles cannot evict orders or problems and both classes remain bounded" {
+            val state = CurrentPortfolioState()
+            val start = Instant.parse("2026-10-11T12:00:00Z")
+            fun activity(id: String, index: Int, outcome: CurrentCycleOutcome?, actions: List<String>) =
+                CurrentCycleActivity(
+                    id,
+                    start.plusSeconds(index.toLong()),
+                    CurrentCycleActivityMode.LIVE,
+                    outcome,
+                    actions,
+                )
+
+            state.publishActivity(activity("order", 0, null, listOf("[DRY RUN] BUY BTC")), "a")
+            repeat(130) {
+                state.publishActivity(activity("routine-$it", it + 1, CurrentCycleOutcome.NO_TRADE, emptyList()), "a")
+            }
+            state.readDashboardView().recentActivities.map { it.cycleId }.contains("order") shouldBe true
+            repeat(120) {
+                state.publishActivity(activity("problem-$it", it + 200, null, listOf("WARNING: issue")), "a")
+            }
+            val retained = state.readDashboardView().recentActivities
+            retained shouldHaveSize 240
+            retained.any { it.cycleId == "order" } shouldBe false
+            state.publishActivity(activity("problem-119", 400, CurrentCycleOutcome.NO_TRADE, emptyList()), "a")
+            state.readDashboardView().recentActivities.count { it.cycleId == "problem-119" } shouldBe 1
+            state.publishActivity(activity("new-source", 500, null, emptyList()), "b")
+            state.readDashboardView().recentActivities.map { it.cycleId } shouldBe listOf("new-source")
         }
 
         "activity ring clears on source changes and replaces duplicate cycle identities" {
