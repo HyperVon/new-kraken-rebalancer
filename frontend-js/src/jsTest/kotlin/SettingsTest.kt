@@ -515,8 +515,12 @@ class SettingsTest : StringSpec() {
             try {
                 registerSettingsGlobals()
                 removeAllocationRow(allocations.querySelector("button")!!)
-                dispatchModePlateRefreshBeforeRequest(form)
+                val refreshXhr = dispatchModePlateRefreshBeforeRequest(form)
+                refreshXhr.status = 200
+                refreshXhr.responseText = ""
+                refreshXhr.getResponseHeader = { _: String -> null }
                 val detail = js("({})")
+                detail.xhr = refreshXhr
                 detail.target = document.body
                 detail.shouldSwap = true
                 val canceledSwap = document.createEvent("CustomEvent")
