@@ -76,10 +76,11 @@ Gather facts from code/build (do not trust docs yet):
    `:common`, `:engine`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
    `PortfolioAnalyzerImpl`, `PortfolioCalculations`, `OrderExecutorImpl`,
    `DynamicKrakenService`, `RateLimiter`, `CurrentPortfolioState`,
-   `ActualObservationDispatcher`, `DashboardController`, view components).
+   `ConfigServiceImpl`, `DashboardController`, view components).
 3. **Config surface** — `Settings`, `AppConfig`, `Allocation`, and
    `rebalancer-config-template.json`; distinguish active controls from retired
-   history-only keys discarded on load and removed by Settings save.
+   history-only keys rejected as unknown properties. Retired keys must be removed
+   before startup; Settings cannot repair a file that prevents boot.
 4. **HTTP / UI** — routes and form fields; Dashboard latest-cycle snapshot,
    active Settings, simulation scoping, and SSE.
 5. **Algorithm** — fixed configured USD target, `PortfolioCalculations`,
@@ -302,7 +303,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | Topic | Code anchors | Doc anchors |
 | :--- | :--- | :--- |
 | Rebalance math | `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl` | `docs/ALGORITHM.md` |
-| Flows / SSE | `ConfigServiceImpl`, `CurrentPortfolioState`, `ActualObservationDispatcher`, `DashboardController` | `docs/FLOWS.md` |
+| Flows / SSE | `ConfigServiceImpl`, `CurrentPortfolioState`, `OrderSettleHelper`, `DashboardController` | `docs/FLOWS.md` |
 | Evaluation | Focused planning, execution-safety, Dashboard, and Settings checks | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
 | Coverage | `backend/build.gradle.kts` JaCoCo, `frontend-js/karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |

@@ -175,8 +175,7 @@ val coverageExcludes =
         // Only the pure interface is excluded; synthetic HTML-DSL lambdas are handled
         // via `*Kt$*` in tight scopes if ever needed rather than whole-class excludes.
         "**/config/KtorConfigKt*",
-        "**/config/ExecutionDatabase*",
-        "**/service/KrakenService*",
+        "**/service/KrakenService.class",
         // Thin interfaces are excluded at their actual package paths; implementations under
         // service/impl remain measured by both JaCoCo tasks.
         "**/service/ConfigService.class",
