@@ -2,7 +2,7 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.StreamStatus
-import com.gemini.krakenbot.view.util.ActionLogFormat
+import com.gemini.krakenbot.view.util.ActivityClassification
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataSort
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -185,9 +185,9 @@ internal fun mergeRecentActivityItems(
 ): List<RecentActivityItem> {
     val byCycleId = linkedMapOf<String, RecentActivityItem>()
     (existing + incoming).forEach { item -> byCycleId[item.cycleId] = item }
-    return byCycleId.values
+    val sorted = byCycleId.values
         .sortedWith(compareByDescending<RecentActivityItem> { it.occurredAt }.thenByDescending { it.cycleId })
-        .take(RecentActivityText.MAX_ITEMS.toInt())
+    return ActivityClassification.retain(sorted) { ActivityClassification.isProtected(it.outcome, it.actions) }
 }
 
 internal fun filterRecentActivityItems(
@@ -197,12 +197,11 @@ internal fun filterRecentActivityItems(
 ): List<RecentActivityItem> {
     val filtered = when (filter) {
         RecentActivityText.FILTER_VALUE_ORDERS -> items.filter { item ->
-            outcomeCode(item.outcome) in setOf("DRY_RUN_PLAN", "ORDERS_ATTEMPTED") ||
-                item.actions.any(::isOrderAction)
+            ActivityClassification.hasOrders(item.outcome, item.actions)
         }
 
         RecentActivityText.FILTER_VALUE_PROBLEMS -> items.filter { item ->
-            outcomeCode(item.outcome) == "PROBLEM" || item.actions.any(::isProblemAction)
+            ActivityClassification.hasProblem(item.outcome, item.actions)
         }
 
         else -> items
@@ -463,29 +462,15 @@ private fun activityModeLabel(mode: String): String = when (mode.uppercase()) {
 }
 
 private fun itemHasOrders(item: RecentActivityItem): Boolean =
-    outcomeCode(item.outcome) in setOf("DRY_RUN_PLAN", "ORDERS_ATTEMPTED") || item.actions.any(::isOrderAction)
+    ActivityClassification.hasOrders(item.outcome, item.actions)
 
 private fun hasActivity(item: RecentActivityItem): Boolean =
-    item.actions.isNotEmpty() || outcomeCode(item.outcome) in setOf("DRY_RUN_PLAN", "ORDERS_ATTEMPTED", "PROBLEM")
+    item.actions.isNotEmpty() || ActivityClassification.isProtected(item.outcome, item.actions)
 
 private fun itemProblem(item: RecentActivityItem): Boolean =
-    outcomeCode(item.outcome) == "PROBLEM" || item.actions.any(::isProblemAction)
+    ActivityClassification.hasProblem(item.outcome, item.actions)
 
-private fun isOrderAction(action: String): Boolean = activityOrderSide(action) != null
-
-private fun activityOrderSide(action: String): String? {
-    val normalized = action.uppercase().removePrefix(ActionLogFormat.DRY_RUN_PREFIX.uppercase()).trim()
-    return when {
-        normalized.startsWith("BUY") -> "BUY"
-        normalized.startsWith("SELL") -> "SELL"
-        else -> null
-    }
-}
-
-private fun isProblemAction(action: String): Boolean {
-    val normalized = action.uppercase().trimStart()
-    return normalized.startsWith("ERROR") || normalized.startsWith("FAILED") || normalized.startsWith("WARNING")
-}
+private fun activityOrderSide(action: String): String? = ActivityClassification.orderSide(action)
 
 private fun activityLocalTime(timestamp: Double): String {
     val date = Date(timestamp)

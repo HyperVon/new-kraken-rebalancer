@@ -107,6 +107,17 @@ class RecentActivityComponentTest : StringSpec() {
                 htmlString.indexOf("last recorded note")
         }
 
+        "fresh markup includes retained orders beyond 120 newer routine cycles" {
+            val routine = (1..120).map {
+                activity().copy(cycleId = "routine-$it", outcome = CurrentCycleOutcome.NO_TRADE)
+            }
+            val html = createHTML().div {
+                RecentActivityComponent().render(routine + activity("BUY BTC").copy(cycleId = "older-order"), "source")
+            }
+            html shouldContain "data-cycle-id=\"older-order\""
+            html shouldContain "data-activity-orders=\"true\""
+        }
+
         "legacy activity with no outcome uses the recorded activity label" {
             val htmlString = createHTML().div {
                 RecentActivityComponent().render(

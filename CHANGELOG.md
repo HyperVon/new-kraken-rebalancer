@@ -15,6 +15,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Hide Show older when no more matching activity is available, and keep search focus during dashboard updates.
+- Retain recent order and problem cycles separately from routine activity in the Dashboard's in-memory history.
 
 ### Changed
 
