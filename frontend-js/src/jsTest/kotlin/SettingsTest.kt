@@ -20,6 +20,216 @@ class SettingsTest : StringSpec() {
         """{"configPublicationPending":$publicationPending,"activeMode":"$activeMode","savedAt":"$savedAt"}"""
 
     init {
+        "unmarked or non HTML preview failures cannot replace the settings form" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            try {
+                main()
+                val marker = mapOf("X-Rebalancer-Error-Fragment" to "settings-form")
+                val cases = listOf(
+                    Triple(422, "text/html", emptyMap()),
+                    Triple(422, "application/json", marker),
+                    Triple(500, "text/html", marker),
+                )
+                cases.forEach { (status, contentType, headers) ->
+                    val xhr = dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
+                    val response = dispatchSettingsResponse(
+                        status,
+                        "error",
+                        xhr,
+                        contentType,
+                        headers,
+                        initialShouldSwap = false,
+                        eventTarget = document.body,
+                    )
+                    (response.eventPrevented as Boolean).shouldBeFalse()
+                    (response.shouldSwap as Boolean).shouldBeFalse()
+                }
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                form.remove()
+                initSettings()
+            }
+        }
+
+        "fresh preview error restores an unadded symbol after the form swap" {
+            val form = settingsStateForm()
+            form.insertAdjacentHTML("beforeend", "<input id='new-symbol-input' value='ETH'>")
+            document.body!!.appendChild(form)
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            try {
+                main()
+                val xhr = dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
+                val response = dispatchSettingsResponse(
+                    422,
+                    "<form>invalid</form>",
+                    xhr,
+                    "text/html",
+                    mapOf("X-Rebalancer-Error-Fragment" to "settings-form"),
+                    initialShouldSwap = false,
+                    eventTarget = document.body,
+                )
+                (response.eventPrevented as Boolean).shouldBeFalse()
+                (response.shouldSwap as Boolean).shouldBeTrue()
+                val replacement = settingsStateForm()
+                replacement.insertAdjacentHTML("beforeend", "<input id='new-symbol-input'>")
+                document.body!!.replaceChild(replacement, form)
+                val detail = js("({})")
+                detail.xhr = xhr
+                val event = document.createEvent("CustomEvent")
+                event.asDynamic().initCustomEvent("htmx:afterSwap", true, true, detail)
+                replacement.dispatchEvent(event)
+                (replacement.querySelector("#new-symbol-input") as HTMLInputElement).value shouldBe "ETH"
+                replacement.remove()
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                form.remove()
+                initSettings()
+            }
+        }
+
+        "stale preview errors cannot replace newer settings and still refresh CSRF" {
+            val form = settingsStateForm()
+            form.insertAdjacentHTML(
+                "beforeend",
+                "<input name='csrfToken' value='old'><input id='new-symbol-input'>",
+            )
+            document.body!!.appendChild(form)
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            try {
+                main()
+                val previewPath = "/fragments/settings-allocations-preview"
+                val errorHeaders = mapOf(
+                    "X-Rebalancer-Error-Fragment" to "settings-form",
+                    "X-Rebalancer-CSRF-Token" to "new-token",
+                )
+                val stale = dispatchSettingsBeforeRequest(previewPath, form)
+                dispatchSettingsInput(form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement, "61")
+                val staleResponse =
+                    dispatchSettingsResponse(422, "<form>invalid</form>", stale, "text/html", errorHeaders)
+                (staleResponse.eventPrevented as Boolean).shouldBeTrue()
+                (form.querySelector("input[name=loopDelaySeconds]") as HTMLInputElement).value shouldBe "61"
+                (form.querySelector("input[name=csrfToken]") as HTMLInputElement).value shouldBe "new-token"
+
+                val pendingSymbol = dispatchSettingsBeforeRequest(previewPath, form)
+                val newSymbol = form.querySelector("#new-symbol-input") as HTMLInputElement
+                newSymbol.value = "ETH"
+                val pendingError = dispatchSettingsResponse(
+                    422,
+                    "<form>invalid</form>",
+                    pendingSymbol,
+                    "text/html",
+                    errorHeaders,
+                )
+                (pendingError.eventPrevented as Boolean).shouldBeTrue()
+                newSymbol.value shouldBe "ETH"
+
+                val fresh = dispatchSettingsBeforeRequest(previewPath, form)
+                val freshResponse = dispatchSettingsResponse(409, "<form>busy</form>", fresh, "text/html", errorHeaders)
+                (freshResponse.eventPrevented as Boolean).shouldBeFalse()
+                (freshResponse.shouldSwap as Boolean).shouldBeTrue()
+
+                val older = dispatchSettingsBeforeRequest(previewPath, form)
+                dispatchSettingsBeforeRequest(previewPath, form)
+                val olderError = dispatchSettingsResponse(422, "<form>invalid</form>", older, "text/html", errorHeaders)
+                (olderError.eventPrevented as Boolean).shouldBeTrue()
+
+                val beforeSave = dispatchSettingsBeforeRequest(previewPath, form)
+                val save = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(200, saveResponse(false, "LIVE", "2026-10-19T14:40:00Z"), save)
+                val savedError =
+                    dispatchSettingsResponse(422, "<form>invalid</form>", beforeSave, "text/html", errorHeaders)
+                (savedError.eventPrevented as Boolean).shouldBeTrue()
+
+                val beforeReplacement = dispatchSettingsBeforeRequest(previewPath, form)
+                val replacement = settingsStateForm()
+                document.body!!.replaceChild(replacement, form)
+                val replacedError = dispatchSettingsResponse(
+                    422,
+                    "<form>invalid</form>",
+                    beforeReplacement,
+                    "text/html",
+                    errorHeaders,
+                )
+                (replacedError.eventPrevented as Boolean).shouldBeTrue()
+                replacement.remove()
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                form.remove()
+                initSettings()
+            }
+        }
+
+        "score previews preserve edits and reject older responses" {
+            val form = settingsStateForm()
+            document.body!!.appendChild(form)
+            form.insertAdjacentHTML(
+                "beforeend",
+                """<div id="allocation-rows"><input name="symbols" value="USD"><input name="colors" value="#ffffff">
+                   <input name="scores" value="1"><input name="targets" value="100"></div>
+                   <input name="scoreEmphasis" value="2"><input name="scoreSleevePercent" value="50">""",
+            )
+            try {
+                registerSettingsGlobals()
+                val status = form.querySelector("#settings-preview-status") as HTMLElement
+                val rows = form.querySelector("#allocation-rows") as HTMLElement
+                val previewPath = "/fragments/settings-allocations-preview"
+                for (name in listOf("symbols", "colors", "scores", "targets", "scoreEmphasis", "scoreSleevePercent")) {
+                    val input = form.querySelector("input[name=$name]") as HTMLInputElement
+                    val original = input.value
+                    val xhr = dispatchSettingsBeforeRequest(previewPath, form)
+                    input.value = "changed"
+                    val detail = dispatchSettingsResponse(200, "preview", xhr, "text/html")
+                    (detail.shouldSwap as Boolean).shouldBeFalse()
+                    status.textContent shouldBe
+                        "Settings changed while the preview was calculating. Recalculate the preview."
+                    status.classList.contains("hidden").shouldBeFalse()
+                    input.value = original
+                }
+                val added = dispatchSettingsBeforeRequest(previewPath, form)
+                rows.insertAdjacentHTML("beforeend", "<input name='symbols' value='BTC'>")
+                (dispatchSettingsResponse(200, "preview", added, "text/html").shouldSwap as Boolean).shouldBeFalse()
+                val removed = dispatchSettingsBeforeRequest(previewPath, form)
+                rows.lastElementChild!!.remove()
+                (dispatchSettingsResponse(200, "preview", removed, "text/html").shouldSwap as Boolean).shouldBeFalse()
+
+                val older = dispatchSettingsBeforeRequest(previewPath, form)
+                val newer = dispatchSettingsBeforeRequest(previewPath, form)
+                (dispatchSettingsResponse(200, "preview", newer, "text/html").shouldSwap as Boolean).shouldBeTrue()
+                (dispatchSettingsResponse(200, "preview", older, "text/html").shouldSwap as Boolean).shouldBeFalse()
+                status.classList.contains("hidden").shouldBeTrue()
+
+                val beforeSave = dispatchSettingsBeforeRequest(previewPath, form)
+                val save = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsResponse(200, saveResponse(false, "LIVE", "2026-10-19T14:40:00Z"), save)
+                (
+                    dispatchSettingsResponse(
+                        200,
+                        "preview",
+                        beforeSave,
+                        "text/html",
+                    ).shouldSwap as Boolean
+                    ).shouldBeFalse()
+
+                val error = dispatchSettingsBeforeRequest(previewPath, form)
+                (form.querySelector("input[name=scores]") as HTMLInputElement).value = "2"
+                (dispatchSettingsResponse(422, "error", error, "text/html").shouldSwap as Boolean).shouldBeTrue()
+
+                val replaced = dispatchSettingsBeforeRequest(previewPath, form)
+                val replacement = settingsStateForm()
+                document.body!!.replaceChild(replacement, form)
+                (dispatchSettingsResponse(200, "preview", replaced, "text/html").shouldSwap as Boolean).shouldBeFalse()
+                replacement.remove()
+            } finally {
+                form.remove()
+                initSettings()
+            }
+        }
+
         "settings dirty state confirms navigation only while values differ from baseline" {
             val form = settingsStateForm()
             document.body!!.appendChild(form)
@@ -711,6 +921,7 @@ private fun settingsStateForm(): HTMLFormElement {
         <span id="total-allocated-display"></span>
         <button id="save-button"></button>
         <time id="settings-save-status" class="hidden"></time>
+        <p id="settings-preview-status" class="hidden"></p>
     """.trimIndent()
     return form
 }
@@ -755,17 +966,21 @@ private fun dispatchSettingsResponse(
     response: String,
     xhr: dynamic = js("({})"),
     contentType: String = "application/json; charset=UTF-8",
+    headers: Map<String, String> = emptyMap(),
+    initialShouldSwap: Boolean = true,
+    eventTarget: Element? = null,
 ): dynamic {
     xhr.status = status
     xhr.responseText = response
     xhr.getResponseHeader = { name: String ->
-        if (name == "Content-Type") contentType else null
+        if (name == "Content-Type") contentType else headers[name]
     }
     val detail = js("({})")
     detail.xhr = xhr
-    detail.shouldSwap = true
+    detail.shouldSwap = initialShouldSwap
     val event = document.createEvent("CustomEvent")
     event.asDynamic().initCustomEvent("htmx:beforeSwap", true, true, detail)
-    document.dispatchEvent(event)
+    (eventTarget ?: document).dispatchEvent(event)
+    detail.eventPrevented = event.defaultPrevented
     return detail
 }

@@ -11,6 +11,7 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxAttrs
+import com.gemini.krakenbot.view.util.HttpWire
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.SettingsState
 import com.gemini.krakenbot.view.util.ViewText
@@ -40,6 +41,10 @@ private val SETTINGS_FIELD_NAMES = setOf(
 private var settingsResponseListenerInstalled = false
 private var beforeUnloadListenerInstalled = false
 private val submittedSettingsSnapshots = js("new WeakMap()")
+private val submittedPreviews = js("new WeakMap()")
+private val previewDraftsToRestore = js("new WeakMap()")
+private var latestPreviewRequestId = 0L
+private var acknowledgedSaveGeneration = 0L
 private var latestSubmittedSettingsRequestId = 0L
 private var latestAcknowledgedSettingsRequestId = 0L
 private var activeModePlateRefreshXhr: dynamic = null
@@ -61,6 +66,7 @@ fun registerSettingsGlobals() {
     if (!settingsResponseListenerInstalled) {
         document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, ::handleSettingsSaveResponse)
         document.addEventListener(HtmlEvents.HTMX_BEFORE_REQUEST, ::captureSubmittedSettingsSnapshot)
+        document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, ::restorePreviewDraft)
         settingsResponseListenerInstalled = true
     }
 }
@@ -84,6 +90,21 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
         return
     }
     if (requestConfig?.verb?.toString()?.equals("post", ignoreCase = true) == false) return
+    if (path.substringBefore('?').trimEnd('/') == Routes.FRAGMENT_SETTINGS_ALLOCATIONS_PREVIEW.trimEnd('/')) {
+        val xhr = detail.xhr ?: return
+        submittedPreviews.set(
+            xhr,
+            SubmittedPreview(
+                ++latestPreviewRequestId,
+                form,
+                previewSnapshot(form),
+                formReplacementSnapshot(form),
+                acknowledgedSaveGeneration,
+            ),
+        )
+        document.getElementById(SettingsState.PREVIEW_STATUS_ID)?.classList?.add(CssClass.Utility.Hidden.value)
+        return
+    }
     if (path.substringBefore('?').trimEnd('/') != Routes.SETTINGS.trimEnd('/')) return
     val xhr = detail.xhr ?: return
     submittedSettingsSnapshots.set(
@@ -254,10 +275,33 @@ private fun updateSettingsState() {
 }
 
 private fun settingsSnapshot(form: HTMLFormElement): String = buildString {
+    appendInputSnapshot(form, SETTINGS_FIELD_NAMES)
+}
+
+private val PREVIEW_FIELD_NAMES = setOf(
+    FormFields.SYMBOLS,
+    FormFields.COLORS,
+    FormFields.SCORES,
+    FormFields.TARGETS,
+    FormFields.SCORE_EMPHASIS,
+    FormFields.SCORE_SLEEVE_PERCENT,
+)
+
+private fun previewSnapshot(form: HTMLFormElement): String = buildString {
+    appendInputSnapshot(form, PREVIEW_FIELD_NAMES)
+}
+
+private fun formReplacementSnapshot(form: HTMLFormElement): String = buildString {
+    append(settingsSnapshot(form))
+    val pendingSymbol = (form.querySelector("#${HtmlIds.NEW_SYMBOL_INPUT}") as? HTMLInputElement)?.value.orEmpty()
+    append(pendingSymbol.length).append(':').append(pendingSymbol)
+}
+
+private fun StringBuilder.appendInputSnapshot(form: HTMLFormElement, fieldNames: Set<String>) {
     val inputs = form.querySelectorAll("input")
     repeat(inputs.length) { index ->
         val input = inputs.item(index) as? HTMLInputElement ?: return@repeat
-        if (input.name !in SETTINGS_FIELD_NAMES) return@repeat
+        if (input.name !in fieldNames) return@repeat
 
         val value = if (input.type == "checkbox") input.checked.toString() else input.value
         append(input.name.length).append(':').append(input.name)
@@ -276,9 +320,48 @@ private fun updateLeaveConfirmation(dirty: Boolean) {
 }
 
 private fun handleSettingsSaveResponse(event: Event) {
-    val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
     val detail = event.asDynamic().detail ?: return
     val xhr = detail.xhr ?: return
+    val preview = submittedPreviews.get(xhr) as? SubmittedPreview
+    if (preview != null) {
+        submittedPreviews.delete(xhr)
+        val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement
+        val status = xhr.status as Int
+        val success = status in 200..299
+        val replacesForm = (status == 409 || status == 422) && shouldSwapRenderedError(
+            status,
+            xhr.responseText as? String,
+            xhr.getResponseHeader("Content-Type") as? String,
+            xhr.getResponseHeader(HttpWire.ERROR_FRAGMENT_HEADER) as? String,
+        )
+        if (
+            (success || replacesForm) && (
+                form !== preview.form || preview.requestId != latestPreviewRequestId ||
+                    preview.saveGeneration != acknowledgedSaveGeneration ||
+                    (
+                        if (replacesForm) {
+                            formReplacementSnapshot(preview.form) != preview.formValues
+                        } else {
+                            previewSnapshot(preview.form) != preview.values
+                        }
+                        )
+                )
+        ) {
+            detail.shouldSwap = false
+            event.preventDefault()
+            if (form === preview.form && preview.requestId == latestPreviewRequestId) {
+                document.getElementById(SettingsState.PREVIEW_STATUS_ID)?.let { status ->
+                    status.textContent = SettingsState.PREVIEW_STALE
+                    status.classList.remove(CssClass.Utility.Hidden.value)
+                }
+            }
+        } else if (replacesForm && form === preview.form) {
+            val symbol = form.querySelector("#${HtmlIds.NEW_SYMBOL_INPUT}") as? HTMLInputElement
+            previewDraftsToRestore.set(xhr, symbol?.value.orEmpty())
+        }
+        return
+    }
+    val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
     val submitted = submittedSettingsSnapshots.get(xhr) as? SubmittedSettingsSnapshot ?: return
     submittedSettingsSnapshots.delete(xhr)
     val contentType = xhr.getResponseHeader("Content-Type") as? String ?: return
@@ -299,6 +382,7 @@ private fun handleSettingsSaveResponse(event: Event) {
     val savedAt = response.savedAt as? String ?: return
     val activeMode = response.activeMode as? String
 
+    acknowledgedSaveGeneration++
     form.setAttribute(SettingsState.BASELINE_ATTRIBUTE, submitted.values)
     val status = document.getElementById(SettingsState.SAVE_STATUS_ID) as? HTMLElement ?: return
     status.textContent = if (configPublicationPending) {
@@ -314,6 +398,15 @@ private fun handleSettingsSaveResponse(event: Event) {
     if (configPublicationPending) refreshModePlateAfterSave(submitted)
     // Edits made while the request was in flight are not covered by the acknowledgement.
     updateSettingsState()
+}
+
+private fun restorePreviewDraft(event: Event) {
+    val xhr = event.asDynamic().detail?.xhr ?: return
+    val draft = previewDraftsToRestore.get(xhr) as? String ?: return
+    previewDraftsToRestore.delete(xhr)
+    val form = document.getElementById(SettingsState.FORM_ID) as? HTMLFormElement ?: return
+    val symbol = form.querySelector("#${HtmlIds.NEW_SYMBOL_INPUT}") as? HTMLInputElement ?: return
+    symbol.value = draft
 }
 
 internal fun updateModePlate(activeMode: String) {
@@ -385,6 +478,14 @@ private fun scheduleModePlateRefresh(submitted: SubmittedSettingsSnapshot) {
 }
 
 private data class SubmittedSettingsSnapshot(val requestId: Long, val values: String, val modeLabel: String)
+
+private data class SubmittedPreview(
+    val requestId: Long,
+    val form: HTMLFormElement,
+    val values: String,
+    val formValues: String,
+    val saveGeneration: Long,
+)
 
 private fun NodeList.forEachInput(action: (HTMLInputElement) -> Unit) {
     repeat(length) { index ->

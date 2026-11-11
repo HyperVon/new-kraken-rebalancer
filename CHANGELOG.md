@@ -17,6 +17,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Retain recent order and problem cycles separately from routine activity in the Dashboard's in-memory history.
 - Space Dashboard trend samples by elapsed time and show the observed UTC window.
 
+### Fixed
+
+- Preserve newer Settings edits when an earlier score preview completes; prompt to recalculate a stale preview.
+
 ## [6.20.22] - 2026-11-09
 
 ### Fixed
