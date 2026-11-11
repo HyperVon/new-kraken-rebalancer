@@ -18,6 +18,9 @@ import kotlinx.html.style
 import kotlinx.html.unsafe
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class OverviewGridComponent {
@@ -89,6 +92,19 @@ class OverviewGridComponent {
                     +"${recentSnapshots.size}$suffix"
                 }
             }
+            if (recentSnapshots.size >= 2) {
+                val first = recentSnapshots.first().timestamp
+                val latest = recentSnapshots.last().timestamp
+                val start = recentSnapshots.minOf { it.timestamp }
+                val end = recentSnapshots.maxOf { it.timestamp }
+                div(CssClass.Hero.TrendSummary) {
+                    +(
+                        "${ViewText.DASHBOARD_TREND_FIRST} ${TREND_TIME_FORMAT.format(first)} · " +
+                            "${ViewText.DASHBOARD_TREND_LATEST} ${TREND_TIME_FORMAT.format(latest)} · " +
+                            "${ViewText.DASHBOARD_TREND_WINDOW} ${formatElapsed(Duration.between(start, end))}"
+                        )
+                }
+            }
             if (recentSnapshots.size < 2) {
                 div(CssClass.Hero.TrendEmpty) { +ViewText.DASHBOARD_TREND_COLLECTING }
             } else {
@@ -113,10 +129,19 @@ class OverviewGridComponent {
         val yMinimum = minimum.subtract(padding)
         val yMaximum = maximum.add(padding)
         val yRange = yMaximum.subtract(yMinimum)
+        val start = samples.minOf { it.timestamp }
+        val end = samples.maxOf { it.timestamp }
+        val duration = elapsedSeconds(Duration.between(start, end))
         val points =
-            values.mapIndexed { index, value ->
+            samples.map { sample ->
+                val value = sample.totalValueUSD
                 val x =
-                    PLOT_LEFT + index.toDouble() / (values.lastIndex) * (PLOT_RIGHT - PLOT_LEFT)
+                    if (duration == 0.0) {
+                        (PLOT_LEFT + PLOT_RIGHT) / 2
+                    } else {
+                        val ratio = elapsedSeconds(Duration.between(start, sample.timestamp)) / duration
+                        PLOT_LEFT + ratio * (PLOT_RIGHT - PLOT_LEFT)
+                    }
                 val valueRatio =
                     value.subtract(yMinimum).divide(yRange, COORDINATE_SCALE, RoundingMode.HALF_UP).toDouble()
                 val y = PLOT_BOTTOM - valueRatio * (PLOT_BOTTOM - PLOT_TOP)
@@ -124,8 +149,8 @@ class OverviewGridComponent {
             }
         val areaPoints =
             points.joinToString(" ") +
-                " ${formatCoordinate(PLOT_RIGHT)},${formatCoordinate(PLOT_BOTTOM)}" +
-                " ${formatCoordinate(PLOT_LEFT)},${formatCoordinate(PLOT_BOTTOM)}"
+                " ${points.last().substringBefore(',')},${formatCoordinate(PLOT_BOTTOM)}" +
+                " ${points.first().substringBefore(',')},${formatCoordinate(PLOT_BOTTOM)}"
         val lastPoint = points.last().split(',')
         return """
             <svg class="${CssClass.Hero.TrendSvg.value}" viewBox="0 0 ${formatCoordinate(
@@ -147,6 +172,21 @@ class OverviewGridComponent {
     }
 
     private fun formatCoordinate(value: Double): String = String.format(Locale.US, "%.2f", value)
+
+    private fun elapsedSeconds(duration: Duration): Double = duration.seconds.toDouble() + duration.nano / 1e9
+
+    private fun formatElapsed(duration: Duration): String {
+        if (duration.isZero) return "0s"
+        if (duration.seconds == 0L) return "<1s"
+        var seconds = duration.seconds
+        val parts = mutableListOf<String>()
+        for ((unit, suffix) in listOf(86400L to "d", 3600L to "h", 60L to "m", 1L to "s")) {
+            val count = seconds / unit
+            if (count > 0) parts.add("$count$suffix")
+            seconds %= unit
+        }
+        return parts.joinToString(" ")
+    }
 
     private fun DIV.renderCashTile(
         latest: PortfolioSnapshot,
@@ -226,3 +266,6 @@ private const val TREND_FILL_GRADIENT_ID = "hero-trend-fill"
 private val TREND_PADDING_PERCENT = BigDecimal("0.08")
 private val FLAT_LINE_PADDING_PERCENT = BigDecimal("0.005")
 private val MINIMUM_TREND_PADDING = BigDecimal("1.00")
+
+private val TREND_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'", Locale.US)
+    .withZone(ZoneOffset.UTC)
