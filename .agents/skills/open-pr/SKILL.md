@@ -97,11 +97,21 @@ gh auth setup-git
 env -u GITHUB_TOKEN gh pr create --base main --head "$BRANCH" --title "<title>" --body "<body>"
 ```
 
-Or:
+Or, once Steps 0–5 are complete and converged:
 
 ```bash
-./.agents/skills/open-pr/scripts/create_pr.sh
+./.agents/skills/open-pr/scripts/create_pr.sh <prepared-body-file>
 ```
+
+`create_pr.sh` is **not** a shortcut for Steps 0–5: it runs only
+`pre_commit_check.sh` and opens the PR. It performs no Step 3 change-specific
+(UI/sim) verification and never runs the Step 4 adversarial review.
+
+- Use it only after Steps 0–5 are complete and converged.
+- Pass a body prepared from `examples/sample_pr_body.md`; every Test plan line
+  checked or omitted as N/A with a reason.
+- Never keep a "Verification Results: … PASSED" line unless that check was run
+  for this change.
 
 ## Step 7: Return URL
 

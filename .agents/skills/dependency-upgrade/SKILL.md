@@ -78,7 +78,12 @@ fails, follow the relaunch and parent-substitution rules in
 
 ### Step 1: Detect current vs latest
 
-Run the checker. It parses all build files, resolves version variables, and queries Maven Central, the Gradle Plugin Portal, the npm registry, and the Gradle release feed for the latest **stable** version of each artifact:
+Run the checker. It reads the version catalog and its explicit `BUILD_FILES`
+list, resolves version variables, and queries Maven Central, the Gradle Plugin
+Portal, the npm registry, and the Gradle release feed for the latest **stable**
+version of each detected artifact. The list currently omits
+`backend/build.gradle.kts`: manually inspect that file's dependencies and
+security-floor constraints; the checker is not a complete dependency inventory.
 
 ```bash
 ./.agents/skills/dependency-upgrade/scripts/check_updates.py

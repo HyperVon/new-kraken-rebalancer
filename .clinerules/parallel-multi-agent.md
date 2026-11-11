@@ -1,7 +1,8 @@
 # Parallel multi-agent work
 
 Parallelize independent workstreams through the host's native parallel task
-surface; subagents inherit the parent session's model. Keep tracks bounded with
+surface, following the canonical model-inheritance and configured-role policy.
+Keep tracks bounded with
 disjoint file ownership; file disjointness alone does not justify delegation.
 The parent owns integration, cleanup, and final gates.
 

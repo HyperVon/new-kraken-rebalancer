@@ -61,6 +61,15 @@ Pure KMP types under `common/.../config/`:
 - `Allocation` — symbol + percent + optional `#rrggbb` color
 - `KrakenCredentials` — key/secret holders (never commit real values)
 
+Keep `commonMain` KMP-pure when extending these models:
+
+- No `java.math.BigDecimal`, `java.time.*`, SLF4J, or JVM I/O imports — money
+  math lives in `:engine` and backend JVM code, never in shared models.
+- `AppConfig` / `Settings` / `Allocation` fields stay plain `Double` / `String`;
+  `PrecisionConstants` holds plain scalars usable from JS.
+- New constant catalogs go through codegen YAML resources; runtime maps and
+  helpers belong in handwritten `*Mappings.kt` / `*Extensions.kt` files.
+
 ## Validation (`ConfigServiceImpl`)
 
 - Allocations **sum to 100%** within tolerance `0.01`
@@ -83,6 +92,17 @@ Pure KMP types under `common/.../config/`:
 
 1. Write `rebalancer-config.json.tmp`
 2. `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)` → `rebalancer-config.json`
+
+Write-path invariants:
+
+- The temp file is created owner-only (`createOwnerOnlyFile` /
+  `filePermissionStrategy`) and `enforceOwnerOnly` runs again before
+  `ATOMIC_MOVE`; serialize fully before the move and delete the temp in
+  `finally`.
+- The post-write state publish runs under `NonCancellable`.
+- Keep `configMutationLock` (file I/O) separate from `configLock`
+  (state/publish) so `endExecutionSession()` can decrement depth while a slow
+  write is in flight.
 
 Only after the move succeeds may `appConfig`, raw persisted credentials, and
 the settings flow publish the new values. File reload follows the same
@@ -114,8 +134,9 @@ creates the journal on first start and resumes an interrupted initialization.
 with `account-identity.sha256`.
 
 Older settings JSON may include retired history-only drawdown, deployment,
-inception, or comparison-start keys. The parser drops these keys before model
-deserialization, and a later Settings save writes only active controls.
+inception, or comparison-start keys. Remove them before startup: the parser
+rejects unknown keys with `UnrecognizedPropertyException`. It does not silently
+migrate older files, so a Settings save cannot repair a file that prevents boot.
 
 File is gitignored — never commit secrets.
 
@@ -125,6 +146,13 @@ File is gitignored — never commit secrets.
   `KrakenCredentials` equals the **previous resolved** pair, persist
   `persistedKrakenCredentials` (raw `${ENV:default}` placeholders from disk),
   not the resolved runtime values.
+- Rotation detection compares posted credentials to `appConfig.kraken` — the
+  last **published** pair — never `pendingConfig` and never the posted values
+  themselves. Comparing against anything else makes a settings-only save read
+  as rotation and write resolved secrets over an earlier staged rotation.
+- Persistence and runtime configs are computed separately:
+  `configForPersistence` keeps `${ENV:default}` placeholders when the pair is
+  unchanged; `configForRuntime` resolves them.
 - The settings form posts resolved credentials back unchanged — saving loop
   delay / allocations must **not** materialize env vars into JSON.
 - Anti-pattern: `updateConfig` → `writeConfigAtomically(full resolved config)`

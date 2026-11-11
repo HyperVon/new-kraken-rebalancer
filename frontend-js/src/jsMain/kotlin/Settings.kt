@@ -10,6 +10,7 @@ import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.SettingsState
 import com.gemini.krakenbot.view.util.ViewText
@@ -81,8 +82,8 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
     val detail = event.asDynamic().detail ?: return
     val requestConfig = detail.requestConfig
     val path = (requestConfig?.path as? String)
-        ?: target.getAttribute("hx-post")
-        ?: target.getAttribute("hx-get")
+        ?: target.getAttribute(HtmxAttrs.HX_POST)
+        ?: target.getAttribute(HtmxAttrs.HX_GET)
         ?: return
     if (isModePlateRefreshRequest(target, path, requestConfig)) {
         activeModePlateRefreshXhr = detail.xhr

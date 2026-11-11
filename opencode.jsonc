@@ -5,64 +5,55 @@
     ".agents/AGENTS.md",
     ".agents/OPERATING.md"
   ],
-  "plugins": [
-    "@rehydra/opencode@0.16.0"
-  ],
   "mcp": {
-    "servers": {
-      "context7": {
-        "type": "remote",
-        "url": "https://mcp.context7.com/mcp"
-      },
-      "gh_grep": {
-        "type": "remote",
-        "url": "https://mcp.grep.app"
-      },
-      "intellij": {
-        "type": "remote",
-        "url": "http://127.0.0.1:64342/stream",
-        "oauth": false,
-        "codemode": true
-      },
-      "zvec_grep": {
-        "type": "local",
-        "command": ["zg", "server", "--stdio"],
-        "codemode": true,
-        "timeout": {
-          "catalog": 600000,
-          "execution": 600000
-        }
-      },
-      "playwright": {
-        "type": "local",
-        "command": ["npx", "-y", "@playwright/mcp"],
-        "codemode": true,
-        "timeout": { "startup": 120000 }
-      },
-      "context-mode": {
-        "type": "local",
-        "command": ["npx", "-y", "context-mode"],
-        "codemode": true,
-        "timeout": { "startup": 120000 }
-      }
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "gh_grep": {
+      "type": "remote",
+      "url": "https://mcp.grep.app"
+    },
+    "intellij": {
+      "type": "remote",
+      "url": "http://127.0.0.1:64342/stream",
+      "oauth": false
+    },
+    "zvec_grep": {
+      "type": "local",
+      "command": [
+        "zg",
+        "server",
+        "--stdio"
+      ],
+      "timeout": 600000
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp"
+      ],
+      "timeout": 120000
     }
   },
-  "agents": {
+  "agent": {
     "adversarial-reviewer-a": {
       "description": "Fast capable reviewer for adversarial PR review (Reviewer A). Invoke via the Task tool when running the adversarial-pr-review skill. Read-only; inherits the parent session's model.",
       "mode": "subagent",
       "hidden": true,
-      "permissions": [
-        { "action": "edit", "resource": "*", "effect": "deny" }
-      ]
+      "permission": {
+        "edit": "deny"
+      }
     },
     "adversarial-reviewer-b": {
       "description": "Strong high-reasoning reviewer for adversarial PR review (Reviewer B). Invoke via the Task tool when running the adversarial-pr-review skill. Read-only; inherits the parent session's model.",
       "mode": "subagent",
       "hidden": true,
-      "permissions": [
-        { "action": "edit", "resource": "*", "effect": "deny" }
-      ]
+      "permission": {
+        "edit": "deny"
+      }
     }
   }
 }
