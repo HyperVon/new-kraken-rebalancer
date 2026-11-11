@@ -24,8 +24,10 @@ class SettingsTest : StringSpec() {
             val form = settingsStateForm()
             form.insertAdjacentHTML("beforeend", "<input id='new-symbol-input' value='ETH'>")
             document.body!!.appendChild(form)
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
             try {
-                registerSettingsGlobals()
+                main()
                 val xhr = dispatchSettingsBeforeRequest("/fragments/settings-allocations-preview", form)
                 val response = dispatchSettingsResponse(
                     422,
@@ -33,8 +35,11 @@ class SettingsTest : StringSpec() {
                     xhr,
                     "text/html",
                     mapOf("X-Rebalancer-Error-Fragment" to "settings-form"),
+                    initialShouldSwap = false,
+                    eventTarget = document.body,
                 )
                 (response.eventPrevented as Boolean).shouldBeFalse()
+                (response.shouldSwap as Boolean).shouldBeTrue()
                 val replacement = settingsStateForm()
                 replacement.insertAdjacentHTML("beforeend", "<input id='new-symbol-input'>")
                 document.body!!.replaceChild(replacement, form)
@@ -46,6 +51,7 @@ class SettingsTest : StringSpec() {
                 (replacement.querySelector("#new-symbol-input") as HTMLInputElement).value shouldBe "ETH"
                 replacement.remove()
             } finally {
+                window.asDynamic().setInterval = oldSetInterval
                 form.remove()
                 initSettings()
             }
@@ -878,6 +884,8 @@ private fun dispatchSettingsResponse(
     xhr: dynamic = js("({})"),
     contentType: String = "application/json; charset=UTF-8",
     headers: Map<String, String> = emptyMap(),
+    initialShouldSwap: Boolean = true,
+    eventTarget: Element? = null,
 ): dynamic {
     xhr.status = status
     xhr.responseText = response
@@ -886,10 +894,10 @@ private fun dispatchSettingsResponse(
     }
     val detail = js("({})")
     detail.xhr = xhr
-    detail.shouldSwap = true
+    detail.shouldSwap = initialShouldSwap
     val event = document.createEvent("CustomEvent")
     event.asDynamic().initCustomEvent("htmx:beforeSwap", true, true, detail)
-    document.dispatchEvent(event)
+    (eventTarget ?: document).dispatchEvent(event)
     detail.eventPrevented = event.defaultPrevented
     return detail
 }
