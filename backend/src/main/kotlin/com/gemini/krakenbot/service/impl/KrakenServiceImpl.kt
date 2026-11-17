@@ -221,15 +221,15 @@ class KrakenServiceImpl(
     private fun tickerPath(pairs: String): String =
         "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
 
-    override suspend fun getTradingPairLimits(pair: String): TradingPairLimits? {
-        val requested = Asset.splitTradingPair(pair)?.takeIf { it.quote == Asset.USD } ?: return null
+    override suspend fun getTradingPairLimits(symbol: String): TradingPairLimits? {
+        val pair = Asset.tradingPair(symbol)
         val path = "${KrakenApiConstants.PATH_ASSET_PAIRS}?${KrakenApiConstants.PARAM_PAIR}=$pair"
         val result = queryPublic(path).path(KrakenApiConstants.FIELD_RESULT)
         if (!result.isObject || result.size() != 1) return null
         val (responsePair, metadata) = result.properties().single()
         val altname = metadata.path(KrakenApiConstants.FIELD_ALTNAME)
-        if (!Asset.matchesUsdQuotedPair(responsePair, requested.base) &&
-            !(altname.isTextual && Asset.matchesUsdQuotedPair(altname.textValue(), requested.base))
+        if (!Asset.matchesUsdQuotedPair(responsePair, symbol) &&
+            !(altname.isTextual && Asset.matchesUsdQuotedPair(altname.textValue(), symbol))
         ) {
             return null
         }

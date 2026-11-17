@@ -62,12 +62,12 @@ internal fun captureIntentDrafts(event: DomEvent) {
     val detail = event.asDynamic().detail ?: return
     val target = detail.target as? Element ?: return
     val xhr = detail.xhr ?: return
-    val forms = target.querySelectorAll("form[data-intent-id]")
+    val forms = target.querySelectorAll("form[${HtmlAttrs.DATA_INTENT_ID}]")
     if (forms.length == 0) return
     var focus: IntentFocus? = null
     val drafts = (0 until forms.length).mapNotNull { index ->
         val form = forms.item(index) as? HTMLFormElement ?: return@mapNotNull null
-        val id = form.getAttribute("data-intent-id") ?: return@mapNotNull null
+        val id = form.getAttribute(HtmlAttrs.DATA_INTENT_ID) ?: return@mapNotNull null
         val state = form.querySelector("select[name='${FormFields.ORDER_INTENT_STATE}']") as? HTMLSelectElement
         val txid = form.querySelector("input[name='${FormFields.ORDER_INTENT_ORDER_TXID}']") as? HTMLInputElement
         val evidence = form.querySelector("input[name='${FormFields.ORDER_INTENT_EVIDENCE}']") as? HTMLInputElement
@@ -93,10 +93,10 @@ internal fun restoreIntentDrafts(event: DomEvent) {
     if (detail.target !== swap.target) return
     intentSwaps.delete(xhr)
     if (!document.contains(swap.target)) return
-    val forms = swap.target.querySelectorAll("form[data-intent-id]")
+    val forms = swap.target.querySelectorAll("form[${HtmlAttrs.DATA_INTENT_ID}]")
     repeat(forms.length) { index ->
         val form = forms.item(index) as? HTMLFormElement ?: return@repeat
-        val id = form.getAttribute("data-intent-id") ?: return@repeat
+        val id = form.getAttribute(HtmlAttrs.DATA_INTENT_ID) ?: return@repeat
         val draft = swap.drafts[id] ?: return@repeat
         val state = form.querySelector("select[name='${FormFields.ORDER_INTENT_STATE}']") as? HTMLSelectElement
         val txid = form.querySelector("input[name='${FormFields.ORDER_INTENT_ORDER_TXID}']") as? HTMLInputElement

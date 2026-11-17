@@ -10,7 +10,7 @@ import java.math.BigDecimal
 data class TradingPairLimits(val lotDecimals: Int, val orderMin: BigDecimal, val costMin: BigDecimal)
 
 interface KrakenService {
-    suspend fun getTradingPairLimits(pair: String): TradingPairLimits? = null
+    suspend fun getTradingPairLimits(symbol: String): TradingPairLimits? = null
 
     suspend fun getBalances(): RawBalances
 

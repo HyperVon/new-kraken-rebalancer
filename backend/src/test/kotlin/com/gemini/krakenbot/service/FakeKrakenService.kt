@@ -27,7 +27,7 @@ class FakeKrakenService :
     }
     var spendableBalancesSupplier: (suspend () -> RawBalances)? = null
 
-    override suspend fun getTradingPairLimits(pair: String): TradingPairLimits? = pairLimitsSupplier(pair)
+    override suspend fun getTradingPairLimits(symbol: String): TradingPairLimits? = pairLimitsSupplier(symbol)
 
     override suspend fun getSpendableBalances(): RawBalances = spendableBalancesSupplier?.invoke() ?: getBalances()
 

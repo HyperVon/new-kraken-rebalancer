@@ -63,8 +63,8 @@ class DynamicKrakenService(
         }
     }
 
-    override suspend fun getTradingPairLimits(pair: String): TradingPairLimits? =
-        currentBackend().getTradingPairLimits(pair)
+    override suspend fun getTradingPairLimits(symbol: String): TradingPairLimits? =
+        currentBackend().getTradingPairLimits(symbol)
 
     override suspend fun getBalances(): RawBalances = currentBackend().getBalances()
 

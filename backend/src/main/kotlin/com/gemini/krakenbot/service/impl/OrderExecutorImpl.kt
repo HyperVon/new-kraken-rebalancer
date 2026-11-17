@@ -215,7 +215,7 @@ class OrderExecutorImpl(
         val pair = Asset.tradingPair(symbol)
         val isLiveSubmission = !context.settings.dryRun && !context.settings.simulation
         val limits = if (isLiveSubmission) {
-            context.backend.getTradingPairLimits(pair)
+            context.backend.getTradingPairLimits(symbol)
                 ?: throw IllegalStateException("Missing or invalid trading limits for $pair")
         } else {
             null

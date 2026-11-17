@@ -361,9 +361,23 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     "\"lot_decimals\":8,\"ordermin\":\"0.001\"",
                 )) {
                     val service = createService("{\"error\":[],\"result\":{\"XXBTZUSD\":{$metadata}}}")
-                    val limits = service.getTradingPairLimits("XBTUSD")
+                    val limits = service.getTradingPairLimits(Asset.BTC)
                     (limits != null) shouldBe (metadata.contains("costmin") && !metadata.contains(":-1"))
                 }
+            }
+        }
+
+        "pair limits identify AIOZ without confusing it with AIO" {
+            runTest {
+                var requestedPair: String? = null
+                val service = createService(
+                    """{"error":[],"result":{"AIOZUSD":{"altname":"AIOZUSD","lot_decimals":5,"ordermin":"50","costmin":"0.5"}}}""",
+                    onRequest = { requestedPair = it.url.parameters["pair"] },
+                )
+                val limits = service.getTradingPairLimits("AIOZ")
+                requestedPair shouldBe "AIOZUSD"
+                limits?.lotDecimals shouldBe 5
+                service.getTradingPairLimits("AIO") shouldBe null
             }
         }
 
@@ -372,7 +386,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val service = createService(
                     """{"error":[],"result":{"XETHZUSD":{"altname":"ETHUSD","lot_decimals":8,"ordermin":"0.001","costmin":"5"}}}""",
                 )
-                service.getTradingPairLimits("XBTUSD") shouldBe null
+                service.getTradingPairLimits(Asset.BTC) shouldBe null
             }
         }
 

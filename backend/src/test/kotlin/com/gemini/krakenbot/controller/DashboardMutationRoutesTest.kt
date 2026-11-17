@@ -461,6 +461,7 @@ class DashboardMutationRoutesTest : DashboardControllerTestBase() {
                 recovery shouldContain "Waiting for first rebalance cycle"
                 recovery shouldContain "Action Required: Unresolved Live Order Intent"
                 recovery shouldContain "State: PENDING"
+                recovery shouldContain "data-intent-id=\"19\""
                 recovery shouldContain "value=\"CONFIRMED\""
                 recovery shouldContain "value=\"REJECTED\""
                 recovery shouldNotContain "value=\"PENDING\""

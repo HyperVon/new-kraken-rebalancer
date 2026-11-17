@@ -11,7 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Reserve each execution journal for one process and refuse to replace missing journal files when the account marker survives.
-- Validate live order transaction IDs and apply Kraken pair limits before submission.
+- Validate live order transaction IDs and apply Kraken pair limits before submission, including for symbols ending in Z.
 - Use spendable USD for buy-only cycles and recognize delayed sell fills with fees reported in quote currency.
 - Keep readiness failed during a retry until the last completed outcome changes, and omit below-minimum fiat correction legs.
 - Save fractional allocation previews, preserve edits made during a save, and retain order resolution drafts during dashboard refreshes.

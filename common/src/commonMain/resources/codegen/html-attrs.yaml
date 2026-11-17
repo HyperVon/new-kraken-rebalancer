@@ -3,6 +3,7 @@ HtmlAttrs:
   ONCHANGE: "onchange"
   ONKEYDOWN: "onkeydown"
   DATA_EPOCH: "data-epoch"
+  DATA_INTENT_ID: "data-intent-id"
   DATA_SORT_VALUE: "data-sort-value"
   DATA_TIME: "data-time"
   DATA_VALUE: "data-value"
