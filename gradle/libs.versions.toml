@@ -11,7 +11,7 @@ kotlinCssJvm = "2026.11.0"
 logback = "1.6.6"
 jacksonBom = "2.22.4"
 kotest = "6.2.6"
-mockk = "1.14.11"
+mockk = "1.14.12"
 ktlint = "1.8.0"
 
 [libraries]
