@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.DirectTickerRequest
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.service.TickerRead
+import com.gemini.krakenbot.service.TradingPairLimits
 import com.gemini.krakenbot.service.readBalancesWithCapture
 import com.gemini.krakenbot.service.readTickerPricesWithCapture
 import kotlinx.coroutines.currentCoroutineContext
@@ -61,6 +62,9 @@ class DynamicKrakenService(
             block(backend)
         }
     }
+
+    override suspend fun getTradingPairLimits(pair: String): TradingPairLimits? =
+        currentBackend().getTradingPairLimits(pair)
 
     override suspend fun getBalances(): RawBalances = currentBackend().getBalances()
 

@@ -32,6 +32,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -185,6 +186,50 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 worker.join()
                 portfolioManager.isLoopRunning() shouldBe false
+            }
+        }
+
+        "a failed completed cycle remains failed during a retry and cancellation" {
+            runTest {
+                stubUsdConfig(TestFixtures.settings(simulation = true, dryRun = true))
+                val observed = ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                val retryStarted = CompletableDeferred<Unit>()
+                val resumeRetry = CompletableDeferred<Unit>()
+                var calls = 0
+                val analyzer = spyk(portfolioAnalyzer)
+                coEvery { analyzer.fetchObservedBalances() } coAnswers {
+                    when (++calls) {
+                        2 -> throw IllegalStateException("exchange unavailable")
+
+                        3, 4 -> {
+                            retryStarted.complete(Unit)
+                            resumeRetry.await()
+                            observed
+                        }
+
+                        else -> observed
+                    }
+                }
+                val manager = createManager(analyzer = analyzer)
+
+                manager.performRebalanceCycle().shouldNotBeNull()
+                shouldThrow<IllegalStateException> { manager.performRebalanceCycle() }
+                currentPortfolioState.snapshot.value.shouldNotBeNull()
+                manager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
+
+                val cancelledRetry = launch { manager.performRebalanceCycle() }
+                retryStarted.await()
+                manager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
+                cancelledRetry.cancel()
+                cancelledRetry.join()
+                manager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
+
+                val successfulRetry = launch { manager.performRebalanceCycle() }
+                runCurrent()
+                manager.getOperationalStatus().lastCycleError shouldBe "IllegalStateException"
+                resumeRetry.complete(Unit)
+                successfulRetry.join()
+                manager.getOperationalStatus().lastCycleError shouldBe null
             }
         }
 
@@ -557,6 +602,36 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
+        "shutdown drains an earlier worker through cancelled replacements" {
+            runTest {
+                stubUsdConfig(TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L))
+                val entered = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+                val analyzer = spyk(portfolioAnalyzer)
+                coEvery { analyzer.fetchObservedBalances() } coAnswers {
+                    entered.complete(Unit)
+                    withContext(NonCancellable) { release.await() }
+                    ObservedBalances(mapOf(Asset.USD to BigDecimal("100.00")), Instant.now())
+                }
+                val manager = createManager(analyzer = analyzer)
+                val original = manager.startRebalancingLoop(this)
+                entered.await()
+
+                manager.pauseLoop()
+                manager.resumeLoop()
+                manager.pauseLoop()
+                manager.resumeLoop()
+                val stopped = manager.stopRebalancingLoop().shouldNotBeNull()
+                runCurrent()
+
+                original.isCompleted shouldBe false
+                stopped.isCompleted shouldBe false
+                release.complete(Unit)
+                stopped.join()
+                original.isCompleted shouldBe true
+            }
+        }
+
         "shutdown joins the current worker after pause and resume, not the stale worker" {
             runTest {
                 val settings = TestFixtures.settings(simulation = true, dryRun = true, loopDelaySeconds = 60L)
@@ -611,7 +686,7 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 var dependenciesReleased = false
                 val joiner = launch {
-                    joinRebalancingWorker(stoppedWorker) shouldBe true
+                    joinRebalancingWorker(stoppedWorker)
                     dependenciesReleased = true
                 }
                 runCurrent()

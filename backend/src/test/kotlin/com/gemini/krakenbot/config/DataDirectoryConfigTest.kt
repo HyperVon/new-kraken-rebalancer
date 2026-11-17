@@ -261,6 +261,63 @@ class DataDirectoryConfigTest : StringSpec() {
             }
         }
 
+        "startup ownership excludes a second owner and releases after close" {
+            val tempDir = Files.createTempDirectory("data-dir-owner-test-")
+            try {
+                DataDirectoryConfig.acquireOwnership(tempDir).use {
+                    val error = shouldThrow<IllegalStateException> { DataDirectoryConfig.acquireOwnership(tempDir) }
+                    error.message shouldContain "another process"
+                }
+                DataDirectoryConfig.acquireOwnership(tempDir).use { }
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
+        "missing journal with account identity fails closed for automatic and explicit initialization" {
+            for (resuming in listOf(false, true)) {
+                for (explicit in listOf(false, true)) {
+                    val tempDir = Files.createTempDirectory("data-dir-lost-journal-test-")
+                    try {
+                        val identity = tempDir.resolve(DataDirectoryIdentity.IDENTITY_FILE_NAME)
+                        Files.writeString(identity, "a".repeat(64))
+                        if (resuming) Files.createFile(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE))
+
+                        shouldThrow<IllegalStateException> {
+                            if (explicit) {
+                                DataDirectoryConfig.initializeDataDirectory(tempDir)
+                            } else {
+                                DataDirectoryConfig.ensureDataDirectory(tempDir)
+                            }
+                        }
+
+                        Files.exists(DataDirectoryConfig.executionDatabasePath(tempDir)) shouldBe false
+                        Files.readString(identity) shouldBe "a".repeat(64)
+                        Files.exists(tempDir.resolve(DataDirectoryConfig.INITIALIZATION_MARKER_FILE)) shouldBe resuming
+                    } finally {
+                        tempDir.toFile().deleteRecursively()
+                    }
+                }
+            }
+        }
+
+        "direct fresh initialization resume refuses an existing account identity" {
+            val tempDir = Files.createTempDirectory("data-dir-resume-identity-test-")
+            try {
+                val executionDb = DataDirectoryConfig.executionDatabasePath(tempDir)
+                val journalId = ExecutionDatabase.initialize(executionDb.toString()).journalId()
+                Files.writeString(tempDir.resolve(DataDirectoryIdentity.IDENTITY_FILE_NAME), "a".repeat(64))
+
+                shouldThrow<IllegalStateException> {
+                    ExecutionDatabase.resumeFreshInitialization(executionDb.toString())
+                }
+
+                ExecutionDatabase.init(executionDb.toString()).journalId() shouldBe journalId
+            } finally {
+                tempDir.toFile().deleteRecursively()
+            }
+        }
+
         "ensureDataDirectory fails closed on a legacy reporting data directory" {
             for (withInitializationMarker in listOf(false, true)) {
                 val tempDir = Files.createTempDirectory("data-dir-ensure-mixed-test-")

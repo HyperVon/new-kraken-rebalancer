@@ -234,6 +234,7 @@ active and the Settings form shows the validation error.
 After a successful save, the page stays on Settings and reports whether the new
 values are active or pending the current execution cycle. Validation failures
 preserve the entered values so you can correct the form without re-entering it.
+Edits made while a save is in progress stay in the form.
 
 ### Target allocations
 

@@ -19,7 +19,18 @@ import java.math.BigDecimal
  * Suppliers and [executeOrderAction] / [orderResultFactory] may be reassigned between tests.
  * [tradePageSupplier] serves recent fill cursor pages; the default is one empty valid page.
  */
-class FakeKrakenService : KrakenService {
+class FakeKrakenService :
+    KrakenService,
+    SpendableBalanceService {
+    var pairLimitsSupplier: (String) -> TradingPairLimits? = {
+        TradingPairLimits(8, BigDecimal("0.00000001"), BigDecimal("0.01"))
+    }
+    var spendableBalancesSupplier: (suspend () -> RawBalances)? = null
+
+    override suspend fun getTradingPairLimits(pair: String): TradingPairLimits? = pairLimitsSupplier(pair)
+
+    override suspend fun getSpendableBalances(): RawBalances = spendableBalancesSupplier?.invoke() ?: getBalances()
+
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var assetMetadataSupplier: () -> List<KrakenAssetMetadata> = { DEFAULT_ASSET_METADATA }

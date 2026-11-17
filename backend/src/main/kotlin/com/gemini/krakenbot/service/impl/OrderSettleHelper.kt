@@ -120,8 +120,7 @@ internal object OrderSettleHelper {
         sellOrderTxids: List<String>,
         targetThreshold: BigDecimal = projectedCash.multiply(EARLY_ACCEPT_PROPORTION),
     ): Flow<BigDecimal> = flow {
-        val endSec = Instant.now().epochSecond
-        val startSec = endSec - 600
+        val startSec = Instant.now().epochSecond - 600
         val txidSet = sellOrderTxids.toSet()
         emitAll(
             coldPollBackoff(
@@ -130,7 +129,7 @@ internal object OrderSettleHelper {
                 bestLog = "Using best fill-confirmed USD after sell refresh: {}",
                 noneLog = "No fill-confirmed USD observed after sell refresh",
                 resolve = { attempt ->
-                    val matchedProceeds = sumMatchedSellProceeds(backend, startSec, endSec, txidSet)
+                    val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
                     if (matchedProceeds != null && matchedProceeds > BigDecimal.ZERO) {
                         val cash = openingUsd.add(matchedProceeds).toUsdScale()
                         log.info(
@@ -151,7 +150,6 @@ internal object OrderSettleHelper {
     private suspend fun sumMatchedSellProceeds(
         backend: KrakenService,
         startSec: Long,
-        endSec: Long,
         txidSet: Set<String>,
     ): BigDecimal? {
         var cursor: String? = null
@@ -162,7 +160,7 @@ internal object OrderSettleHelper {
         repeat(MAX_FILL_PAGES) {
             val page = backend.getRecentTradePage(
                 startSec = startSec,
-                endSec = endSec,
+                endSec = null,
                 cursor = cursor,
                 limit = KrakenApiConstants.TRADE_PAGE_SIZE,
             )

@@ -65,7 +65,7 @@ class KrakenTradeFillParserTest : KrakenServiceTestBase() {
                 fill.orderTxid shouldBe "O1"
                 fill.baseAsset shouldBe "SOL"
                 fill.quoteCurrency shouldBe "USDT"
-                fill.feeCurrency shouldBe null
+                fill.feeCurrency shouldBe "USDT"
                 fill.type shouldBe "sell"
                 fill.price shouldBe "123.450000000000000001"
                 fill.cost shouldBe "12.3450000000000000001"

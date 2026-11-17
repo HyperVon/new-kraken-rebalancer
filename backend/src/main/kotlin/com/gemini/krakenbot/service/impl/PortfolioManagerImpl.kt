@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -34,6 +35,7 @@ import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.math.BigDecimal
@@ -110,14 +112,14 @@ class PortfolioManagerImpl(
             if (staleJob != null && staleJob.isActive) {
                 staleJob
             } else {
-                // A cancelled worker is still draining until its finally block runs. The replacement
-                // joins it before runLoop so it can never lose the admission race on runLoopMutex.
-                scope.launch(start = CoroutineStart.LAZY) {
-                    staleJob?.join()
+                // Enter the predecessor join before publishing the replacement, even if the
+                // replacement is cancelled before dispatch. Shutdown must drain the whole chain.
+                scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    withContext(NonCancellable) { staleJob?.join() }
+                    yield()
                     runLoop()
                 }.also { newJob ->
                     workerJob = newJob
-                    newJob.start()
                 }
             }
         }
@@ -266,7 +268,6 @@ class PortfolioManagerImpl(
         val startedAt = Instant.now()
         operationalStatus = operationalStatus.copy(
             lastCycleStartedAt = startedAt,
-            lastCycleError = null,
         )
         var activityDraft: CycleActivityDraft? = null
         try {
@@ -279,17 +280,19 @@ class PortfolioManagerImpl(
             )
             activityDraft = draft
             val snapshot = performRebalanceCyclePinned(draft)
-            if (snapshot == null) {
-                operationalStatus = operationalStatus.copy(
-                    lastCycleError = operationalStatus.lastCycleError ?: "Cycle produced no snapshot",
-                )
-            } else if (operationalStatus.lastCycleError == null) {
-                operationalStatus = operationalStatus.copy(lastCycleCompletedAt = Instant.now())
-            } else {
-                log.warn(
-                    "Rebalance cycle produced a snapshot with an operational error: {}",
-                    operationalStatus.lastCycleError,
-                )
+            val cycleError = draft.error ?: if (snapshot == null) "Cycle produced no snapshot" else null
+            operationalStatus = operationalStatus.copy(
+                lastCycleError = cycleError,
+                lastCycleCompletedAt = if (cycleError ==
+                    null
+                ) {
+                    Instant.now()
+                } else {
+                    operationalStatus.lastCycleCompletedAt
+                },
+            )
+            if (snapshot != null && cycleError != null) {
+                log.warn("Rebalance cycle produced a snapshot with an operational error: {}", cycleError)
             }
             val activity = draft.toActivity(snapshot?.timestamp ?: Instant.now())
             if (snapshot == null) {
@@ -399,7 +402,7 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Order execution failed; continuing with a snapshot", e)
-            markCycleError("Order execution failed")
+            activityDraft.error = "Order execution failed"
             executionFailed = true
             actionLog.add(ViewText.ERROR_ORDER_EXECUTION_FAILED_PREFIX + (e.message ?: e.javaClass.simpleName))
         } finally {
@@ -425,7 +428,7 @@ class PortfolioManagerImpl(
                             )
                         },
                         onFailure = {
-                            markCycleError("Post-trade valuation failed")
+                            activityDraft.error = "Post-trade valuation failed"
                             actionLog += RecentActivityText.VALUATION_FAILURE_PREFIX +
                                 (it.message ?: RecentActivityText.UNKNOWN_REASON)
                             RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
@@ -438,7 +441,7 @@ class PortfolioManagerImpl(
                         "Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values",
                         e,
                     )
-                    markCycleError("Post-trade state refresh failed")
+                    activityDraft.error = "Post-trade state refresh failed"
                     actionLog += RecentActivityText.CYCLE_FAILURE_PREFIX +
                         (e.message ?: e::class.simpleName ?: RecentActivityText.UNKNOWN_REASON)
                     RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
@@ -448,7 +451,7 @@ class PortfolioManagerImpl(
             }
 
         val cycleOutcome = when {
-            executionFailed || operationalStatus.lastCycleError != null ||
+            executionFailed || activityDraft.error != null ||
                 executionOutcome?.blockedByUnresolvedIntents == true -> CurrentCycleOutcome.PROBLEM
 
             config.settings.dryRun && activityDraft.hasOrders -> CurrentCycleOutcome.DRY_RUN_PLAN
@@ -473,10 +476,6 @@ class PortfolioManagerImpl(
 
         log.info("--- Cycle Complete ---")
         return snapshot
-    }
-
-    private fun markCycleError(error: String) {
-        operationalStatus = operationalStatus.copy(lastCycleError = error)
     }
 
     private suspend fun portfolioSourceScope(config: AppConfig, cycleId: String): String {
@@ -514,6 +513,7 @@ class PortfolioManagerImpl(
         val config: AppConfig,
         val sourceScope: String,
         val actions: MutableList<String>,
+        var error: String? = null,
         var hasOrders: Boolean = false,
         var outcome: CurrentCycleOutcome? = null,
     )

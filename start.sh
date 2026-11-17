@@ -16,4 +16,4 @@ if [ ! -f "$JAR_PATH" ]; then
 fi
 
 echo "Starting Kraken Rebalancer..."
-java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar "$JAR_PATH"
+exec java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar "$JAR_PATH" "$@"

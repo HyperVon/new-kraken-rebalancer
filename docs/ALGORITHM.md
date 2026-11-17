@@ -87,11 +87,14 @@ the only triggered asset:
   deviation does not create a second correction plan.
 - If there are no counter-balancing assets, no fiat correction orders are
   generated.
+- Proportional correction shares below `minimumOrderSizeUSD` are omitted; their
+  amounts remain unallocated rather than being added to the other shares.
 
-The minimum-order threshold is checked during planning and checked again at
-execution after the requested USD amount is converted to an eight-decimal asset
-volume. A sell volume is capped at the cycle-entry holding. No zero or negative
-volume is submitted.
+The minimum-order threshold is checked during planning and again at execution
+after the requested USD amount is converted to asset volume. Live orders use
+Kraken's pair-specific lot precision up to eight decimals and must meet its
+base-volume and quote-cost minimums. A sell volume is capped at the cycle-entry
+holding. No zero or negative volume is submitted.
 
 ## Cycle sequence
 
@@ -104,13 +107,15 @@ volume is submitted.
    remaining batch.
 4. **Settle cash.** In a non-dry-run cycle with a successful sell, confirm the
    available USD before buying. Matching Kraken fills are preferred when
-   transaction IDs are available; observed spendable balance caps confirmed
-   proceeds. A successful read with absent or zero USD means zero spendable cash,
+   transaction IDs are available. Polling includes fills that arrive after
+   submission, and observed spendable balance caps confirmed proceeds after
+   quote-currency fees. A successful read with absent or zero USD means zero spendable cash,
    not a failed peek. If the spendable-balance peek fails, confirmed proceeds are capped
    to projected post-sell cash instead. A bounded USD balance poll is the
    fallback when fill evidence is missing or materially short. If no positive
    spendable USD is confirmed, the buy phase stops.
-5. **Buy.** Limit the entire buy batch to 99% of post-sell cash, rounded down
+5. **Buy.** When no sell succeeded, cap live buys using the spendable USD balance.
+   Limit the entire buy batch to 99% of the resulting cash budget, rounded down
    to cents. Each successful buy reduces the remaining cycle budget. Apply the
    minimum-order and volume checks again after budget adjustment.
 6. **Publish.** Build a snapshot with the cycle actions, final available

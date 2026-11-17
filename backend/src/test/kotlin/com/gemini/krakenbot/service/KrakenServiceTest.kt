@@ -353,9 +353,32 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "pair limits reject malformed metadata" {
+            runTest {
+                for (metadata in listOf(
+                    "\"lot_decimals\":8,\"ordermin\":\"0.001\",\"costmin\":\"5\"",
+                    "\"lot_decimals\":-1,\"ordermin\":\"0.001\",\"costmin\":\"5\"",
+                    "\"lot_decimals\":8,\"ordermin\":\"0.001\"",
+                )) {
+                    val service = createService("{\"error\":[],\"result\":{\"XXBTZUSD\":{$metadata}}}")
+                    val limits = service.getTradingPairLimits("XBTUSD")
+                    (limits != null) shouldBe (metadata.contains("costmin") && !metadata.contains(":-1"))
+                }
+            }
+        }
+
+        "pair limits reject a response for another market" {
+            runTest {
+                val service = createService(
+                    """{"error":[],"result":{"XETHZUSD":{"altname":"ETHUSD","lot_decimals":8,"ordermin":"0.001","costmin":"5"}}}""",
+                )
+                service.getTradingPairLimits("XBTUSD") shouldBe null
+            }
+        }
+
         "executeOrder rejects empty txid arrays and blank txid values" {
             runTest {
-                for (txid in listOf("[]", "[\"\"]")) {
+                for (txid in listOf("[]", "[\"\"]", "[null]", "[123]", "[true]", "[{}]")) {
                     val service = createService(
                         """{"error":[],"result":{"txid":$txid}}""",
                     )

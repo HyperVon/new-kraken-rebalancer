@@ -149,7 +149,7 @@ The Dashboard health and readiness endpoints describe current operation: loop
 state, cycle timestamps and error, latest snapshot, active mode, and unresolved
 live-order intent status. Readiness is unavailable until the loop runs,
 configuration and diagnostics are available, a cycle snapshot exists, the
-latest cycle has no operational error, and no unresolved live-order intent
+last completed cycle has no operational error, and no unresolved live-order intent
 remains. The dashboard invalidation SSE carries revisions; the legacy status
 stream retains current-cycle snapshot JSON and activity-cycle IDs.
 

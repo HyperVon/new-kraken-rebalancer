@@ -47,6 +47,7 @@ import java.nio.file.Files
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -110,20 +111,18 @@ class KrakenRebalancerApplicationTest :
                 }
 
                 val joiner = launch {
-                    // The first 5 s budget elapses while the worker is still draining; pending
-                    // submissions must escalate to an extended wait instead of returning false.
-                    joinRebalancingWorker(worker) { pending } shouldBe true
+                    // The first 5 s budget elapses while the worker is still draining.
+                    joinRebalancingWorker(worker) { pending }
                 }
                 runCurrent()
                 joiner.isCompleted shouldBe false
 
-                // Fire the shutdown timeout: with pending submissions still true, the joiner
-                // must escalate into a wait on the worker instead of completing false.
+                // A pending submission keeps the joiner waiting after the timeout.
                 testScheduler.advanceTimeBy(5_001L)
                 runCurrent()
                 joiner.isCompleted shouldBe false
 
-                // Allow the worker to finish; the extended wait resolves and the joiner returns true.
+                // Allow the worker to finish and the extended wait to resolve.
                 pending = false
                 releasePending.complete(Unit)
                 runCurrent()
@@ -132,9 +131,9 @@ class KrakenRebalancerApplicationTest :
             }
         }
 
-        "shutdown join does not extend the wait when no submissions are pending" {
+        "shutdown join waits for the worker even when no submissions are pending" {
             runTest {
-                var pending = false
+                val pending = false
                 val releaseWorker = CompletableDeferred<Unit>()
                 val worker = Job()
                 val cleanup = launch {
@@ -145,19 +144,19 @@ class KrakenRebalancerApplicationTest :
                 }
 
                 val joiner = launch {
-                    joinRebalancingWorker(worker) { pending } shouldBe false
+                    joinRebalancingWorker(worker) { pending }
                 }
                 runCurrent()
                 joiner.isCompleted shouldBe false
 
-                // Fire the shutdown timeout: no pending submissions, so the joiner returns false
-                // and does not escalate into a wait on the worker.
+                // A worker can still submit after the journal check, so ownership must remain held.
                 testScheduler.advanceTimeBy(5_001L)
                 runCurrent()
-                joiner.isCompleted shouldBe true
+                joiner.isCompleted shouldBe false
 
                 releaseWorker.complete(Unit)
                 runCurrent()
+                joiner.join()
                 cleanup.join()
             }
         }
@@ -180,7 +179,7 @@ class KrakenRebalancerApplicationTest :
                 cleanupStarted.await()
                 var dependenciesReleased = false
                 val joiner = launch {
-                    joinRebalancingWorker(worker) shouldBe true
+                    joinRebalancingWorker(worker)
                     dependenciesReleased = true
                 }
                 runCurrent()
@@ -238,6 +237,50 @@ class KrakenRebalancerApplicationTest :
             verify(exactly = 1) { manager.stopRebalancingLoop() }
         }
 
+        "shutdown waits for startup journal recovery before closing dependencies" {
+            val recoveryStarted = CountDownLatch(1)
+            val releaseRecovery = CountDownLatch(1)
+            val shutdownStarted = CountDownLatch(1)
+            val clientClosed = CountDownLatch(1)
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val manager = mockk<PortfolioManager>()
+            every { manager.stopRebalancingLoop() } returns Job().apply { complete() }
+            val client = mockk<HttpClient>()
+            every { client.close() } answers { clientClosed.countDown() }
+            val lifecycle = KrakenRebalancerApplicationLifecycle(
+                portfolioManager = manager,
+                orderIntentService = mockk<OrderIntentService>(),
+                applicationScope = scope,
+                httpClient = client,
+                stopContainer = {},
+            )
+            val executor = Executors.newFixedThreadPool(2)
+            val recovery = CompletableFuture.runAsync({
+                lifecycle.initializeJournal {
+                    recoveryStarted.countDown()
+                    releaseRecovery.await()
+                }
+            }, executor)
+            try {
+                recoveryStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                val shutdown = CompletableFuture.runAsync({
+                    shutdownStarted.countDown()
+                    lifecycle.shutdown()
+                }, executor)
+                shutdownStarted.await(5, TimeUnit.SECONDS) shouldBe true
+                clientClosed.await(100, TimeUnit.MILLISECONDS) shouldBe false
+                releaseRecovery.countDown()
+                recovery.orTimeout(5, TimeUnit.SECONDS).join()
+                shutdown.orTimeout(5, TimeUnit.SECONDS).join()
+                clientClosed.count shouldBe 0L
+                shouldThrow<IllegalStateException> { lifecycle.initializeJournal {} }
+            } finally {
+                releaseRecovery.countDown()
+                executor.shutdownNow()
+                scope.coroutineContext[Job]?.cancel()
+            }
+        }
+
         "concurrent shutdown caller waits for cleanup to complete" {
             val events = mutableListOf<String>()
             val stopStarted = CountDownLatch(1)
@@ -263,22 +306,24 @@ class KrakenRebalancerApplicationTest :
                     httpClient = client,
                     stopContainer = { events += "container-stop" },
                 )
-            val firstShutdown = CompletableFuture.runAsync(lifecycle::shutdown)
+            val executor = Executors.newFixedThreadPool(2)
+            val firstShutdown = CompletableFuture.runAsync(lifecycle::shutdown, executor)
             val secondThread = AtomicReference<Thread>()
             var secondShutdown: CompletableFuture<Void>? = null
             try {
                 stopStarted.await(5, TimeUnit.SECONDS) shouldBe true
                 val secondStarted = CountDownLatch(1)
                 secondShutdown =
-                    CompletableFuture.runAsync {
+                    CompletableFuture.runAsync({
                         secondThread.set(Thread.currentThread())
                         secondStarted.countDown()
                         lifecycle.shutdown()
-                    }
+                    }, executor)
                 secondStarted.await(5, TimeUnit.SECONDS) shouldBe true
                 awaitWaitingForShutdown(checkNotNull(secondThread.get())) shouldBe true
             } finally {
                 releaseStop.countDown()
+                executor.shutdown()
             }
             firstShutdown.join()
             checkNotNull(secondShutdown).join()
@@ -310,22 +355,24 @@ class KrakenRebalancerApplicationTest :
                     httpClient = client,
                     stopContainer = { events += "container-stop" },
                 )
-            val firstShutdown = CompletableFuture.runAsync(lifecycle::shutdown)
+            val executor = Executors.newFixedThreadPool(2)
+            val firstShutdown = CompletableFuture.runAsync(lifecycle::shutdown, executor)
             val secondThread = AtomicReference<Thread>()
             var secondShutdown: CompletableFuture<Void>? = null
             try {
                 stopStarted.await(5, TimeUnit.SECONDS) shouldBe true
                 val secondStarted = CountDownLatch(1)
                 secondShutdown =
-                    CompletableFuture.runAsync {
+                    CompletableFuture.runAsync({
                         secondThread.set(Thread.currentThread())
                         secondStarted.countDown()
                         lifecycle.shutdown()
-                    }
+                    }, executor)
                 secondStarted.await(5, TimeUnit.SECONDS) shouldBe true
                 awaitWaitingForShutdown(checkNotNull(secondThread.get())) shouldBe true
             } finally {
                 releaseStop.countDown()
+                executor.shutdown()
             }
 
             shouldThrow<CompletionException> { firstShutdown.join() }.cause shouldBe stopFailure

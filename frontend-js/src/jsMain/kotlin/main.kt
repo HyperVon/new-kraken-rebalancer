@@ -102,7 +102,7 @@ fun main() {
             contentType = xhr.getResponseHeader("Content-Type") as? String,
             fragmentKind = xhr.getResponseHeader(HttpWire.ERROR_FRAGMENT_HEADER) as? String,
         )
-        if (shouldSwap) {
+        if (shouldSwap && detail.settingsResponseIsStale != true && !csrfSessionExpired) {
             detail.shouldSwap = true
             detail.isError = false
         }

@@ -124,6 +124,8 @@ private fun captureSubmittedSettingsSnapshot(event: Event) {
         SubmittedSettingsSnapshot(
             requestId = ++latestSubmittedSettingsRequestId,
             values = settingsSnapshot(form),
+            form = form,
+            formValues = formReplacementSnapshot(form),
             modeLabel = settingsModeLabel(form),
             removedAllocation = removedAllocation,
         ),
@@ -427,6 +429,14 @@ private fun handleSettingsSaveResponse(event: Event) {
     val responseBody = xhr.responseText as? String
     val errorFragment = xhr.getResponseHeader(HttpWire.ERROR_FRAGMENT_HEADER) as? String
     if (shouldSwapRenderedError(responseStatus, responseBody, contentType, errorFragment)) {
+        if (submitted.requestId != latestSubmittedSettingsRequestId || form !== submitted.form ||
+            formReplacementSnapshot(form) != submitted.formValues
+        ) {
+            detail.settingsResponseIsStale = true
+            detail.shouldSwap = false
+            event.preventDefault()
+            return
+        }
         val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER)
         if (container != null) {
             val rows = mutableListOf<Element>()
@@ -573,6 +583,8 @@ private fun scheduleModePlateRefresh(submitted: SubmittedSettingsSnapshot) {
 private data class SubmittedSettingsSnapshot(
     val requestId: Long,
     val values: String,
+    val form: HTMLFormElement,
+    val formValues: String,
     val modeLabel: String,
     val removedAllocation: RemovedAllocation?,
 )

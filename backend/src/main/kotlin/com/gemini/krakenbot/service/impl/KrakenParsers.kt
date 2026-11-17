@@ -52,7 +52,7 @@ object KrakenParsers {
             orderTxid = orderTxid,
             baseAsset = pairSplit?.base,
             quoteCurrency = pairSplit?.quote,
-            feeCurrency = null,
+            feeCurrency = pairSplit?.quote,
             type = rawValue(node, KrakenApiConstants.FIELD_TYPE),
             price = price,
             cost = cost,

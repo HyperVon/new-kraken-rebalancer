@@ -163,6 +163,11 @@ a marker next to copied-in database files, and keep the directory's
 `account-identity.sha256` binding in place so mismatched stores are refused
 before any live submission.
 
+One application process owns the data directory from startup through worker
+shutdown. A second process using the same directory exits before journal
+recovery. If the account identity marker survives while the journal files are
+missing, restore the original journal from a consistent backup.
+
 The `account-identity.sha256` file binds execution state in that data directory
 to one authenticated Kraken account. It contains a
 SHA-256 digest rather than the raw account identity. Do not move the data files

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.21.1] - 2026-11-17
+
+### Fixed
+
+- Reserve each execution journal for one process and refuse to replace missing journal files when the account marker survives.
+- Validate live order transaction IDs and apply Kraken pair limits before submission.
+- Use spendable USD for buy-only cycles and recognize delayed sell fills with fees reported in quote currency.
+- Keep readiness failed during a retry until the last completed outcome changes, and omit below-minimum fiat correction legs.
+- Save fractional allocation previews, preserve edits made during a save, and retain order resolution drafts during dashboard refreshes.
+- Isolate the Kilo simulation journal, forward Unix launcher arguments and shutdown signals, and make shutdown tests independent of CPU count.
+
 ## [6.21.0] - 2026-11-10
 
 ### Added

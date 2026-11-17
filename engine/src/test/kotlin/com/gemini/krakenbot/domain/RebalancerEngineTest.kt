@@ -145,6 +145,48 @@ class RebalancerEngineTest : StringSpec() {
                 }
         }
 
+        "USD-only correction omits a plan when every proportional share is below the minimum" {
+            val plan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                currentValuesUSD = mapOf(
+                    Asset.BTC to BigDecimal("493.00"),
+                    Asset.ETH to BigDecimal("293.00"),
+                    Asset.USD to BigDecimal("214.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 5.0),
+            )
+
+            plan.buyOrders.shouldBeEmpty()
+            plan.sellOrders.shouldBeEmpty()
+        }
+
+        "fiat correction keeps exact-minimum shares and leaves dust unallocated in either direction" {
+            for (usdDev in listOf(BigDecimal("20.00"), BigDecimal("-20.00"))) {
+                val sign = if (usdDev.signum() > 0) BigDecimal.ONE.negate() else BigDecimal.ONE
+                val buys = mutableMapOf<String, BigDecimal>()
+                val sells = mutableMapOf<String, BigDecimal>()
+                RebalancerEngine.distributeFiatCorrectionPlan(
+                    usdDev = usdDev,
+                    allDevs = linkedMapOf(
+                        Asset.BTC to BigDecimal("10.00").multiply(sign),
+                        Asset.ETH to BigDecimal("9.99").multiply(sign),
+                        "SOL" to BigDecimal("0.01").multiply(sign),
+                    ),
+                    buyOrders = buys,
+                    sellOrders = sells,
+                    events = mutableListOf(),
+                    minimumOrderSizeUSD = BigDecimal("10.00"),
+                )
+
+                val orders = if (usdDev.signum() > 0) buys else sells
+                orders.keys shouldBe setOf(Asset.BTC)
+                orders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("10.00"))
+            }
+        }
+
         "calculatePortfolioValues returns failure when crypto price is missing or zero" {
             val balances = mapOf("BTC" to BigDecimal("1.0"), "USD" to BigDecimal("100.00"))
             val missingPrice = RebalancerEngine.calculatePortfolioValues(

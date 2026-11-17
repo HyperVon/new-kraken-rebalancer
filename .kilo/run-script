@@ -142,6 +142,7 @@ DB_PATH="$RUN_DIR/kraken-rebalancer.db"
         --enable-native-access=ALL-UNNAMED \
         "-Dkraken.server.port=$PORT" \
         "-Dkraken.db.path=$DB_PATH" \
+        "-Dkraken.data.dir=$RUN_DIR/data" \
         -jar "$JAR_PATH"
 ) >/dev/null 2>&1 &
 APP_PID=$!

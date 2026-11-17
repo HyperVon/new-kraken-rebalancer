@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.QualityAllocation
-import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
@@ -83,14 +82,14 @@ class SettingsFormComponent {
             ViewText.DEVIATION_TRIGGER,
             FormFields.DEVIATION_TRIGGER_PERCENT,
             formValues?.deviationTriggerPercent ?: config.settings.deviationTriggerPercent.toString(),
-            step = "0.1",
+            step = "any",
             min = "0",
         ),
         NumericFieldSpec(
             ViewText.MINIMUM_ORDER_SIZE,
             FormFields.MINIMUM_ORDER_SIZE_USD,
             formValues?.minimumOrderSizeUsd ?: config.settings.minimumOrderSizeUSD.toString(),
-            step = "0.5",
+            step = "any",
             min = "2",
         ),
     )
@@ -331,7 +330,7 @@ class SettingsFormComponent {
                             input(CssClass.Form.InputGlass, type = number) {
                                 id = HtmlIds.SCORE_SLEEVE_INPUT
                                 name = FormFields.SCORE_SLEEVE_PERCENT
-                                step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
+                                step = "any"
                                 placeholder = ViewText.ALLOCATION_SLEEVE_PLACEHOLDER
                                 formValues?.scoreSleevePercent?.let { value = it }
                             }
