@@ -5,6 +5,7 @@ import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.OrderIntentService
+import com.gemini.krakenbot.service.TradingPairLimits
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -65,6 +66,86 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
             }
         }
 
+        "live sizing uses pair limits and spendable cash before journaling" {
+            runTest {
+                val kraken = FakeKrakenService()
+                kraken.pairLimitsSupplier = { TradingPairLimits(2, BigDecimal("0.01"), BigDecimal("1")) }
+                kraken.spendableBalancesSupplier = { mapOf(Asset.USD to BigDecimal("12.50")) }
+                val intents = mockk<OrderIntentService>(relaxed = true)
+                coEvery { intents.recordOutcome(any(), any()) } returns true
+                val executor = OrderExecutorImpl(kraken, intents)
+                executeLiveBuy(executor)
+                kraken.executedOrders.single().volume.compareTo(BigDecimal("0.01")) shouldBe 0
+                coVerify { intents.savePending(match { it.volume.compareTo(BigDecimal("0.01")) == 0 }) }
+            }
+        }
+
+        "buy-only cash is capped by cycle valuation even when spendable includes credit" {
+            runTest {
+                val kraken = FakeKrakenService()
+                kraken.pairLimitsSupplier = { TradingPairLimits(12, BigDecimal("0.00000001"), BigDecimal("1")) }
+                kraken.spendableBalancesSupplier = { mapOf(Asset.USD to BigDecimal("1000")) }
+                val intents = mockk<OrderIntentService>(relaxed = true)
+                coEvery { intents.recordOutcome(any(), any()) } returns true
+                OrderExecutorImpl(kraken, intents).executeOrders(
+                    buyOrders = mapOf(Asset.BTC to BigDecimal("100")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("50")),
+                    prices = mapOf(Asset.BTC to BigDecimal("3")),
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
+                    actionLog = mutableListOf(),
+                    cycleId = "cash-cap-test",
+                )
+                kraken.executedOrders.single().volume.compareTo(BigDecimal("16.50000000")) shouldBe 0
+                kraken.executedOrders.single().volume.scale() shouldBe 8
+            }
+        }
+
+        "exchange minimum volume and notional block undersized live orders" {
+            runTest {
+                for (limits in listOf(
+                    TradingPairLimits(8, BigDecimal("0.03"), BigDecimal("1")),
+                    TradingPairLimits(8, BigDecimal("0.001"), BigDecimal("30")),
+                )) {
+                    val kraken = FakeKrakenService()
+                    kraken.pairLimitsSupplier = { limits }
+                    val intents = mockk<OrderIntentService>(relaxed = true)
+                    OrderExecutorImpl(kraken, intents).executeOrders(
+                        buyOrders = emptyMap(),
+                        sellOrders = mapOf(Asset.BTC to BigDecimal("25")),
+                        currentValuesUSD = emptyMap(),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000")),
+                        settings = TestFixtures.settings(dryRun = false, simulation = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "minimum-test",
+                    )
+                    kraken.executedOrders.shouldBeEmpty()
+                    coVerify(exactly = 0) { intents.savePending(any()) }
+                }
+            }
+        }
+
+        "missing pair limits block a live sell before journaling" {
+            runTest {
+                val kraken = FakeKrakenService()
+                kraken.pairLimitsSupplier = { null }
+                val intents = mockk<OrderIntentService>(relaxed = true)
+                shouldThrow<IllegalStateException> {
+                    OrderExecutorImpl(kraken, intents).executeOrders(
+                        buyOrders = emptyMap(),
+                        sellOrders = mapOf(Asset.BTC to BigDecimal("25")),
+                        currentValuesUSD = emptyMap(),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000")),
+                        settings = TestFixtures.settings(dryRun = false, simulation = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "limits-test",
+                    )
+                }
+                kraken.executedOrders.shouldBeEmpty()
+                coVerify(exactly = 0) { intents.savePending(any()) }
+            }
+        }
+
         "live orders fail closed when no execution journal is wired" {
             runTest {
                 val kraken = FakeKrakenService()
@@ -88,6 +169,7 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
         "live placement is rejected before persistence when the cycle identity is blank" {
             runTest {
                 val kraken = FakeKrakenService()
+                kraken.spendableBalancesSupplier = { mapOf(Asset.USD to BigDecimal("100")) }
                 val intents = mockk<OrderIntentService>(relaxed = true)
 
                 shouldThrow<IllegalStateException> {
@@ -320,8 +402,10 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
         }
     }
 
-    private fun liveExecutor(kraken: FakeKrakenService, intents: OrderIntentService) =
-        OrderExecutorImpl(kraken, orderIntentService = intents)
+    private fun liveExecutor(kraken: FakeKrakenService, intents: OrderIntentService): OrderExecutorImpl {
+        kraken.spendableBalancesSupplier = { mapOf(Asset.USD to BigDecimal("100.00")) }
+        return OrderExecutorImpl(kraken, orderIntentService = intents)
+    }
 
     private suspend fun executeLiveBuy(executor: OrderExecutorImpl) = executor.executeOrders(
         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),

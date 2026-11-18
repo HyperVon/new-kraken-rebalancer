@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ExchangeTradePage
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.KrakenAssetMetadata
@@ -16,6 +17,7 @@ import com.gemini.krakenbot.service.KrakenCredentialsUnavailableException
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.service.TickerRead
+import com.gemini.krakenbot.service.TradingPairLimits
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ResponseException
@@ -219,6 +221,29 @@ class KrakenServiceImpl(
     private fun tickerPath(pairs: String): String =
         "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
 
+    override suspend fun getTradingPairLimits(symbol: String): TradingPairLimits? {
+        val pair = Asset.tradingPair(symbol)
+        val path = "${KrakenApiConstants.PATH_ASSET_PAIRS}?${KrakenApiConstants.PARAM_PAIR}=$pair"
+        val result = queryPublic(path).path(KrakenApiConstants.FIELD_RESULT)
+        if (!result.isObject || result.size() != 1) return null
+        val (responsePair, metadata) = result.properties().single()
+        val altname = metadata.path(KrakenApiConstants.FIELD_ALTNAME)
+        if (!Asset.matchesUsdQuotedPair(responsePair, symbol) &&
+            !(altname.isTextual && Asset.matchesUsdQuotedPair(altname.textValue(), symbol))
+        ) {
+            return null
+        }
+        val decimals = metadata.path(KrakenApiConstants.FIELD_LOT_DECIMALS)
+        if (!decimals.isIntegralNumber || !decimals.canConvertToInt()) return null
+        val scale = decimals.intValue()
+        val orderMin = metadata.path(KrakenApiConstants.FIELD_ORDERMIN).takeIf { it.isTextual || it.isNumber }
+            ?.asText()?.toBigDecimalOrNull() ?: return null
+        val costMin = metadata.path(KrakenApiConstants.FIELD_COSTMIN).takeIf { it.isTextual || it.isNumber }
+            ?.asText()?.toBigDecimalOrNull() ?: return null
+        if (scale !in 0..18 || orderMin.signum() <= 0 || costMin.signum() <= 0) return null
+        return TradingPairLimits(scale, orderMin, costMin)
+    }
+
     override suspend fun getAssetMetadata(): List<KrakenAssetMetadata> = getAssetMetadata(allowStaleFallback = true)
 
     override suspend fun getFreshAssetMetadata(): List<KrakenAssetMetadata> =
@@ -262,12 +287,7 @@ class KrakenServiceImpl(
         dryRun: Boolean,
         clOrdId: String?,
     ): OrderResult {
-        val normalizedVolume =
-            volume
-                .setScale(
-                    PrecisionConstants.SCALE_CRYPTO,
-                    RoundingMode.DOWN,
-                ).stripTrailingZeros()
+        val normalizedVolume = volume.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.DOWN).stripTrailingZeros()
 
         if (dryRun) {
             log.info(
@@ -304,7 +324,7 @@ class KrakenServiceImpl(
             val txidNode = resp.path(KrakenApiConstants.FIELD_TXID)
             val orderTxid =
                 if (txidNode.isArray && txidNode.size() > 0) {
-                    txidNode[0].asText().ifBlank { null }
+                    txidNode[0].takeIf { it.isTextual }?.textValue()?.takeIf(String::isNotBlank)
                 } else {
                     null
                 }

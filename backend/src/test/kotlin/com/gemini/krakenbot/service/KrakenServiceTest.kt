@@ -353,9 +353,46 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "pair limits reject malformed metadata" {
+            runTest {
+                for (metadata in listOf(
+                    "\"lot_decimals\":8,\"ordermin\":\"0.001\",\"costmin\":\"5\"",
+                    "\"lot_decimals\":-1,\"ordermin\":\"0.001\",\"costmin\":\"5\"",
+                    "\"lot_decimals\":8,\"ordermin\":\"0.001\"",
+                )) {
+                    val service = createService("{\"error\":[],\"result\":{\"XXBTZUSD\":{$metadata}}}")
+                    val limits = service.getTradingPairLimits(Asset.BTC)
+                    (limits != null) shouldBe (metadata.contains("costmin") && !metadata.contains(":-1"))
+                }
+            }
+        }
+
+        "pair limits identify AIOZ without confusing it with AIO" {
+            runTest {
+                var requestedPair: String? = null
+                val service = createService(
+                    """{"error":[],"result":{"AIOZUSD":{"altname":"AIOZUSD","lot_decimals":5,"ordermin":"50","costmin":"0.5"}}}""",
+                    onRequest = { requestedPair = it.url.parameters["pair"] },
+                )
+                val limits = service.getTradingPairLimits("AIOZ")
+                requestedPair shouldBe "AIOZUSD"
+                limits?.lotDecimals shouldBe 5
+                service.getTradingPairLimits("AIO") shouldBe null
+            }
+        }
+
+        "pair limits reject a response for another market" {
+            runTest {
+                val service = createService(
+                    """{"error":[],"result":{"XETHZUSD":{"altname":"ETHUSD","lot_decimals":8,"ordermin":"0.001","costmin":"5"}}}""",
+                )
+                service.getTradingPairLimits(Asset.BTC) shouldBe null
+            }
+        }
+
         "executeOrder rejects empty txid arrays and blank txid values" {
             runTest {
-                for (txid in listOf("[]", "[\"\"]")) {
+                for (txid in listOf("[]", "[\"\"]", "[null]", "[123]", "[true]", "[{}]")) {
                     val service = createService(
                         """{"error":[],"result":{"txid":$txid}}""",
                     )

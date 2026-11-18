@@ -259,6 +259,7 @@ class ExecutionDatabase internal constructor(
 
             val databasePath = filePath(executionDbPath)
             val markerPath = journalMarkerPath(databasePath)
+            DataDirectoryIdentity.requireAbsent(databasePath.parent)
             check(!Files.exists(databasePath) && !Files.exists(markerPath)) {
                 "Execution database or its identity marker already exists; refusing to replace it."
             }
@@ -285,6 +286,7 @@ class ExecutionDatabase internal constructor(
         /** Resumes a fresh paired-store initialization whose outer marker proves this path began empty. */
         fun resumeFreshInitialization(executionDbPath: String): ExecutionDatabase {
             val databasePath = filePath(executionDbPath)
+            DataDirectoryIdentity.requireAbsent(databasePath.parent)
             val markerPath = journalMarkerPath(databasePath)
             val database = ExecutionDatabase(executionDbPath, buildSqliteUrl(executionDbPath))
             val schemaComplete = runCatching { database.verifyInitializedSchema() }.isSuccess

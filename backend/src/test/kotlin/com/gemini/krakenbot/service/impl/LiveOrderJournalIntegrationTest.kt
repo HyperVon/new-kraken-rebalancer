@@ -33,7 +33,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             val directory = Files.createTempDirectory("live-order-journal-success-")
             try {
                 val journal = openJournal(directory)
-                val fakeExchange = FakeKrakenService()
+                val fakeExchange = fundedExchange()
                 val observedPendingPairs = mutableListOf<String>()
                 fakeExchange.executeOrderAction = { pair, _, _, _ ->
                     readIntentState(journal.executionPath, pair) shouldBe OrderIntentState.PENDING.name
@@ -88,7 +88,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             val directory = Files.createTempDirectory("live-order-journal-uncertain-")
             try {
                 val journal = openJournal(directory)
-                val fakeExchange = FakeKrakenService().apply {
+                val fakeExchange = fundedExchange().apply {
                     orderResultFactory = { pair, _, side, volume ->
                         OrderResult(
                             success = false,
@@ -136,7 +136,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             val directory = Files.createTempDirectory("live-order-journal-uncertain-sell-")
             try {
                 val journal = openJournal(directory)
-                val fakeExchange = FakeKrakenService().apply {
+                val fakeExchange = fundedExchange().apply {
                     executeOrderAction = { pair, _, _, _ ->
                         readIntentState(journal.executionPath, pair) shouldBe OrderIntentState.PENDING.name
                     }
@@ -226,7 +226,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             try {
                 val journal = openJournal(directory)
                 val resolver = OrderIntentServiceImpl(SqliteExecutionOrderIntentRepositoryImpl(journal.database))
-                val fakeExchange = FakeKrakenService().apply {
+                val fakeExchange = fundedExchange().apply {
                     executeOrderAction = { pair, _, side, volume ->
                         if (pair == Asset.BTC_USD_PAIR) {
                             val intentId = readIntentId(journal.executionPath, pair)
@@ -306,7 +306,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
                         )
                     }
                 }
-                val fakeExchange = FakeKrakenService()
+                val fakeExchange = fundedExchange()
 
                 shouldThrow<SQLException> {
                     runTest {
@@ -330,7 +330,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             val directory = Files.createTempDirectory("live-order-journal-outcome-failure-")
             try {
                 val journal = openJournal(directory)
-                val fakeExchange = FakeKrakenService()
+                val fakeExchange = fundedExchange()
                 fakeExchange.executeOrderAction = { pair, _, _, _ ->
                     readIntentState(journal.executionPath, pair) shouldBe OrderIntentState.PENDING.name
                     DriverManager.getConnection("jdbc:sqlite:${journal.executionPath}").use { connection ->
@@ -366,7 +366,7 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
 
                 val restarted = openJournal(directory, initialize = false)
                 readIntent(restarted.executionPath, Asset.BTC_USD_PAIR).state shouldBe OrderIntentState.UNCERTAIN.name
-                val afterRestartExchange = FakeKrakenService()
+                val afterRestartExchange = fundedExchange()
                 executeLiveOrders(
                     fakeExchange = afterRestartExchange,
                     intentService = restarted.intentService,
@@ -545,6 +545,10 @@ class LiveOrderJournalIntegrationTest : StringSpec() {
             actionLog = mutableListOf(),
             cycleId = cycleId,
         )
+    }
+
+    private fun fundedExchange() = FakeKrakenService().apply {
+        spendableBalancesSupplier = { mapOf(Asset.USD to BigDecimal("100.00")) }
     }
 
     private fun liveSettings() = TestFixtures.settings(dryRun = false, simulation = false)

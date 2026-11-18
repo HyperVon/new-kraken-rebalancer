@@ -68,9 +68,15 @@ class DataDirectoryIdentity(dataDirectory: Path, private val hasAccountEvidence:
 
     private fun isDigest(value: String): Boolean = DIGEST_PATTERN.matches(value)
 
-    private companion object {
-        const val IDENTITY_FILE_NAME = "account-identity.sha256"
-        val DIGEST_PATTERN = Regex("[0-9a-f]{64}")
-        val directoryLocks = ConcurrentHashMap<Path, Any>()
+    companion object {
+        internal const val IDENTITY_FILE_NAME = "account-identity.sha256"
+        private val DIGEST_PATTERN = Regex("[0-9a-f]{64}")
+        private val directoryLocks = ConcurrentHashMap<Path, Any>()
+
+        internal fun requireAbsent(directory: Path) {
+            check(Files.notExists(directory.resolve(IDENTITY_FILE_NAME))) {
+                "Account identity exists without a complete execution journal; restore the original journal."
+            }
+        }
     }
 }

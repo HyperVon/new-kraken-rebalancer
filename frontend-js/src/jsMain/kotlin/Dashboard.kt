@@ -5,6 +5,7 @@ import com.gemini.krakenbot.util.StreamStatus
 import com.gemini.krakenbot.view.util.ActivityClassification
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataSort
+import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlTags
@@ -39,10 +40,84 @@ fun registerDashboardGlobals() {
     recentActivityHandlersRegistered = true
     document.addEventListener("click", ::handleRecentActivityClick)
     document.addEventListener("input", ::handleRecentActivitySearch)
-    document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, { captureRecentActivityState() })
-    document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, { restoreRecentActivityState() })
+    document.addEventListener(HtmlEvents.HTMX_BEFORE_SWAP, {
+        captureRecentActivityState()
+        captureIntentDrafts(it)
+    })
+    document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, {
+        restoreRecentActivityState()
+        restoreIntentDrafts(it)
+    })
     document.addEventListener(HtmlEvents.HTMX_AFTER_SETTLE, ::restoreRecentActivitySelectionAfterSettle)
     restoreRecentActivityState()
+}
+
+private data class IntentDraft(val state: String, val txid: String, val evidence: String)
+private data class IntentFocus(val id: String, val name: String, val start: Int?, val end: Int?)
+private data class IntentSwap(val target: Element, val drafts: Map<String, IntentDraft>, val focus: IntentFocus?)
+
+private val intentSwaps = js("new WeakMap()")
+
+internal fun captureIntentDrafts(event: DomEvent) {
+    val detail = event.asDynamic().detail ?: return
+    val target = detail.target as? Element ?: return
+    val xhr = detail.xhr ?: return
+    val forms = target.querySelectorAll("form[${HtmlAttrs.DATA_INTENT_ID}]")
+    if (forms.length == 0) return
+    var focus: IntentFocus? = null
+    val drafts = (0 until forms.length).mapNotNull { index ->
+        val form = forms.item(index) as? HTMLFormElement ?: return@mapNotNull null
+        val id = form.getAttribute(HtmlAttrs.DATA_INTENT_ID) ?: return@mapNotNull null
+        val state = form.querySelector("select[name='${FormFields.ORDER_INTENT_STATE}']") as? HTMLSelectElement
+        val txid = form.querySelector("input[name='${FormFields.ORDER_INTENT_ORDER_TXID}']") as? HTMLInputElement
+        val evidence = form.querySelector("input[name='${FormFields.ORDER_INTENT_EVIDENCE}']") as? HTMLInputElement
+        if (state == null || txid == null || evidence == null) return@mapNotNull null
+        val active = document.activeElement
+        when (active) {
+            txid, evidence -> {
+                val input = active as HTMLInputElement
+                focus = IntentFocus(id, input.name, input.selectionStart, input.selectionEnd)
+            }
+
+            state -> focus = IntentFocus(id, state.name, null, null)
+        }
+        id to IntentDraft(state.value, txid.value, evidence.value)
+    }.toMap()
+    intentSwaps.set(xhr, IntentSwap(target, drafts, focus))
+}
+
+internal fun restoreIntentDrafts(event: DomEvent) {
+    val detail = event.asDynamic().detail ?: return
+    val xhr = detail.xhr ?: return
+    val swap = intentSwaps.get(xhr) as? IntentSwap ?: return
+    if (detail.target !== swap.target) return
+    intentSwaps.delete(xhr)
+    if (!document.contains(swap.target)) return
+    val forms = swap.target.querySelectorAll("form[${HtmlAttrs.DATA_INTENT_ID}]")
+    repeat(forms.length) { index ->
+        val form = forms.item(index) as? HTMLFormElement ?: return@repeat
+        val id = form.getAttribute(HtmlAttrs.DATA_INTENT_ID) ?: return@repeat
+        val draft = swap.drafts[id] ?: return@repeat
+        val state = form.querySelector("select[name='${FormFields.ORDER_INTENT_STATE}']") as? HTMLSelectElement
+        val txid = form.querySelector("input[name='${FormFields.ORDER_INTENT_ORDER_TXID}']") as? HTMLInputElement
+        val evidence = form.querySelector("input[name='${FormFields.ORDER_INTENT_EVIDENCE}']") as? HTMLInputElement
+        state?.value = draft.state
+        txid?.value = draft.txid
+        evidence?.value = draft.evidence
+        val focus = swap.focus
+        if (focus?.id == id && document.activeElement == document.body) {
+            val control = when (focus.name) {
+                FormFields.ORDER_INTENT_STATE -> state
+                FormFields.ORDER_INTENT_ORDER_TXID -> txid
+                FormFields.ORDER_INTENT_EVIDENCE -> evidence
+                else -> null
+            }
+            control?.focus()
+            if (control is HTMLInputElement && focus.start != null && focus.end != null) {
+                control.setSelectionRange(focus.start, focus.end)
+            }
+        }
+    }
 }
 
 fun updateAge() {

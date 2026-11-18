@@ -192,6 +192,54 @@ class DashboardTest : StringSpec() {
             removeActivityDom(root)
         }
 
+        "intent drafts follow matching IDs across dashboard swaps" {
+            val root = document.createElement("div") as HTMLElement
+            document.body!!.appendChild(root)
+            fun markup(id: String) = """<form data-intent-id="$id">
+                <select name="state"><option value="CONFIRMED">confirmed</option><option value="REJECTED">rejected</option></select>
+                <input name="orderTxid"><input name="evidence">
+            </form>"""
+            try {
+                root.innerHTML = markup("1") + markup("2")
+                val form = root.querySelector("form[data-intent-id='1']")!!
+                (form.querySelector("select") as HTMLSelectElement).value = "REJECTED"
+                (form.querySelector("input[name=orderTxid]") as HTMLInputElement).value = "tx-1"
+                val evidence = form.querySelector("input[name=evidence]") as HTMLInputElement
+                evidence.value = "checked"
+                evidence.focus()
+                evidence.setSelectionRange(1, 4)
+                val detail = js("({})")
+                detail.target = root
+                detail.xhr = js("({})")
+                val event = document.createEvent("CustomEvent")
+                event.asDynamic().initCustomEvent("htmx:beforeSwap", true, true, detail)
+                captureIntentDrafts(event)
+                val unrelatedDetail = js("({})")
+                unrelatedDetail.target = root
+                unrelatedDetail.xhr = js("({})")
+                val unrelated = document.createEvent("CustomEvent")
+                unrelated.asDynamic().initCustomEvent("htmx:afterSwap", true, true, unrelatedDetail)
+                restoreIntentDrafts(unrelated)
+                unrelatedDetail.xhr = detail.xhr
+                unrelatedDetail.target = document.body
+                restoreIntentDrafts(unrelated)
+                root.innerHTML = markup("2") + markup("1") + markup("3")
+                restoreIntentDrafts(event)
+                val restored = root.querySelector("form[data-intent-id='1']")!!
+                (restored.querySelector("select") as HTMLSelectElement).value shouldBe "REJECTED"
+                (restored.querySelector("input[name=orderTxid]") as HTMLInputElement).value shouldBe "tx-1"
+                val restoredEvidence = restored.querySelector("input[name=evidence]") as HTMLInputElement
+                restoredEvidence.value shouldBe "checked"
+                (document.activeElement == restoredEvidence).shouldBeTrue()
+                restoredEvidence.selectionStart shouldBe 1
+                restoredEvidence.selectionEnd shouldBe 4
+                (root.querySelector("form[data-intent-id='3'] input[name=evidence]") as HTMLInputElement).value shouldBe
+                    ""
+            } finally {
+                root.remove()
+            }
+        }
+
         "recent activity defaults to 20 newest cycles and shows 20 older per click" {
             resetRecentActivityClientState()
             registerDashboardGlobals()

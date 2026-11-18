@@ -14,6 +14,7 @@ object DataDirectoryConfig {
     const val LEGACY_REPORTING_DB_FILE = "history.db"
     const val INITIALIZATION_MARKER_FILE = ".initialization-in-progress"
     const val INITIALIZATION_LOCK_FILE = ".initialization.lock"
+    const val OWNERSHIP_LOCK_FILE = ".execution-owner.lock"
 
     private val log = LoggerFactory.getLogger(DataDirectoryConfig::class.java)
 
@@ -53,6 +54,31 @@ object DataDirectoryConfig {
         }
     }
 
+    fun acquireOwnership(dataDir: Path = resolveDataDirectory()): AutoCloseable {
+        Files.createDirectories(dataDir)
+        val channel = FileChannel.open(
+            dataDir.resolve(OWNERSHIP_LOCK_FILE),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE,
+        )
+        try {
+            val lock = try {
+                channel.tryLock()
+            } catch (_: OverlappingFileLockException) {
+                null
+            }
+            checkNotNull(lock) { "Data directory $dataDir is already owned by another process." }
+            return AutoCloseable { channel.use { lock.release() } }
+        } catch (failure: Throwable) {
+            try {
+                channel.close()
+            } catch (closeFailure: Throwable) {
+                if (closeFailure !== failure) failure.addSuppressed(closeFailure)
+            }
+            throw failure
+        }
+    }
+
     private fun initializeUnlocked(dataDir: Path) {
         val executionDb = executionDatabasePath(dataDir)
         val initializationMarker = dataDir.resolve(INITIALIZATION_MARKER_FILE)
@@ -60,6 +86,9 @@ object DataDirectoryConfig {
             "${executionDb.fileName}${ExecutionDatabase.JOURNAL_MARKER_SUFFIX}",
         )
         val resuming = Files.exists(initializationMarker)
+        if (!Files.exists(executionDb) || resuming) {
+            DataDirectoryIdentity.requireAbsent(dataDir)
+        }
         if (!Files.exists(executionDb)) {
             check(!Files.exists(dataDir.resolve(LEGACY_REPORTING_DB_FILE))) {
                 "Legacy reporting data exists without an execution database; refusing to initialize a new journal. " +

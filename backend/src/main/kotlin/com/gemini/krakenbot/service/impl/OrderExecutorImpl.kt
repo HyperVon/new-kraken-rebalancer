@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.OrderAttemptTracker
 import com.gemini.krakenbot.service.OrderExecutionOutcome
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
+import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ViewText
@@ -131,6 +132,12 @@ class OrderExecutorImpl(
                 }
             }
 
+            if (!executedSells && !settings.dryRun && !settings.simulation && buyOrders.isNotEmpty()) {
+                val spendable = backend as? SpendableBalanceService
+                    ?: throw IllegalStateException("Live buys require spendable balances")
+                actualCash = openingUsd.min(resolveBalance(Asset.USD, spendable.getSpendableBalances()))
+            }
+
             // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
             val cycleBuyBudget =
                 actualCash
@@ -205,14 +212,28 @@ class OrderExecutorImpl(
         // exchange and persist a $0 TradeRecord otherwise (CQ-3-23 / #74).
         if (usdAmount.signum() <= 0) return null
 
-        val requestedVolume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.DOWN)
+        val pair = Asset.tradingPair(symbol)
+        val isLiveSubmission = !context.settings.dryRun && !context.settings.simulation
+        val limits = if (isLiveSubmission) {
+            context.backend.getTradingPairLimits(symbol)
+                ?: throw IllegalStateException("Missing or invalid trading limits for $pair")
+        } else {
+            null
+        }
+        if (limits != null &&
+            (limits.lotDecimals !in 0..18 || limits.orderMin.signum() <= 0 || limits.costMin.signum() <= 0)
+        ) {
+            throw IllegalStateException("Invalid trading limits for $pair")
+        }
+        val scale = minOf(limits?.lotDecimals ?: PrecisionConstants.SCALE_CRYPTO, PrecisionConstants.SCALE_CRYPTO)
+        val requestedVolume = usdAmount.divide(price, scale, RoundingMode.DOWN)
         // Portfolio values are cent-rounded, so a full liquidation intent can round up to one
         // crypto quantum more than the entry balance. Kraken volume must never exceed holdings.
         val volume =
             if (side == OrderSide.SELL && availableVolume != null) {
                 requestedVolume.min(
                     availableVolume.max(BigDecimal.ZERO).setScale(
-                        PrecisionConstants.SCALE_CRYPTO,
+                        scale,
                         RoundingMode.DOWN,
                     ),
                 )
@@ -231,7 +252,9 @@ class OrderExecutorImpl(
         }
         // Compare dust against the notional actually submitted after crypto-volume flooring.
         val effectiveUsdAmount = volume.multiply(price)
-        if (effectiveUsdAmount < BigDecimal.valueOf(context.settings.minimumOrderSizeUSD)) {
+        if (effectiveUsdAmount < BigDecimal.valueOf(context.settings.minimumOrderSizeUSD) ||
+            (limits != null && (volume < limits.orderMin || effectiveUsdAmount < limits.costMin))
+        ) {
             log.info(
                 "Skipping dust {} for {} after volume sizing ($ {})",
                 side.apiValue,
@@ -241,9 +264,7 @@ class OrderExecutorImpl(
             context.actionLog.add(ActionLogFormatter.formatSkippedDust(side, symbol, effectiveUsdAmount))
             return null
         }
-        val pair = Asset.tradingPair(symbol)
         val clOrdId = clientOrderId(context.cycleId, symbol, side.apiValue)
-        val isLiveSubmission = !context.settings.dryRun && !context.settings.simulation
         if (isLiveSubmission && clOrdId == null) {
             throw IllegalStateException("Live order requires a non-blank cycle id")
         }

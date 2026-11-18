@@ -56,8 +56,8 @@ class ExecutionAccountBindingIntegrationTest : StringSpec() {
         "prior directory identity prevents execution from binding another account" {
             withTempDirectory { directory ->
                 val identity = DataDirectoryIdentity(directory) { false }
-                identity.bindOrVerify(identityDigest(ACCOUNT_A))
                 val environment = openEnvironment(directory, exchange(ACCOUNT_B, GENERATION_B), identity)
+                identity.bindOrVerify(identityDigest(ACCOUNT_A))
 
                 shouldThrow<IllegalStateException> {
                     environment.bindingService.ensureVerifiedForSubmission()

@@ -163,6 +163,7 @@ object RebalancerEngine {
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
                 events = events,
+                minimumOrderSizeUSD = BigDecimal.valueOf(settings.minimumOrderSizeUSD),
             )
         }
 
@@ -175,6 +176,7 @@ object RebalancerEngine {
         buyOrders: MutableRebalanceOrders,
         sellOrders: MutableRebalanceOrders,
         events: MutableList<RebalanceEvent>,
+        minimumOrderSizeUSD: BigDecimal = BigDecimal.ZERO,
     ) {
         // Positive USD DevUSD = surplus cash (deposit) → buy underweights; negative = shortage → sell overweights.
         val deviationAbs = usdDev.abs()
@@ -220,9 +222,8 @@ object RebalancerEngine {
                 )
             val share = deviationAbs.multiply(ratio).toUsdScale().min(remaining)
 
-            // A tiny counter-deviation rounds to $0.00, and HALF_UP shares can collectively
-            // exceed the budget; either way there is nothing left to trade for this symbol.
-            if (share.signum() <= 0) continue
+            // Leave sub-minimum shares unallocated rather than changing the proportional split.
+            if (share.signum() <= 0 || share < minimumOrderSizeUSD) continue
             remaining = remaining.subtract(share)
 
             if (isDeposit) {

@@ -44,12 +44,12 @@ internal suspend fun joinRebalancingWorker(
     workerJob: Job?,
     hasPendingSubmissions: suspend () -> Boolean = { false },
     hasUnresolvedOrderIntents: suspend () -> Boolean = { false },
-): Boolean {
+) {
     val joinedWithinBudget = withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS.milliseconds) {
         workerJob?.join()
         true
     } ?: false
-    if (joinedWithinBudget) return true
+    if (joinedWithinBudget) return
     val submissionsPending = try {
         hasPendingSubmissions() || hasUnresolvedOrderIntents()
     } catch (failure: Throwable) {
@@ -67,13 +67,17 @@ internal suspend fun joinRebalancingWorker(
         log.warn(
             "Timed out waiting for the rebalance worker while submissions are pending; extending the shutdown wait to preserve the order journal.",
         )
-        workerJob?.join()
-        return true
+    } else {
+        log.warn("Timed out waiting for the rebalance worker; extending shutdown until it exits.")
     }
-    return false
+    workerJob?.join()
 }
 
 fun main(args: Array<String>) {
+    DataDirectoryConfig.acquireOwnership().use { runApplication(args) }
+}
+
+private fun runApplication(args: Array<String>) {
     if (INITIALIZE_DATA_FLAG in args) {
         DataDirectoryConfig.initializeDataDirectory()
         return
@@ -107,7 +111,7 @@ fun main(args: Array<String>) {
         Runtime.getRuntime().addShutdownHook(shutdownHook)
         shutdownHookRegistered = true
 
-        runBlocking { executionJournalBootstrap.initialize() }
+        lifecycle.initializeJournal { executionJournalBootstrap.initialize() }
         val server = createServer(objectMapper)
         lifecycle.attachServer(server)
         server.start(wait = true)
@@ -154,6 +158,13 @@ internal class KrakenRebalancerApplicationLifecycle(
     private var workerStarted = false
     private var shuttingDown = false
     private var shutdownOwner: Thread? = null
+
+    fun initializeJournal(initialize: suspend () -> Unit) {
+        synchronized(lock) {
+            check(!shuttingDown) { "Cannot recover the execution journal after shutdown has started." }
+            runBlocking { initialize() }
+        }
+    }
 
     fun attachServer(server: EmbeddedServer<*, *>) {
         synchronized(lock) {
@@ -206,15 +217,11 @@ internal class KrakenRebalancerApplicationLifecycle(
             }
 
             stoppedWorker = portfolioManager.stopRebalancingLoop()
-            val workerJoined =
-                runBlocking {
-                    joinRebalancingWorker(
-                        workerJob = stoppedWorker,
-                        hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
-                    )
-                }
-            if (!workerJoined) {
-                log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
+            runBlocking {
+                joinRebalancingWorker(
+                    workerJob = stoppedWorker,
+                    hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
+                )
             }
         }
         if (shutdownFailure != null) {
@@ -237,7 +244,7 @@ internal class KrakenRebalancerApplicationLifecycle(
                 }
             }
         }
-        // Keep dependencies alive through the worker's bounded (or journal-extended) drain,
+        // Keep dependencies alive through the worker's drain,
         // but do not let a failed drain prevent the remaining shutdown phases.
         cleanup { applicationScope.cancel() }
         cleanup { httpClient.close() }

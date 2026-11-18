@@ -297,6 +297,18 @@ class SettingsTest : StringSpec() {
                 input.value shouldBe "61"
                 status.textContent shouldBe "Unsaved changes"
 
+                val invalidSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
+                dispatchSettingsInput(input, "61.5")
+                val staleError = dispatchSettingsResponse(
+                    422,
+                    "invalid",
+                    invalidSaveXhr,
+                    "text/html",
+                    mapOf("X-Rebalancer-Error-Fragment" to "settings-form"),
+                )
+                (staleError.shouldSwap as Boolean).shouldBeFalse()
+                input.value shouldBe "61.5"
+
                 val inFlightSaveXhr = dispatchSettingsBeforeRequest("/settings", form)
                 dispatchSettingsInput(input, "62")
                 val inFlightEdit = dispatchSettingsResponse(
@@ -883,29 +895,13 @@ class SettingsTest : StringSpec() {
                     initialShouldSwap = false,
                     eventTarget = document.body,
                 )
-                (response.shouldSwap as Boolean).shouldBeTrue()
-
-                val replacement = settingsStateForm()
-                val replacementAllocations = document.createElement("div") as HTMLElement
-                replacementAllocations.id = "allocations-container"
-                replacement.appendChild(replacementAllocations)
-                val replacementNotice = document.createElement("div") as HTMLElement
-                replacementNotice.id = "allocation-undo-notice"
-                replacementNotice.classList.add("hidden")
-                replacement.appendChild(replacementNotice)
-                document.body!!.replaceChild(replacement, form)
-                val afterSwapDetail = js("({})")
-                afterSwapDetail.xhr = xhr
-                afterSwapDetail.target = document.body
-                val afterSwap = document.createEvent("CustomEvent")
-                afterSwap.asDynamic().initCustomEvent("htmx:afterSwap", true, true, afterSwapDetail)
-                document.body!!.dispatchEvent(afterSwap)
-
-                replacementAllocations.children.item(0) shouldBe usdRow
-                replacementNotice.classList.contains("hidden").shouldBeFalse()
-                (replacementAllocations.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "52.5"
+                (response.shouldSwap as Boolean).shouldBeFalse()
+                (response.eventPrevented as Boolean).shouldBeTrue()
+                allocations.children.item(0) shouldBe usdRow
+                undoNotice.classList.contains("hidden").shouldBeFalse()
+                (usdRow.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "52.5"
                 undoAllocationRemoval()
-                replacementAllocations.children.item(1) shouldBe btcRow
+                allocations.children.item(1) shouldBe btcRow
                 (btcRow.querySelector("input[name=targets]") as HTMLInputElement).value shouldBe "47.5"
             } finally {
                 window.asDynamic().setInterval = originalSetInterval
