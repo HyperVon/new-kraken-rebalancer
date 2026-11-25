@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/server-memory": "^2026.8.31",
-    "@playwright/mcp": "^0.0.85",
+    "@playwright/mcp": "^0.0.86",
     "markdownlint-cli": "^0.50.0",
     "playwright": "^1.65.1"
   },
